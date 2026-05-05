@@ -1,0 +1,14 @@
+{
+  "name": "snaelda",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "web:dev": "npm --workspace @snaelda/web run dev",
+    "web:build": "npm --workspace @snaelda/web run build",
+    "web:start": "npm --workspace @snaelda/web run start"
+  }
+}

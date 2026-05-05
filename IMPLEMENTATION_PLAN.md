@@ -19,12 +19,12 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 
 - [x] Choose the frontend framework: TanStack Start as the preferred React candidate, or Next.js if deployment, ecosystem, or team familiarity makes it the better tradeoff.
 - [x] Scaffold a Go backend as a modular monolith with clear internal packages for `auth`, `workspaces`, `sites`, `pages`, `blocks`, `themes`, `generation`, `publishing`, `domains`, `assets`, and `forms`.
-- [ ] Scaffold a React frontend app with separate route areas for marketing/auth entry, authenticated builder, draft preview, and public rendering experiments.
-- [ ] Decide whether the React app lives in the same repo as the Go backend as a monorepo, or as a separate app package with shared generated API types.
+- [x] Scaffold a React frontend app with separate route areas for marketing/auth entry, authenticated builder, draft preview, and public rendering experiments.
+- [x] Decide whether the React app lives in the same repo as the Go backend as a monorepo, or as a separate app package with shared generated API types.
 - [ ] Set up Postgres connection, migrations, seed tooling, and local development environment for the Go backend.
 - [ ] Set up local S3-compatible object storage with SeaweedFS for image uploads and published artifact development.
 - [x] Add Go API routing, middleware, config loading, request logging, validation error responses, and health checks.
-- [ ] Add frontend data fetching conventions for calling the Go API.
+- [x] Add frontend data fetching conventions for calling the Go API.
 - [ ] Add JWT-based authentication across the Go API and React frontend.
 - [ ] Implement Go JWT middleware that validates token signature, expiry, issuer, audience, subject, and required claims.
 - [ ] Use server-set secure HTTP-only cookies for browser auth tokens; do not store auth tokens in browser local storage.

@@ -31,11 +31,11 @@ coverage/
 *.tsbuildinfo
 pnpm-lock.yaml
 yarn.lock
-package-lock.json
 
 # Build outputs
 build/
 out/
+.output/
 tmp/
 .tmp/
 .cache/
