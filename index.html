@@ -1,0 +1,1042 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Snaelda.io | Spin Up a Landing Page, Then Make It Yours</title>
+    <meta
+      name="description"
+      content="Snaelda helps you spin up a warm, SEO-friendly landing page from a prompt, tweak it in a lightweight builder, and connect your own domain when you're ready."
+    />
+    <meta
+      property="og:title"
+      content="Snaelda.io | Spin Up a Landing Page, Then Make It Yours"
+    />
+    <meta
+      property="og:description"
+      content="Prompt in. Clean site out. Tweak it, publish it, connect your domain, and get something fast and search-friendly from day one."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="theme-color" content="#f6f2ec" />
+    <style>
+      :root {
+        --bg: #ede4cf;
+        --bg-soft: #f3ead7;
+        --surface: rgba(248, 239, 220, 0.92);
+        --surface-strong: #f8f0dd;
+        --text: #2b2324;
+        --muted: #554c4e;
+        --line: rgba(82, 64, 67, 0.18);
+        --shadow: 0 18px 50px rgba(89, 66, 70, 0.12);
+        --blue: #6ca9e8;
+        --blue-deep: #356fbd;
+        --teal: #7bc7bb;
+        --coral: #f07a98;
+        --gold: #e5a13a;
+        --wood: #b78656;
+        --radius-xl: 32px;
+        --radius-lg: 24px;
+        --radius-md: 18px;
+        --max: 1160px;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #151215;
+          --bg-soft: #1d171e;
+          --surface: rgba(31, 24, 34, 0.94);
+          --surface-strong: #231c24;
+          --text: #f6efe8;
+          --muted: #d0c4c8;
+          --line: rgba(255, 255, 255, 0.12);
+          --shadow: 0 20px 60px rgba(0, 0, 0, 0.32);
+          --blue: #8fc6ff;
+          --blue-deep: #5a8fdd;
+          --teal: #8ee2d1;
+          --coral: #ff8cad;
+          --gold: #f3b547;
+          --wood: #d0a170;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        font-family: Helvetica, Arial, sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(108, 169, 232, 0.16), transparent 30%),
+          radial-gradient(circle at top right, rgba(240, 122, 152, 0.12), transparent 28%),
+          radial-gradient(circle at 25% 65%, rgba(123, 199, 187, 0.1), transparent 22%),
+          linear-gradient(180deg, var(--bg-soft), var(--bg));
+        color: var(--text);
+        position: relative;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0.08;
+        background-image:
+          url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='48' viewBox='0 0 180 48'%3E%3Cpath d='M0 24 C15 8 30 8 45 24 S75 40 90 24 S120 8 135 24 S165 40 180 24' fill='none' stroke='%232b2324' stroke-width='1.3' stroke-linecap='round' opacity='0.55'/%3E%3C/svg%3E");
+        background-size: 180px 48px;
+        background-repeat: repeat;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      img {
+        max-width: 100%;
+        display: block;
+      }
+
+      .shell {
+        width: min(calc(100% - 32px), var(--max));
+        margin: 0 auto;
+      }
+
+      .site-header {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        backdrop-filter: blur(16px);
+        background: color-mix(in srgb, var(--bg-soft) 92%, transparent);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        min-height: 76px;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 14px;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+      }
+
+      .brand-mark {
+        width: 48px;
+        height: 48px;
+        border-radius: 16px;
+        object-fit: contain;
+        filter: drop-shadow(0 8px 18px rgba(53, 111, 189, 0.16));
+      }
+
+      .brand-name {
+        font-size: 1.1rem;
+        font-family: Helvetica, Arial, sans-serif;
+      }
+
+      .brand-name span {
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      .nav-links {
+        display: flex;
+        gap: 18px;
+        align-items: center;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      .nav-links a:hover {
+        color: var(--text);
+      }
+
+      .hero {
+        padding: 72px 0 44px;
+      }
+
+      .hero-grid {
+        display: grid;
+        gap: 28px;
+        grid-template-columns: 1.1fr 0.9fr;
+        align-items: center;
+      }
+
+      .kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: color-mix(in srgb, var(--surface-strong) 94%, transparent);
+        color: var(--text);
+        font-size: 0.92rem;
+        box-shadow: var(--shadow);
+      }
+
+      .kicker-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--teal), var(--blue));
+        box-shadow: 16px 0 0 var(--coral), 32px 0 0 var(--gold);
+        margin-right: 34px;
+      }
+
+      h1 {
+        margin: 18px 0 16px;
+        font-size: clamp(2.7rem, 6vw, 5.7rem);
+        line-height: 0.92;
+        letter-spacing: -0.065em;
+        font-family: "Times New Roman", Times, serif;
+      }
+
+      .hero-copy {
+        max-width: 58ch;
+        color: var(--muted);
+        font-size: 1.08rem;
+        line-height: 1.78;
+      }
+
+      .hero-copy strong {
+        color: var(--text);
+      }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin-top: 28px;
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 14px 20px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+      }
+
+      .button:hover {
+        transform: translateY(-1px);
+      }
+
+      .button-primary {
+        color: white;
+        background: linear-gradient(135deg, var(--blue-deep), var(--coral));
+        box-shadow: 0 16px 34px rgba(53, 111, 189, 0.22);
+      }
+
+      .button-secondary {
+        color: var(--text);
+        border-color: var(--line);
+        background: color-mix(in srgb, var(--surface-strong) 86%, transparent);
+      }
+
+      .button-locked,
+      .button[aria-disabled="true"] {
+        pointer-events: none;
+        opacity: 0.58;
+        box-shadow: none;
+        filter: grayscale(0.15);
+      }
+
+      .hero-notes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 22px;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .hero-notes span {
+        padding: 9px 12px;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--surface-strong) 92%, transparent);
+        border: 1px solid var(--line);
+      }
+
+      .founding-strip {
+        margin-top: 18px;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: color-mix(in srgb, var(--surface-strong) 94%, transparent);
+        box-shadow: var(--shadow);
+      }
+
+      .founding-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        margin-bottom: 12px;
+      }
+
+      .founding-label {
+        font-family: "Courier New", Courier, monospace;
+        font-size: 0.86rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .founding-count {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 800;
+        font-size: 1rem;
+      }
+
+      .founding-count strong {
+        font-size: 1.4rem;
+        font-family: "Times New Roman", Times, serif;
+      }
+
+      .founding-bar {
+        position: relative;
+        height: 14px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(43, 35, 36, 0.08);
+        border: 1px solid var(--line);
+      }
+
+      .founding-fill {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 0%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, var(--teal), var(--blue), var(--coral));
+        transition: width 220ms ease;
+      }
+
+      .founding-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 0.94rem;
+        line-height: 1.65;
+      }
+
+      .lock-note {
+        margin-top: 10px;
+        color: var(--text);
+        font-weight: 700;
+      }
+
+      .orb-card,
+      .panel,
+      .card,
+      .callout {
+        border: 1px solid var(--line);
+        border-radius: var(--radius-xl);
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+
+      .orb-card {
+        padding: 26px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        transform: rotate(-1.3deg);
+      }
+
+      .hero-logo-stage {
+        position: relative;
+        border-radius: 40px;
+        overflow: hidden;
+        min-height: 520px;
+        padding: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background:
+          radial-gradient(circle at 18% 20%, rgba(108, 169, 232, 0.24), transparent 24%),
+          radial-gradient(circle at 82% 18%, rgba(240, 122, 152, 0.2), transparent 22%),
+          radial-gradient(circle at 72% 76%, rgba(123, 199, 187, 0.24), transparent 20%),
+          linear-gradient(160deg, rgba(255, 249, 236, 0.88), rgba(255, 245, 232, 0.32));
+      }
+
+      .hero-logo-stage::before {
+        content: "";
+        position: absolute;
+        inset: 22px;
+        border-radius: 32px;
+        border: 1px dashed rgba(53, 111, 189, 0.2);
+        pointer-events: none;
+      }
+
+      .hero-logo-stage::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0.1;
+        background-image:
+          url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='80' viewBox='0 0 220 80'%3E%3Cpath d='M0 30 C20 10 40 10 60 30 S100 50 120 30 S160 10 180 30 S200 50 220 30' fill='none' stroke='%23554c4e' stroke-width='1.1' stroke-linecap='round' opacity='0.55'/%3E%3Cpath d='M0 54 C20 34 40 34 60 54 S100 74 120 54 S160 34 180 54 S200 74 220 54' fill='none' stroke='%23554c4e' stroke-width='1.1' stroke-linecap='round' opacity='0.35'/%3E%3C/svg%3E");
+        background-size: 220px 80px;
+        background-repeat: repeat;
+      }
+
+      .hero-logo {
+        position: relative;
+        z-index: 2;
+        width: min(100%, 460px);
+        filter: drop-shadow(0 22px 38px rgba(53, 111, 189, 0.18));
+      }
+
+      .hero-badge {
+        position: absolute;
+        z-index: 3;
+        padding: 11px 14px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: color-mix(in srgb, var(--surface-strong) 96%, transparent);
+        color: var(--text);
+        font-size: 0.92rem;
+        font-weight: 700;
+        box-shadow: var(--shadow);
+        font-family: "Courier New", Courier, monospace;
+      }
+
+      .hero-badge small {
+        display: block;
+        margin-top: 2px;
+        color: var(--muted);
+        font-weight: 600;
+        font-size: 0.74rem;
+      }
+
+      .hero-badge-a {
+        top: 28px;
+        left: 26px;
+        transform: rotate(-4deg);
+      }
+
+      .hero-badge-b {
+        right: 28px;
+        top: 72px;
+        transform: rotate(5deg);
+      }
+
+      .hero-badge-c {
+        left: 40px;
+        bottom: 40px;
+        transform: rotate(-3deg);
+      }
+
+      .orb-caption {
+        margin-top: 18px;
+        color: var(--text);
+        line-height: 1.65;
+      }
+
+      .section {
+        padding: 26px 0 40px;
+      }
+
+      .section-heading {
+        max-width: 700px;
+        margin-bottom: 18px;
+      }
+
+      .section-heading h2 {
+        margin: 0 0 10px;
+        font-size: clamp(2rem, 4vw, 3rem);
+        letter-spacing: -0.05em;
+        font-family: "Times New Roman", Times, serif;
+      }
+
+      .section-heading p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.78;
+      }
+
+      .grid {
+        display: grid;
+        gap: 18px;
+      }
+
+      .grid-3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .grid-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .card {
+        padding: 24px;
+      }
+
+      .card-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 16px;
+        margin-bottom: 14px;
+      }
+
+      .icon-prompt {
+        background: linear-gradient(135deg, rgba(108, 169, 232, 0.24), rgba(240, 122, 152, 0.22));
+      }
+
+      .icon-builder {
+        background: linear-gradient(135deg, rgba(123, 199, 187, 0.24), rgba(108, 169, 232, 0.22));
+      }
+
+      .icon-publish {
+        background: linear-gradient(135deg, rgba(229, 161, 58, 0.24), rgba(240, 122, 152, 0.2));
+      }
+
+      .card h3 {
+        margin: 0 0 10px;
+        font-size: 1.1rem;
+        font-family: "Times New Roman", Times, serif;
+      }
+
+      .card p,
+      .card li,
+      .callout p {
+        color: var(--muted);
+        line-height: 1.76;
+      }
+
+      .card ul {
+        padding-left: 18px;
+        margin: 14px 0 0;
+      }
+
+      .panel {
+        overflow: hidden;
+      }
+
+      .panel-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--line);
+        background: color-mix(in srgb, var(--surface-strong) 88%, transparent);
+      }
+
+      .window-dots {
+        display: flex;
+        gap: 8px;
+      }
+
+      .window-dots span {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+
+      .window-dots span:nth-child(1) { background: var(--coral); }
+      .window-dots span:nth-child(2) { background: var(--gold); }
+      .window-dots span:nth-child(3) { background: var(--teal); }
+
+      .panel-body {
+        display: grid;
+        grid-template-columns: 240px 1fr;
+      }
+
+      .sidebar {
+        border-right: 1px solid var(--line);
+        padding: 18px;
+      }
+
+      .sidebar h4,
+      .preview h4,
+      .callout h3 {
+        margin: 0 0 10px;
+      }
+
+      .block-list,
+      .stats-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .block-chip {
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: color-mix(in srgb, var(--surface-strong) 90%, transparent);
+        color: var(--muted);
+        font-family: "Courier New", Courier, monospace;
+      }
+
+      .block-chip strong {
+        display: block;
+        color: var(--text);
+        margin-bottom: 3px;
+      }
+
+      .preview {
+        padding: 18px;
+      }
+
+      .mini-site {
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        overflow: hidden;
+        background: var(--surface-strong);
+        transform: rotate(0.7deg);
+      }
+
+      .mini-hero {
+        padding: 24px;
+        background:
+          radial-gradient(circle at top right, rgba(108, 169, 232, 0.22), transparent 35%),
+          radial-gradient(circle at bottom left, rgba(240, 122, 152, 0.18), transparent 32%),
+          linear-gradient(180deg, color-mix(in srgb, var(--bg-soft) 90%, transparent), rgba(255, 255, 255, 0.5));
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        padding: 7px 10px;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--surface-strong) 94%, transparent);
+        border: 1px solid var(--line);
+        color: var(--text);
+        font-size: 0.84rem;
+      }
+
+      .mini-hero h3 {
+        margin: 14px 0 8px;
+        font-size: 1.6rem;
+        letter-spacing: -0.05em;
+        font-family: "Times New Roman", Times, serif;
+      }
+
+      .mini-hero p {
+        margin: 0;
+        max-width: 52ch;
+        color: var(--muted);
+      }
+
+      .mini-cards {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        padding: 18px;
+      }
+
+      .mini-card {
+        padding: 16px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: color-mix(in srgb, var(--surface-strong) 94%, transparent);
+      }
+
+      .mini-card strong {
+        display: block;
+        margin-bottom: 6px;
+      }
+
+      .callout {
+        padding: 28px;
+      }
+
+      .domain-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .pill {
+        padding: 10px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: color-mix(in srgb, var(--surface-strong) 94%, transparent);
+        color: var(--text);
+        font-family: "Courier New", Courier, monospace;
+      }
+
+      .pill strong {
+        color: var(--text);
+      }
+
+      .footer {
+        padding: 36px 0 60px;
+        color: var(--text);
+      }
+
+      .footer-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        border-top: 1px solid var(--line);
+        padding-top: 22px;
+      }
+
+      @media (max-width: 980px) {
+        .hero-grid,
+        .grid-3,
+        .grid-2,
+        .panel-body,
+        .mini-cards {
+          grid-template-columns: 1fr;
+        }
+
+        .nav {
+          min-height: 70px;
+        }
+
+        .nav-links {
+          display: none;
+        }
+
+        .hero {
+          padding-top: 44px;
+        }
+
+        .hero-logo-stage {
+          min-height: 380px;
+        }
+
+        .hero-badge {
+          position: static;
+        }
+
+        .orb-card {
+          gap: 14px;
+        }
+
+        .founding-top {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="shell nav">
+        <a class="brand" href="#top" aria-label="Snaelda home">
+          <img class="brand-mark" src="./logo.png" alt="Snaelda logo" />
+          <span class="brand-name">snaelda<span>.io</span></span>
+        </a>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="#how">How it works</a>
+          <a href="#builder">Builder</a>
+          <a href="#seo">SEO</a>
+          <a href="#domains">Domains</a>
+          <a class="button button-secondary" data-lockable href="#cta">Start spinning</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="shell hero-grid">
+          <div>
+            <div class="kicker">
+              <span class="kicker-dot" aria-hidden="true"></span>
+              Prompt in. Good first draft out.
+            </div>
+            <h1>Spin up a landing page. Then make it yours.</h1>
+            <p class="hero-copy">
+              Snaelda turns a prompt into a <strong>fast, SEO-friendly landing page</strong>,
+              lets you tweak the details in a lightweight builder, and gets it live on a
+              Snaelda URL or your own domain without dragging you through a giant website
+              builder.
+            </p>
+            <div class="hero-actions">
+              <a class="button button-primary" data-lockable href="#cta">Create your first draft</a>
+              <a class="button button-secondary" href="#builder">Peek at the builder</a>
+            </div>
+            <div class="hero-notes" aria-label="Product highlights">
+              <span>Prompt to site draft</span>
+              <span>SEO-friendly by default</span>
+              <span>Bring your own domain</span>
+            </div>
+            <div class="founding-strip" id="founding-50">
+              <div class="founding-top">
+                <div>
+                  <div class="founding-label">Founding 50</div>
+                  <div class="founding-count">
+                    <strong data-spots-left>17</strong>
+                    <span>spots left</span>
+                  </div>
+                </div>
+                <div class="pill">$20/month or $180/year</div>
+              </div>
+              <div class="founding-bar" aria-hidden="true">
+                <div class="founding-fill" data-founding-fill></div>
+              </div>
+              <div class="founding-meta">
+                <span>First 20 get 50% off the first year</span>
+                <span>5 free prompts</span>
+                <span>Re-prompt inside the builder</span>
+                <span>1 site, up to 10 pages</span>
+              </div>
+              <div class="lock-note" data-lock-note>
+                When the 50 spots are gone, we close new subscriptions for now.
+              </div>
+            </div>
+          </div>
+
+          <div class="orb-card">
+            <div class="hero-logo-stage">
+              <div class="hero-badge hero-badge-a">
+                Prompt to page
+                <small>copy, blocks, theme</small>
+              </div>
+              <div class="hero-badge hero-badge-b">
+                SEO-friendly
+                <small>fast HTML from day one</small>
+              </div>
+              <div class="hero-badge hero-badge-c">
+                Bring your own domain
+                <small>when it feels like home</small>
+              </div>
+              <img class="hero-logo" src="./logo.png" alt="Snaelda logo illustration" />
+            </div>
+            <p class="orb-caption">
+              A little tangled up front. Nicely behaved once published.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="how">
+        <div class="shell">
+          <div class="section-heading">
+            <h2>Small flow. Real website.</h2>
+            <p>
+              The product is intentionally narrow: make a solid first draft quickly, tweak what
+              matters, publish something fast, and connect a real domain when you’re ready.
+            </p>
+          </div>
+          <div class="grid grid-3">
+            <article class="card">
+              <div class="card-icon icon-prompt"></div>
+              <h3>1. Start with a prompt</h3>
+              <p>
+                Tell Snaelda what you do, how you want it to feel, and what kind of page you need.
+                The prompt shapes both the content and the theme direction.
+              </p>
+            </article>
+            <article class="card">
+              <div class="card-icon icon-builder"></div>
+              <h3>2. Tweak it in the builder</h3>
+              <p>
+                Rearrange sections, edit copy, adjust colors, swap blocks, and make it look like
+                something you’d actually want to share.
+              </p>
+            </article>
+            <article class="card">
+              <div class="card-icon icon-publish"></div>
+              <h3>3. Publish something snappy</h3>
+              <p>
+                The final site ships as lightweight HTML with clean metadata, shared styling, and a
+                tiny runtime footprint.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="builder">
+        <div class="shell">
+          <div class="section-heading">
+            <h2>A lightweight builder, not a cockpit.</h2>
+            <p>
+              Enough control to make the page yours, without turning every decision into a
+              side-quest.
+            </p>
+          </div>
+          <div class="panel">
+            <div class="panel-top">
+              <div class="window-dots" aria-hidden="true">
+                <span></span><span></span><span></span>
+              </div>
+              <strong>Draft builder mockup</strong>
+              <span style="color: var(--muted)">autosave on</span>
+            </div>
+            <div class="panel-body">
+              <aside class="sidebar">
+                <h4>Page blocks</h4>
+                <div class="block-list">
+                  <div class="block-chip">
+                    <strong>Hero</strong>
+                    headline, CTA, image
+                  </div>
+                  <div class="block-chip">
+                    <strong>Features</strong>
+                    three reasons to care
+                  </div>
+                  <div class="block-chip">
+                    <strong>Profile cards</strong>
+                    people, founders, team
+                  </div>
+                  <div class="block-chip">
+                    <strong>FAQ</strong>
+                    good for trust and SEO
+                  </div>
+                  <div class="block-chip">
+                    <strong>Contact form</strong>
+                    keep it simple, get leads
+                  </div>
+                </div>
+              </aside>
+              <div class="preview">
+                <h4>Live draft preview</h4>
+                <div class="mini-site">
+                  <div class="mini-hero">
+                    <span class="eyebrow">Calm studio • Stockholm</span>
+                    <h3>Natural photography for meaningful moments</h3>
+                    <p>
+                      Portraits, events, and brand photography with a soft Nordic feel and a clean
+                      booking path.
+                    </p>
+                  </div>
+                  <div class="mini-cards">
+                    <div class="mini-card">
+                      <strong>Prompt-made</strong>
+                      Copy, page structure, and theme direction start here.
+                    </div>
+                    <div class="mini-card">
+                      <strong>Easy to tweak</strong>
+                      Swap blocks, rewrite headings, change colors.
+                    </div>
+                    <div class="mini-card">
+                      <strong>Ready to publish</strong>
+                      Clean HTML, tiny runtime, real domain support.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="seo">
+        <div class="shell grid grid-2">
+          <div class="card">
+            <h3>SEO-friendly out of the box</h3>
+            <p>
+              Public pages are served as real HTML with sensible metadata, canonical structure, and
+              fast response times. Users should not need to learn search engine rituals before they
+              can launch something decent.
+            </p>
+            <ul>
+              <li>Server-served HTML instead of a client-rendered shell</li>
+              <li>Page titles and descriptions generated from the prompt</li>
+              <li>Sitemap and robots output at publish time</li>
+              <li>Clean page paths and internal linking</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Simple analytics, not surveillance furniture</h3>
+            <p>
+              Snaelda can give users just enough signal to know the page is doing something:
+              lightweight page view counts by site, page, and day. No noisy tracker circus needed.
+            </p>
+            <div class="stats-list">
+              <div class="pill"><strong>1,284</strong> total views this month</div>
+              <div class="pill"><strong>/pricing</strong> is your top page</div>
+              <div class="pill"><strong>Today</strong> 47 visits and counting</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="domains">
+        <div class="shell">
+          <div class="callout">
+            <h3>Start on a Snaelda URL. Bring your own domain when it feels like home.</h3>
+            <p>
+              Every site can go live quickly on a Snaelda subdomain, then switch to a custom domain
+              when the brand is ready. That keeps launch friction low without making the final result
+              feel temporary.
+            </p>
+            <div class="domain-row">
+              <span class="pill"><strong>Draft URL</strong> nordic-lens.snaelda.io</span>
+              <span class="pill"><strong>Later</strong> nordiclensstudio.com</span>
+              <span class="pill"><strong>Still fast</strong> same lightweight site output</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="cta">
+        <div class="shell">
+          <div class="section-heading">
+            <h2>Prompt in. Good first draft out.</h2>
+            <p>
+              Snaelda is for people who want a page online before the mood evaporates. Warm brand,
+              light builder, fast public pages, and just enough weirdness to be memorable.
+            </p>
+          </div>
+          <div class="hero-actions">
+            <a class="button button-primary" data-lockable href="#">Start with a prompt</a>
+            <a class="button button-secondary" href="#">See a sample site</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="shell footer-bar">
+        <div class="brand">
+          <img class="brand-mark" src="./logo.png" alt="Snaelda logo" />
+          <span class="brand-name">snaelda<span>.io</span></span>
+        </div>
+        <div>Warm by default. Slightly mean after dark.</div>
+      </div>
+    </footer>
+    <script>
+      (function () {
+        const totalSpots = 50;
+        const spotsLeft = 17;
+        const spotsClaimed = totalSpots - spotsLeft;
+        const countEl = document.querySelector("[data-spots-left]");
+        const fillEl = document.querySelector("[data-founding-fill]");
+        const noteEl = document.querySelector("[data-lock-note]");
+        const lockableEls = document.querySelectorAll("[data-lockable]");
+
+        if (countEl) countEl.textContent = String(spotsLeft);
+        if (fillEl) fillEl.style.width = `${(spotsClaimed / totalSpots) * 100}%`;
+
+        if (spotsLeft <= 0) {
+          if (noteEl) {
+            noteEl.textContent = "Founding 50 is full. New subscriptions are locked for now.";
+          }
+
+          lockableEls.forEach((el) => {
+            el.setAttribute("aria-disabled", "true");
+            el.classList.add("button-locked");
+            el.textContent = "Founding 50 is full";
+            el.setAttribute("href", "#founding-50");
+          });
+        }
+      })();
+    </script>
+  </body>
+</html>
