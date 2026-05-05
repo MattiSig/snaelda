@@ -24,6 +24,9 @@ func Load() (Config, error) {
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR is required")
 	}
+	if cfg.AppEnv != "test" && cfg.DatabaseURL == "" {
+		return Config{}, fmt.Errorf("DATABASE_URL is required")
+	}
 
 	return cfg, nil
 }

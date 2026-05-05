@@ -12,6 +12,7 @@ import (
 
 	"github.com/MattiSig/snaelda/internal/api"
 	"github.com/MattiSig/snaelda/internal/platform/config"
+	"github.com/MattiSig/snaelda/internal/platform/database"
 )
 
 func main() {
@@ -23,9 +24,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	startupCtx, cancelStartup := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelStartup()
+
+	dbPool, err := database.Open(startupCtx, cfg.DatabaseURL)
+	if err != nil {
+		logger.Error("connect database", "error", err)
+		os.Exit(1)
+	}
+	defer dbPool.Close()
+
 	server := api.NewServer(api.ServerConfig{
-		Config: cfg,
-		Logger: logger,
+		Config:   cfg,
+		Logger:   logger,
+		Database: dbPool,
 	})
 
 	httpServer := &http.Server{

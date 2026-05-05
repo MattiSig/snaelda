@@ -6,7 +6,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 
 - [ ] A signed-in user can create or use a default workspace.
 - [ ] The backend is a Go modular monolith exposing the product API and owning Postgres persistence.
-- [ ] The frontend is a React application, preferably evaluated as TanStack Start first unless Next.js is chosen deliberately.
+- [ ] The frontend is a React application built with TanStack Start, Tailwind CSS, and shadcn/ui unless a later decision deliberately changes that stack.
 - [ ] A user can enter a prompt and get a valid structured site draft.
 - [ ] The generated draft uses only known block types, known block versions, valid block props, valid theme tokens, and no arbitrary code.
 - [ ] The draft can be previewed through the maintained React renderer.
@@ -17,11 +17,12 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 
 ## Phase 0: Technical Foundation
 
-- [x] Choose the frontend framework: TanStack Start as the preferred React candidate, or Next.js if deployment, ecosystem, or team familiarity makes it the better tradeoff.
+- [x] Choose the frontend framework and styling baseline: TanStack Start for the React app, Tailwind CSS for utility styling, and shadcn/ui for reusable app components.
 - [x] Scaffold a Go backend as a modular monolith with clear internal packages for `auth`, `workspaces`, `sites`, `pages`, `blocks`, `themes`, `generation`, `publishing`, `domains`, `assets`, and `forms`.
 - [x] Scaffold a React frontend app with separate route areas for marketing/auth entry, authenticated builder, draft preview, and public rendering experiments.
 - [x] Decide whether the React app lives in the same repo as the Go backend as a monorepo, or as a separate app package with shared generated API types.
-- [ ] Set up Postgres connection, migrations, seed tooling, and local development environment for the Go backend.
+- [x] Configure the TanStack Start app with Tailwind CSS, shadcn/ui, the `@/*` import alias, shared `cn` utility, and a small starting set of UI primitives.
+- [x] Set up Postgres connection, migrations, seed tooling, and local development environment for the Go backend.
 - [ ] Set up local S3-compatible object storage with SeaweedFS for image uploads and published artifact development.
 - [x] Add Go API routing, middleware, config loading, request logging, validation error responses, and health checks.
 - [x] Add frontend data fetching conventions for calling the Go API.
@@ -40,16 +41,16 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 
 ## Phase 1: Data Model And Draft Persistence
 
-- [ ] Create `users`, `workspaces`, and `workspace_members`.
-- [ ] Create `sites` with `workspace_id`, `name`, `slug`, `status`, `default_locale`, `published_version_id`, `generation_prompt`, `generation_summary`, and `settings`.
-- [ ] Create `site_domains` with hostname, type, status, and verification fields, even if custom domain verification is deferred.
-- [ ] Create `themes` with site ownership, version, and constrained token JSON.
-- [ ] Create `pages` with site ownership, title, slug, sort order, status, SEO JSON, and settings JSON.
+- [x] Create `users`, `workspaces`, and `workspace_members`.
+- [x] Create `sites` with `workspace_id`, `name`, `slug`, `status`, `default_locale`, `published_version_id`, `generation_prompt`, `generation_summary`, and `settings`.
+- [x] Create `site_domains` with hostname, type, status, and verification fields, even if custom domain verification is deferred.
+- [x] Create `themes` with site ownership, version, and constrained token JSON.
+- [x] Create `pages` with site ownership, title, slug, sort order, status, SEO JSON, and settings JSON.
 - [ ] Enforce the maximum of 10 active pages per site at the application layer first, and add DB-level protection if practical.
-- [ ] Create `block_instances` with `page_id`, duplicated `site_id`, type, version, sort order, props JSON, settings JSON, and `is_hidden`.
-- [ ] Create `site_versions` with immutable snapshot JSON, version number, creator, created timestamp, and publish note.
-- [ ] Create `generation_jobs` for prompt tracking, status, output plan, errors, and input context.
-- [ ] Create `assets`, `form_submissions`, `page_view_daily`, and `audit_events` tables, but keep most UI around them for later phases.
+- [x] Create `block_instances` with `page_id`, duplicated `site_id`, type, version, sort order, props JSON, settings JSON, and `is_hidden`.
+- [x] Create `site_versions` with immutable snapshot JSON, version number, creator, created timestamp, and publish note.
+- [x] Create `generation_jobs` for prompt tracking, status, output plan, errors, and input context.
+- [x] Create `assets`, `form_submissions`, `page_view_daily`, and `audit_events` tables, but keep most UI around them for later phases.
 - [ ] Implement draft assembly from normalized rows into a canonical `SiteDraft`.
 - [ ] Implement draft persistence from canonical input into normalized rows.
 - [ ] Implement read APIs for listing sites and loading one complete draft.
@@ -64,6 +65,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [ ] Add the first prototype blocks: `hero`, `text_section`, `image_text`, `features_grid`, and `cta_band`.
 - [ ] Implement React renderer components for those prototype blocks.
 - [ ] Implement React editor field metadata for those prototype blocks.
+- [ ] Build React renderer and editor surfaces with Tailwind utilities so preview, builder, and publish output stay visually consistent.
 - [ ] Add contract tests or generated fixtures proving Go validation accepts exactly what the React renderer/editor expects.
 - [ ] Add registry tests that reject unknown blocks, unknown versions, invalid props, unsafe links, and unsupported settings.
 - [ ] Defer remaining MVP blocks until the prototype loop works.
@@ -89,6 +91,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [ ] Implement Go block create, update, delete, duplicate, hide/show, and reorder APIs.
 - [ ] Implement Go theme read and update APIs.
 - [ ] Implement a simple authenticated builder shell with site list and site detail.
+- [ ] Use shadcn/ui primitives for builder controls, forms, dialogs, menus, tabs, loading states, and empty/error states before creating bespoke app components.
 - [ ] Build the React prompt entry page, even if it initially creates a deterministic default site before AI is wired in.
 - [ ] Add a page list and block list.
 - [ ] Add a simple field editor generated from the block editor schema.

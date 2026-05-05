@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"os"
@@ -21,16 +22,22 @@ import (
 )
 
 type ServerConfig struct {
-	Config config.Config
-	Logger *slog.Logger
+	Config   config.Config
+	Logger   *slog.Logger
+	Database Pinger
 }
 
 type Server struct {
-	config Config
-	logger *slog.Logger
+	config   Config
+	logger   *slog.Logger
+	database Pinger
 }
 
 type Config = config.Config
+
+type Pinger interface {
+	Ping(ctx context.Context) error
+}
 
 func NewServer(cfg ServerConfig) *Server {
 	logger := cfg.Logger
@@ -39,8 +46,9 @@ func NewServer(cfg ServerConfig) *Server {
 	}
 
 	return &Server{
-		config: cfg.Config,
-		logger: logger,
+		config:   cfg.Config,
+		logger:   logger,
+		database: cfg.Database,
 	}
 }
 
@@ -49,6 +57,8 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /api/healthz", s.health)
+	mux.HandleFunc("GET /readyz", s.ready)
+	mux.HandleFunc("GET /api/readyz", s.ready)
 
 	mountPlaceholderModule(mux, auth.Module{})
 	mountPlaceholderModule(mux, workspaces.Module{})
@@ -69,6 +79,27 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status": "ok",
 		"env":    s.config.AppEnv,
+	})
+}
+
+func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
+	if s.database == nil {
+		writeError(w, http.StatusServiceUnavailable, "database_unavailable", "database is not configured")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+
+	if err := s.database.Ping(ctx); err != nil {
+		s.logger.Error("database readiness check failed", "error", err)
+		writeError(w, http.StatusServiceUnavailable, "database_unavailable", "database is unavailable")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":   "ready",
+		"database": "ok",
 	})
 }
 
