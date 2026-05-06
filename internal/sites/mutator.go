@@ -18,6 +18,9 @@ var (
 	ErrSiteSlugInvalid  = errors.New("site slug is invalid")
 	ErrSiteSlugConflict = errors.New("site slug is already in use")
 	ErrNoSiteChanges    = errors.New("site update requires at least one change")
+	ErrPageNotFound     = errors.New("page was not found")
+	ErrBlockNotFound    = errors.New("block was not found")
+	ErrNoBlockChanges   = errors.New("block update requires at least one change")
 )
 
 type mutationDB interface {
@@ -28,6 +31,7 @@ type mutationDB interface {
 type Mutator interface {
 	CreateSite(ctx context.Context, workspaceID string, input CreateSiteInput) (siteconfig.SiteDraft, error)
 	UpdateSite(ctx context.Context, workspaceID string, siteID string, input UpdateSiteInput) (siteconfig.SiteDraft, error)
+	UpdateBlock(ctx context.Context, workspaceID string, siteID string, pageID string, blockID string, input UpdateBlockInput) (siteconfig.SiteDraft, error)
 	DeleteSite(ctx context.Context, workspaceID string, siteID string) error
 }
 
@@ -40,6 +44,11 @@ type CreateSiteInput struct {
 type UpdateSiteInput struct {
 	Name *string
 	Slug *string
+}
+
+type UpdateBlockInput struct {
+	Props  map[string]any
+	Hidden *bool
 }
 
 type PostgresMutator struct {
@@ -142,6 +151,59 @@ func (m *PostgresMutator) DeleteSite(ctx context.Context, workspaceID string, si
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (m *PostgresMutator) UpdateBlock(ctx context.Context, workspaceID string, siteID string, pageID string, blockID string, input UpdateBlockInput) (siteconfig.SiteDraft, error) {
+	if input.Props == nil && input.Hidden == nil {
+		return siteconfig.SiteDraft{}, ErrNoBlockChanges
+	}
+
+	draft, err := m.reader.LoadDraft(ctx, siteID)
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+
+	pageIndex := -1
+	blockIndex := -1
+	for index, page := range draft.Pages {
+		if page.ID != pageID {
+			continue
+		}
+		pageIndex = index
+		for candidateIndex, block := range page.Blocks {
+			if block.ID == blockID {
+				blockIndex = candidateIndex
+				break
+			}
+		}
+		break
+	}
+
+	if pageIndex == -1 {
+		return siteconfig.SiteDraft{}, ErrPageNotFound
+	}
+	if blockIndex == -1 {
+		return siteconfig.SiteDraft{}, ErrBlockNotFound
+	}
+
+	block := draft.Pages[pageIndex].Blocks[blockIndex]
+	if input.Props != nil {
+		block.Props = input.Props
+	}
+	if input.Hidden != nil {
+		block.Settings.Hidden = *input.Hidden
+	}
+	draft.Pages[pageIndex].Blocks[blockIndex] = block
+
+	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+
+	savedDraft, err := m.reader.LoadDraft(ctx, siteID)
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	return savedDraft, nil
 }
 
 func (m *PostgresMutator) createSlug(ctx context.Context, workspaceID string, requested string, name string) (string, error) {

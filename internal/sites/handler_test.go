@@ -29,10 +29,14 @@ func (r fakeReader) LoadDraft(context.Context, string) (siteconfig.SiteDraft, er
 type fakeMutator struct {
 	created           siteconfig.SiteDraft
 	updated           siteconfig.SiteDraft
+	blockUpdated      siteconfig.SiteDraft
 	createInput       CreateSiteInput
 	updateInput       UpdateSiteInput
+	updateBlockInput  UpdateBlockInput
 	deleteSiteID      string
 	deleteWorkspaceID string
+	updatePageID      string
+	updateBlockID     string
 	err               error
 }
 
@@ -46,6 +50,15 @@ func (m *fakeMutator) UpdateSite(_ context.Context, workspaceID string, siteID s
 	m.deleteSiteID = siteID
 	m.updateInput = input
 	return m.updated, m.err
+}
+
+func (m *fakeMutator) UpdateBlock(_ context.Context, workspaceID string, siteID string, pageID string, blockID string, input UpdateBlockInput) (siteconfig.SiteDraft, error) {
+	m.deleteWorkspaceID = workspaceID
+	m.deleteSiteID = siteID
+	m.updatePageID = pageID
+	m.updateBlockID = blockID
+	m.updateBlockInput = input
+	return m.blockUpdated, m.err
 }
 
 func (m *fakeMutator) DeleteSite(_ context.Context, workspaceID string, siteID string) error {
@@ -128,13 +141,17 @@ func TestGetSiteReturnsCanonicalDraft(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
 	}
 	var payload struct {
-		Draft siteconfig.SiteDraft `json:"draft"`
+		Draft         siteconfig.SiteDraft         `json:"draft"`
+		BlockRegistry []siteconfig.BlockDefinition `json:"blockRegistry"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if payload.Draft.Site.ID != "site_demo" {
 		t.Fatalf("expected site draft, got %#v", payload.Draft.Site)
+	}
+	if len(payload.BlockRegistry) == 0 {
+		t.Fatal("expected block registry in payload")
 	}
 }
 
@@ -215,6 +232,40 @@ func TestDeleteSiteReturnsNoContent(t *testing.T) {
 	}
 	if mutator.deleteSiteID != "site_demo" {
 		t.Fatalf("expected delete site id to reach mutator, got %q", mutator.deleteSiteID)
+	}
+}
+
+func TestUpdateBlockReturnsUpdatedDraft(t *testing.T) {
+	mutator := &fakeMutator{blockUpdated: validHandlerDraft()}
+	handler := Handler{
+		reader:     fakeReader{},
+		mutator:    mutator,
+		authorizer: fakeAuthorizer{},
+	}
+	req := httptest.NewRequest(http.MethodPatch, "/api/sites/site_demo/pages/page_home/blocks/block_hero", strings.NewReader(`{"props":{"headline":"Refined headline","layout":"centered"},"hidden":true}`)).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	req.SetPathValue("siteId", "site_demo")
+	req.SetPathValue("pageId", "page_home")
+	req.SetPathValue("blockId", "block_hero")
+	res := httptest.NewRecorder()
+
+	handler.updateBlock(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	if mutator.updatePageID != "page_home" || mutator.updateBlockID != "block_hero" {
+		t.Fatalf("expected page and block ids to reach mutator, got %q and %q", mutator.updatePageID, mutator.updateBlockID)
+	}
+	if mutator.updateBlockInput.Props["headline"] != "Refined headline" {
+		t.Fatalf("expected updated props to reach mutator, got %#v", mutator.updateBlockInput.Props)
+	}
+	if mutator.updateBlockInput.Hidden == nil || !*mutator.updateBlockInput.Hidden {
+		t.Fatalf("expected hidden flag to reach mutator, got %#v", mutator.updateBlockInput.Hidden)
 	}
 }
 

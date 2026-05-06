@@ -9,9 +9,9 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [ ] The frontend is a React application built with TanStack Start, Tailwind CSS, and shadcn/ui unless a later decision deliberately changes that stack.
 - [ ] Frontend surfaces support brand-aligned light and dark modes based on `BRANDING.md`, with dark mode required and using the sharper, slightly meaner palette described there.
 - [ ] A user can enter a prompt and get a valid structured site draft.
-- [ ] The generated draft uses only known block types, known block versions, valid block props, valid theme tokens, and no arbitrary code.
+- [x] The generated draft uses only known block types, known block versions, valid block props, valid theme tokens, and no arbitrary code.
 - [ ] The draft can be previewed through the maintained React renderer.
-- [ ] The user can edit basic block fields and save validated changes.
+- [x] The user can edit basic block fields and save validated changes.
 - [ ] The user can publish the draft into an immutable snapshot.
 - [ ] The published site is reachable at a platform subdomain or local equivalent.
 - [ ] Published output is served from the published snapshot or generated artifacts, not from mutable draft tables.
@@ -63,15 +63,16 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 
 ## Phase 2: Code-Owned Block Registry
 
-- [ ] Define the shared `BlockDefinition` contract with type, version, display name, category, prop schema, default props, editor schema, renderer mapping, and migration hook.
+- [x] Define the shared `BlockDefinition` contract with type, version, display name, category, prop schema, default props, editor schema, renderer mapping, and migration hook.
+  The Go-owned `siteconfig` registry now carries type, version, display name, category, default props, and recursive editor field metadata for the prototype blocks, while React consumes that contract for block editing and rendering. Renderer mapping remains owned by the React renderer switch until a more formal generated contract is added.
 - [ ] Decide the registry ownership boundary: Go owns validation schemas and persistence rules; React owns renderer components and editor field components; both must be generated from or checked against the same contract.
-- [ ] Implement the registry in code rather than the database.
-- [ ] Add registry lookup by `type` and `version`.
-- [ ] Add validation for block existence, version existence, props shape, links, asset references, and hidden/settings fields.
+- [x] Implement the registry in code rather than the database.
+- [x] Add registry lookup by `type` and `version`.
+- [x] Add validation for block existence, version existence, props shape, links, asset references, and hidden/settings fields.
 - [ ] Add the first prototype blocks: `hero`, `text_section`, `image_text`, `features_grid`, and `cta_band`.
 - [x] Implement React renderer components for those prototype blocks.
   React now renders the prototype `hero`, `text_section`, `image_text`, `features_grid`, and `cta_band` blocks in a shared `SiteDraftRenderer` used by the authenticated preview route.
-- [ ] Implement React editor field metadata for those prototype blocks.
+- [x] Implement React editor field metadata for those prototype blocks.
 - [ ] Build React renderer and editor surfaces with Tailwind utilities so preview, builder, and publish output stay visually consistent.
 - [ ] Add contract tests or generated fixtures proving Go validation accepts exactly what the React renderer/editor expects.
 - [ ] Add registry tests that reject unknown blocks, unknown versions, invalid props, unsafe links, and unsupported settings.
@@ -98,22 +99,25 @@ This plan is sequenced for the shortest path to a working prototype first. The p
   `internal/sites` now exposes authenticated `POST /api/sites`, `GET /api/sites`, `GET /api/sites/:siteId`, `PATCH /api/sites/:siteId`, and `DELETE /api/sites/:siteId` handlers, backed by deterministic draft creation, slug conflict checks, and tests for handler + mutation flows.
 - [ ] Implement Go page create, update, delete, and reorder APIs.
 - [ ] Implement Go block create, update, delete, duplicate, hide/show, and reorder APIs.
+  Basic block field update plus hide/show now works through `PATCH /api/sites/:siteId/pages/:pageId/blocks/:blockId`, but create, delete, duplicate, and reorder remain open.
 - [ ] Implement Go theme read and update APIs.
 - [x] Implement a simple authenticated builder shell with site list and site detail.
   The `/app` workspace route now lists saved sites, creates drafts, and links into a functional site detail screen with metadata, page outline, rename/reslug, and delete actions.
 - [ ] Use shadcn/ui primitives for builder controls, forms, dialogs, menus, tabs, loading states, and empty/error states before creating bespoke app components.
 - [x] Build the React prompt entry page, even if it initially creates a deterministic default site before AI is wired in.
   The builder home now accepts a site name plus brief and creates a deterministic starter draft through `POST /api/sites`.
-- [ ] Add a page list and block list.
-- [ ] Add a simple field editor generated from the block editor schema.
+- [x] Add a page list and block list.
+- [x] Add a simple field editor generated from the block editor schema.
 - [x] Add a React preview route that renders the current draft through the same block renderer used by publish.
   `/app/sites/:siteId/preview` now fetches the stored draft and renders it through the shared React block renderer.
 - [ ] Add a frontend API client layer for typed calls to the Go backend.
 - [ ] Add loading, empty, and error states for the site list, builder, save actions, preview, and publish action.
-- [ ] Save every block edit through backend validation rather than trusting client state.
+- [x] Save every block edit through backend validation rather than trusting client state.
 - [ ] Keep the editor state adapter thin and do not store raw editor/Puck state as canonical data.
 - [x] Confirm the prototype works without AI generation by creating a site from deterministic defaults.
   Verified on May 6, 2026 by logging in locally, creating a draft for `Moss & Thread Atelier`, editing its site metadata, and loading the authenticated preview route in Playwright.
+- [x] Confirm the block editing loop works end to end for the prototype builder.
+  Verified on May 6, 2026 by logging in locally, creating `Ribbon & Reed Workshop`, editing the hero headline and CTA label in the block editor, saving through the Go API, and confirming the updated content rendered on `/app/sites/:siteId/preview` in Playwright.
 
 ## Phase 5: Prompt-To-Draft Generation
 

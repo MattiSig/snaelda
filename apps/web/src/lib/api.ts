@@ -100,6 +100,32 @@ export type SiteDraft = {
   }>
 }
 
+export type BlockEditorField = {
+  name: string
+  label: string
+  control: string
+  valueType?: string
+  description?: string
+  placeholder?: string
+  options?: string[]
+  fields?: BlockEditorField[]
+  itemFields?: BlockEditorField[]
+}
+
+export type BlockDefinition = {
+  type: string
+  version: string
+  displayName: string
+  category: string
+  defaultProps?: Record<string, unknown>
+  editorSchema?: BlockEditorField[]
+}
+
+export type SiteDraftResponse = {
+  draft: SiteDraft
+  blockRegistry: BlockDefinition[]
+}
+
 const defaultAPIBaseURL = 'http://localhost:8080'
 
 export function getAPIBaseURL() {
@@ -177,7 +203,7 @@ export async function listSites() {
 }
 
 export async function getSiteDraft(siteId: string) {
-  return apiFetch<{ draft: SiteDraft }>(`/api/sites/${siteId}`)
+  return apiFetch<SiteDraftResponse>(`/api/sites/${siteId}`)
 }
 
 export async function createSite(input: {
@@ -214,4 +240,25 @@ export async function deleteSite(siteId: string) {
   return apiFetch<unknown>(`/api/sites/${siteId}`, {
     method: 'DELETE',
   })
+}
+
+export async function updateBlock(
+  siteId: string,
+  pageId: string,
+  blockId: string,
+  input: {
+    props?: Record<string, unknown>
+    hidden?: boolean
+  },
+) {
+  return apiFetch<{ draft: SiteDraft }>(
+    `/api/sites/${siteId}/pages/${pageId}/blocks/${blockId}`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    },
+  )
 }

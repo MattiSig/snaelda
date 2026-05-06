@@ -9,6 +9,7 @@ import (
 
 	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/authorization"
+	"github.com/MattiSig/snaelda/internal/siteconfig"
 )
 
 type Handler struct {
@@ -35,6 +36,7 @@ func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.
 	mux.Handle("GET /api/sites", requireUser(http.HandlerFunc(h.list)))
 	mux.Handle("GET /api/sites/{siteId}", requireUser(http.HandlerFunc(h.get)))
 	mux.Handle("PATCH /api/sites/{siteId}", requireUser(http.HandlerFunc(h.update)))
+	mux.Handle("PATCH /api/sites/{siteId}/pages/{pageId}/blocks/{blockId}", requireUser(http.HandlerFunc(h.updateBlock)))
 	mux.Handle("DELETE /api/sites/{siteId}", requireUser(http.HandlerFunc(h.delete)))
 }
 
@@ -47,6 +49,11 @@ type createSiteRequest struct {
 type updateSiteRequest struct {
 	Name *string `json:"name,omitempty"`
 	Slug *string `json:"slug,omitempty"`
+}
+
+type updateBlockRequest struct {
+	Props  map[string]any `json:"props,omitempty"`
+	Hidden *bool          `json:"hidden,omitempty"`
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +100,10 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "load_site_failed", "could not load site draft")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"draft": draft})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"draft":         draft,
+		"blockRegistry": siteconfig.DefaultBlockRegistry().Definitions(),
+	})
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
@@ -181,10 +191,47 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *Handler) updateBlock(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	pageID := r.PathValue("pageId")
+	blockID := r.PathValue("blockId")
+	if siteID == "" || pageID == "" || blockID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_block_resource", "site, page, and block ids are required")
+		return
+	}
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+
+	var payload updateBlockRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "request body must be valid JSON")
+		return
+	}
+
+	draft, err := h.mutator.UpdateBlock(r.Context(), scope.WorkspaceID, siteID, pageID, blockID, UpdateBlockInput{
+		Props:  payload.Props,
+		Hidden: payload.Hidden,
+	})
+	if err != nil {
+		writeSiteError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"draft": draft})
+}
+
 func writeSiteError(w http.ResponseWriter, err error) {
+	var validationErr siteconfig.ValidationError
 	switch {
 	case errors.Is(err, ErrNotFound):
 		writeError(w, http.StatusNotFound, "site_not_found", "site was not found")
+	case errors.Is(err, ErrPageNotFound):
+		writeError(w, http.StatusNotFound, "page_not_found", "page was not found")
+	case errors.Is(err, ErrBlockNotFound):
+		writeError(w, http.StatusNotFound, "block_not_found", "block was not found")
 	case errors.Is(err, ErrSiteNameRequired):
 		writeError(w, http.StatusBadRequest, "invalid_site_name", "site name is required")
 	case errors.Is(err, ErrSiteSlugInvalid):
@@ -193,6 +240,16 @@ func writeSiteError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "site_slug_conflict", "site slug is already in use")
 	case errors.Is(err, ErrNoSiteChanges):
 		writeError(w, http.StatusBadRequest, "no_site_changes", "at least one site field must change")
+	case errors.Is(err, ErrNoBlockChanges):
+		writeError(w, http.StatusBadRequest, "no_block_changes", "at least one block field must change")
+	case errors.As(err, &validationErr):
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": map[string]string{
+				"code":    "invalid_site_draft",
+				"message": "draft changes failed validation",
+			},
+			"issues": validationErr.Issues,
+		})
 	default:
 		writeError(w, http.StatusInternalServerError, "site_write_failed", "could not save site")
 	}

@@ -3,6 +3,7 @@ package siteconfig
 import (
 	"errors"
 	"fmt"
+	"sort"
 )
 
 var (
@@ -20,20 +21,25 @@ const (
 )
 
 type BlockDefinition struct {
-	Type          string
-	Version       string
-	DisplayName   string
-	Category      BlockCategory
-	DefaultProps  map[string]any
-	EditorSchema  []EditorField
-	ValidateProps func(path string, props map[string]any, c *collector)
+	Type          string                                                `json:"type"`
+	Version       string                                                `json:"version"`
+	DisplayName   string                                                `json:"displayName"`
+	Category      BlockCategory                                         `json:"category"`
+	DefaultProps  map[string]any                                        `json:"defaultProps,omitempty"`
+	EditorSchema  []EditorField                                         `json:"editorSchema,omitempty"`
+	ValidateProps func(path string, props map[string]any, c *collector) `json:"-"`
 }
 
 type EditorField struct {
-	Name    string   `json:"name"`
-	Label   string   `json:"label"`
-	Control string   `json:"control"`
-	Options []string `json:"options,omitempty"`
+	Name        string        `json:"name"`
+	Label       string        `json:"label"`
+	Control     string        `json:"control"`
+	ValueType   string        `json:"valueType,omitempty"`
+	Description string        `json:"description,omitempty"`
+	Placeholder string        `json:"placeholder,omitempty"`
+	Options     []string      `json:"options,omitempty"`
+	Fields      []EditorField `json:"fields,omitempty"`
+	ItemFields  []EditorField `json:"itemFields,omitempty"`
 }
 
 type BlockRegistry struct {
@@ -100,4 +106,26 @@ func (r *BlockRegistry) ValidateProps(blockType string, version string, path str
 	var c collector
 	definition.ValidateProps(path, props, &c)
 	return c.err()
+}
+
+func (r *BlockRegistry) Definitions() []BlockDefinition {
+	if r == nil {
+		r = DefaultBlockRegistry()
+	}
+
+	definitions := make([]BlockDefinition, 0)
+	for _, versions := range r.byType {
+		for _, definition := range versions {
+			definitions = append(definitions, definition)
+		}
+	}
+
+	sort.SliceStable(definitions, func(i int, j int) bool {
+		if definitions[i].Type == definitions[j].Type {
+			return definitions[i].Version < definitions[j].Version
+		}
+		return definitions[i].Type < definitions[j].Type
+	})
+
+	return definitions
 }

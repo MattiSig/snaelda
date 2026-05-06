@@ -21,6 +21,24 @@ func heroBlockDefinition() BlockDefinition {
 			{Name: "eyebrow", Label: "Eyebrow", Control: "text"},
 			{Name: "headline", Label: "Headline", Control: "text"},
 			{Name: "subheadline", Label: "Subheadline", Control: "textarea"},
+			{
+				Name:    "primaryCta",
+				Label:   "Primary CTA",
+				Control: "link",
+				Fields: []EditorField{
+					{Name: "label", Label: "Label", Control: "text"},
+					{Name: "href", Label: "Link", Control: "text", Placeholder: "/contact"},
+				},
+			},
+			{
+				Name:    "secondaryCta",
+				Label:   "Secondary CTA",
+				Control: "link",
+				Fields: []EditorField{
+					{Name: "label", Label: "Label", Control: "text"},
+					{Name: "href", Label: "Link", Control: "text", Placeholder: "/about"},
+				},
+			},
 			{Name: "layout", Label: "Layout", Control: "select", Options: []string{"centered", "split-left", "split-right"}},
 		},
 		ValidateProps: validateHeroProps,
@@ -63,7 +81,21 @@ func imageTextBlockDefinition() BlockDefinition {
 		EditorSchema: []EditorField{
 			{Name: "heading", Label: "Heading", Control: "text"},
 			{Name: "body", Label: "Body", Control: "textarea"},
-			{Name: "image", Label: "Image", Control: "asset"},
+			{
+				Name:        "image",
+				Label:       "Image",
+				Control:     "asset",
+				Description: "Assets are stored by id once uploads are wired in.",
+			},
+			{
+				Name:    "cta",
+				Label:   "CTA",
+				Control: "link",
+				Fields: []EditorField{
+					{Name: "label", Label: "Label", Control: "text"},
+					{Name: "href", Label: "Link", Control: "text", Placeholder: "/contact"},
+				},
+			},
 			{Name: "imagePosition", Label: "Image position", Control: "select", Options: []string{"left", "right"}},
 		},
 		ValidateProps: validateImageTextProps,
@@ -86,8 +118,17 @@ func featuresGridBlockDefinition() BlockDefinition {
 		EditorSchema: []EditorField{
 			{Name: "heading", Label: "Heading", Control: "text"},
 			{Name: "intro", Label: "Intro", Control: "textarea"},
-			{Name: "items", Label: "Items", Control: "repeater"},
-			{Name: "columns", Label: "Columns", Control: "select", Options: []string{"2", "3", "4"}},
+			{
+				Name:    "items",
+				Label:   "Items",
+				Control: "repeater",
+				ItemFields: []EditorField{
+					{Name: "title", Label: "Title", Control: "text"},
+					{Name: "body", Label: "Body", Control: "textarea"},
+					{Name: "icon", Label: "Icon label", Control: "text"},
+				},
+			},
+			{Name: "columns", Label: "Columns", Control: "select", ValueType: "integer", Options: []string{"2", "3", "4"}},
 		},
 		ValidateProps: validateFeaturesGridProps,
 	}
@@ -107,7 +148,15 @@ func ctaBandBlockDefinition() BlockDefinition {
 		EditorSchema: []EditorField{
 			{Name: "heading", Label: "Heading", Control: "text"},
 			{Name: "body", Label: "Body", Control: "textarea"},
-			{Name: "cta", Label: "CTA", Control: "link"},
+			{
+				Name:    "cta",
+				Label:   "CTA",
+				Control: "link",
+				Fields: []EditorField{
+					{Name: "label", Label: "Label", Control: "text"},
+					{Name: "href", Label: "Link", Control: "text", Placeholder: "/contact"},
+				},
+			},
 			{Name: "variant", Label: "Variant", Control: "select", Options: []string{"primary", "secondary", "accent"}},
 		},
 		ValidateProps: validateCTABandProps,

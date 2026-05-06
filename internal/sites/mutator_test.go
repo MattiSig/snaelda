@@ -88,6 +88,58 @@ func TestDeleteSiteRemovesDraft(t *testing.T) {
 	}
 }
 
+func TestUpdateBlockPersistsValidatedProps(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := validHandlerDraft()
+	draft.Site.ID = "site-1"
+	store.drafts[draft.Site.ID] = draft
+
+	mutator := &PostgresMutator{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	updated, err := mutator.UpdateBlock(context.Background(), "workspace-1", "site-1", "page_home", "block_hero", UpdateBlockInput{
+		Props: map[string]any{
+			"eyebrow":     "Nordic Studio",
+			"headline":    "A more focused homepage",
+			"subheadline": "Shorter, clearer, and ready to preview.",
+			"layout":      "split-left",
+		},
+	})
+	if err != nil {
+		t.Fatalf("update block: %v", err)
+	}
+	if got := updated.Pages[0].Blocks[0].Props["headline"]; got != "A more focused homepage" {
+		t.Fatalf("expected saved block props, got %#v", updated.Pages[0].Blocks[0].Props)
+	}
+}
+
+func TestUpdateBlockRejectsInvalidProps(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := validHandlerDraft()
+	draft.Site.ID = "site-1"
+	store.drafts[draft.Site.ID] = draft
+
+	mutator := &PostgresMutator{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	_, err := mutator.UpdateBlock(context.Background(), "workspace-1", "site-1", "page_home", "block_hero", UpdateBlockInput{
+		Props: map[string]any{
+			"headline": "",
+			"layout":   "centered",
+		},
+	})
+	var validationErr siteconfig.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected validation error, got %v", err)
+	}
+}
+
 type fakeMutationStore struct {
 	drafts  map[string]siteconfig.SiteDraft
 	prompts map[string]string
@@ -113,6 +165,9 @@ func (s *fakeMutationStore) LoadDraft(_ context.Context, siteID string) (sitecon
 }
 
 func (s *fakeMutationStore) SaveDraft(_ context.Context, _ string, draft siteconfig.SiteDraft) error {
+	if err := siteconfig.ValidateDraft(draft); err != nil {
+		return err
+	}
 	s.drafts[draft.Site.ID] = draft
 	return nil
 }
