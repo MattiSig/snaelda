@@ -56,7 +56,8 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Create `generation_jobs` for prompt tracking, status, output plan, errors, and input context.
 - [x] Create `assets`, `form_submissions`, `page_view_daily`, and `audit_events` tables, but keep most UI around them for later phases.
 - [x] Implement draft assembly from normalized rows into a canonical `SiteDraft`.
-- [ ] Implement draft persistence from canonical input into normalized rows.
+- [x] Implement draft persistence from canonical input into normalized rows.
+  Draft persistence now lives in `internal/sites` as `PostgresWriter.SaveDraft`: it validates canonical `siteconfig.SiteDraft` input, normalizes site/theme/page/block rows, upserts site/theme/pages, replaces block instances transactionally, and preserves block visibility through `block_instances.is_hidden`. Public create/generate APIs still need to call this writer in later phases.
 - [x] Implement read APIs for listing sites and loading one complete draft.
 
 ## Phase 2: Code-Owned Block Registry
