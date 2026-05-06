@@ -29,8 +29,9 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Add JWT-based authentication across the Go API and React frontend.
 - [x] Implement Go JWT middleware that validates token signature, expiry, issuer, audience, subject, and required claims.
 - [x] Use server-set secure HTTP-only cookies for browser auth tokens; do not store auth tokens in browser local storage.
-- [ ] Keep token issuance, refresh, logout, and revocation server-side in the Go backend.
-- [ ] Define access token lifetime, refresh token lifetime, refresh rotation, logout, and token revocation behavior.
+- [x] Keep token issuance, refresh, logout, and revocation server-side in the Go backend.
+- [x] Define access token lifetime, refresh token lifetime, refresh rotation, logout, and token revocation behavior.
+  Auth behavior: access tokens default to 15 minutes via `AUTH_ACCESS_TOKEN_TTL`; refresh tokens default to 30 days via `AUTH_REFRESH_TOKEN_TTL`; refresh uses opaque HTTP-only cookie tokens stored only as hashes, rotates the refresh token on every refresh, extends the session expiry, and logout revokes the server-side session before clearing cookies.
 - [x] Add React route guards and API client behavior for unauthenticated, expired-token, and forbidden responses.
 - [x] Create automatic default workspace creation for each user.
 - [ ] Add shared authorization helpers that verify workspace membership and resource ownership.

@@ -66,9 +66,10 @@ func NewServer(cfg ServerConfig) *Server {
 		logger:   logger,
 		database: cfg.Database,
 		auth: auth.NewHandler(auth.HandlerConfig{
-			Store:        authStore,
-			Tokens:       tokenManager,
-			CookieSecure: cfg.Config.AuthCookieSecure,
+			Store:           authStore,
+			Tokens:          tokenManager,
+			RefreshTokenTTL: firstPositiveDuration(cfg.Config.AuthRefreshTokenTTL, 30*24*time.Hour),
+			CookieSecure:    cfg.Config.AuthCookieSecure,
 		}),
 	}
 }

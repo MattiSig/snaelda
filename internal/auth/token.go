@@ -13,7 +13,10 @@ import (
 	"time"
 )
 
-const AccessTokenCookieName = "snaelda_access_token"
+const (
+	AccessTokenCookieName  = "snaelda_access_token"
+	RefreshTokenCookieName = "snaelda_refresh_token"
+)
 
 var (
 	ErrTokenMalformed = errors.New("token is malformed")
@@ -40,6 +43,7 @@ type Claims struct {
 	Issuer        string `json:"iss"`
 	Audience      string `json:"aud"`
 	Subject       string `json:"sub"`
+	SessionID     string `json:"sid,omitempty"`
 	Email         string `json:"email"`
 	Name          string `json:"name,omitempty"`
 	WorkspaceID   string `json:"workspace_id"`
@@ -85,11 +89,16 @@ func (m *TokenManager) TTL() time.Duration {
 }
 
 func (m *TokenManager) Issue(user User) (string, Claims, error) {
+	return m.IssueForSession(user, "")
+}
+
+func (m *TokenManager) IssueForSession(user User, sessionID string) (string, Claims, error) {
 	now := m.now().UTC()
 	claims := Claims{
 		Issuer:        m.issuer,
 		Audience:      m.audience,
 		Subject:       user.ID,
+		SessionID:     sessionID,
 		Email:         user.Email,
 		Name:          user.Name,
 		WorkspaceID:   user.WorkspaceID,
@@ -210,6 +219,14 @@ func UserFromClaims(claims Claims) User {
 
 func CookieFromRequest(r *http.Request) (string, error) {
 	cookie, err := r.Cookie(AccessTokenCookieName)
+	if err != nil {
+		return "", err
+	}
+	return cookie.Value, nil
+}
+
+func RefreshCookieFromRequest(r *http.Request) (string, error) {
+	cookie, err := r.Cookie(RefreshTokenCookieName)
 	if err != nil {
 		return "", err
 	}

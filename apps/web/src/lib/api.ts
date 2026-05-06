@@ -48,6 +48,7 @@ export function getAPIBaseURL() {
 export async function apiFetch<T>(
   path: string,
   init: RequestInit = {},
+  retryOnUnauthorized = true,
 ): Promise<T> {
   const response = await fetch(new URL(path, getAPIBaseURL()), {
     credentials: 'include',
@@ -59,6 +60,16 @@ export async function apiFetch<T>(
   })
 
   if (!response.ok) {
+    if (
+      response.status === 401 &&
+      retryOnUnauthorized &&
+      path !== '/api/auth/login' &&
+      path !== '/api/auth/refresh'
+    ) {
+      await refreshAuthSession()
+      return apiFetch<T>(path, init, false)
+    }
+
     const payload = await response.json().catch(() => null)
     throw new APIError(response.status, payload)
   }
@@ -68,6 +79,16 @@ export async function apiFetch<T>(
 
 export async function getCurrentSession() {
   return apiFetch<AuthSession>('/api/auth/me')
+}
+
+export async function refreshAuthSession() {
+  return apiFetch<AuthSession>(
+    '/api/auth/refresh',
+    {
+      method: 'POST',
+    },
+    false,
+  )
 }
 
 export async function login(email: string, name?: string) {

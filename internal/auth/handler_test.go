@@ -15,12 +15,29 @@ import (
 
 type fakeAuthStore struct {
 	createdWorkspaceMember bool
+	sessionID              string
+	refreshHash            string
+	revoked                bool
 }
 
 func (s *fakeAuthStore) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
 	switch {
 	case strings.Contains(sql, "insert into users"):
 		return fakeRow{values: []string{"user-1", args[0].(string), args[1].(string)}}
+	case strings.Contains(sql, "insert into auth_sessions"):
+		s.sessionID = "session-1"
+		s.refreshHash = args[1].(string)
+		return fakeRow{values: []string{s.sessionID}}
+	case strings.Contains(sql, "from auth_sessions s"):
+		if !s.revoked && args[0].(string) == s.refreshHash {
+			return fakeRow{values: []string{s.sessionID, "user-1", "demo@snaelda.local", "Demo User", "workspace-1", "owner"}}
+		}
+		return fakeRow{err: pgx.ErrNoRows}
+	case strings.Contains(sql, "from auth_sessions"):
+		if !s.revoked && args[0].(string) == s.sessionID && args[1].(string) == "user-1" {
+			return fakeRow{values: []string{s.sessionID}}
+		}
+		return fakeRow{err: pgx.ErrNoRows}
 	case strings.Contains(sql, "from workspaces"):
 		return fakeRow{err: pgx.ErrNoRows}
 	case strings.Contains(sql, "insert into workspaces"):
@@ -30,9 +47,28 @@ func (s *fakeAuthStore) QueryRow(_ context.Context, sql string, args ...any) pgx
 	}
 }
 
-func (s *fakeAuthStore) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
+func (s *fakeAuthStore) Exec(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	if strings.Contains(sql, "set refresh_token_hash") {
+		if !s.revoked && args[1].(string) == s.sessionID && args[2].(string) == s.refreshHash {
+			s.refreshHash = args[0].(string)
+			return pgconn.NewCommandTag("UPDATE 1"), nil
+		}
+		return pgconn.NewCommandTag("UPDATE 0"), nil
+	}
+	if strings.Contains(sql, "set revoked_at") {
+		if strings.Contains(sql, "refresh_token_hash") && args[0].(string) == s.refreshHash {
+			s.revoked = true
+			return pgconn.NewCommandTag("UPDATE 1"), nil
+		}
+		if strings.Contains(sql, "where id") && args[0].(string) == s.sessionID {
+			s.revoked = true
+			return pgconn.NewCommandTag("UPDATE 1"), nil
+		}
+		return pgconn.NewCommandTag("UPDATE 0"), nil
+	}
+
 	s.createdWorkspaceMember = true
-	return pgconn.CommandTag{}, nil
+	return pgconn.NewCommandTag("INSERT 0 1"), nil
 }
 
 type fakeRow struct {
@@ -75,10 +111,10 @@ func TestLoginSetsHTTPOnlyCookieAndReturnsUser(t *testing.T) {
 	}
 
 	cookies := res.Result().Cookies()
-	if len(cookies) != 1 {
-		t.Fatalf("expected one cookie, got %d", len(cookies))
+	if len(cookies) != 2 {
+		t.Fatalf("expected two cookies, got %d", len(cookies))
 	}
-	cookie := cookies[0]
+	cookie := cookieNamed(t, cookies, AccessTokenCookieName)
 	if cookie.Name != AccessTokenCookieName {
 		t.Fatalf("expected access token cookie, got %q", cookie.Name)
 	}
@@ -87,6 +123,13 @@ func TestLoginSetsHTTPOnlyCookieAndReturnsUser(t *testing.T) {
 	}
 	if !cookie.Secure {
 		t.Fatal("expected secure auth cookie")
+	}
+	refreshCookie := cookieNamed(t, cookies, RefreshTokenCookieName)
+	if !refreshCookie.HttpOnly {
+		t.Fatal("expected refresh cookie to be HTTP-only")
+	}
+	if !refreshCookie.Secure {
+		t.Fatal("expected secure refresh cookie")
 	}
 
 	var payload authResponse
@@ -98,6 +141,86 @@ func TestLoginSetsHTTPOnlyCookieAndReturnsUser(t *testing.T) {
 	}
 	if payload.User.WorkspaceID != "workspace-1" {
 		t.Fatalf("expected default workspace, got %q", payload.User.WorkspaceID)
+	}
+}
+
+func TestRefreshRotatesRefreshCookieAndReturnsUser(t *testing.T) {
+	store := &fakeAuthStore{}
+	handler := NewHandler(HandlerConfig{
+		Store:  store,
+		Tokens: newHandlerTestTokenManager(t),
+	})
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{
+		"email": "demo@snaelda.local",
+		"name": "Demo User"
+	}`))
+	loginRes := httptest.NewRecorder()
+
+	handler.login(loginRes, loginReq)
+
+	refreshCookie := cookieNamed(t, loginRes.Result().Cookies(), RefreshTokenCookieName)
+	refreshReq := httptest.NewRequest(http.MethodPost, "/api/auth/refresh", nil)
+	refreshReq.AddCookie(refreshCookie)
+	refreshRes := httptest.NewRecorder()
+
+	handler.refresh(refreshRes, refreshReq)
+
+	if refreshRes.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, refreshRes.Code)
+	}
+	nextRefreshCookie := cookieNamed(t, refreshRes.Result().Cookies(), RefreshTokenCookieName)
+	if nextRefreshCookie.Value == refreshCookie.Value {
+		t.Fatal("expected refresh token rotation")
+	}
+
+	replayReq := httptest.NewRequest(http.MethodPost, "/api/auth/refresh", nil)
+	replayReq.AddCookie(refreshCookie)
+	replayRes := httptest.NewRecorder()
+
+	handler.refresh(replayRes, replayReq)
+
+	if replayRes.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d for replayed refresh token, got %d", http.StatusUnauthorized, replayRes.Code)
+	}
+}
+
+func TestLogoutRevokesActiveSession(t *testing.T) {
+	store := &fakeAuthStore{}
+	handler := NewHandler(HandlerConfig{
+		Store:  store,
+		Tokens: newHandlerTestTokenManager(t),
+	})
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{
+		"email": "demo@snaelda.local",
+		"name": "Demo User"
+	}`))
+	loginRes := httptest.NewRecorder()
+	handler.login(loginRes, loginReq)
+	accessCookie := cookieNamed(t, loginRes.Result().Cookies(), AccessTokenCookieName)
+	refreshCookie := cookieNamed(t, loginRes.Result().Cookies(), RefreshTokenCookieName)
+
+	logoutReq := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	logoutReq.AddCookie(accessCookie)
+	logoutReq.AddCookie(refreshCookie)
+	logoutRes := httptest.NewRecorder()
+
+	handler.logout(logoutRes, logoutReq)
+
+	if logoutRes.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, logoutRes.Code)
+	}
+
+	protected := handler.RequireUser(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	protectedReq := httptest.NewRequest(http.MethodGet, "/api/protected", nil)
+	protectedReq.AddCookie(accessCookie)
+	protectedRes := httptest.NewRecorder()
+
+	protected.ServeHTTP(protectedRes, protectedReq)
+
+	if protectedRes.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d after logout, got %d", http.StatusUnauthorized, protectedRes.Code)
 	}
 }
 
@@ -117,6 +240,18 @@ func TestRequireUserRejectsMissingCookie(t *testing.T) {
 	if res.Code != http.StatusUnauthorized {
 		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, res.Code)
 	}
+}
+
+func cookieNamed(t *testing.T, cookies []*http.Cookie, name string) *http.Cookie {
+	t.Helper()
+
+	for _, cookie := range cookies {
+		if cookie.Name == name {
+			return cookie
+		}
+	}
+	t.Fatalf("expected cookie %q", name)
+	return nil
 }
 
 func newHandlerTestTokenManager(t *testing.T) *TokenManager {

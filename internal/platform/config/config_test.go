@@ -41,6 +41,9 @@ func TestLoadUsesLocalStorageDefaults(t *testing.T) {
 	if cfg.AuthAccessTokenTTL != 15*time.Minute {
 		t.Fatalf("expected default auth access token ttl, got %s", cfg.AuthAccessTokenTTL)
 	}
+	if cfg.AuthRefreshTokenTTL != 30*24*time.Hour {
+		t.Fatalf("expected default auth refresh token ttl, got %s", cfg.AuthRefreshTokenTTL)
+	}
 	if cfg.AuthCookieSecure {
 		t.Fatal("expected insecure auth cookie in test")
 	}
@@ -97,6 +100,16 @@ func TestLoadRejectsInvalidAuthDuration(t *testing.T) {
 
 	if _, err := Load(); err == nil {
 		t.Fatal("expected invalid auth duration error")
+	}
+}
+
+func TestLoadRejectsInvalidRefreshAuthDuration(t *testing.T) {
+	t.Setenv("APP_ENV", "test")
+	unsetStorageEnv(t)
+	t.Setenv("AUTH_REFRESH_TOKEN_TTL", "later")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid auth refresh duration error")
 	}
 }
 

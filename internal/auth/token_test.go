@@ -11,7 +11,7 @@ func TestTokenManagerValidatesIssuedToken(t *testing.T) {
 	now := time.Date(2026, 5, 6, 12, 0, 0, 0, time.UTC)
 	manager.now = func() time.Time { return now }
 
-	token, _, err := manager.Issue(testUser())
+	token, _, err := manager.IssueForSession(testUser(), "session-1")
 	if err != nil {
 		t.Fatalf("issue token: %v", err)
 	}
@@ -31,6 +31,9 @@ func TestTokenManagerValidatesIssuedToken(t *testing.T) {
 	}
 	if claims.WorkspaceID != "workspace-1" {
 		t.Fatalf("expected workspace claim, got %q", claims.WorkspaceID)
+	}
+	if claims.SessionID != "session-1" {
+		t.Fatalf("expected session claim, got %q", claims.SessionID)
 	}
 }
 
