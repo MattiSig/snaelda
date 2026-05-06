@@ -36,7 +36,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Add React route guards and API client behavior for unauthenticated, expired-token, and forbidden responses.
 - [x] Create automatic default workspace creation for each user.
 - [x] Add shared authorization helpers that verify workspace membership and resource ownership.
-- [ ] Add a shared ID, slug, timestamp, and audit utility layer.
+- [x] Add a shared ID, slug, timestamp, and audit utility layer.
 - [ ] Establish runtime validation with schema tooling for site drafts, published snapshots, block props, theme tokens, navigation, URLs, and form definitions.
 - [ ] Add backend test setup for schema validation, registry validation, publish validation, persistence, and API authorization.
 - [ ] Add frontend test setup for core builder flows and renderer smoke tests.
