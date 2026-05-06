@@ -37,7 +37,8 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Create automatic default workspace creation for each user.
 - [x] Add shared authorization helpers that verify workspace membership and resource ownership.
 - [x] Add a shared ID, slug, timestamp, and audit utility layer.
-- [ ] Establish runtime validation with schema tooling for site drafts, published snapshots, block props, theme tokens, navigation, URLs, and form definitions.
+- [x] Establish runtime validation with schema tooling for site drafts, published snapshots, block props, theme tokens, navigation, URLs, and form definitions.
+  Runtime validation now lives in `internal/siteconfig` with canonical draft/snapshot types, a Go-owned prototype block registry, theme/navigation/URL/form validators, and regression tests for unsafe URLs, unknown blocks, page constraints, theme tokens, and publish snapshot requirements. Asset ownership checks still need to be wired into save-time persistence once asset APIs exist.
 - [ ] Add backend test setup for schema validation, registry validation, publish validation, persistence, and API authorization.
 - [ ] Add frontend test setup for core builder flows and renderer smoke tests.
 - [ ] Reserve a `billing` backend module boundary for Stripe-backed workspace subscriptions, but keep payment implementation out of the first prototype loop.

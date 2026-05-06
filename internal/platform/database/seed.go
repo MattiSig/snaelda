@@ -72,9 +72,9 @@ func SeedDevelopment(ctx context.Context, pool *pgxpool.Pool) error {
 		 	'00000000-0000-4000-8000-000000000501',
 		 	'00000000-0000-4000-8000-000000000201',
 		 	'hero',
-		 	'v1',
+		 	'1.0.0',
 		 	0,
-		 	'{"eyebrow":"Nordic Studio","headline":"Clear websites for focused teams","body":"A seeded draft that proves local Postgres, migrations, and draft persistence tables are ready.","primaryLabel":"Start a project","primaryHref":"#contact"}'::jsonb,
+		 	'{"eyebrow":"Nordic Studio","headline":"Clear websites for focused teams","subheadline":"A seeded draft that proves local Postgres, migrations, and draft persistence tables are ready.","primaryCta":{"label":"Start a project","href":"#contact"},"layout":"centered"}'::jsonb,
 		 	'{}'::jsonb,
 		 	false
 		 )
@@ -85,9 +85,9 @@ func SeedDevelopment(ctx context.Context, pool *pgxpool.Pool) error {
 		 	'00000000-0000-4000-8000-000000000501',
 		 	'00000000-0000-4000-8000-000000000201',
 		 	'text_section',
-		 	'v1',
+		 	'1.0.0',
 		 	1,
-		 	'{"heading":"A structured seed draft","body":"This content is stored as validated application data, not generated code."}'::jsonb,
+		 	'{"heading":"A structured seed draft","body":"This content is stored as validated application data, not generated code.","alignment":"left","width":"default"}'::jsonb,
 		 	'{}'::jsonb,
 		 	false
 		 )
