@@ -23,7 +23,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Decide whether the React app lives in the same repo as the Go backend as a monorepo, or as a separate app package with shared generated API types.
 - [x] Configure the TanStack Start app with Tailwind CSS, shadcn/ui, the `@/*` import alias, shared `cn` utility, and a small starting set of UI primitives.
 - [x] Set up Postgres connection, migrations, seed tooling, and local development environment for the Go backend.
-- [ ] Set up local S3-compatible object storage with SeaweedFS for image uploads and published artifact development.
+- [x] Set up local S3-compatible object storage with SeaweedFS for image uploads and published artifact development.
 - [x] Add Go API routing, middleware, config loading, request logging, validation error responses, and health checks.
 - [x] Add frontend data fetching conventions for calling the Go API.
 - [ ] Add JWT-based authentication across the Go API and React frontend.
