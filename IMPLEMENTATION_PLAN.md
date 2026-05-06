@@ -55,9 +55,9 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Create `site_versions` with immutable snapshot JSON, version number, creator, created timestamp, and publish note.
 - [x] Create `generation_jobs` for prompt tracking, status, output plan, errors, and input context.
 - [x] Create `assets`, `form_submissions`, `page_view_daily`, and `audit_events` tables, but keep most UI around them for later phases.
-- [ ] Implement draft assembly from normalized rows into a canonical `SiteDraft`.
+- [x] Implement draft assembly from normalized rows into a canonical `SiteDraft`.
 - [ ] Implement draft persistence from canonical input into normalized rows.
-- [ ] Implement read APIs for listing sites and loading one complete draft.
+- [x] Implement read APIs for listing sites and loading one complete draft.
 
 ## Phase 2: Code-Owned Block Registry
 
