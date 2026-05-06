@@ -34,7 +34,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
   Auth behavior: access tokens default to 15 minutes via `AUTH_ACCESS_TOKEN_TTL`; refresh tokens default to 30 days via `AUTH_REFRESH_TOKEN_TTL`; refresh uses opaque HTTP-only cookie tokens stored only as hashes, rotates the refresh token on every refresh, extends the session expiry, and logout revokes the server-side session before clearing cookies.
 - [x] Add React route guards and API client behavior for unauthenticated, expired-token, and forbidden responses.
 - [x] Create automatic default workspace creation for each user.
-- [ ] Add shared authorization helpers that verify workspace membership and resource ownership.
+- [x] Add shared authorization helpers that verify workspace membership and resource ownership.
 - [ ] Add a shared ID, slug, timestamp, and audit utility layer.
 - [ ] Establish runtime validation with schema tooling for site drafts, published snapshots, block props, theme tokens, navigation, URLs, and form definitions.
 - [ ] Add backend test setup for schema validation, registry validation, publish validation, persistence, and API authorization.
