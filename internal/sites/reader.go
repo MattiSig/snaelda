@@ -92,7 +92,10 @@ func (r *PostgresReader) ListSites(ctx context.Context, workspaceID string) ([]S
 		       s.workspace_id::text,
 		       s.name,
 		       s.slug,
-		       s.status,
+		       case
+		         when s.published_version_id is not null then 'published'
+		         else s.status
+		       end as status,
 		       s.default_locale,
 		       coalesce(s.published_version_id::text, '') as published_version_id,
 		       count(p.id)::int as page_count

@@ -100,6 +100,31 @@ export type SiteDraft = {
   }>
 }
 
+export type PublishedSnapshot = {
+  schemaVersion: string
+  site: {
+    id: string
+    name: string
+    defaultLocale: string
+    seo?: {
+      title?: string
+      description?: string
+    }
+  }
+  theme: SiteDraft['theme']
+  navigation: SiteDraft['navigation']
+  pages: SiteDraft['pages']
+}
+
+export type SiteVersion = {
+  id: string
+  siteId: string
+  versionNumber: number
+  createdAt: string
+  publishNote?: string
+  isCurrent: boolean
+}
+
 export type BlockEditorField = {
   name: string
   label: string
@@ -124,6 +149,25 @@ export type BlockDefinition = {
 export type SiteDraftResponse = {
   draft: SiteDraft
   blockRegistry: BlockDefinition[]
+}
+
+export type PublishSiteResponse = {
+  version: SiteVersion
+  hostname: string
+  publicUrl: string
+  snapshot: PublishedSnapshot
+}
+
+export type SiteVersionsResponse = {
+  versions: SiteVersion[]
+}
+
+export type PublishedSiteResponse = {
+  siteSlug: string
+  hostname?: string
+  publicUrl: string
+  version: SiteVersion
+  snapshot: PublishedSnapshot
 }
 
 const defaultAPIBaseURL = 'http://localhost:8080'
@@ -261,4 +305,29 @@ export async function updateBlock(
       body: JSON.stringify(input),
     },
   )
+}
+
+export async function publishSite(
+  siteId: string,
+  input: {
+    publishNote?: string
+  } = {},
+) {
+  return apiFetch<PublishSiteResponse>(`/api/sites/${siteId}/publish`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  })
+}
+
+export async function listSiteVersions(siteId: string) {
+  return apiFetch<SiteVersionsResponse>(`/api/sites/${siteId}/versions`)
+}
+
+export async function getPublishedSite(siteSlug: string) {
+  return apiFetch<PublishedSiteResponse>(`/api/public/sites/${siteSlug}`, {
+    credentials: 'omit',
+  })
 }

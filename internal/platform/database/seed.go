@@ -78,7 +78,7 @@ func SeedDevelopment(ctx context.Context, pool *pgxpool.Pool) error {
 		 	'{}'::jsonb,
 		 	false
 		 )
-		 on conflict (id) do update set props = excluded.props, updated_at = now()`,
+		 on conflict (id) do update set version = excluded.version, props = excluded.props, updated_at = now()`,
 		`insert into block_instances (id, page_id, site_id, type, version, sort_order, props, settings, is_hidden)
 		 values (
 		 	'00000000-0000-4000-8000-000000000602',
@@ -91,7 +91,7 @@ func SeedDevelopment(ctx context.Context, pool *pgxpool.Pool) error {
 		 	'{}'::jsonb,
 		 	false
 		 )
-		 on conflict (id) do update set props = excluded.props, updated_at = now()`,
+		 on conflict (id) do update set version = excluded.version, props = excluded.props, updated_at = now()`,
 	}
 
 	for _, statement := range statements {

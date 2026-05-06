@@ -10,11 +10,11 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [ ] Frontend surfaces support brand-aligned light and dark modes based on `BRANDING.md`, with dark mode required and using the sharper, slightly meaner palette described there.
 - [ ] A user can enter a prompt and get a valid structured site draft.
 - [x] The generated draft uses only known block types, known block versions, valid block props, valid theme tokens, and no arbitrary code.
-- [ ] The draft can be previewed through the maintained React renderer.
+- [x] The draft can be previewed through the maintained React renderer.
 - [x] The user can edit basic block fields and save validated changes.
-- [ ] The user can publish the draft into an immutable snapshot.
-- [ ] The published site is reachable at a platform subdomain or local equivalent.
-- [ ] Published output is served from the published snapshot or generated artifacts, not from mutable draft tables.
+- [x] The user can publish the draft into an immutable snapshot.
+- [x] The published site is reachable at a platform subdomain or local equivalent.
+- [x] Published output is served from the published snapshot or generated artifacts, not from mutable draft tables.
 
 ## Phase 0: Technical Foundation
 
@@ -135,21 +135,22 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 
 ## Phase 6: Publish, Public Serving, And Rollback
 
-- [ ] Implement snapshot assembly from the current canonical draft in Go.
-- [ ] Validate the full snapshot before publish.
-- [ ] Create a new immutable `site_versions` row with an incremented version number.
+- [x] Implement snapshot assembly from the current canonical draft in Go.
+- [x] Validate the full snapshot before publish.
+- [x] Create a new immutable `site_versions` row with an incremented version number.
 - [ ] Decide the first artifact generation path: React SSR/render command invoked by Go, React public route rendering from snapshot, or Go serving prebuilt React-generated artifacts.
 - [ ] Generate page HTML artifacts from the snapshot using the maintained React block renderer.
 - [ ] Generate `sitemap.xml`, `robots.txt`, canonical metadata, and basic social metadata.
 - [ ] Store artifacts in object storage or a local artifact adapter for the first prototype.
-- [ ] Update `sites.published_version_id` only after snapshot and artifact creation succeeds.
-- [ ] Create or update the default subdomain record `{site-slug}.platform.com` or local equivalent.
+- [x] Update `sites.published_version_id` only after snapshot and artifact creation succeeds.
+- [x] Create or update the default subdomain record `{site-slug}.platform.com` or local equivalent.
 - [ ] Implement public hostname and path resolution through `site_domains` in the Go backend or public-serving layer.
-- [ ] Serve public pages from published artifacts or published snapshots, never from draft rows.
+- [x] Serve public pages from published artifacts or published snapshots, never from draft rows.
 - [ ] Add cache keys for domain lookup, published snapshots, and page artifacts.
 - [ ] Invalidate public cache on publish and rollback.
 - [ ] Implement version list and rollback by setting `sites.published_version_id` to an existing version.
 - [ ] Write audit events for publish and rollback.
+  Verified on May 6, 2026 by logging in locally, creating `Publish Proof Loom`, publishing version 1 from the builder in Playwright, loading `/public/publish-proof-loom`, then editing the draft hero headline and confirming the public page continued serving the original published snapshot content.
 
 ## Phase 7: Builder Fleshing After The Prototype Works
 

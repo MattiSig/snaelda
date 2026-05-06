@@ -153,6 +153,15 @@ function SitesIndex() {
                   >
                     Preview
                   </Link>
+                  {site.publishedVersionId ? (
+                    <Link
+                      to="/public/$siteSlug"
+                      params={{ siteSlug: site.slug }}
+                      className="site-inline-link"
+                    >
+                      Live site
+                    </Link>
+                  ) : null}
                 </div>
               </article>
             ))}

@@ -7,8 +7,11 @@ import {
   APIError,
   deleteSite,
   getSiteDraft,
+  listSiteVersions,
+  publishSite,
   type BlockDefinition,
   type SiteDraft,
+  type SiteVersion,
   updateBlock,
   updateSite,
 } from '@/lib/api'
@@ -26,28 +29,34 @@ function SiteDetail() {
   const [slug, setSlug] = useState('')
   const [selectedPageId, setSelectedPageId] = useState('')
   const [selectedBlockId, setSelectedBlockId] = useState('')
+  const [versions, setVersions] = useState<SiteVersion[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSavingSite, setIsSavingSite] = useState(false)
   const [isSavingBlock, setIsSavingBlock] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isPublishing, setIsPublishing] = useState(false)
+  const [publishNote, setPublishNote] = useState('')
   const [loadErrorMessage, setLoadErrorMessage] = useState('')
   const [siteErrorMessage, setSiteErrorMessage] = useState('')
   const [siteStatusMessage, setSiteStatusMessage] = useState('')
   const [blockErrorMessage, setBlockErrorMessage] = useState('')
   const [blockStatusMessage, setBlockStatusMessage] = useState('')
+  const [publishErrorMessage, setPublishErrorMessage] = useState('')
+  const [publishStatusMessage, setPublishStatusMessage] = useState('')
 
   useEffect(() => {
     let isMounted = true
 
-    getSiteDraft(siteId)
-      .then((response) => {
+    Promise.all([getSiteDraft(siteId), listSiteVersions(siteId)])
+      .then(([draftResponse, versionResponse]) => {
         if (!isMounted) {
           return
         }
-        setDraft(response.draft)
-        setBlockRegistry(response.blockRegistry)
-        setName(response.draft.site.name)
-        setSlug(response.draft.site.slug)
+        setDraft(draftResponse.draft)
+        setBlockRegistry(draftResponse.blockRegistry)
+        setVersions(versionResponse.versions)
+        setName(draftResponse.draft.site.name)
+        setSlug(draftResponse.draft.site.slug)
         setIsLoading(false)
       })
       .catch((error) => {
@@ -153,6 +162,25 @@ function SiteDetail() {
     }
   }
 
+  async function handlePublish() {
+    setIsPublishing(true)
+    setPublishErrorMessage('')
+    setPublishStatusMessage('')
+
+    try {
+      const response = await publishSite(siteId, { publishNote })
+      const versionResponse = await listSiteVersions(siteId)
+      setVersions(versionResponse.versions)
+      setPublishStatusMessage(`Published version ${response.version.versionNumber}.`)
+    } catch (error) {
+      setPublishErrorMessage(
+        error instanceof APIError ? error.message : 'Could not publish site',
+      )
+    } finally {
+      setIsPublishing(false)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="builder-panel ribbon-panel">
@@ -170,6 +198,7 @@ function SiteDetail() {
   }
 
   const blockCount = draft.pages.reduce((count, page) => count + page.blocks.length, 0)
+  const currentVersion = versions.find((version) => version.isCurrent) ?? null
 
   return (
     <div className="builder-grid builder-grid--detail">
@@ -186,7 +215,7 @@ function SiteDetail() {
         <dl className="metadata-list">
           <div>
             <dt>Status</dt>
-            <dd>{draft.site.status}</dd>
+            <dd>{currentVersion ? 'published' : draft.site.status}</dd>
           </div>
           <div>
             <dt>Pages</dt>
@@ -206,6 +235,15 @@ function SiteDetail() {
           >
             Open preview
           </Link>
+          {currentVersion ? (
+            <Link
+              to="/public/$siteSlug"
+              params={{ siteSlug: draft.site.slug }}
+              className="site-inline-link"
+            >
+              Open live site
+            </Link>
+          ) : null}
         </div>
 
         <div className="page-outline page-outline--detail">
@@ -275,6 +313,70 @@ function SiteDetail() {
 
         <section className="editor-panel ribbon-panel">
           <div className="panel-heading">
+            <p className="eyebrow">Publish</p>
+            <h2>Release an immutable snapshot</h2>
+            <p>
+              Publish stores the current validated draft in `site_versions` and
+              serves the public route from that snapshot.
+            </p>
+          </div>
+
+          <label htmlFor="publish-note">Publish note</label>
+          <textarea
+            id="publish-note"
+            name="publishNote"
+            rows={3}
+            value={publishNote}
+            onChange={(event) => setPublishNote(event.target.value)}
+            placeholder="What changed in this release?"
+          />
+
+          {publishErrorMessage ? (
+            <p className="form-error">{publishErrorMessage}</p>
+          ) : null}
+          {publishStatusMessage ? (
+            <p className="form-success">{publishStatusMessage}</p>
+          ) : null}
+
+          <div className="publish-actions">
+            <Button type="button" disabled={isPublishing} onClick={handlePublish}>
+              {isPublishing ? 'Publishing...' : 'Publish snapshot'}
+            </Button>
+            {currentVersion ? (
+              <Link
+                to="/public/$siteSlug"
+                params={{ siteSlug: draft.site.slug }}
+                className="site-inline-link"
+              >
+                View live site
+              </Link>
+            ) : null}
+          </div>
+
+          <div className="version-list">
+            {versions.length === 0 ? (
+              <div className="empty-state">
+                <p>No published versions yet.</p>
+              </div>
+            ) : (
+              versions.map((version) => (
+                <article key={version.id} className="version-list__item">
+                  <div>
+                    <strong>
+                      v{version.versionNumber}
+                      {version.isCurrent ? ' current' : ''}
+                    </strong>
+                    <p>{formatTimestamp(version.createdAt)}</p>
+                  </div>
+                  {version.publishNote ? <small>{version.publishNote}</small> : null}
+                </article>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="editor-panel ribbon-panel">
+          <div className="panel-heading">
             <p className="eyebrow">Site details</p>
             <h2>Rename and reslug the draft</h2>
           </div>
@@ -320,4 +422,15 @@ function SiteDetail() {
       </div>
     </div>
   )
+}
+
+function formatTimestamp(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date)
 }

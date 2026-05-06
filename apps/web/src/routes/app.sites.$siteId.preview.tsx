@@ -66,7 +66,7 @@ function DraftPreview() {
           Back to builder
         </Link>
       </div>
-      <SiteDraftRenderer draft={draft} />
+      <SiteDraftRenderer site={draft} eyebrow="Draft preview" />
     </div>
   )
 }
