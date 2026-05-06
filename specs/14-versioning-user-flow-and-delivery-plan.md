@@ -193,7 +193,7 @@ Avoid building these in the first version:
 1. Should the first release support only one-page sites before expanding to 10 pages?
 2. Should AI generate images, or should MVP use uploaded and placeholder assets only?
 3. Should contact form submissions be stored, emailed, or both?
-4. Is billing required on day one?
+4. Which Stripe-backed billing model is required on day one: free beta, paid subscriptions, metered usage, or manual invoicing?
 5. Should the product support multiple languages later?
 6. Should published pages be dynamically server-rendered or statically cached after publish?
 7. Which industries should prompt presets target first?

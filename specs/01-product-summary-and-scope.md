@@ -36,6 +36,7 @@ The MVP does not generate arbitrary custom code per website. Instead, it generat
 - Asset upload and image library
 - Basic SEO fields
 - Contact form block with stored submissions and/or email forwarding
+- Stripe-backed billing for platform subscriptions, usage limits, and payment collection if paid access is required at launch
 
 Basic custom domain mapping is planned, but it does not need to be fully built in the first MVP.
 
@@ -44,7 +45,7 @@ Basic custom domain mapping is planned, but it does not need to be fully built i
 - Arbitrary user code injection
 - Full drag-and-drop layout freedom
 - Marketplace of third-party blocks
-- E-commerce checkout
+- E-commerce checkout inside generated customer websites
 - Complex CMS collections
 - Multi-language sites
 - Advanced permissions

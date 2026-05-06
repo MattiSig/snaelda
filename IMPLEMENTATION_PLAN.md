@@ -39,6 +39,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [ ] Establish runtime validation with schema tooling for site drafts, published snapshots, block props, theme tokens, navigation, URLs, and form definitions.
 - [ ] Add backend test setup for schema validation, registry validation, publish validation, persistence, and API authorization.
 - [ ] Add frontend test setup for core builder flows and renderer smoke tests.
+- [ ] Reserve a `billing` backend module boundary for Stripe-backed workspace subscriptions, but keep payment implementation out of the first prototype loop.
 
 ## Phase 1: Data Model And Draft Persistence
 
@@ -205,7 +206,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [ ] Configure `app.platform.com` or the chosen builder domain.
 - [ ] Configure wildcard hosted subdomains for `{site-slug}.platform.com`.
 - [ ] Ensure public serving can resolve hostname, find `site_domains`, load `published_version_id`, load the artifact for the path, and return the response.
-- [ ] Add environment configuration for model API keys, object storage, app URL, public site base domain, and email provider if needed.
+- [ ] Add environment configuration for model API keys, object storage, app URL, public site base domain, email provider if needed, and Stripe billing keys when billing is enabled.
 - [ ] Keep Redis, workers, custom domains, and advanced CDN behavior optional until the simpler deployment is proven.
 
 ## Phase 12: MVP Completion
@@ -222,6 +223,21 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [ ] Add regression tests for invalid generation output, invalid block props, broken navigation, missing homepage, duplicate slugs, and exceeding 10 pages.
 - [ ] Run a production-like smoke test using a real prompt and a real published subdomain.
 
+## Phase 13: Stripe Billing
+
+- [ ] Decide the first billing posture: free beta, paid subscriptions, metered usage, or manual invoicing.
+- [ ] Define Stripe products, prices, and local plan entitlements for site count, published sites, custom domains, generation allowance, asset storage, and future seats.
+- [ ] Create a `billing` backend module using Stripe for workspace subscriptions and payment collection.
+- [ ] Add `billing_customers`, `billing_subscriptions`, `billing_entitlements`, and `billing_events` persistence.
+- [ ] Create Checkout session APIs for starting or changing a workspace subscription.
+- [ ] Create Customer Portal session APIs for payment method, invoice, and cancellation management.
+- [ ] Implement Stripe webhook signature verification and idempotent event processing.
+- [ ] Map Stripe customer, subscription, product, price, and invoice/payment states to local workspace billing state.
+- [ ] Enforce billing entitlements server-side before generation, publishing, custom domain setup, asset upload, and future team expansion.
+- [ ] Add builder billing settings UI for current plan, usage, checkout, and customer portal access.
+- [ ] Add blocked-action states for entitlement limits and unpaid or canceled subscriptions.
+- [ ] Add Stripe test-mode or Stripe CLI smoke tests plus unit tests for webhook processing and entitlement enforcement.
+
 ## Explicit Deferrals
 
 - [ ] Do not build arbitrary user code injection.
@@ -229,10 +245,10 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [ ] Do not build full drag-and-drop layout freedom.
 - [ ] Do not build a Webflow-style design editor.
 - [ ] Do not build marketplace or third-party blocks.
-- [ ] Do not build e-commerce checkout.
+- [ ] Do not build e-commerce checkout inside generated customer websites.
 - [ ] Do not build complex CMS collections.
 - [ ] Do not build multi-language sites.
-- [ ] Do not build advanced teams, roles, billing, or client collaboration until the single-workspace MVP works.
+- [ ] Do not build advanced teams, roles, or client collaboration until the single-workspace MVP works.
 - [ ] Do not build per-customer frontend deployments.
 - [ ] Do not build custom domain verification before hosted subdomains work reliably.
 - [ ] Do not add raw analytics event storage unless aggregated daily counts are insufficient.

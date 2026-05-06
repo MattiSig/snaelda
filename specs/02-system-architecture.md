@@ -58,7 +58,7 @@ Recommended internal modules:
 - `publishing`
 - `domains`
 - `forms`
-- `billing` later
+- `billing` with Stripe after the core create/edit/publish loop is stable
 
 This should start as a modular monolith.
 

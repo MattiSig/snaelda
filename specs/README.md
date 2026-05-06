@@ -22,6 +22,7 @@ The platform creates and hosts simple websites from prompts. The core architectu
 12. [Security, Validation, and Caching](./12-security-validation-and-caching.md)
 13. [Deployment, Domains, and Hosting](./13-deployment-domains-and-hosting.md)
 14. [Versioning, User Flow, and Delivery Plan](./14-versioning-user-flow-and-delivery-plan.md)
+15. [Billing and Stripe](./15-billing-and-stripe.md)
 
 ## Recommended Reading Order
 
