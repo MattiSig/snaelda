@@ -22,7 +22,10 @@ export const Route = createRootRoute({
         content: 'Structured website drafts, editing, preview, and publishing.',
       },
     ],
-    links: [{ rel: 'stylesheet', href: appCss }],
+    links: [
+      { rel: 'stylesheet', href: appCss },
+      { rel: 'icon', href: '/logo.png', type: 'image/png' },
+    ],
   }),
   errorComponent: DefaultCatchBoundary,
   notFoundComponent: () => <NotFound />,

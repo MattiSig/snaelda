@@ -264,6 +264,20 @@ export async function createSite(input: {
   })
 }
 
+export async function generateSite(input: {
+  name?: string
+  prompt: string
+  slug?: string
+}) {
+  return apiFetch<{ jobId: string; draft: SiteDraft }>('/api/sites/generate', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  })
+}
+
 export async function updateSite(
   siteId: string,
   input: {

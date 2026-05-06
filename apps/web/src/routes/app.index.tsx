@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import {
   APIError,
   createSite,
+  generateSite,
   listSites,
   type SiteSummary,
 } from '@/lib/api'
@@ -53,9 +54,12 @@ function SitesIndex() {
     setErrorMessage('')
 
     try {
-      const response = await createSite({ name, prompt })
+      const isGenerated = prompt.trim() !== ''
+      const response = isGenerated
+        ? await generateSite({ name, prompt })
+        : await createSite({ name, prompt })
       await navigate({
-        to: '/app/sites/$siteId',
+        to: isGenerated ? '/app/sites/$siteId/preview' : '/app/sites/$siteId',
         params: { siteId: response.draft.site.id },
       })
     } catch (error) {
@@ -71,10 +75,11 @@ function SitesIndex() {
       <section className="builder-panel ribbon-panel">
         <div className="panel-heading">
           <p className="eyebrow">Create website</p>
-          <h1>Spin up a draft, then tune it in the builder.</h1>
+          <h1>Spin up a generated draft, then tune it in the builder.</h1>
           <p>
-            This first pass saves a deterministic starter draft from your site
-            name and brief so the editing loop works before generation lands.
+            Add a name and brief to generate a structured site draft from the
+            approved block set. Leave the brief empty if you just want the
+            simpler starter scaffold.
           </p>
         </div>
 
@@ -102,7 +107,13 @@ function SitesIndex() {
           {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
 
           <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Creating draft...' : 'Create draft'}
+            {isSubmitting
+              ? prompt.trim() !== ''
+                ? 'Generating draft...'
+                : 'Creating draft...'
+              : prompt.trim() !== ''
+                ? 'Generate draft'
+                : 'Create starter draft'}
           </Button>
         </form>
       </section>

@@ -8,7 +8,8 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [ ] The backend is a Go modular monolith exposing the product API and owning Postgres persistence.
 - [ ] The frontend is a React application built with TanStack Start, Tailwind CSS, and shadcn/ui unless a later decision deliberately changes that stack.
 - [ ] Frontend surfaces support brand-aligned light and dark modes based on `BRANDING.md`, with dark mode required and using the sharper, slightly meaner palette described there.
-- [ ] A user can enter a prompt and get a valid structured site draft.
+- [x] A user can enter a prompt and get a valid structured site draft.
+  Verified on May 6, 2026 by logging in locally, generating `Loom & Light Studio` from a photography prompt in Playwright, confirming the created draft contained four validated pages in the builder, and loading the generated content on `/app/sites/:siteId/preview`.
 - [x] The generated draft uses only known block types, known block versions, valid block props, valid theme tokens, and no arbitrary code.
 - [x] The draft can be previewed through the maintained React renderer.
 - [x] The user can edit basic block fields and save validated changes.
@@ -69,7 +70,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Implement the registry in code rather than the database.
 - [x] Add registry lookup by `type` and `version`.
 - [x] Add validation for block existence, version existence, props shape, links, asset references, and hidden/settings fields.
-- [ ] Add the first prototype blocks: `hero`, `text_section`, `image_text`, `features_grid`, and `cta_band`.
+- [x] Add the first prototype blocks: `hero`, `text_section`, `image_text`, `features_grid`, and `cta_band`.
 - [x] Implement React renderer components for those prototype blocks.
   React now renders the prototype `hero`, `text_section`, `image_text`, `features_grid`, and `cta_band` blocks in a shared `SiteDraftRenderer` used by the authenticated preview route.
 - [x] Implement React editor field metadata for those prototype blocks.
@@ -82,8 +83,8 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 
 - [ ] Define `theme.v1` token schema for colors, typography, layout, and shape.
 - [ ] Define brand baseline tokens from `BRANDING.md`, including `logo.png`-inspired yarn/spindle colors and required light/dark mode token sets.
-- [ ] Add a small set of safe theme presets such as minimal luxury, playful startup, and calm nordic.
-- [ ] Implement theme token validation and fallback generation.
+- [x] Add a small set of safe theme presets such as minimal luxury, playful startup, and calm nordic.
+- [x] Implement theme token validation and fallback generation.
 - [ ] Implement CSS variable output from theme tokens in React rendering.
 - [ ] Define canonical `SiteDraft`, `PageDraft`, `BlockInstance`, `ThemeConfig`, `NavigationConfig`, and `SeoConfig` types.
 - [ ] Define published `site-config.v1` snapshot schema.
@@ -105,7 +106,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
   The `/app` workspace route now lists saved sites, creates drafts, and links into a functional site detail screen with metadata, page outline, rename/reslug, and delete actions.
 - [ ] Use shadcn/ui primitives for builder controls, forms, dialogs, menus, tabs, loading states, and empty/error states before creating bespoke app components.
 - [x] Build the React prompt entry page, even if it initially creates a deterministic default site before AI is wired in.
-  The builder home now accepts a site name plus brief and creates a deterministic starter draft through `POST /api/sites`.
+  The builder home now accepts a site name plus brief, calls `POST /api/sites/generate` when a brief is provided, and still falls back to the deterministic starter draft through `POST /api/sites` when the brief is left empty.
 - [x] Add a page list and block list.
 - [x] Add a simple field editor generated from the block editor schema.
 - [x] Add a React preview route that renders the current draft through the same block renderer used by publish.
@@ -121,17 +122,18 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 
 ## Phase 5: Prompt-To-Draft Generation
 
-- [ ] Implement `POST /api/sites/generate` in the Go backend.
-- [ ] Create a `generation_jobs` row for every prompt.
-- [ ] Define structured model output for `siteName`, `siteSlug`, `siteGoal`, `theme`, `pages`, `navigation`, `assetsNeeded`, and `assumptions`.
-- [ ] Use the canonical draft schema as the generation output target.
-- [ ] Limit generation to the prototype block set until the core loop is stable.
+- [x] Implement `POST /api/sites/generate` in the Go backend.
+- [x] Create a `generation_jobs` row for every prompt.
+- [x] Define structured model output for `siteName`, `siteSlug`, `siteGoal`, `theme`, `pages`, `navigation`, `assetsNeeded`, and `assumptions`.
+- [x] Use the canonical draft schema as the generation output target.
+- [x] Limit generation to the prototype block set until the core loop is stable.
 - [ ] Enforce generation guardrails: max 10 pages, known blocks only, supported versions only, safe URLs only, valid theme tokens only, no scripts, no unsupported embed code, no unsanitized HTML.
 - [ ] Add deterministic repair for safe issues such as missing optional defaults, excessive page count, duplicate slugs, and missing SEO fallbacks.
 - [ ] Add model repair or retry only after backend validation fails.
-- [ ] Persist valid generated output as normalized draft rows.
-- [ ] Store generation prompt, assumptions, provenance metadata, validation outcome, and summary.
-- [ ] Return the created site draft and send the user to the builder preview.
+- [x] Persist valid generated output as normalized draft rows.
+- [x] Store generation prompt, assumptions, provenance metadata, validation outcome, and summary.
+- [x] Return the created site draft and send the user to the builder preview.
+  Verified on May 6, 2026 by generating a photography-site draft through the authenticated builder in Playwright, confirming a completed `generation_jobs` record plus stored site metadata in the Go-backed flow, and loading the generated draft preview without current-page console errors.
 
 ## Phase 6: Publish, Public Serving, And Rollback
 
