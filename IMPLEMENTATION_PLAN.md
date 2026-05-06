@@ -7,6 +7,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] A signed-in user can create or use a default workspace.
 - [ ] The backend is a Go modular monolith exposing the product API and owning Postgres persistence.
 - [ ] The frontend is a React application built with TanStack Start, Tailwind CSS, and shadcn/ui unless a later decision deliberately changes that stack.
+- [ ] Frontend surfaces support brand-aligned light and dark modes based on `BRANDING.md`, with dark mode required and using the sharper, slightly meaner palette described there.
 - [ ] A user can enter a prompt and get a valid structured site draft.
 - [ ] The generated draft uses only known block types, known block versions, valid block props, valid theme tokens, and no arbitrary code.
 - [ ] The draft can be previewed through the maintained React renderer.
@@ -75,6 +76,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 ## Phase 3: Theme, Navigation, And Snapshot Contracts
 
 - [ ] Define `theme.v1` token schema for colors, typography, layout, and shape.
+- [ ] Define brand baseline tokens from `BRANDING.md`, including `logo.png`-inspired yarn/spindle colors and required light/dark mode token sets.
 - [ ] Add a small set of safe theme presets such as minimal luxury, playful startup, and calm nordic.
 - [ ] Implement theme token validation and fallback generation.
 - [ ] Implement CSS variable output from theme tokens in React rendering.
