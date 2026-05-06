@@ -41,7 +41,9 @@ function RootDocument({ children }: { children: ReactNode }) {
             Snaelda
           </Link>
           <nav aria-label="Primary navigation">
-            <Link to="/login">Sign in</Link>
+            <Link to="/login" search={{ redirect: '/app' }}>
+              Sign in
+            </Link>
             <Link to="/app">Builder</Link>
             <Link to="/preview/$token" params={{ token: 'local' }}>
               Preview

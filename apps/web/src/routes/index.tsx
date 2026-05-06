@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { Button } from '@/components/ui/button'
 
 export const Route = createFileRoute('/')({
   component: Home,
@@ -24,9 +25,9 @@ function Home() {
           rows={8}
           placeholder="A five-page site for a local design studio"
         />
-        <button type="button" disabled>
+        <Button type="button" disabled>
           Create draft
-        </button>
+        </Button>
       </form>
     </main>
   )

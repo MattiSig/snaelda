@@ -4,7 +4,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 
 ## Prototype Success Criteria
 
-- [ ] A signed-in user can create or use a default workspace.
+- [x] A signed-in user can create or use a default workspace.
 - [ ] The backend is a Go modular monolith exposing the product API and owning Postgres persistence.
 - [ ] The frontend is a React application built with TanStack Start, Tailwind CSS, and shadcn/ui unless a later decision deliberately changes that stack.
 - [ ] A user can enter a prompt and get a valid structured site draft.
@@ -26,13 +26,13 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Set up local S3-compatible object storage with SeaweedFS for image uploads and published artifact development.
 - [x] Add Go API routing, middleware, config loading, request logging, validation error responses, and health checks.
 - [x] Add frontend data fetching conventions for calling the Go API.
-- [ ] Add JWT-based authentication across the Go API and React frontend.
-- [ ] Implement Go JWT middleware that validates token signature, expiry, issuer, audience, subject, and required claims.
-- [ ] Use server-set secure HTTP-only cookies for browser auth tokens; do not store auth tokens in browser local storage.
+- [x] Add JWT-based authentication across the Go API and React frontend.
+- [x] Implement Go JWT middleware that validates token signature, expiry, issuer, audience, subject, and required claims.
+- [x] Use server-set secure HTTP-only cookies for browser auth tokens; do not store auth tokens in browser local storage.
 - [ ] Keep token issuance, refresh, logout, and revocation server-side in the Go backend.
 - [ ] Define access token lifetime, refresh token lifetime, refresh rotation, logout, and token revocation behavior.
-- [ ] Add React route guards and API client behavior for unauthenticated, expired-token, and forbidden responses.
-- [ ] Create automatic default workspace creation for each user.
+- [x] Add React route guards and API client behavior for unauthenticated, expired-token, and forbidden responses.
+- [x] Create automatic default workspace creation for each user.
 - [ ] Add shared authorization helpers that verify workspace membership and resource ownership.
 - [ ] Add a shared ID, slug, timestamp, and audit utility layer.
 - [ ] Establish runtime validation with schema tooling for site drafts, published snapshots, block props, theme tokens, navigation, URLs, and form definitions.

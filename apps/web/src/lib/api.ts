@@ -1,5 +1,8 @@
 export type APIErrorPayload = {
-  error?: string
+  error?: string | {
+    code?: string
+    message?: string
+  }
   code?: string
   message?: string
 }
@@ -9,11 +12,31 @@ export class APIError extends Error {
   readonly payload: APIErrorPayload | null
 
   constructor(status: number, payload: APIErrorPayload | null) {
-    super(payload?.message ?? `API request failed with status ${status}`)
+    const nestedMessage =
+      typeof payload?.error === 'object' ? payload.error.message : undefined
+    super(
+      payload?.message ??
+        nestedMessage ??
+        `API request failed with status ${status}`,
+    )
     this.name = 'APIError'
     this.status = status
     this.payload = payload
   }
+}
+
+export type AuthUser = {
+  id: string
+  email: string
+  name: string
+  workspaceId: string
+  workspaceRole: string
+}
+
+export type AuthSession = {
+  user: AuthUser
+  expiresAt?: number
+  tokenType?: string
 }
 
 const defaultAPIBaseURL = 'http://localhost:8080'
@@ -41,4 +64,24 @@ export async function apiFetch<T>(
   }
 
   return response.json() as Promise<T>
+}
+
+export async function getCurrentSession() {
+  return apiFetch<AuthSession>('/api/auth/me')
+}
+
+export async function login(email: string, name?: string) {
+  return apiFetch<AuthSession>('/api/auth/login', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email, name }),
+  })
+}
+
+export async function logout() {
+  return apiFetch<{ status: string }>('/api/auth/logout', {
+    method: 'POST',
+  })
 }

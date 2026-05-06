@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestLoadUsesLocalStorageDefaults(t *testing.T) {
 	t.Setenv("APP_ENV", "test")
@@ -28,6 +31,18 @@ func TestLoadUsesLocalStorageDefaults(t *testing.T) {
 	}
 	if !cfg.S3ForcePathStyle {
 		t.Fatal("expected path-style S3 addressing for local SeaweedFS")
+	}
+	if cfg.AuthIssuer != "snaelda-api" {
+		t.Fatalf("expected default auth issuer, got %q", cfg.AuthIssuer)
+	}
+	if cfg.AuthAudience != "snaelda-web" {
+		t.Fatalf("expected default auth audience, got %q", cfg.AuthAudience)
+	}
+	if cfg.AuthAccessTokenTTL != 15*time.Minute {
+		t.Fatalf("expected default auth access token ttl, got %s", cfg.AuthAccessTokenTTL)
+	}
+	if cfg.AuthCookieSecure {
+		t.Fatal("expected insecure auth cookie in test")
 	}
 }
 
@@ -72,6 +87,26 @@ func TestLoadRejectsInvalidStorageBool(t *testing.T) {
 
 	if _, err := Load(); err == nil {
 		t.Fatal("expected invalid bool error")
+	}
+}
+
+func TestLoadRejectsInvalidAuthDuration(t *testing.T) {
+	t.Setenv("APP_ENV", "test")
+	unsetStorageEnv(t)
+	t.Setenv("AUTH_ACCESS_TOKEN_TTL", "soon")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid auth duration error")
+	}
+}
+
+func TestLoadRequiresProductionAuthSecret(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("DATABASE_URL", "postgres://example")
+	unsetStorageEnv(t)
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected production auth secret error")
 	}
 }
 

@@ -86,15 +86,19 @@ These should be created from the published snapshot:
 
 Users should mainly control content and theme tokens, not arbitrary CSS or custom JavaScript.
 
-## Tailwind Direction
+## Frontend Styling Direction
 
-Tailwind is a good fit for building the shared block system.
+Tailwind CSS is the styling baseline for the TanStack Start web app and the shared block system.
+
+shadcn/ui is the default component source for the authenticated builder UI. Use it for common controls such as buttons, inputs, dialogs, menus, tabs, forms, loading states, and empty/error states so the app stays consistent and fast to build. Treat shadcn/ui as source-owned app components, not as a customer-facing component marketplace.
 
 Recommended approach:
 
-1. blocks use Tailwind in the source code
-2. the platform compiles a shared CSS bundle
-3. each published site gets a small token-driven `theme.css`
+1. the TanStack Start app is configured with Tailwind CSS, shadcn/ui, the `@/*` import alias, and a shared `cn` utility
+2. builder UI starts from shadcn/ui primitives before introducing bespoke components
+3. blocks use Tailwind utilities in source code
+4. the platform compiles a shared CSS bundle for maintained block and layout styles
+5. each published site gets a small token-driven `theme.css`
 
 This keeps public websites lightweight while still allowing prompt-driven visual direction.
 

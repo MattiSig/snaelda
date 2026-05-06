@@ -31,6 +31,7 @@ type Server struct {
 	config   Config
 	logger   *slog.Logger
 	database Pinger
+	auth     *auth.Handler
 }
 
 type Config = config.Config
@@ -45,10 +46,30 @@ func NewServer(cfg ServerConfig) *Server {
 		logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 	}
 
+	tokenManager, err := auth.NewTokenManager(auth.TokenConfig{
+		Secret:   firstNonEmpty(cfg.Config.AuthJWTSecret, "test-auth-secret"),
+		Issuer:   firstNonEmpty(cfg.Config.AuthIssuer, "snaelda-api"),
+		Audience: firstNonEmpty(cfg.Config.AuthAudience, "snaelda-web"),
+		TTL:      firstPositiveDuration(cfg.Config.AuthAccessTokenTTL, 15*time.Minute),
+	})
+	if err != nil {
+		logger.Error("configure auth tokens", "error", err)
+	}
+
+	var authStore auth.UserStore
+	if store, ok := cfg.Database.(auth.UserStore); ok {
+		authStore = store
+	}
+
 	return &Server{
 		config:   cfg.Config,
 		logger:   logger,
 		database: cfg.Database,
+		auth: auth.NewHandler(auth.HandlerConfig{
+			Store:        authStore,
+			Tokens:       tokenManager,
+			CookieSecure: cfg.Config.AuthCookieSecure,
+		}),
 	}
 }
 
@@ -60,19 +81,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /readyz", s.ready)
 	mux.HandleFunc("GET /api/readyz", s.ready)
 
-	mountPlaceholderModule(mux, auth.Module{})
-	mountPlaceholderModule(mux, workspaces.Module{})
-	mountPlaceholderModule(mux, sites.Module{})
-	mountPlaceholderModule(mux, pages.Module{})
-	mountPlaceholderModule(mux, blocks.Module{})
-	mountPlaceholderModule(mux, themes.Module{})
-	mountPlaceholderModule(mux, generation.Module{})
-	mountPlaceholderModule(mux, publishing.Module{})
-	mountPlaceholderModule(mux, domains.Module{})
-	mountPlaceholderModule(mux, assets.Module{})
-	mountPlaceholderModule(mux, forms.Module{})
+	s.auth.Mount(mux)
 
-	return s.recover(s.logRequests(mux))
+	mountAuthenticatedPlaceholderModule(mux, s.auth, workspaces.Module{})
+	mountAuthenticatedPlaceholderModule(mux, s.auth, sites.Module{})
+	mountAuthenticatedPlaceholderModule(mux, s.auth, pages.Module{})
+	mountAuthenticatedPlaceholderModule(mux, s.auth, blocks.Module{})
+	mountAuthenticatedPlaceholderModule(mux, s.auth, themes.Module{})
+	mountAuthenticatedPlaceholderModule(mux, s.auth, generation.Module{})
+	mountAuthenticatedPlaceholderModule(mux, s.auth, publishing.Module{})
+	mountAuthenticatedPlaceholderModule(mux, s.auth, domains.Module{})
+	mountAuthenticatedPlaceholderModule(mux, s.auth, assets.Module{})
+	mountAuthenticatedPlaceholderModule(mux, s.auth, forms.Module{})
+
+	return s.recover(s.logRequests(s.cors(mux)))
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
@@ -125,4 +147,38 @@ func (s *Server) recover(next http.Handler) http.Handler {
 		}()
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) cors(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin != "" && origin == s.config.AppBaseURL {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+			w.Header().Add("Vary", "Origin")
+		}
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func firstNonEmpty(value string, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func firstPositiveDuration(value time.Duration, fallback time.Duration) time.Duration {
+	if value <= 0 {
+		return fallback
+	}
+	return value
 }

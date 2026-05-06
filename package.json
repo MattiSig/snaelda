@@ -9,6 +9,7 @@
   "scripts": {
     "web:dev": "npm --workspace @snaelda/web run dev",
     "web:build": "npm --workspace @snaelda/web run build",
+    "web:lint": "npm --workspace @snaelda/web run lint",
     "web:start": "npm --workspace @snaelda/web run start"
   }
 }
