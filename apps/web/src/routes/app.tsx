@@ -77,12 +77,9 @@ function AppLayout() {
           <small>{session.user.workspaceRole}</small>
         </div>
         <Link to="/app">Sites</Link>
-        <Link to="/app/sites/$siteId" params={{ siteId: 'draft' }}>
-          Draft
-        </Link>
-        <Link to="/app/sites/$siteId/preview" params={{ siteId: 'draft' }}>
-          Preview
-        </Link>
+        <p className="app-sidebar-note">
+          Build from validated drafts, then move into preview from each site.
+        </p>
         <button type="button" onClick={handleSignOut}>
           Sign out
         </button>

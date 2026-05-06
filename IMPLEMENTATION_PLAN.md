@@ -69,7 +69,8 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [ ] Add registry lookup by `type` and `version`.
 - [ ] Add validation for block existence, version existence, props shape, links, asset references, and hidden/settings fields.
 - [ ] Add the first prototype blocks: `hero`, `text_section`, `image_text`, `features_grid`, and `cta_band`.
-- [ ] Implement React renderer components for those prototype blocks.
+- [x] Implement React renderer components for those prototype blocks.
+  React now renders the prototype `hero`, `text_section`, `image_text`, `features_grid`, and `cta_band` blocks in a shared `SiteDraftRenderer` used by the authenticated preview route.
 - [ ] Implement React editor field metadata for those prototype blocks.
 - [ ] Build React renderer and editor surfaces with Tailwind utilities so preview, builder, and publish output stay visually consistent.
 - [ ] Add contract tests or generated fixtures proving Go validation accepts exactly what the React renderer/editor expects.
@@ -93,21 +94,26 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 
 ## Phase 4: React Builder And Manual Prototype Creation
 
-- [ ] Implement Go site create, update, delete, and list APIs.
+- [x] Implement Go site create, update, delete, and list APIs.
+  `internal/sites` now exposes authenticated `POST /api/sites`, `GET /api/sites`, `GET /api/sites/:siteId`, `PATCH /api/sites/:siteId`, and `DELETE /api/sites/:siteId` handlers, backed by deterministic draft creation, slug conflict checks, and tests for handler + mutation flows.
 - [ ] Implement Go page create, update, delete, and reorder APIs.
 - [ ] Implement Go block create, update, delete, duplicate, hide/show, and reorder APIs.
 - [ ] Implement Go theme read and update APIs.
-- [ ] Implement a simple authenticated builder shell with site list and site detail.
+- [x] Implement a simple authenticated builder shell with site list and site detail.
+  The `/app` workspace route now lists saved sites, creates drafts, and links into a functional site detail screen with metadata, page outline, rename/reslug, and delete actions.
 - [ ] Use shadcn/ui primitives for builder controls, forms, dialogs, menus, tabs, loading states, and empty/error states before creating bespoke app components.
-- [ ] Build the React prompt entry page, even if it initially creates a deterministic default site before AI is wired in.
+- [x] Build the React prompt entry page, even if it initially creates a deterministic default site before AI is wired in.
+  The builder home now accepts a site name plus brief and creates a deterministic starter draft through `POST /api/sites`.
 - [ ] Add a page list and block list.
 - [ ] Add a simple field editor generated from the block editor schema.
-- [ ] Add a React preview route that renders the current draft through the same block renderer used by publish.
+- [x] Add a React preview route that renders the current draft through the same block renderer used by publish.
+  `/app/sites/:siteId/preview` now fetches the stored draft and renders it through the shared React block renderer.
 - [ ] Add a frontend API client layer for typed calls to the Go backend.
 - [ ] Add loading, empty, and error states for the site list, builder, save actions, preview, and publish action.
 - [ ] Save every block edit through backend validation rather than trusting client state.
 - [ ] Keep the editor state adapter thin and do not store raw editor/Puck state as canonical data.
-- [ ] Confirm the prototype works without AI generation by creating a site from deterministic defaults.
+- [x] Confirm the prototype works without AI generation by creating a site from deterministic defaults.
+  Verified on May 6, 2026 by logging in locally, creating a draft for `Moss & Thread Atelier`, editing its site metadata, and loading the authenticated preview route in Playwright.
 
 ## Phase 5: Prompt-To-Draft Generation
 

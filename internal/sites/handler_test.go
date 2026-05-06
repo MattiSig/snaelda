@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/MattiSig/snaelda/internal/auth"
@@ -23,6 +24,34 @@ func (r fakeReader) ListSites(context.Context, string) ([]Summary, error) {
 
 func (r fakeReader) LoadDraft(context.Context, string) (siteconfig.SiteDraft, error) {
 	return r.draft, nil
+}
+
+type fakeMutator struct {
+	created           siteconfig.SiteDraft
+	updated           siteconfig.SiteDraft
+	createInput       CreateSiteInput
+	updateInput       UpdateSiteInput
+	deleteSiteID      string
+	deleteWorkspaceID string
+	err               error
+}
+
+func (m *fakeMutator) CreateSite(_ context.Context, _ string, input CreateSiteInput) (siteconfig.SiteDraft, error) {
+	m.createInput = input
+	return m.created, m.err
+}
+
+func (m *fakeMutator) UpdateSite(_ context.Context, workspaceID string, siteID string, input UpdateSiteInput) (siteconfig.SiteDraft, error) {
+	m.deleteWorkspaceID = workspaceID
+	m.deleteSiteID = siteID
+	m.updateInput = input
+	return m.updated, m.err
+}
+
+func (m *fakeMutator) DeleteSite(_ context.Context, workspaceID string, siteID string) error {
+	m.deleteWorkspaceID = workspaceID
+	m.deleteSiteID = siteID
+	return m.err
 }
 
 type fakeAuthorizer struct{}
@@ -81,6 +110,7 @@ func TestGetSiteReturnsCanonicalDraft(t *testing.T) {
 		reader: fakeReader{
 			draft: validHandlerDraft(),
 		},
+		mutator:    &fakeMutator{},
 		authorizer: fakeAuthorizer{},
 	}
 	req := httptest.NewRequest(http.MethodGet, "/api/sites/site_demo", nil).WithContext(auth.WithUser(context.Background(), auth.User{
@@ -105,6 +135,86 @@ func TestGetSiteReturnsCanonicalDraft(t *testing.T) {
 	}
 	if payload.Draft.Site.ID != "site_demo" {
 		t.Fatalf("expected site draft, got %#v", payload.Draft.Site)
+	}
+}
+
+func TestCreateSiteReturnsCreatedDraft(t *testing.T) {
+	mutator := &fakeMutator{created: validHandlerDraft()}
+	handler := Handler{
+		reader:     fakeReader{},
+		mutator:    mutator,
+		authorizer: fakeAuthorizer{},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/sites", strings.NewReader(`{"name":"Nordic Studio","prompt":"A compact site for a local studio."}`)).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	res := httptest.NewRecorder()
+
+	handler.create(res, req)
+
+	if res.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d", http.StatusCreated, res.Code)
+	}
+	if mutator.createInput.Name != "Nordic Studio" {
+		t.Fatalf("expected create name to reach mutator, got %#v", mutator.createInput)
+	}
+}
+
+func TestUpdateSiteReturnsUpdatedDraft(t *testing.T) {
+	mutator := &fakeMutator{updated: validHandlerDraft()}
+	handler := Handler{
+		reader:     fakeReader{},
+		mutator:    mutator,
+		authorizer: fakeAuthorizer{},
+	}
+	req := httptest.NewRequest(http.MethodPatch, "/api/sites/site_demo", strings.NewReader(`{"name":"Renamed Studio","slug":"renamed-studio"}`)).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	req.SetPathValue("siteId", "site_demo")
+	res := httptest.NewRecorder()
+
+	handler.update(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	if mutator.deleteSiteID != "site_demo" {
+		t.Fatalf("expected site id to reach mutator, got %q", mutator.deleteSiteID)
+	}
+	if mutator.updateInput.Name == nil || *mutator.updateInput.Name != "Renamed Studio" {
+		t.Fatalf("expected updated name to reach mutator, got %#v", mutator.updateInput.Name)
+	}
+}
+
+func TestDeleteSiteReturnsNoContent(t *testing.T) {
+	mutator := &fakeMutator{}
+	handler := Handler{
+		reader:     fakeReader{},
+		mutator:    mutator,
+		authorizer: fakeAuthorizer{},
+	}
+	req := httptest.NewRequest(http.MethodDelete, "/api/sites/site_demo", nil).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	req.SetPathValue("siteId", "site_demo")
+	res := httptest.NewRecorder()
+
+	handler.delete(res, req)
+
+	if res.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, res.Code)
+	}
+	if mutator.deleteSiteID != "site_demo" {
+		t.Fatalf("expected delete site id to reach mutator, got %q", mutator.deleteSiteID)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/authorization"
@@ -12,6 +13,7 @@ import (
 
 type Handler struct {
 	reader     Reader
+	mutator    Mutator
 	authorizer Authorizer
 }
 
@@ -23,13 +25,28 @@ type Authorizer interface {
 func NewHandler(db DB) *Handler {
 	return &Handler{
 		reader:     NewPostgresReader(db),
+		mutator:    NewPostgresMutator(db),
 		authorizer: authorization.New(db),
 	}
 }
 
 func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.Handler) {
+	mux.Handle("POST /api/sites", requireUser(http.HandlerFunc(h.create)))
 	mux.Handle("GET /api/sites", requireUser(http.HandlerFunc(h.list)))
 	mux.Handle("GET /api/sites/{siteId}", requireUser(http.HandlerFunc(h.get)))
+	mux.Handle("PATCH /api/sites/{siteId}", requireUser(http.HandlerFunc(h.update)))
+	mux.Handle("DELETE /api/sites/{siteId}", requireUser(http.HandlerFunc(h.delete)))
+}
+
+type createSiteRequest struct {
+	Name   string `json:"name"`
+	Slug   string `json:"slug,omitempty"`
+	Prompt string `json:"prompt,omitempty"`
+}
+
+type updateSiteRequest struct {
+	Name *string `json:"name,omitempty"`
+	Slug *string `json:"slug,omitempty"`
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
@@ -77,6 +94,108 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"draft": draft})
+}
+
+func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
+		return
+	}
+	workspaceID := user.WorkspaceID
+	if workspaceID == "" {
+		writeError(w, http.StatusForbidden, "forbidden", "workspace access is required")
+		return
+	}
+	if _, err := h.authorizer.RequireWorkspaceMember(r.Context(), workspaceID, authorization.RoleOwner, authorization.RoleEditor); err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+
+	var payload createSiteRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "request body must be valid JSON")
+		return
+	}
+
+	draft, err := h.mutator.CreateSite(r.Context(), workspaceID, CreateSiteInput{
+		Name:   strings.TrimSpace(payload.Name),
+		Slug:   strings.TrimSpace(payload.Slug),
+		Prompt: strings.TrimSpace(payload.Prompt),
+	})
+	if err != nil {
+		writeSiteError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"draft": draft})
+}
+
+func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	if siteID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_site_id", "site id is required")
+		return
+	}
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+
+	var payload updateSiteRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "request body must be valid JSON")
+		return
+	}
+
+	draft, err := h.mutator.UpdateSite(r.Context(), scope.WorkspaceID, siteID, UpdateSiteInput{
+		Name: payload.Name,
+		Slug: payload.Slug,
+	})
+	if err != nil {
+		writeSiteError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"draft": draft})
+}
+
+func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	if siteID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_site_id", "site id is required")
+		return
+	}
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+
+	if err := h.mutator.DeleteSite(r.Context(), scope.WorkspaceID, siteID); err != nil {
+		writeSiteError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func writeSiteError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrNotFound):
+		writeError(w, http.StatusNotFound, "site_not_found", "site was not found")
+	case errors.Is(err, ErrSiteNameRequired):
+		writeError(w, http.StatusBadRequest, "invalid_site_name", "site name is required")
+	case errors.Is(err, ErrSiteSlugInvalid):
+		writeError(w, http.StatusBadRequest, "invalid_site_slug", "site slug must use lowercase words separated by hyphens")
+	case errors.Is(err, ErrSiteSlugConflict):
+		writeError(w, http.StatusConflict, "site_slug_conflict", "site slug is already in use")
+	case errors.Is(err, ErrNoSiteChanges):
+		writeError(w, http.StatusBadRequest, "no_site_changes", "at least one site field must change")
+	default:
+		writeError(w, http.StatusInternalServerError, "site_write_failed", "could not save site")
+	}
 }
 
 func writeAuthorizationError(w http.ResponseWriter, err error) {
