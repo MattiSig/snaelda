@@ -3,6 +3,7 @@ package sites
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -196,6 +197,33 @@ func TestSaveDraftPersistsCanonicalDraftInTransaction(t *testing.T) {
 	}
 	if hidden, ok := tx.execs[6].args[8].(bool); !ok || !hidden {
 		t.Fatalf("expected hidden block flag in is_hidden argument, got %#v", tx.execs[6].args[8])
+	}
+}
+
+func TestSaveDraftRejectsMoreThanTenPagesBeforeWriting(t *testing.T) {
+	tx := &fakeDraftTx{}
+	db := &fakeDraftDB{tx: tx}
+	writer := NewPostgresWriter(db)
+	draft := validPersistenceDraft()
+	draft.Pages = make([]siteconfig.PageDraft, 0, siteconfig.MaxPagesPerSite+1)
+	for i := 0; i < siteconfig.MaxPagesPerSite+1; i++ {
+		page := validPersistenceDraft().Pages[0]
+		page.ID = "page_" + strconv.Itoa(i)
+		page.Slug = "/page-" + strconv.Itoa(i)
+		draft.Pages = append(draft.Pages, page)
+	}
+	draft.Navigation.Primary = []siteconfig.NavigationItem{{Label: "Page 0", PageID: "page_0"}}
+
+	err := writer.SaveDraft(context.Background(), "00000000-0000-4000-8000-000000000101", draft)
+	var validationErr siteconfig.ValidationError
+	if !errors.As(err, &validationErr) || !validationErr.Has("too_many_pages") {
+		t.Fatalf("expected too_many_pages validation error, got %v", err)
+	}
+	if db.beginCount != 0 {
+		t.Fatalf("expected validation to stop before opening a transaction, got %d transactions", db.beginCount)
+	}
+	if len(tx.execs) != 0 {
+		t.Fatalf("expected no writes for invalid draft, got %d", len(tx.execs))
 	}
 }
 

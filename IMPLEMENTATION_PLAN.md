@@ -50,7 +50,8 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Create `site_domains` with hostname, type, status, and verification fields, even if custom domain verification is deferred.
 - [x] Create `themes` with site ownership, version, and constrained token JSON.
 - [x] Create `pages` with site ownership, title, slug, sort order, status, SEO JSON, and settings JSON.
-- [ ] Enforce the maximum of 10 active pages per site at the application layer first, and add DB-level protection if practical.
+- [x] Enforce the maximum of 10 active pages per site at the application layer first, and add DB-level protection if practical.
+  The canonical `siteconfig` validator rejects drafts with more than 10 pages before persistence starts, and migration `000003_page_limit.sql` adds a Postgres constraint trigger that rejects more than 10 non-archived page rows per site.
 - [x] Create `block_instances` with `page_id`, duplicated `site_id`, type, version, sort order, props JSON, settings JSON, and `is_hidden`.
 - [x] Create `site_versions` with immutable snapshot JSON, version number, creator, created timestamp, and publish note.
 - [x] Create `generation_jobs` for prompt tracking, status, output plan, errors, and input context.
