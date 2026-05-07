@@ -12,6 +12,7 @@ import {
   deleteSite,
   duplicateBlock,
   getSiteDraft,
+  getSiteTheme,
   listSiteVersions,
   publishSite,
   reorderBlocks,
@@ -19,9 +20,12 @@ import {
   type BlockDefinition,
   type SiteDraft,
   type SiteVersion,
+  type ThemeEditorCatalog,
+  type ThemeSelection,
   updateBlock,
   updatePage,
   updateSite,
+  updateSiteTheme,
 } from '@/lib/api'
 
 type DraftPage = SiteDraft['pages'][number]
@@ -60,6 +64,8 @@ function SiteDetail() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [isPublishing, setIsPublishing] = useState(false)
   const [publishNote, setPublishNote] = useState('')
+  const [themeSelection, setThemeSelection] = useState<ThemeSelection | null>(null)
+  const [themeOptions, setThemeOptions] = useState<ThemeEditorCatalog | null>(null)
   const [loadErrorMessage, setLoadErrorMessage] = useState('')
   const [siteErrorMessage, setSiteErrorMessage] = useState('')
   const [siteStatusMessage, setSiteStatusMessage] = useState('')
@@ -67,6 +73,9 @@ function SiteDetail() {
   const [pageStatusMessage, setPageStatusMessage] = useState('')
   const [blockErrorMessage, setBlockErrorMessage] = useState('')
   const [blockStatusMessage, setBlockStatusMessage] = useState('')
+  const [themeErrorMessage, setThemeErrorMessage] = useState('')
+  const [themeStatusMessage, setThemeStatusMessage] = useState('')
+  const [isSavingTheme, setIsSavingTheme] = useState(false)
   const [publishErrorMessage, setPublishErrorMessage] = useState('')
   const [publishStatusMessage, setPublishStatusMessage] = useState('')
 
@@ -112,14 +121,16 @@ function SiteDetail() {
   useEffect(() => {
     let isMounted = true
 
-    Promise.all([getSiteDraft(siteId), listSiteVersions(siteId)])
-      .then(([draftResponse, versionResponse]) => {
+    Promise.all([getSiteDraft(siteId), listSiteVersions(siteId), getSiteTheme(siteId)])
+      .then(([draftResponse, versionResponse, themeResponse]) => {
         if (!isMounted) {
           return
         }
         setBlockRegistry(draftResponse.blockRegistry)
         setNewBlockType((current) => current || draftResponse.blockRegistry[0]?.type || '')
         setVersions(versionResponse.versions)
+        setThemeSelection(themeResponse.selection)
+        setThemeOptions(themeResponse.options)
         setName(draftResponse.draft.site.name)
         setSlug(draftResponse.draft.site.slug)
         const initialPage = draftResponse.draft.pages[0] ?? null
@@ -322,6 +333,54 @@ function SiteDetail() {
       )
     } finally {
       setIsSavingBlock(false)
+    }
+  }
+
+  function handleThemeSelectionChange(
+    field: keyof ThemeSelection,
+    value: string,
+  ) {
+    setThemeSelection((current) =>
+      current
+        ? {
+            ...current,
+            [field]: value,
+          }
+        : current,
+    )
+    setThemeErrorMessage('')
+    setThemeStatusMessage('')
+  }
+
+  async function handleSaveTheme(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!themeSelection) {
+      return
+    }
+
+    setIsSavingTheme(true)
+    setThemeErrorMessage('')
+    setThemeStatusMessage('')
+
+    try {
+      const response = await updateSiteTheme(siteId, themeSelection)
+      setThemeSelection(response.selection)
+      setThemeOptions(response.options)
+      setDraft((current) =>
+        current
+          ? {
+              ...current,
+              theme: response.theme,
+            }
+          : current,
+      )
+      setThemeStatusMessage('Theme saved for preview and publish.')
+    } catch (error) {
+      setThemeErrorMessage(
+        error instanceof APIError ? error.message : 'Could not save theme',
+      )
+    } finally {
+      setIsSavingTheme(false)
     }
   }
 
@@ -781,6 +840,126 @@ function SiteDetail() {
 
         <section className="editor-panel ribbon-panel">
           <div className="panel-heading">
+            <p className="eyebrow">Theme</p>
+            <h2>Set the site direction</h2>
+            <p>
+              Keep the visual system inside the safe theme contract while tuning
+              the palette, type, spacing, and corner feel.
+            </p>
+          </div>
+
+          {themeSelection && themeOptions ? (
+            <form className="auth-panel" onSubmit={handleSaveTheme}>
+              <div className="theme-preview-card">
+                <div className="theme-preview-card__swatches">
+                  {Object.entries(draft.theme.tokens.colors).map(([key, value]) => (
+                    <div key={key} className="theme-swatch">
+                      <span
+                        className="theme-swatch__chip"
+                        style={{ backgroundColor: value }}
+                      />
+                      <div>
+                        <strong>{formatThemeLabel(key)}</strong>
+                        <small>{value}</small>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <label htmlFor="theme-palette">Palette</label>
+              <select
+                id="theme-palette"
+                value={themeSelection.palette}
+                onChange={(event) =>
+                  handleThemeSelectionChange('palette', event.target.value)
+                }
+              >
+                {themeOptions.palettes.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <p className="field-hint">
+                {describeThemeOption(themeOptions.palettes, themeSelection.palette)}
+              </p>
+
+              <label htmlFor="theme-font-preset">Font preset</label>
+              <select
+                id="theme-font-preset"
+                value={themeSelection.fontPreset}
+                onChange={(event) =>
+                  handleThemeSelectionChange('fontPreset', event.target.value)
+                }
+              >
+                {themeOptions.fontPresets.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <p className="field-hint">
+                {describeThemeOption(themeOptions.fontPresets, themeSelection.fontPreset)}
+              </p>
+
+              <label htmlFor="theme-section-spacing">Section spacing</label>
+              <select
+                id="theme-section-spacing"
+                value={themeSelection.sectionSpacing}
+                onChange={(event) =>
+                  handleThemeSelectionChange('sectionSpacing', event.target.value)
+                }
+              >
+                {themeOptions.sectionSpacings.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <p className="field-hint">
+                {describeThemeOption(
+                  themeOptions.sectionSpacings,
+                  themeSelection.sectionSpacing,
+                )}
+              </p>
+
+              <label htmlFor="theme-radius">Corner radius</label>
+              <select
+                id="theme-radius"
+                value={themeSelection.radius}
+                onChange={(event) =>
+                  handleThemeSelectionChange('radius', event.target.value)
+                }
+              >
+                {themeOptions.radii.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <p className="field-hint">
+                {describeThemeOption(themeOptions.radii, themeSelection.radius)}
+              </p>
+
+              {themeErrorMessage ? <p className="form-error">{themeErrorMessage}</p> : null}
+              {themeStatusMessage ? (
+                <p className="form-success">{themeStatusMessage}</p>
+              ) : null}
+
+              <Button type="submit" disabled={isSavingTheme}>
+                {isSavingTheme ? 'Saving theme...' : 'Save theme'}
+              </Button>
+            </form>
+          ) : (
+            <div className="empty-state">
+              <p>Loading theme controls...</p>
+            </div>
+          )}
+        </section>
+
+        <section className="editor-panel ribbon-panel">
+          <div className="panel-heading">
             <p className="eyebrow">Blocks</p>
             <h2>{selectedPage ? `Add to ${selectedPage.title}` : 'Choose a page first'}</h2>
           </div>
@@ -1019,4 +1198,17 @@ function formatTimestamp(value: string) {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(date)
+}
+
+function describeThemeOption(
+  options: Array<{ id: string; description?: string }>,
+  selectedID: string,
+) {
+  return options.find((option) => option.id === selectedID)?.description ?? ''
+}
+
+function formatThemeLabel(value: string) {
+  return value
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/^./, (char) => char.toUpperCase())
 }

@@ -158,6 +158,32 @@ export type PublishSiteResponse = {
   snapshot: PublishedSnapshot
 }
 
+export type ThemeOption = {
+  id: string
+  label: string
+  description?: string
+}
+
+export type ThemeSelection = {
+  palette: string
+  fontPreset: string
+  sectionSpacing: string
+  radius: string
+}
+
+export type ThemeEditorCatalog = {
+  palettes: ThemeOption[]
+  fontPresets: ThemeOption[]
+  sectionSpacings: ThemeOption[]
+  radii: ThemeOption[]
+}
+
+export type ThemeState = {
+  theme: SiteDraft['theme']
+  selection: ThemeSelection
+  options: ThemeEditorCatalog
+}
+
 export type SiteVersionsResponse = {
   versions: SiteVersion[]
 }
@@ -286,6 +312,23 @@ export async function updateSite(
   },
 ) {
   return apiFetch<{ draft: SiteDraft }>(`/api/sites/${siteId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  })
+}
+
+export async function getSiteTheme(siteId: string) {
+  return apiFetch<ThemeState>(`/api/sites/${siteId}/theme`)
+}
+
+export async function updateSiteTheme(
+  siteId: string,
+  input: Partial<ThemeSelection>,
+) {
+  return apiFetch<ThemeState>(`/api/sites/${siteId}/theme`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',

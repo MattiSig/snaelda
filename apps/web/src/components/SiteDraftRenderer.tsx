@@ -1,5 +1,5 @@
-import type { CSSProperties } from 'react'
 import type { PublishedSnapshot, SiteDraft } from '@/lib/api'
+import { buildSiteThemeStyle } from '@/lib/site-theme'
 
 type RenderableSite = Pick<SiteDraft, 'theme' | 'navigation' | 'pages'> & {
   site: {
@@ -19,28 +19,15 @@ export function SiteDraftRenderer({
   eyebrow?: string
   showPageMeta?: boolean
 }) {
-  const colors = site.theme.tokens.colors ?? {}
   const pageAnchors = new Map(
     site.pages.map((page) => [page.id, pageAnchor(page.slug, page.id)]),
   )
   const slugAnchors = new Map(
     site.pages.map((page) => [page.slug, pageAnchor(page.slug, page.id)]),
   )
-  const style = {
-    '--site-background': colors.background ?? '#151215',
-    '--site-foreground': colors.foreground ?? colors.text ?? '#f6f2ec',
-    '--site-surface': colors.surface ?? '#231c24',
-    '--site-surface-muted': colors.surfaceMuted ?? '#312736',
-    '--site-primary': colors.primary ?? '#8fc6ff',
-    '--site-secondary': colors.secondary ?? '#8ee2d1',
-    '--site-accent': colors.accent ?? '#ff8cad',
-    '--site-border': colors.border ?? '#58415b',
-    '--site-muted': colors.muted ?? '#b78656',
-    '--site-ring': colors.ring ?? '#f3b547',
-  } as CSSProperties
 
   return (
-    <div className="site-preview" style={style}>
+    <div className="site-preview" style={buildSiteThemeStyle(site.theme)}>
       <header className="site-preview__header">
         <div>
           <p className="eyebrow">{eyebrow}</p>

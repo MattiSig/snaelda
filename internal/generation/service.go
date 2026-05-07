@@ -312,7 +312,7 @@ func buildGenerationPlan(nameHint string, prompt string) generationPlan {
 		SiteName:     siteName,
 		SiteGoal:     siteGoalForCategory(profile.Category),
 		ThemePreset:  profile.ThemePreset,
-		Theme:        themePreset(profile.ThemePreset),
+		Theme:        siteconfig.ThemePreset(profile.ThemePreset),
 		Pages:        pages,
 		AssetsNeeded: assetsNeeded,
 		Assumptions:  assumptionsForProfile(profile),
@@ -835,113 +835,6 @@ func contactPagePlan(siteName string, profile promptProfile) generationPagePlan 
 				},
 			},
 		},
-	}
-}
-
-func themePreset(name string) siteconfig.ThemeConfig {
-	switch name {
-	case "meaner-dark":
-		return siteconfig.ThemeConfig{
-			Version: siteconfig.ThemeVersionV1,
-			Tokens: siteconfig.ThemeTokens{
-				Colors: map[string]string{
-					"background":   "#151215",
-					"foreground":   "#f6f2ec",
-					"surface":      "#231c24",
-					"surfaceMuted": "#312736",
-					"primary":      "#8fc6ff",
-					"secondary":    "#8ee2d1",
-					"accent":       "#ff8cad",
-					"muted":        "#b78656",
-					"border":       "#58415b",
-					"ring":         "#f3b547",
-				},
-				Typography: map[string]any{
-					"heading":     "Iowan Old Style",
-					"body":        "Avenir Next",
-					"headingFont": "Iowan Old Style",
-					"bodyFont":    "Avenir Next",
-					"scale":       "editorial",
-				},
-				Layout: map[string]any{
-					"maxWidth":       "1120px",
-					"contentWidth":   "720px",
-					"sectionSpacing": "96px",
-				},
-				Shape: map[string]any{
-					"radius": "28px",
-					"shadow": "soft",
-				},
-			},
-		}
-	case "playful-ribbon":
-		return siteconfig.ThemeConfig{
-			Version: siteconfig.ThemeVersionV1,
-			Tokens: siteconfig.ThemeTokens{
-				Colors: map[string]string{
-					"background":   "#fff9f4",
-					"foreground":   "#2b2324",
-					"surface":      "#fff4ec",
-					"surfaceMuted": "#f8e4de",
-					"primary":      "#356fbd",
-					"secondary":    "#7bc7bb",
-					"accent":       "#f07a98",
-					"muted":        "#b78656",
-					"border":       "#e8cdbd",
-					"ring":         "#e5a13a",
-				},
-				Typography: map[string]any{
-					"heading":     "Avenir Next",
-					"body":        "Avenir Next",
-					"headingFont": "Avenir Next",
-					"bodyFont":    "Avenir Next",
-					"scale":       "playful",
-				},
-				Layout: map[string]any{
-					"maxWidth":       "1120px",
-					"contentWidth":   "720px",
-					"sectionSpacing": "88px",
-				},
-				Shape: map[string]any{
-					"radius": "32px",
-					"shadow": "soft",
-				},
-			},
-		}
-	default:
-		return siteconfig.ThemeConfig{
-			Version: siteconfig.ThemeVersionV1,
-			Tokens: siteconfig.ThemeTokens{
-				Colors: map[string]string{
-					"background":   "#f6f2ec",
-					"foreground":   "#2b2324",
-					"surface":      "#fff9f4",
-					"surfaceMuted": "#efe4d9",
-					"primary":      "#356fbd",
-					"secondary":    "#7bc7bb",
-					"accent":       "#f07a98",
-					"muted":        "#b78656",
-					"border":       "#dfd1c3",
-					"ring":         "#e5a13a",
-				},
-				Typography: map[string]any{
-					"heading":     "Iowan Old Style",
-					"body":        "Avenir Next",
-					"headingFont": "Iowan Old Style",
-					"bodyFont":    "Avenir Next",
-					"scale":       "calm",
-				},
-				Layout: map[string]any{
-					"maxWidth":       "1120px",
-					"contentWidth":   "720px",
-					"sectionSpacing": "96px",
-				},
-				Shape: map[string]any{
-					"radius": "28px",
-					"shadow": "soft",
-				},
-			},
-		}
 	}
 }
 

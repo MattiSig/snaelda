@@ -1,0 +1,107 @@
+package themes
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/MattiSig/snaelda/internal/auth"
+	"github.com/MattiSig/snaelda/internal/authorization"
+	"github.com/MattiSig/snaelda/internal/siteconfig"
+)
+
+type stubThemeService struct {
+	state     ThemeState
+	updateIn  UpdateInput
+	workspace string
+	siteID    string
+	err       error
+}
+
+func (s *stubThemeService) Load(context.Context, string) (ThemeState, error) {
+	return s.state, s.err
+}
+
+func (s *stubThemeService) Update(_ context.Context, workspaceID string, siteID string, input UpdateInput) (ThemeState, error) {
+	s.workspace = workspaceID
+	s.siteID = siteID
+	s.updateIn = input
+	return s.state, s.err
+}
+
+type stubThemeAuthorizer struct{}
+
+func (stubThemeAuthorizer) RequireSite(context.Context, string, ...string) (authorization.Scope, error) {
+	return authorization.Scope{WorkspaceID: "workspace-1", SiteID: "site_demo", Role: authorization.RoleOwner}, nil
+}
+
+func TestGetThemeReturnsThemeState(t *testing.T) {
+	handler := Handler{
+		service: &stubThemeService{
+			state: ThemeState{
+				Theme:     siteconfig.ThemePreset(siteconfig.ThemePaletteMeanerDark),
+				Selection: siteconfig.DefaultThemeSelection(),
+				Options:   siteconfig.DefaultThemeEditorCatalog(),
+			},
+		},
+		authorizer: stubThemeAuthorizer{},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/sites/site_demo/theme", nil).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: authorization.RoleOwner,
+	}))
+	req.SetPathValue("siteId", "site_demo")
+	res := httptest.NewRecorder()
+
+	handler.get(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	var payload ThemeState
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Selection.Palette != siteconfig.ThemePaletteMeanerDark {
+		t.Fatalf("expected theme selection in response, got %#v", payload.Selection)
+	}
+}
+
+func TestUpdateThemePassesTrimmedSelection(t *testing.T) {
+	service := &stubThemeService{
+		state: ThemeState{
+			Theme:     siteconfig.ThemePreset(siteconfig.ThemePalettePlayfulRibbon),
+			Selection: siteconfig.DetectThemeSelection(siteconfig.ThemePreset(siteconfig.ThemePalettePlayfulRibbon)),
+			Options:   siteconfig.DefaultThemeEditorCatalog(),
+		},
+	}
+	handler := Handler{
+		service:    service,
+		authorizer: stubThemeAuthorizer{},
+	}
+	req := httptest.NewRequest(http.MethodPatch, "/api/sites/site_demo/theme", strings.NewReader(`{"palette":" playful-ribbon ","fontPreset":" studio-sans ","sectionSpacing":" snug ","radius":" pillowy "}`)).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: authorization.RoleOwner,
+	}))
+	req.SetPathValue("siteId", "site_demo")
+	res := httptest.NewRecorder()
+
+	handler.update(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	if service.workspace != "workspace-1" || service.siteID != "site_demo" {
+		t.Fatalf("expected scoped update call, got workspace=%q site=%q", service.workspace, service.siteID)
+	}
+	if service.updateIn.Palette == nil || *service.updateIn.Palette != siteconfig.ThemePalettePlayfulRibbon {
+		t.Fatalf("expected trimmed palette, got %#v", service.updateIn.Palette)
+	}
+}

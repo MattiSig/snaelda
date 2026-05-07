@@ -81,11 +81,11 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 
 ## Phase 3: Theme, Navigation, And Snapshot Contracts
 
-- [ ] Define `theme.v1` token schema for colors, typography, layout, and shape.
-- [ ] Define brand baseline tokens from `BRANDING.md`, including `logo.png`-inspired yarn/spindle colors and required light/dark mode token sets.
+- [x] Define `theme.v1` token schema for colors, typography, layout, and shape.
+- [x] Define brand baseline tokens from `BRANDING.md`, including `logo.png`-inspired yarn/spindle colors and required light/dark mode token sets.
 - [x] Add a small set of safe theme presets such as minimal luxury, playful startup, and calm nordic.
 - [x] Implement theme token validation and fallback generation.
-- [ ] Implement CSS variable output from theme tokens in React rendering.
+- [x] Implement CSS variable output from theme tokens in React rendering.
 - [ ] Define canonical `SiteDraft`, `PageDraft`, `BlockInstance`, `ThemeConfig`, `NavigationConfig`, and `SeoConfig` types.
 - [ ] Define published `site-config.v1` snapshot schema.
 - [ ] Generate or manually maintain frontend TypeScript types from the Go/API schema until automated type generation is added.
@@ -101,7 +101,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Implement Go page create, update, delete, and reorder APIs.
 - [x] Implement Go block create, update, delete, duplicate, hide/show, and reorder APIs.
   `internal/sites` now exposes authenticated page create/update/delete/reorder routes plus block create/update/delete/duplicate/reorder routes, all backed by canonical draft validation and regression tests across handler + mutator flows.
-- [ ] Implement Go theme read and update APIs.
+- [x] Implement Go theme read and update APIs.
 - [x] Implement a simple authenticated builder shell with site list and site detail.
   The `/app` workspace route now lists saved sites, creates drafts, and links into a functional site detail screen with metadata, page outline, rename/reslug, and delete actions.
 - [ ] Use shadcn/ui primitives for builder controls, forms, dialogs, menus, tabs, loading states, and empty/error states before creating bespoke app components.
@@ -121,6 +121,8 @@ This plan is sequenced for the shortest path to a working prototype first. The p
   Verified on May 6, 2026 by logging in locally, creating `Ribbon & Reed Workshop`, editing the hero headline and CTA label in the block editor, saving through the Go API, and confirming the updated content rendered on `/app/sites/:siteId/preview` in Playwright.
 - [x] Confirm page management and advanced block operations work end to end for the prototype builder.
   Verified on May 7, 2026 by logging in locally, creating `Planner Spindle Test`, adding a `Contact` page, editing its slug/SEO/navigation state, reordering pages, adding a `text_section` block, duplicating/reordering/deleting that block, and then deleting the page in Playwright while the corresponding Go API page/block routes returned successful responses with no browser console errors.
+- [x] Confirm theme editing works end to end for preview and published rendering.
+  Verified on May 7, 2026 by logging in locally, creating `Theme Verification Studio`, switching the builder theme to `Playful Ribbon` + `Studio Sans` + `Airy` + `Pillowy` in Playwright, confirming the saved theme swatches and success state in the builder, then checking computed styles on both `/app/sites/:siteId/preview` and `/public/theme-verification-studio` to confirm the updated palette, font stack, and radius-driven layout rendered without browser console errors.
 
 ## Phase 5: Prompt-To-Draft Generation
 

@@ -747,35 +747,7 @@ func starterDraft(name string, slugValue string, prompt string) (siteconfig.Site
 		},
 		Theme: siteconfig.ThemeConfig{
 			Version: siteconfig.ThemeVersionV1,
-			Tokens: siteconfig.ThemeTokens{
-				Colors: map[string]string{
-					"background":   "#151215",
-					"foreground":   "#f6f2ec",
-					"surface":      "#231c24",
-					"surfaceMuted": "#312736",
-					"primary":      "#8fc6ff",
-					"secondary":    "#8ee2d1",
-					"accent":       "#ff8cad",
-					"muted":        "#b78656",
-					"border":       "#58415b",
-					"ring":         "#f3b547",
-				},
-				Typography: map[string]any{
-					"heading":     "Iowan Old Style",
-					"body":        "Avenir Next",
-					"headingFont": "Iowan Old Style",
-					"bodyFont":    "Avenir Next",
-				},
-				Layout: map[string]any{
-					"maxWidth":       "1120px",
-					"contentWidth":   "720px",
-					"sectionSpacing": "96px",
-				},
-				Shape: map[string]any{
-					"radius": "28px",
-					"shadow": "soft",
-				},
-			},
+			Tokens:  siteconfig.ThemePreset(siteconfig.ThemePaletteMeanerDark).Tokens,
 		},
 		Navigation: siteconfig.NavigationConfig{
 			Primary: []siteconfig.NavigationItem{
