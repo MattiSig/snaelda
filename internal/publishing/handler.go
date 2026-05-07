@@ -21,6 +21,7 @@ type Handler struct {
 
 type Publisher interface {
 	Publish(ctx context.Context, siteID string, userID string, input PublishInput) (PublishResult, error)
+	Rollback(ctx context.Context, siteID string, versionID string, userID string) (RollbackResult, error)
 	ListVersions(ctx context.Context, siteID string) ([]VersionSummary, error)
 	LoadPublishedSiteBySlug(ctx context.Context, siteSlug string) (PublishedSiteResult, error)
 }
@@ -44,6 +45,7 @@ func NewHandler(db DB, appBaseURL string) *Handler {
 func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.Handler) {
 	mux.Handle("POST /api/sites/{siteId}/publish", requireUser(http.HandlerFunc(h.publish)))
 	mux.Handle("GET /api/sites/{siteId}/versions", requireUser(http.HandlerFunc(h.listVersions)))
+	mux.Handle("POST /api/sites/{siteId}/rollback/{versionId}", requireUser(http.HandlerFunc(h.rollback)))
 	mux.HandleFunc("GET /api/public/sites/{siteSlug}", h.getPublishedSite)
 }
 
@@ -108,6 +110,41 @@ func (h *Handler) listVersions(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) rollback(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	if siteID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_site_id", "site id is required")
+		return
+	}
+	versionID := strings.TrimSpace(r.PathValue("versionId"))
+	if versionID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_version_id", "version id is required")
+		return
+	}
+	if _, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor); err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
+		return
+	}
+
+	result, err := h.service.Rollback(r.Context(), siteID, versionID, user.ID)
+	if err != nil {
+		writePublishError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"version":   result.Version,
+		"hostname":  result.Hostname,
+		"publicUrl": h.publicURLFromSlug(result.SiteSlug),
+	})
+}
+
 func (h *Handler) getPublishedSite(w http.ResponseWriter, r *http.Request) {
 	siteSlug := strings.TrimSpace(r.PathValue("siteSlug"))
 	if siteSlug == "" {
@@ -142,6 +179,8 @@ func writePublishError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		writeError(w, http.StatusNotFound, "published_site_not_found", "published site was not found")
+	case errors.Is(err, ErrVersionNotFound):
+		writeError(w, http.StatusNotFound, "published_version_not_found", "published version was not found")
 	case errors.Is(err, ErrHostnameConflict):
 		writeError(w, http.StatusConflict, "published_hostname_conflict", "published hostname is already in use")
 	case errors.As(err, &validationErr):

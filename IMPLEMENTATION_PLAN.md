@@ -154,9 +154,9 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Serve public pages from published artifacts or published snapshots, never from draft rows.
 - [ ] Add cache keys for domain lookup, published snapshots, and page artifacts.
 - [ ] Invalidate public cache on publish and rollback.
-- [ ] Implement version list and rollback by setting `sites.published_version_id` to an existing version.
-- [ ] Write audit events for publish and rollback.
-  Verified on May 6, 2026 by logging in locally, creating `Publish Proof Loom`, publishing version 1 from the builder in Playwright, loading `/public/publish-proof-loom`, then editing the draft hero headline and confirming the public page continued serving the original published snapshot content.
+- [x] Implement version list and rollback by setting `sites.published_version_id` to an existing version.
+- [x] Write audit events for publish and rollback.
+  Verified on May 7, 2026 by logging in locally, creating `Rollback Verification Loom`, publishing version 1 from the builder in Playwright, editing and publishing version 2, rolling the live site back to version 1 from the new publish history UI, confirming the builder marked `v1` current again, and reloading `/public/rollback-verification-loom` to confirm it served the original published snapshot while the draft still retained the newer editable headline.
 
 ## Phase 7: Builder Fleshing After The Prototype Works
 
@@ -238,7 +238,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [ ] Add asset upload and image library UI.
 - [ ] Add basic SEO editing and publish-generated SEO artifacts.
 - [ ] Add contact form submissions and the chosen notification behavior.
-- [ ] Add version list and user-visible rollback.
+- [x] Add version list and user-visible rollback.
 - [ ] Add lightweight analytics views for total views, page views, and daily views.
 - [ ] Add enough empty, loading, and error states to make the builder usable.
 - [ ] Add end-to-end tests for create, generate, edit, preview, publish, public render, submit form, and rollback.

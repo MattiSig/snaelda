@@ -531,6 +531,12 @@ p {
   gap: 8px;
 }
 
+.version-list__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .version-list__item p,
 .version-list__item small {
   margin: 0;

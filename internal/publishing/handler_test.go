@@ -17,11 +17,15 @@ import (
 
 type fakePublisher struct {
 	publishResult   PublishResult
+	rollbackResult  RollbackResult
 	publishedResult PublishedSiteResult
 	versions        []VersionSummary
 	publishInput    PublishInput
 	publishSiteID   string
 	publishUserID   string
+	rollbackSiteID  string
+	rollbackUserID  string
+	rollbackVersion string
 	publishedSlug   string
 	versionSiteID   string
 	err             error
@@ -32,6 +36,13 @@ func (f *fakePublisher) Publish(_ context.Context, siteID string, userID string,
 	f.publishUserID = userID
 	f.publishInput = input
 	return f.publishResult, f.err
+}
+
+func (f *fakePublisher) Rollback(_ context.Context, siteID string, versionID string, userID string) (RollbackResult, error) {
+	f.rollbackSiteID = siteID
+	f.rollbackVersion = versionID
+	f.rollbackUserID = userID
+	return f.rollbackResult, f.err
 }
 
 func (f *fakePublisher) ListVersions(_ context.Context, siteID string) ([]VersionSummary, error) {
@@ -136,6 +147,60 @@ func TestListVersionsReturnsPublishHistory(t *testing.T) {
 	}
 }
 
+func TestRollbackReturnsVersionAndPublicURL(t *testing.T) {
+	publisher := &fakePublisher{
+		rollbackResult: RollbackResult{
+			Version: VersionSummary{
+				ID:            "version-1",
+				SiteID:        "site_demo",
+				VersionNumber: 1,
+				CreatedAt:     time.Date(2026, 5, 7, 9, 30, 0, 0, time.UTC),
+				IsCurrent:     true,
+			},
+			SiteSlug: "nordic-studio",
+			Hostname: "nordic-studio.localhost",
+		},
+	}
+	handler := Handler{
+		service:    publisher,
+		authorizer: fakePublishAuthorizer{},
+		appBaseURL: "http://localhost:3000",
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/site_demo/rollback/version-1", nil).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	req.SetPathValue("siteId", "site_demo")
+	req.SetPathValue("versionId", "version-1")
+	res := httptest.NewRecorder()
+
+	handler.rollback(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	if publisher.rollbackSiteID != "site_demo" || publisher.rollbackVersion != "version-1" || publisher.rollbackUserID != "user-1" {
+		t.Fatalf("expected rollback inputs to reach service, got site=%q version=%q user=%q", publisher.rollbackSiteID, publisher.rollbackVersion, publisher.rollbackUserID)
+	}
+
+	var payload struct {
+		Version   VersionSummary `json:"version"`
+		PublicURL string         `json:"publicUrl"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Version.ID != "version-1" {
+		t.Fatalf("expected rolled back version in response, got %#v", payload.Version)
+	}
+	if payload.PublicURL != "http://localhost:3000/public/nordic-studio" {
+		t.Fatalf("expected public url, got %q", payload.PublicURL)
+	}
+}
+
 func TestGetPublishedSiteReturnsSnapshotWithoutAuth(t *testing.T) {
 	publisher := &fakePublisher{
 		publishedResult: PublishedSiteResult{
@@ -204,6 +269,30 @@ func TestPublishedSiteNotFoundReturnsNotFound(t *testing.T) {
 	res := httptest.NewRecorder()
 
 	handler.getPublishedSite(res, req)
+
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, res.Code)
+	}
+}
+
+func TestRollbackVersionNotFoundReturnsNotFound(t *testing.T) {
+	publisher := &fakePublisher{err: ErrVersionNotFound}
+	handler := Handler{
+		service:    publisher,
+		authorizer: fakePublishAuthorizer{},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/site_demo/rollback/version-missing", nil).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	req.SetPathValue("siteId", "site_demo")
+	req.SetPathValue("versionId", "version-missing")
+	res := httptest.NewRecorder()
+
+	handler.rollback(res, req)
 
 	if res.Code != http.StatusNotFound {
 		t.Fatalf("expected status %d, got %d", http.StatusNotFound, res.Code)

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MattiSig/snaelda/internal/platform/audit"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
 	"github.com/MattiSig/snaelda/internal/sites"
 	"github.com/jackc/pgx/v5"
@@ -17,6 +18,7 @@ import (
 var (
 	ErrNotFound         = errors.New("published site not found")
 	ErrHostnameConflict = errors.New("published hostname is already in use")
+	ErrVersionNotFound  = errors.New("published version not found")
 )
 
 type DB interface {
@@ -46,6 +48,12 @@ type PublishResult struct {
 	Snapshot siteconfig.PublishedSnapshot `json:"snapshot"`
 }
 
+type RollbackResult struct {
+	Version  VersionSummary `json:"version"`
+	SiteSlug string         `json:"siteSlug"`
+	Hostname string         `json:"hostname"`
+}
+
 type PublishedSiteResult struct {
 	SiteSlug string                       `json:"siteSlug"`
 	Hostname string                       `json:"hostname,omitempty"`
@@ -56,6 +64,11 @@ type PublishedSiteResult struct {
 type Service struct {
 	db     DB
 	reader sites.Reader
+}
+
+type siteMetadata struct {
+	WorkspaceID string
+	SiteSlug    string
 }
 
 func NewService(db DB) *Service {
@@ -84,6 +97,11 @@ func (s *Service) Publish(ctx context.Context, siteID string, userID string, inp
 		return PublishResult{}, fmt.Errorf("begin publish transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
+
+	metadata, err := loadSiteMetadata(ctx, tx, siteID)
+	if err != nil {
+		return PublishResult{}, err
+	}
 
 	var nextVersion int
 	if err := tx.QueryRow(ctx, `
@@ -126,8 +144,24 @@ func (s *Service) Publish(ctx context.Context, siteID string, userID string, inp
 		return PublishResult{}, ErrNotFound
 	}
 
-	hostname, err := ensureSubdomain(ctx, tx, siteID, draft.Site.Slug)
+	hostname, err := ensureSubdomain(ctx, tx, siteID, metadata.SiteSlug)
 	if err != nil {
+		return PublishResult{}, err
+	}
+
+	if err := recordAuditEvent(ctx, tx, audit.Event{
+		WorkspaceID: metadata.WorkspaceID,
+		SiteID:      siteID,
+		UserID:      userID,
+		Action:      "site.publish",
+		Metadata: map[string]any{
+			"siteSlug":      metadata.SiteSlug,
+			"versionId":     version.ID,
+			"versionNumber": version.VersionNumber,
+			"publishNote":   version.PublishNote,
+			"hostname":      hostname,
+		},
+	}); err != nil {
 		return PublishResult{}, err
 	}
 
@@ -137,10 +171,92 @@ func (s *Service) Publish(ctx context.Context, siteID string, userID string, inp
 
 	return PublishResult{
 		Version:  version,
-		SiteSlug: draft.Site.Slug,
+		SiteSlug: metadata.SiteSlug,
 		Hostname: hostname,
 		Snapshot: snapshot,
 	}, nil
+}
+
+func (s *Service) Rollback(ctx context.Context, siteID string, versionID string, userID string) (RollbackResult, error) {
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return RollbackResult{}, fmt.Errorf("begin rollback transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	metadata, err := loadSiteMetadata(ctx, tx, siteID)
+	if err != nil {
+		return RollbackResult{}, err
+	}
+
+	result := RollbackResult{
+		SiteSlug: metadata.SiteSlug,
+	}
+	if err := tx.QueryRow(ctx, `
+		select sv.id::text,
+		       sv.site_id::text,
+		       sv.version_number,
+		       sv.created_at,
+		       coalesce(sv.publish_note, ''),
+		       coalesce((
+		         select hostname
+		         from site_domains
+		         where site_id = sv.site_id
+		           and type = 'subdomain'
+		         order by created_at asc
+		         limit 1
+		       ), '')
+		from site_versions sv
+		where sv.site_id = $1
+		  and sv.id = $2::uuid
+	`, siteID, versionID).Scan(
+		&result.Version.ID,
+		&result.Version.SiteID,
+		&result.Version.VersionNumber,
+		&result.Version.CreatedAt,
+		&result.Version.PublishNote,
+		&result.Hostname,
+	); errors.Is(err, pgx.ErrNoRows) {
+		return RollbackResult{}, ErrVersionNotFound
+	} else if err != nil {
+		return RollbackResult{}, fmt.Errorf("load published version for rollback: %w", err)
+	}
+
+	tag, err := tx.Exec(ctx, `
+		update sites
+		set published_version_id = $2::uuid,
+		    updated_at = now()
+		where id = $1
+	`, siteID, versionID)
+	if err != nil {
+		return RollbackResult{}, fmt.Errorf("set live published version: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return RollbackResult{}, ErrNotFound
+	}
+
+	result.Version.IsCurrent = true
+	if err := recordAuditEvent(ctx, tx, audit.Event{
+		WorkspaceID: metadata.WorkspaceID,
+		SiteID:      siteID,
+		UserID:      userID,
+		Action:      "site.rollback",
+		Metadata: map[string]any{
+			"siteSlug":      metadata.SiteSlug,
+			"versionId":     result.Version.ID,
+			"versionNumber": result.Version.VersionNumber,
+			"publishNote":   result.Version.PublishNote,
+			"hostname":      result.Hostname,
+		},
+	}); err != nil {
+		return RollbackResult{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return RollbackResult{}, fmt.Errorf("commit rollback transaction: %w", err)
+	}
+
+	return result, nil
 }
 
 func (s *Service) ListVersions(ctx context.Context, siteID string) ([]VersionSummary, error) {
@@ -231,6 +347,31 @@ func (s *Service) LoadPublishedSiteBySlug(ctx context.Context, siteSlug string) 
 		return PublishedSiteResult{}, fmt.Errorf("published snapshot is invalid: %w", err)
 	}
 	return result, nil
+}
+
+func loadSiteMetadata(ctx context.Context, rower interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}, siteID string) (siteMetadata, error) {
+	var metadata siteMetadata
+	err := rower.QueryRow(ctx, `
+		select workspace_id::text, slug
+		from sites
+		where id = $1
+	`, siteID).Scan(&metadata.WorkspaceID, &metadata.SiteSlug)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return siteMetadata{}, ErrNotFound
+	}
+	if err != nil {
+		return siteMetadata{}, fmt.Errorf("load site metadata: %w", err)
+	}
+	return metadata, nil
+}
+
+func recordAuditEvent(ctx context.Context, store audit.Store, event audit.Event) error {
+	if err := audit.NewRecorder(store).Record(ctx, event); err != nil {
+		return fmt.Errorf("record audit event: %w", err)
+	}
+	return nil
 }
 
 func ensureSubdomain(ctx context.Context, tx pgx.Tx, siteID string, siteSlug string) (string, error) {

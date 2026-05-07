@@ -15,6 +15,7 @@ import {
   getSiteTheme,
   listSiteVersions,
   publishSite,
+  rollbackSiteVersion,
   reorderBlocks,
   reorderPages,
   type BlockDefinition,
@@ -63,6 +64,7 @@ function SiteDetail() {
   const [isMutatingBlocks, setIsMutatingBlocks] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [isPublishing, setIsPublishing] = useState(false)
+  const [activeRollbackVersionId, setActiveRollbackVersionId] = useState('')
   const [publishNote, setPublishNote] = useState('')
   const [themeSelection, setThemeSelection] = useState<ThemeSelection | null>(null)
   const [themeOptions, setThemeOptions] = useState<ThemeEditorCatalog | null>(null)
@@ -540,6 +542,37 @@ function SiteDetail() {
       )
     } finally {
       setIsPublishing(false)
+    }
+  }
+
+  async function handleRollback(version: SiteVersion) {
+    if (version.isCurrent) {
+      return
+    }
+    const confirmed = window.confirm(
+      `Roll the live site back to version ${version.versionNumber}? The current draft will stay editable.`,
+    )
+    if (!confirmed) {
+      return
+    }
+
+    setActiveRollbackVersionId(version.id)
+    setPublishErrorMessage('')
+    setPublishStatusMessage('')
+
+    try {
+      const response = await rollbackSiteVersion(siteId, version.id)
+      const versionResponse = await listSiteVersions(siteId)
+      setVersions(versionResponse.versions)
+      setPublishStatusMessage(
+        `Rolled back live site to version ${response.version.versionNumber}.`,
+      )
+    } catch (error) {
+      setPublishErrorMessage(
+        error instanceof APIError ? error.message : 'Could not roll back site',
+      )
+    } finally {
+      setActiveRollbackVersionId('')
     }
   }
 
@@ -1080,7 +1113,11 @@ function SiteDetail() {
           ) : null}
 
           <div className="publish-actions">
-            <Button type="button" disabled={isPublishing} onClick={handlePublish}>
+            <Button
+              type="button"
+              disabled={isPublishing || activeRollbackVersionId !== ''}
+              onClick={handlePublish}
+            >
               {isPublishing ? 'Publishing...' : 'Publish snapshot'}
             </Button>
             {currentVersion ? (
@@ -1110,6 +1147,20 @@ function SiteDetail() {
                     <p>{formatTimestamp(version.createdAt)}</p>
                   </div>
                   {version.publishNote ? <small>{version.publishNote}</small> : null}
+                  {!version.isCurrent ? (
+                    <div className="version-list__actions">
+                      <button
+                        type="button"
+                        className="site-inline-link"
+                        disabled={isPublishing || activeRollbackVersionId !== ''}
+                        onClick={() => handleRollback(version)}
+                      >
+                        {activeRollbackVersionId === version.id
+                          ? 'Rolling back...'
+                          : 'Roll back live site'}
+                      </button>
+                    </div>
+                  ) : null}
                 </article>
               ))
             )}

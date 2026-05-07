@@ -158,6 +158,12 @@ export type PublishSiteResponse = {
   snapshot: PublishedSnapshot
 }
 
+export type RollbackSiteResponse = {
+  version: SiteVersion
+  hostname: string
+  publicUrl: string
+}
+
 export type ThemeOption = {
   id: string
   label: string
@@ -499,6 +505,15 @@ export async function publishSite(
 
 export async function listSiteVersions(siteId: string) {
   return apiFetch<SiteVersionsResponse>(`/api/sites/${siteId}/versions`)
+}
+
+export async function rollbackSiteVersion(siteId: string, versionId: string) {
+  return apiFetch<RollbackSiteResponse>(
+    `/api/sites/${siteId}/rollback/${versionId}`,
+    {
+      method: 'POST',
+    },
+  )
 }
 
 export async function getPublishedSite(siteSlug: string) {
