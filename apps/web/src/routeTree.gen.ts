@@ -15,6 +15,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as PublicSiteSlugRouteImport } from './routes/public.$siteSlug'
 import { Route as PreviewTokenRouteImport } from './routes/preview.$token'
+import { Route as PublicSiteSlugIndexRouteImport } from './routes/public.$siteSlug.index'
+import { Route as PublicSiteSlugSplatRouteImport } from './routes/public.$siteSlug.$'
 import { Route as AppSitesSiteIdRouteImport } from './routes/app.sites.$siteId'
 import { Route as AppSitesSiteIdIndexRouteImport } from './routes/app.sites.$siteId.index'
 import { Route as AppSitesSiteIdPreviewRouteImport } from './routes/app.sites.$siteId.preview'
@@ -49,6 +51,16 @@ const PreviewTokenRoute = PreviewTokenRouteImport.update({
   path: '/preview/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PublicSiteSlugIndexRoute = PublicSiteSlugIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PublicSiteSlugRoute,
+} as any)
+const PublicSiteSlugSplatRoute = PublicSiteSlugSplatRouteImport.update({
+  id: '/$',
+  path: '/$',
+  getParentRoute: () => PublicSiteSlugRoute,
+} as any)
 const AppSitesSiteIdRoute = AppSitesSiteIdRouteImport.update({
   id: '/sites/$siteId',
   path: '/sites/$siteId',
@@ -70,9 +82,11 @@ export interface FileRoutesByFullPath {
   '/app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/preview/$token': typeof PreviewTokenRoute
-  '/public/$siteSlug': typeof PublicSiteSlugRoute
+  '/public/$siteSlug': typeof PublicSiteSlugRouteWithChildren
   '/app/': typeof AppIndexRoute
   '/app/sites/$siteId': typeof AppSitesSiteIdRouteWithChildren
+  '/public/$siteSlug/$': typeof PublicSiteSlugSplatRoute
+  '/public/$siteSlug/': typeof PublicSiteSlugIndexRoute
   '/app/sites/$siteId/preview': typeof AppSitesSiteIdPreviewRoute
   '/app/sites/$siteId/': typeof AppSitesSiteIdIndexRoute
 }
@@ -80,8 +94,9 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/preview/$token': typeof PreviewTokenRoute
-  '/public/$siteSlug': typeof PublicSiteSlugRoute
   '/app': typeof AppIndexRoute
+  '/public/$siteSlug/$': typeof PublicSiteSlugSplatRoute
+  '/public/$siteSlug': typeof PublicSiteSlugIndexRoute
   '/app/sites/$siteId/preview': typeof AppSitesSiteIdPreviewRoute
   '/app/sites/$siteId': typeof AppSitesSiteIdIndexRoute
 }
@@ -91,9 +106,11 @@ export interface FileRoutesById {
   '/app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/preview/$token': typeof PreviewTokenRoute
-  '/public/$siteSlug': typeof PublicSiteSlugRoute
+  '/public/$siteSlug': typeof PublicSiteSlugRouteWithChildren
   '/app/': typeof AppIndexRoute
   '/app/sites/$siteId': typeof AppSitesSiteIdRouteWithChildren
+  '/public/$siteSlug/$': typeof PublicSiteSlugSplatRoute
+  '/public/$siteSlug/': typeof PublicSiteSlugIndexRoute
   '/app/sites/$siteId/preview': typeof AppSitesSiteIdPreviewRoute
   '/app/sites/$siteId/': typeof AppSitesSiteIdIndexRoute
 }
@@ -107,6 +124,8 @@ export interface FileRouteTypes {
     | '/public/$siteSlug'
     | '/app/'
     | '/app/sites/$siteId'
+    | '/public/$siteSlug/$'
+    | '/public/$siteSlug/'
     | '/app/sites/$siteId/preview'
     | '/app/sites/$siteId/'
   fileRoutesByTo: FileRoutesByTo
@@ -114,8 +133,9 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/preview/$token'
-    | '/public/$siteSlug'
     | '/app'
+    | '/public/$siteSlug/$'
+    | '/public/$siteSlug'
     | '/app/sites/$siteId/preview'
     | '/app/sites/$siteId'
   id:
@@ -127,6 +147,8 @@ export interface FileRouteTypes {
     | '/public/$siteSlug'
     | '/app/'
     | '/app/sites/$siteId'
+    | '/public/$siteSlug/$'
+    | '/public/$siteSlug/'
     | '/app/sites/$siteId/preview'
     | '/app/sites/$siteId/'
   fileRoutesById: FileRoutesById
@@ -136,7 +158,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
   PreviewTokenRoute: typeof PreviewTokenRoute
-  PublicSiteSlugRoute: typeof PublicSiteSlugRoute
+  PublicSiteSlugRoute: typeof PublicSiteSlugRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -182,6 +204,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/preview/$token'
       preLoaderRoute: typeof PreviewTokenRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/public/$siteSlug/': {
+      id: '/public/$siteSlug/'
+      path: '/'
+      fullPath: '/public/$siteSlug/'
+      preLoaderRoute: typeof PublicSiteSlugIndexRouteImport
+      parentRoute: typeof PublicSiteSlugRoute
+    }
+    '/public/$siteSlug/$': {
+      id: '/public/$siteSlug/$'
+      path: '/$'
+      fullPath: '/public/$siteSlug/$'
+      preLoaderRoute: typeof PublicSiteSlugSplatRouteImport
+      parentRoute: typeof PublicSiteSlugRoute
     }
     '/app/sites/$siteId': {
       id: '/app/sites/$siteId'
@@ -233,12 +269,26 @@ const AppRouteChildren: AppRouteChildren = {
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
+interface PublicSiteSlugRouteChildren {
+  PublicSiteSlugSplatRoute: typeof PublicSiteSlugSplatRoute
+  PublicSiteSlugIndexRoute: typeof PublicSiteSlugIndexRoute
+}
+
+const PublicSiteSlugRouteChildren: PublicSiteSlugRouteChildren = {
+  PublicSiteSlugSplatRoute: PublicSiteSlugSplatRoute,
+  PublicSiteSlugIndexRoute: PublicSiteSlugIndexRoute,
+}
+
+const PublicSiteSlugRouteWithChildren = PublicSiteSlugRoute._addFileChildren(
+  PublicSiteSlugRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
   PreviewTokenRoute: PreviewTokenRoute,
-  PublicSiteSlugRoute: PublicSiteSlugRoute,
+  PublicSiteSlugRoute: PublicSiteSlugRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

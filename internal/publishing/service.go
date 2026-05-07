@@ -17,6 +17,7 @@ import (
 
 var (
 	ErrNotFound         = errors.New("published site not found")
+	ErrPageNotFound     = errors.New("published page not found")
 	ErrHostnameConflict = errors.New("published hostname is already in use")
 	ErrVersionNotFound  = errors.New("published version not found")
 )
@@ -58,6 +59,8 @@ type PublishedSiteResult struct {
 	SiteSlug string                       `json:"siteSlug"`
 	Hostname string                       `json:"hostname,omitempty"`
 	Version  VersionSummary               `json:"version"`
+	PagePath string                       `json:"pagePath"`
+	Page     siteconfig.PageDraft         `json:"page"`
 	Snapshot siteconfig.PublishedSnapshot `json:"snapshot"`
 }
 
@@ -298,7 +301,7 @@ func (s *Service) ListVersions(ctx context.Context, siteID string) ([]VersionSum
 	return versions, nil
 }
 
-func (s *Service) LoadPublishedSiteBySlug(ctx context.Context, siteSlug string) (PublishedSiteResult, error) {
+func (s *Service) LoadPublishedSiteBySlug(ctx context.Context, siteSlug string, pagePath string) (PublishedSiteResult, error) {
 	var result PublishedSiteResult
 	var snapshotJSON []byte
 	err := s.db.QueryRow(ctx, `
@@ -346,7 +349,40 @@ func (s *Service) LoadPublishedSiteBySlug(ctx context.Context, siteSlug string) 
 	if err := siteconfig.ValidatePublishedSnapshot(result.Snapshot); err != nil {
 		return PublishedSiteResult{}, fmt.Errorf("published snapshot is invalid: %w", err)
 	}
+
+	normalizedPath := normalizePublishedPagePath(pagePath)
+	page, err := resolvePublishedPage(result.Snapshot, normalizedPath)
+	if err != nil {
+		return PublishedSiteResult{}, err
+	}
+	result.PagePath = normalizedPath
+	result.Page = page
 	return result, nil
+}
+
+func normalizePublishedPagePath(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" || value == "/" {
+		return "/"
+	}
+	if !strings.HasPrefix(value, "/") {
+		value = "/" + value
+	}
+	value = strings.ReplaceAll(value, "//", "/")
+	value = strings.TrimRight(value, "/")
+	if value == "" {
+		return "/"
+	}
+	return value
+}
+
+func resolvePublishedPage(snapshot siteconfig.PublishedSnapshot, pagePath string) (siteconfig.PageDraft, error) {
+	for _, page := range snapshot.Pages {
+		if page.Slug == pagePath {
+			return page, nil
+		}
+	}
+	return siteconfig.PageDraft{}, ErrPageNotFound
 }
 
 func loadSiteMetadata(ctx context.Context, rower interface {

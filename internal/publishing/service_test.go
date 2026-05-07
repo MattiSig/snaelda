@@ -160,7 +160,11 @@ func (fakePublishingReader) LoadDraft(context.Context, string) (siteconfig.SiteD
 }
 
 type fakePublishingStore struct {
-	tx *fakePublishingTx
+	tx                *fakePublishingTx
+	publishedSiteSlug string
+	publishedHostname string
+	publishedVersion  VersionSummary
+	publishedSnapshot siteconfig.PublishedSnapshot
 }
 
 func newFakePublishingStore() *fakePublishingStore {
@@ -188,6 +192,17 @@ func newFakePublishingStore() *fakePublishingStore {
 				},
 			},
 		},
+		publishedSiteSlug: "nordic-studio",
+		publishedHostname: "nordic-studio.localhost",
+		publishedVersion: VersionSummary{
+			ID:            "00000000-0000-4000-8000-000000000702",
+			SiteID:        "00000000-0000-4000-8000-000000000201",
+			VersionNumber: 2,
+			CreatedAt:     time.Date(2026, 5, 7, 8, 0, 0, 0, time.UTC),
+			PublishNote:   "Refined hero copy",
+			IsCurrent:     true,
+		},
+		publishedSnapshot: validPublishedSnapshotWithContact(),
 	}
 }
 
@@ -195,8 +210,29 @@ func (s *fakePublishingStore) Query(context.Context, string, ...any) (pgx.Rows, 
 	return nil, errors.New("query is not implemented in fakePublishingStore")
 }
 
-func (s *fakePublishingStore) QueryRow(context.Context, string, ...any) pgx.Row {
-	return fakePublishingRow{err: errors.New("query row is not implemented in fakePublishingStore")}
+func (s *fakePublishingStore) QueryRow(_ context.Context, sql string, arguments ...any) pgx.Row {
+	switch {
+	case strings.Contains(sql, "join site_versions sv on sv.id = s.published_version_id"):
+		if strings.TrimSpace(arguments[0].(string)) != s.publishedSiteSlug {
+			return fakePublishingRow{err: pgx.ErrNoRows}
+		}
+		snapshotJSON, err := json.Marshal(s.publishedSnapshot)
+		if err != nil {
+			return fakePublishingRow{err: err}
+		}
+		return fakePublishingRow{values: []any{
+			s.publishedSiteSlug,
+			s.publishedHostname,
+			s.publishedVersion.ID,
+			s.publishedVersion.SiteID,
+			s.publishedVersion.VersionNumber,
+			s.publishedVersion.CreatedAt,
+			s.publishedVersion.PublishNote,
+			snapshotJSON,
+		}}
+	default:
+		return fakePublishingRow{err: errors.New("query row is not implemented in fakePublishingStore")}
+	}
 }
 
 func (s *fakePublishingStore) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
@@ -324,9 +360,107 @@ func (r fakePublishingRow) Scan(dest ...any) error {
 			*target = value.(int)
 		case *time.Time:
 			*target = value.(time.Time)
+		case *[]byte:
+			*target = value.([]byte)
 		default:
 			return errors.New("unsupported scan target")
 		}
 	}
 	return nil
+}
+
+func TestLoadPublishedSiteBySlugResolvesRequestedPage(t *testing.T) {
+	store := newFakePublishingStore()
+	service := Service{db: store}
+
+	result, err := service.LoadPublishedSiteBySlug(context.Background(), "nordic-studio", "/contact")
+	if err != nil {
+		t.Fatalf("load published site: %v", err)
+	}
+
+	if result.PagePath != "/contact" {
+		t.Fatalf("expected page path, got %q", result.PagePath)
+	}
+	if result.Page.ID != "page_contact" {
+		t.Fatalf("expected contact page, got %#v", result.Page)
+	}
+}
+
+func TestLoadPublishedSiteBySlugRejectsUnknownPagePath(t *testing.T) {
+	store := newFakePublishingStore()
+	service := Service{db: store}
+
+	_, err := service.LoadPublishedSiteBySlug(context.Background(), "nordic-studio", "/missing")
+	if !errors.Is(err, ErrPageNotFound) {
+		t.Fatalf("expected page not found, got %v", err)
+	}
+}
+
+func validPublishedSnapshotWithContact() siteconfig.PublishedSnapshot {
+	return siteconfig.PublishedSnapshot{
+		SchemaVersion: siteconfig.SiteConfigVersionV1,
+		Site: siteconfig.PublishedSite{
+			ID:            "site_demo",
+			Name:          "Nordic Studio",
+			DefaultLocale: "en",
+			SEO: siteconfig.SEOConfig{
+				Title:       "Nordic Studio",
+				Description: "Calm design systems for focused teams.",
+			},
+		},
+		Theme: siteconfig.ThemeConfig{
+			Version: siteconfig.ThemeVersionV1,
+			Tokens: siteconfig.ThemeTokens{
+				Colors: map[string]string{
+					"background": "#151215",
+					"foreground": "#f6f2ec",
+					"primary":    "#8fc6ff",
+				},
+			},
+		},
+		Navigation: siteconfig.NavigationConfig{
+			Primary: []siteconfig.NavigationItem{
+				{Label: "Home", PageID: "page_home"},
+				{Label: "Contact", PageID: "page_contact"},
+			},
+		},
+		Pages: []siteconfig.PageDraft{
+			{
+				ID:    "page_home",
+				Title: "Home",
+				Slug:  "/",
+				SEO: siteconfig.SEOConfig{
+					Title:       "Nordic Studio",
+					Description: "Calm design systems for focused teams.",
+				},
+				Blocks: []siteconfig.BlockInstance{{
+					ID:      "block_hero",
+					Type:    "hero",
+					Version: siteconfig.BlockVersionV1,
+					Props: map[string]any{
+						"headline": "Clear websites for focused teams",
+						"layout":   "centered",
+					},
+				}},
+			},
+			{
+				ID:    "page_contact",
+				Title: "Contact",
+				Slug:  "/contact",
+				SEO: siteconfig.SEOConfig{
+					Title:       "Contact | Nordic Studio",
+					Description: "Start a new project conversation.",
+				},
+				Blocks: []siteconfig.BlockInstance{{
+					ID:      "block_text_contact",
+					Type:    "text_section",
+					Version: siteconfig.BlockVersionV1,
+					Props: map[string]any{
+						"heading": "Say hello",
+						"body":    "Send a note with your launch timeline.",
+					},
+				}},
+			},
+		},
+	}
 }

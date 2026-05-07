@@ -10,21 +10,34 @@ type RenderableSite = Pick<SiteDraft, 'theme' | 'navigation' | 'pages'> & {
   }
 }
 
+type RoutablePage = {
+  id: string
+  slug: string
+}
+
 export function SiteDraftRenderer({
   site,
   eyebrow = 'Site render',
   showPageMeta = true,
+  selectedPageId,
+  linkMode = 'anchors',
+  siteSlug,
 }: {
   site: SiteDraft | PublishedSnapshot | RenderableSite
   eyebrow?: string
   showPageMeta?: boolean
+  selectedPageId?: string
+  linkMode?: 'anchors' | 'published'
+  siteSlug?: string
 }) {
+  const renderedPages = selectedPageId
+    ? site.pages.filter((page) => page.id === selectedPageId)
+    : site.pages
   const pageAnchors = new Map(
     site.pages.map((page) => [page.id, pageAnchor(page.slug, page.id)]),
   )
-  const slugAnchors = new Map(
-    site.pages.map((page) => [page.slug, pageAnchor(page.slug, page.id)]),
-  )
+  const pageById = new Map(site.pages.map((page) => [page.id, page]))
+  const slugToPage = new Map(site.pages.map((page) => [page.slug, page]))
 
   return (
     <div className="site-preview" style={buildSiteThemeStyle(site.theme)}>
@@ -38,7 +51,14 @@ export function SiteDraftRenderer({
           {site.navigation.primary.map((item) => (
             <a
               key={`${item.label}-${item.pageId ?? item.href ?? ''}`}
-              href={resolveNavigationHref(item, pageAnchors, slugAnchors)}
+              href={resolveNavigationHref(
+                item,
+                pageAnchors,
+                pageById,
+                slugToPage,
+                linkMode,
+                siteSlug,
+              )}
             >
               {item.label}
             </a>
@@ -46,7 +66,7 @@ export function SiteDraftRenderer({
         </nav>
       </header>
 
-      {site.pages.map((page) => (
+      {renderedPages.map((page) => (
         <article key={page.id} id={pageAnchor(page.slug, page.id)} className="site-preview__page">
           {showPageMeta ? (
             <div className="site-preview__page-meta">
@@ -64,7 +84,9 @@ export function SiteDraftRenderer({
                       <HeroBlock
                         key={block.id}
                         props={block.props}
-                        resolveHref={(href) => resolvePageHref(href, slugAnchors)}
+                        resolveHref={(href) =>
+                          resolvePageHref(href, slugToPage, linkMode, siteSlug)
+                        }
                       />
                     )
                   case 'text_section':
@@ -76,7 +98,9 @@ export function SiteDraftRenderer({
                       <CTABandBlock
                         key={block.id}
                         props={block.props}
-                        resolveHref={(href) => resolvePageHref(href, slugAnchors)}
+                        resolveHref={(href) =>
+                          resolvePageHref(href, slugToPage, linkMode, siteSlug)
+                        }
                       />
                     )
                   case 'image_text':
@@ -213,23 +237,47 @@ function asObject(value: unknown) {
 function resolveNavigationHref(
   item: { pageId?: string; href?: string },
   pageAnchors: Map<string, string>,
-  slugAnchors: Map<string, string>,
+  pageById: Map<string, RoutablePage>,
+  slugToPage: Map<string, RoutablePage>,
+  linkMode: 'anchors' | 'published',
+  siteSlug?: string,
 ) {
   if (item.pageId && pageAnchors.has(item.pageId)) {
+    if (linkMode === 'published' && siteSlug) {
+      const page = pageById.get(item.pageId)
+      if (page) {
+        return buildPublishedPageHref(siteSlug, page.slug)
+      }
+    }
     return `#${pageAnchors.get(item.pageId)}`
   }
-  return resolvePageHref(item.href ?? '#', slugAnchors)
+  return resolvePageHref(item.href ?? '#', slugToPage, linkMode, siteSlug)
 }
 
-function resolvePageHref(href: string, slugAnchors: Map<string, string>) {
+function resolvePageHref(
+  href: string,
+  slugToPage: Map<string, RoutablePage>,
+  linkMode: 'anchors' | 'published',
+  siteSlug?: string,
+) {
   if (!href.startsWith('/')) {
     return href
   }
-  const anchor = slugAnchors.get(href)
-  if (!anchor) {
+  const page = slugToPage.get(href)
+  if (!page) {
     return href
   }
-  return `#${anchor}`
+  if (linkMode === 'published' && siteSlug) {
+    return buildPublishedPageHref(siteSlug, page.slug)
+  }
+  return `#${pageAnchor(page.slug, page.id)}`
+}
+
+function buildPublishedPageHref(siteSlug: string, pageSlug: string) {
+  if (pageSlug === '/') {
+    return `/public/${siteSlug}`
+  }
+  return `/public/${siteSlug}${pageSlug}`
 }
 
 function pageAnchor(slug: string, pageId: string) {

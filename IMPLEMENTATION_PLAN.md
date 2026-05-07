@@ -151,6 +151,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Update `sites.published_version_id` only after snapshot and artifact creation succeeds.
 - [x] Create or update the default subdomain record `{site-slug}.platform.com` or local equivalent.
 - [ ] Implement public hostname and path resolution through `site_domains` in the Go backend or public-serving layer.
+  Local-equivalent published path resolution is verified on May 7, 2026: after publishing `Public Path Verification Studio` in Playwright, both `/public/public-path-verification-studio` and `/public/public-path-verification-studio/contact` loaded the expected snapshot-backed pages and the in-site navigation moved between them without browser console errors. Hostname-based lookup through `site_domains` is still pending.
 - [x] Serve public pages from published artifacts or published snapshots, never from draft rows.
 - [ ] Add cache keys for domain lookup, published snapshots, and page artifacts.
 - [ ] Invalidate public cache on publish and rollback.

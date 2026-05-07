@@ -27,6 +27,7 @@ type fakePublisher struct {
 	rollbackUserID  string
 	rollbackVersion string
 	publishedSlug   string
+	publishedPath   string
 	versionSiteID   string
 	err             error
 }
@@ -50,8 +51,9 @@ func (f *fakePublisher) ListVersions(_ context.Context, siteID string) ([]Versio
 	return f.versions, f.err
 }
 
-func (f *fakePublisher) LoadPublishedSiteBySlug(_ context.Context, siteSlug string) (PublishedSiteResult, error) {
+func (f *fakePublisher) LoadPublishedSiteBySlug(_ context.Context, siteSlug string, pagePath string) (PublishedSiteResult, error) {
 	f.publishedSlug = siteSlug
+	f.publishedPath = pagePath
 	return f.publishedResult, f.err
 }
 
@@ -212,7 +214,9 @@ func TestGetPublishedSiteReturnsSnapshotWithoutAuth(t *testing.T) {
 				VersionNumber: 2,
 				IsCurrent:     true,
 			},
-			Snapshot: validSnapshot(),
+			PagePath: "/contact",
+			Page:     validSnapshotWithContact().Pages[1],
+			Snapshot: validSnapshotWithContact(),
 		},
 	}
 	handler := Handler{
@@ -221,7 +225,7 @@ func TestGetPublishedSiteReturnsSnapshotWithoutAuth(t *testing.T) {
 		appBaseURL: "http://localhost:3000",
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/public/sites/nordic-studio", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/public/sites/nordic-studio?path=/contact", nil)
 	req.SetPathValue("siteSlug", "nordic-studio")
 	res := httptest.NewRecorder()
 
@@ -232,6 +236,9 @@ func TestGetPublishedSiteReturnsSnapshotWithoutAuth(t *testing.T) {
 	}
 	if publisher.publishedSlug != "nordic-studio" {
 		t.Fatalf("expected slug to reach loader, got %q", publisher.publishedSlug)
+	}
+	if publisher.publishedPath != "/contact" {
+		t.Fatalf("expected page path to reach loader, got %q", publisher.publishedPath)
 	}
 }
 
@@ -343,6 +350,33 @@ func validSnapshot() siteconfig.PublishedSnapshot {
 			}},
 		}},
 	}
+}
+
+func validSnapshotWithContact() siteconfig.PublishedSnapshot {
+	snapshot := validSnapshot()
+	snapshot.Navigation.Primary = append(snapshot.Navigation.Primary, siteconfig.NavigationItem{
+		Label:  "Contact",
+		PageID: "page_contact",
+	})
+	snapshot.Pages = append(snapshot.Pages, siteconfig.PageDraft{
+		ID:    "page_contact",
+		Title: "Contact",
+		Slug:  "/contact",
+		SEO: siteconfig.SEOConfig{
+			Title:       "Contact | Nordic Studio",
+			Description: "Start a new project conversation.",
+		},
+		Blocks: []siteconfig.BlockInstance{{
+			ID:      "block_text_contact",
+			Type:    "text_section",
+			Version: siteconfig.BlockVersionV1,
+			Props: map[string]any{
+				"heading": "Say hello",
+				"body":    "Send a note with your launch timeline.",
+			},
+		}},
+	})
+	return snapshot
 }
 
 func TestWritePublishErrorFallsBackToInternalServerError(t *testing.T) {

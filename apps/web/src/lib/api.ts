@@ -199,6 +199,8 @@ export type PublishedSiteResponse = {
   hostname?: string
   publicUrl: string
   version: SiteVersion
+  pagePath: string
+  page: SiteDraft['pages'][number]
   snapshot: PublishedSnapshot
 }
 
@@ -516,8 +518,14 @@ export async function rollbackSiteVersion(siteId: string, versionId: string) {
   )
 }
 
-export async function getPublishedSite(siteSlug: string) {
-  return apiFetch<PublishedSiteResponse>(`/api/public/sites/${siteSlug}`, {
+export async function getPublishedSite(siteSlug: string, pagePath = '/') {
+  const search = new URLSearchParams()
+  if (pagePath && pagePath !== '/') {
+    search.set('path', pagePath)
+  }
+
+  const suffix = search.size > 0 ? `?${search.toString()}` : ''
+  return apiFetch<PublishedSiteResponse>(`/api/public/sites/${siteSlug}${suffix}`, {
     credentials: 'omit',
   })
 }

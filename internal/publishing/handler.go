@@ -23,7 +23,7 @@ type Publisher interface {
 	Publish(ctx context.Context, siteID string, userID string, input PublishInput) (PublishResult, error)
 	Rollback(ctx context.Context, siteID string, versionID string, userID string) (RollbackResult, error)
 	ListVersions(ctx context.Context, siteID string) ([]VersionSummary, error)
-	LoadPublishedSiteBySlug(ctx context.Context, siteSlug string) (PublishedSiteResult, error)
+	LoadPublishedSiteBySlug(ctx context.Context, siteSlug string, pagePath string) (PublishedSiteResult, error)
 }
 
 type Authorizer interface {
@@ -152,7 +152,8 @@ func (h *Handler) getPublishedSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.LoadPublishedSiteBySlug(r.Context(), siteSlug)
+	pagePath := r.URL.Query().Get("path")
+	result, err := h.service.LoadPublishedSiteBySlug(r.Context(), siteSlug, pagePath)
 	if err != nil {
 		writePublishError(w, err)
 		return
@@ -161,17 +162,27 @@ func (h *Handler) getPublishedSite(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"siteSlug":  result.SiteSlug,
 		"hostname":  result.Hostname,
-		"publicUrl": h.publicURLFromSlug(result.SiteSlug),
+		"publicUrl": h.publicURLFromPath(result.SiteSlug, result.PagePath),
 		"version":   result.Version,
+		"pagePath":  result.PagePath,
+		"page":      result.Page,
 		"snapshot":  result.Snapshot,
 	})
 }
 
 func (h *Handler) publicURLFromSlug(siteSlug string) string {
-	if h.appBaseURL == "" {
-		return "/public/" + siteSlug
+	return h.publicURLFromPath(siteSlug, "/")
+}
+
+func (h *Handler) publicURLFromPath(siteSlug string, pagePath string) string {
+	path := "/public/" + siteSlug
+	if pagePath != "" && pagePath != "/" {
+		path += pagePath
 	}
-	return h.appBaseURL + "/public/" + siteSlug
+	if h.appBaseURL == "" {
+		return path
+	}
+	return h.appBaseURL + path
 }
 
 func writePublishError(w http.ResponseWriter, err error) {
@@ -179,6 +190,8 @@ func writePublishError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		writeError(w, http.StatusNotFound, "published_site_not_found", "published site was not found")
+	case errors.Is(err, ErrPageNotFound):
+		writeError(w, http.StatusNotFound, "published_page_not_found", "published page was not found")
 	case errors.Is(err, ErrVersionNotFound):
 		writeError(w, http.StatusNotFound, "published_version_not_found", "published version was not found")
 	case errors.Is(err, ErrHostnameConflict):
