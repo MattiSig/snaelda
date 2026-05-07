@@ -98,9 +98,9 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 
 - [x] Implement Go site create, update, delete, and list APIs.
   `internal/sites` now exposes authenticated `POST /api/sites`, `GET /api/sites`, `GET /api/sites/:siteId`, `PATCH /api/sites/:siteId`, and `DELETE /api/sites/:siteId` handlers, backed by deterministic draft creation, slug conflict checks, and tests for handler + mutation flows.
-- [ ] Implement Go page create, update, delete, and reorder APIs.
-- [ ] Implement Go block create, update, delete, duplicate, hide/show, and reorder APIs.
-  Basic block field update plus hide/show now works through `PATCH /api/sites/:siteId/pages/:pageId/blocks/:blockId`, but create, delete, duplicate, and reorder remain open.
+- [x] Implement Go page create, update, delete, and reorder APIs.
+- [x] Implement Go block create, update, delete, duplicate, hide/show, and reorder APIs.
+  `internal/sites` now exposes authenticated page create/update/delete/reorder routes plus block create/update/delete/duplicate/reorder routes, all backed by canonical draft validation and regression tests across handler + mutator flows.
 - [ ] Implement Go theme read and update APIs.
 - [x] Implement a simple authenticated builder shell with site list and site detail.
   The `/app` workspace route now lists saved sites, creates drafts, and links into a functional site detail screen with metadata, page outline, rename/reslug, and delete actions.
@@ -119,6 +119,8 @@ This plan is sequenced for the shortest path to a working prototype first. The p
   Verified on May 6, 2026 by logging in locally, creating a draft for `Moss & Thread Atelier`, editing its site metadata, and loading the authenticated preview route in Playwright.
 - [x] Confirm the block editing loop works end to end for the prototype builder.
   Verified on May 6, 2026 by logging in locally, creating `Ribbon & Reed Workshop`, editing the hero headline and CTA label in the block editor, saving through the Go API, and confirming the updated content rendered on `/app/sites/:siteId/preview` in Playwright.
+- [x] Confirm page management and advanced block operations work end to end for the prototype builder.
+  Verified on May 7, 2026 by logging in locally, creating `Planner Spindle Test`, adding a `Contact` page, editing its slug/SEO/navigation state, reordering pages, adding a `text_section` block, duplicating/reordering/deleting that block, and then deleting the page in Playwright while the corresponding Go API page/block routes returned successful responses with no browser console errors.
 
 ## Phase 5: Prompt-To-Draft Generation
 

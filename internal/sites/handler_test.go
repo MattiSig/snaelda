@@ -29,12 +29,26 @@ func (r fakeReader) LoadDraft(context.Context, string) (siteconfig.SiteDraft, er
 type fakeMutator struct {
 	created           siteconfig.SiteDraft
 	updated           siteconfig.SiteDraft
+	pageCreated       siteconfig.SiteDraft
+	pageUpdated       siteconfig.SiteDraft
+	pageDeleted       siteconfig.SiteDraft
+	pagesReordered    siteconfig.SiteDraft
+	blockCreated      siteconfig.SiteDraft
 	blockUpdated      siteconfig.SiteDraft
+	blockDeleted      siteconfig.SiteDraft
+	blockDuplicated   siteconfig.SiteDraft
+	blocksReordered   siteconfig.SiteDraft
 	createInput       CreateSiteInput
 	updateInput       UpdateSiteInput
+	createPageInput   CreatePageInput
+	updatePageInput   UpdatePageInput
+	reorderPageIDs    []string
+	createBlockInput  CreateBlockInput
 	updateBlockInput  UpdateBlockInput
+	reorderBlockIDs   []string
 	deleteSiteID      string
 	deleteWorkspaceID string
+	pageSiteID        string
 	updatePageID      string
 	updateBlockID     string
 	err               error
@@ -52,13 +66,74 @@ func (m *fakeMutator) UpdateSite(_ context.Context, workspaceID string, siteID s
 	return m.updated, m.err
 }
 
+func (m *fakeMutator) CreatePage(_ context.Context, workspaceID string, siteID string, input CreatePageInput) (siteconfig.SiteDraft, error) {
+	m.deleteWorkspaceID = workspaceID
+	m.pageSiteID = siteID
+	m.createPageInput = input
+	return m.pageCreated, m.err
+}
+
+func (m *fakeMutator) UpdatePage(_ context.Context, workspaceID string, siteID string, pageID string, input UpdatePageInput) (siteconfig.SiteDraft, error) {
+	m.deleteWorkspaceID = workspaceID
+	m.pageSiteID = siteID
+	m.updatePageID = pageID
+	m.updatePageInput = input
+	return m.pageUpdated, m.err
+}
+
+func (m *fakeMutator) DeletePage(_ context.Context, workspaceID string, siteID string, pageID string) (siteconfig.SiteDraft, error) {
+	m.deleteWorkspaceID = workspaceID
+	m.pageSiteID = siteID
+	m.updatePageID = pageID
+	return m.pageDeleted, m.err
+}
+
+func (m *fakeMutator) ReorderPages(_ context.Context, workspaceID string, siteID string, pageIDs []string) (siteconfig.SiteDraft, error) {
+	m.deleteWorkspaceID = workspaceID
+	m.pageSiteID = siteID
+	m.reorderPageIDs = pageIDs
+	return m.pagesReordered, m.err
+}
+
+func (m *fakeMutator) CreateBlock(_ context.Context, workspaceID string, siteID string, pageID string, input CreateBlockInput) (siteconfig.SiteDraft, error) {
+	m.deleteWorkspaceID = workspaceID
+	m.pageSiteID = siteID
+	m.updatePageID = pageID
+	m.createBlockInput = input
+	return m.blockCreated, m.err
+}
+
 func (m *fakeMutator) UpdateBlock(_ context.Context, workspaceID string, siteID string, pageID string, blockID string, input UpdateBlockInput) (siteconfig.SiteDraft, error) {
 	m.deleteWorkspaceID = workspaceID
-	m.deleteSiteID = siteID
+	m.pageSiteID = siteID
 	m.updatePageID = pageID
 	m.updateBlockID = blockID
 	m.updateBlockInput = input
 	return m.blockUpdated, m.err
+}
+
+func (m *fakeMutator) DeleteBlock(_ context.Context, workspaceID string, siteID string, pageID string, blockID string) (siteconfig.SiteDraft, error) {
+	m.deleteWorkspaceID = workspaceID
+	m.pageSiteID = siteID
+	m.updatePageID = pageID
+	m.updateBlockID = blockID
+	return m.blockDeleted, m.err
+}
+
+func (m *fakeMutator) DuplicateBlock(_ context.Context, workspaceID string, siteID string, pageID string, blockID string) (siteconfig.SiteDraft, error) {
+	m.deleteWorkspaceID = workspaceID
+	m.pageSiteID = siteID
+	m.updatePageID = pageID
+	m.updateBlockID = blockID
+	return m.blockDuplicated, m.err
+}
+
+func (m *fakeMutator) ReorderBlocks(_ context.Context, workspaceID string, siteID string, pageID string, blockIDs []string) (siteconfig.SiteDraft, error) {
+	m.deleteWorkspaceID = workspaceID
+	m.pageSiteID = siteID
+	m.updatePageID = pageID
+	m.reorderBlockIDs = blockIDs
+	return m.blocksReordered, m.err
 }
 
 func (m *fakeMutator) DeleteSite(_ context.Context, workspaceID string, siteID string) error {
@@ -266,6 +341,176 @@ func TestUpdateBlockReturnsUpdatedDraft(t *testing.T) {
 	}
 	if mutator.updateBlockInput.Hidden == nil || !*mutator.updateBlockInput.Hidden {
 		t.Fatalf("expected hidden flag to reach mutator, got %#v", mutator.updateBlockInput.Hidden)
+	}
+}
+
+func TestCreatePageReturnsCreatedDraft(t *testing.T) {
+	mutator := &fakeMutator{pageCreated: validHandlerDraft()}
+	handler := Handler{
+		reader:     fakeReader{},
+		mutator:    mutator,
+		authorizer: fakeAuthorizer{},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/site_demo/pages", strings.NewReader(`{"title":"Contact","slug":"/contact","includeInNavigation":false}`)).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	req.SetPathValue("siteId", "site_demo")
+	res := httptest.NewRecorder()
+
+	handler.createPage(res, req)
+
+	if res.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d", http.StatusCreated, res.Code)
+	}
+	if mutator.createPageInput.Title != "Contact" || mutator.createPageInput.Slug != "/contact" {
+		t.Fatalf("expected page create input to reach mutator, got %#v", mutator.createPageInput)
+	}
+	if mutator.createPageInput.IncludeInNavigation == nil || *mutator.createPageInput.IncludeInNavigation {
+		t.Fatalf("expected includeInNavigation false to reach mutator, got %#v", mutator.createPageInput.IncludeInNavigation)
+	}
+}
+
+func TestUpdatePageReturnsUpdatedDraft(t *testing.T) {
+	mutator := &fakeMutator{pageUpdated: validHandlerDraft()}
+	handler := Handler{
+		reader:     fakeReader{},
+		mutator:    mutator,
+		authorizer: fakeAuthorizer{},
+	}
+	req := httptest.NewRequest(http.MethodPatch, "/api/sites/site_demo/pages/page_home", strings.NewReader(`{"title":"Landing","slug":"/","seo":{"title":"Landing","description":"Primary page"}}`)).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	req.SetPathValue("siteId", "site_demo")
+	req.SetPathValue("pageId", "page_home")
+	res := httptest.NewRecorder()
+
+	handler.updatePage(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	if mutator.updatePageID != "page_home" || mutator.pageSiteID != "site_demo" {
+		t.Fatalf("expected site and page ids to reach mutator, got %q and %q", mutator.pageSiteID, mutator.updatePageID)
+	}
+	if mutator.updatePageInput.Title == nil || *mutator.updatePageInput.Title != "Landing" {
+		t.Fatalf("expected page title to reach mutator, got %#v", mutator.updatePageInput.Title)
+	}
+	if mutator.updatePageInput.SEO == nil || mutator.updatePageInput.SEO.Description != "Primary page" {
+		t.Fatalf("expected page seo to reach mutator, got %#v", mutator.updatePageInput.SEO)
+	}
+}
+
+func TestReorderPagesReturnsUpdatedDraft(t *testing.T) {
+	mutator := &fakeMutator{pagesReordered: validHandlerDraft()}
+	handler := Handler{
+		reader:     fakeReader{},
+		mutator:    mutator,
+		authorizer: fakeAuthorizer{},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/site_demo/pages/reorder", strings.NewReader(`{"pageIds":["page_home"]}`)).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	req.SetPathValue("siteId", "site_demo")
+	res := httptest.NewRecorder()
+
+	handler.reorderPages(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	if len(mutator.reorderPageIDs) != 1 || mutator.reorderPageIDs[0] != "page_home" {
+		t.Fatalf("expected page reorder ids to reach mutator, got %#v", mutator.reorderPageIDs)
+	}
+}
+
+func TestCreateBlockReturnsCreatedDraft(t *testing.T) {
+	mutator := &fakeMutator{blockCreated: validHandlerDraft()}
+	handler := Handler{
+		reader:     fakeReader{},
+		mutator:    mutator,
+		authorizer: fakeAuthorizer{},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/site_demo/pages/page_home/blocks", strings.NewReader(`{"type":"cta_band","version":"1.0.0"}`)).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	req.SetPathValue("siteId", "site_demo")
+	req.SetPathValue("pageId", "page_home")
+	res := httptest.NewRecorder()
+
+	handler.createBlock(res, req)
+
+	if res.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d", http.StatusCreated, res.Code)
+	}
+	if mutator.createBlockInput.Type != "cta_band" || mutator.createBlockInput.Version != "1.0.0" {
+		t.Fatalf("expected block create input to reach mutator, got %#v", mutator.createBlockInput)
+	}
+}
+
+func TestDuplicateBlockReturnsCreatedDraft(t *testing.T) {
+	mutator := &fakeMutator{blockDuplicated: validHandlerDraft()}
+	handler := Handler{
+		reader:     fakeReader{},
+		mutator:    mutator,
+		authorizer: fakeAuthorizer{},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/site_demo/pages/page_home/blocks/block_hero/duplicate", nil).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	req.SetPathValue("siteId", "site_demo")
+	req.SetPathValue("pageId", "page_home")
+	req.SetPathValue("blockId", "block_hero")
+	res := httptest.NewRecorder()
+
+	handler.duplicateBlock(res, req)
+
+	if res.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d", http.StatusCreated, res.Code)
+	}
+	if mutator.updatePageID != "page_home" || mutator.updateBlockID != "block_hero" {
+		t.Fatalf("expected page and block ids to reach mutator, got %q and %q", mutator.updatePageID, mutator.updateBlockID)
+	}
+}
+
+func TestReorderBlocksReturnsUpdatedDraft(t *testing.T) {
+	mutator := &fakeMutator{blocksReordered: validHandlerDraft()}
+	handler := Handler{
+		reader:     fakeReader{},
+		mutator:    mutator,
+		authorizer: fakeAuthorizer{},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/site_demo/pages/page_home/blocks/reorder", strings.NewReader(`{"blockIds":["block_hero"]}`)).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	req.SetPathValue("siteId", "site_demo")
+	req.SetPathValue("pageId", "page_home")
+	res := httptest.NewRecorder()
+
+	handler.reorderBlocks(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	if len(mutator.reorderBlockIDs) != 1 || mutator.reorderBlockIDs[0] != "block_hero" {
+		t.Fatalf("expected block reorder ids to reach mutator, got %#v", mutator.reorderBlockIDs)
 	}
 }
 

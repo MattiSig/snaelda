@@ -319,10 +319,12 @@ func AssembleDraft(rows NormalizedDraftRows) siteconfig.SiteDraft {
 			Blocks:   draftBlocks,
 			Settings: page.Settings,
 		})
-		navigation.Primary = append(navigation.Primary, siteconfig.NavigationItem{
-			Label:  page.Title,
-			PageID: page.ID,
-		})
+		if pageIncludedInNavigation(page.Settings) {
+			navigation.Primary = append(navigation.Primary, siteconfig.NavigationItem{
+				Label:  page.Title,
+				PageID: page.ID,
+			})
+		}
 	}
 
 	return siteconfig.SiteDraft{
@@ -338,6 +340,21 @@ func AssembleDraft(rows NormalizedDraftRows) siteconfig.SiteDraft {
 		Navigation: navigation,
 		Pages:      draftPages,
 	}
+}
+
+func pageIncludedInNavigation(settings map[string]any) bool {
+	if settings == nil {
+		return true
+	}
+	value, ok := settings["includeInNavigation"]
+	if !ok {
+		return true
+	}
+	include, ok := value.(bool)
+	if !ok {
+		return true
+	}
+	return include
 }
 
 func decodeNestedSEO(raw []byte, dest *siteconfig.SEOConfig) error {

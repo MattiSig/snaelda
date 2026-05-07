@@ -294,6 +294,81 @@ export async function updateSite(
   })
 }
 
+export async function createPage(
+  siteId: string,
+  input: {
+    title: string
+    slug?: string
+    includeInNavigation?: boolean
+  },
+) {
+  return apiFetch<{ draft: SiteDraft }>(`/api/sites/${siteId}/pages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  })
+}
+
+export async function updatePage(
+  siteId: string,
+  pageId: string,
+  input: {
+    title?: string
+    slug?: string
+    seo?: {
+      title?: string
+      description?: string
+    }
+    includeInNavigation?: boolean
+  },
+) {
+  return apiFetch<{ draft: SiteDraft }>(`/api/sites/${siteId}/pages/${pageId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  })
+}
+
+export async function deletePage(siteId: string, pageId: string) {
+  return apiFetch<{ draft: SiteDraft }>(`/api/sites/${siteId}/pages/${pageId}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function reorderPages(siteId: string, pageIds: string[]) {
+  return apiFetch<{ draft: SiteDraft }>(`/api/sites/${siteId}/pages/reorder`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ pageIds }),
+  })
+}
+
+export async function createBlock(
+  siteId: string,
+  pageId: string,
+  input: {
+    type: string
+    version?: string
+  },
+) {
+  return apiFetch<{ draft: SiteDraft }>(
+    `/api/sites/${siteId}/pages/${pageId}/blocks`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    },
+  )
+}
+
 export async function deleteSite(siteId: string) {
   return apiFetch<unknown>(`/api/sites/${siteId}`, {
     method: 'DELETE',
@@ -317,6 +392,49 @@ export async function updateBlock(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(input),
+    },
+  )
+}
+
+export async function deleteBlock(
+  siteId: string,
+  pageId: string,
+  blockId: string,
+) {
+  return apiFetch<{ draft: SiteDraft }>(
+    `/api/sites/${siteId}/pages/${pageId}/blocks/${blockId}`,
+    {
+      method: 'DELETE',
+    },
+  )
+}
+
+export async function duplicateBlock(
+  siteId: string,
+  pageId: string,
+  blockId: string,
+) {
+  return apiFetch<{ draft: SiteDraft }>(
+    `/api/sites/${siteId}/pages/${pageId}/blocks/${blockId}/duplicate`,
+    {
+      method: 'POST',
+    },
+  )
+}
+
+export async function reorderBlocks(
+  siteId: string,
+  pageId: string,
+  blockIds: string[],
+) {
+  return apiFetch<{ draft: SiteDraft }>(
+    `/api/sites/${siteId}/pages/${pageId}/blocks/reorder`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ blockIds }),
     },
   )
 }

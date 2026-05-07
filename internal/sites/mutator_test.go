@@ -140,6 +140,225 @@ func TestUpdateBlockRejectsInvalidProps(t *testing.T) {
 	}
 }
 
+func TestCreatePageAppendsPageWithUniqueSlug(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := validHandlerDraft()
+	draft.Site.ID = "site-1"
+	store.drafts[draft.Site.ID] = draft
+
+	mutator := &PostgresMutator{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	updated, err := mutator.CreatePage(context.Background(), "workspace-1", "site-1", CreatePageInput{
+		Title: "Home",
+	})
+	if err != nil {
+		t.Fatalf("create page: %v", err)
+	}
+	if len(updated.Pages) != 2 {
+		t.Fatalf("expected second page, got %#v", updated.Pages)
+	}
+	if updated.Pages[1].Slug != "/home" {
+		t.Fatalf("expected unique generated page slug, got %q", updated.Pages[1].Slug)
+	}
+}
+
+func TestUpdatePageCanHidePageFromNavigation(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := validHandlerDraft()
+	draft.Site.ID = "site-1"
+	draft.Pages = append(draft.Pages, siteconfig.PageDraft{
+		ID:    "page_contact",
+		Title: "Contact",
+		Slug:  "/contact",
+		Blocks: []siteconfig.BlockInstance{
+			{
+				ID:      "block_contact",
+				Type:    "text_section",
+				Version: siteconfig.BlockVersionV1,
+				Props: map[string]any{
+					"heading": "Contact",
+					"body":    "Get in touch.",
+				},
+			},
+		},
+	})
+	store.drafts[draft.Site.ID] = draft
+
+	mutator := &PostgresMutator{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	includeInNavigation := false
+	updated, err := mutator.UpdatePage(context.Background(), "workspace-1", "site-1", "page_contact", UpdatePageInput{
+		IncludeInNavigation: &includeInNavigation,
+	})
+	if err != nil {
+		t.Fatalf("update page: %v", err)
+	}
+	if len(updated.Navigation.Primary) != 1 || updated.Navigation.Primary[0].PageID != "page_home" {
+		t.Fatalf("expected hidden page to be removed from navigation, got %#v", updated.Navigation.Primary)
+	}
+}
+
+func TestDeletePageRejectsDeletingHomepage(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := validHandlerDraft()
+	draft.Site.ID = "site-1"
+	draft.Pages = append(draft.Pages, siteconfig.PageDraft{
+		ID:    "page_about",
+		Title: "About",
+		Slug:  "/about",
+		Blocks: []siteconfig.BlockInstance{
+			{
+				ID:      "block_about",
+				Type:    "text_section",
+				Version: siteconfig.BlockVersionV1,
+				Props: map[string]any{
+					"heading": "About",
+					"body":    "About page copy.",
+				},
+			},
+		},
+	})
+	store.drafts[draft.Site.ID] = draft
+
+	mutator := &PostgresMutator{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	_, err := mutator.DeletePage(context.Background(), "workspace-1", "site-1", "page_home")
+	if !errors.Is(err, ErrHomepageDeleteForbidden) {
+		t.Fatalf("expected homepage delete error, got %v", err)
+	}
+}
+
+func TestReorderPagesPersistsRequestedOrder(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := validHandlerDraft()
+	draft.Site.ID = "site-1"
+	draft.Pages = append(draft.Pages, siteconfig.PageDraft{
+		ID:    "page_contact",
+		Title: "Contact",
+		Slug:  "/contact",
+		Blocks: []siteconfig.BlockInstance{
+			{
+				ID:      "block_contact",
+				Type:    "text_section",
+				Version: siteconfig.BlockVersionV1,
+				Props: map[string]any{
+					"heading": "Contact",
+					"body":    "Contact copy.",
+				},
+			},
+		},
+	})
+	store.drafts[draft.Site.ID] = draft
+
+	mutator := &PostgresMutator{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	updated, err := mutator.ReorderPages(context.Background(), "workspace-1", "site-1", []string{"page_contact", "page_home"})
+	if err != nil {
+		t.Fatalf("reorder pages: %v", err)
+	}
+	if updated.Pages[0].ID != "page_contact" || updated.Navigation.Primary[0].PageID != "page_contact" {
+		t.Fatalf("expected reordered pages and navigation, got %#v %#v", updated.Pages, updated.Navigation.Primary)
+	}
+}
+
+func TestCreateBlockAppendsRegistryDefaultProps(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := validHandlerDraft()
+	draft.Site.ID = "site-1"
+	store.drafts[draft.Site.ID] = draft
+
+	mutator := &PostgresMutator{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	updated, err := mutator.CreateBlock(context.Background(), "workspace-1", "site-1", "page_home", CreateBlockInput{
+		Type: "cta_band",
+	})
+	if err != nil {
+		t.Fatalf("create block: %v", err)
+	}
+	block := updated.Pages[0].Blocks[len(updated.Pages[0].Blocks)-1]
+	if block.Type != "cta_band" || block.Props["heading"] != "Ready to begin?" {
+		t.Fatalf("expected appended block with defaults, got %#v", block)
+	}
+}
+
+func TestDuplicateBlockCreatesCopyAfterOriginal(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := validHandlerDraft()
+	draft.Site.ID = "site-1"
+	store.drafts[draft.Site.ID] = draft
+
+	mutator := &PostgresMutator{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	updated, err := mutator.DuplicateBlock(context.Background(), "workspace-1", "site-1", "page_home", "block_hero")
+	if err != nil {
+		t.Fatalf("duplicate block: %v", err)
+	}
+	if len(updated.Pages[0].Blocks) != 2 {
+		t.Fatalf("expected duplicated block, got %#v", updated.Pages[0].Blocks)
+	}
+	if updated.Pages[0].Blocks[0].ID == updated.Pages[0].Blocks[1].ID {
+		t.Fatalf("expected duplicated block id to change, got %#v", updated.Pages[0].Blocks)
+	}
+	if updated.Pages[0].Blocks[1].Props["headline"] != updated.Pages[0].Blocks[0].Props["headline"] {
+		t.Fatalf("expected duplicated props to match, got %#v", updated.Pages[0].Blocks)
+	}
+}
+
+func TestReorderBlocksPersistsRequestedOrder(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := validHandlerDraft()
+	draft.Site.ID = "site-1"
+	draft.Pages[0].Blocks = append(draft.Pages[0].Blocks, siteconfig.BlockInstance{
+		ID:      "block_cta",
+		Type:    "cta_band",
+		Version: siteconfig.BlockVersionV1,
+		Props: map[string]any{
+			"heading": "Ready to begin?",
+			"body":    "Open the next step.",
+			"variant": "primary",
+		},
+	})
+	store.drafts[draft.Site.ID] = draft
+
+	mutator := &PostgresMutator{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	updated, err := mutator.ReorderBlocks(context.Background(), "workspace-1", "site-1", "page_home", []string{"block_cta", "block_hero"})
+	if err != nil {
+		t.Fatalf("reorder blocks: %v", err)
+	}
+	if updated.Pages[0].Blocks[0].ID != "block_cta" {
+		t.Fatalf("expected block order to change, got %#v", updated.Pages[0].Blocks)
+	}
+}
+
 type fakeMutationStore struct {
 	drafts  map[string]siteconfig.SiteDraft
 	prompts map[string]string
@@ -168,6 +387,19 @@ func (s *fakeMutationStore) SaveDraft(_ context.Context, _ string, draft sitecon
 	if err := siteconfig.ValidateDraft(draft); err != nil {
 		return err
 	}
+	navigation := siteconfig.NavigationConfig{
+		Primary: make([]siteconfig.NavigationItem, 0, len(draft.Pages)),
+	}
+	for _, page := range draft.Pages {
+		if !pageIncludedInNavigation(page.Settings) {
+			continue
+		}
+		navigation.Primary = append(navigation.Primary, siteconfig.NavigationItem{
+			Label:  page.Title,
+			PageID: page.ID,
+		})
+	}
+	draft.Navigation = navigation
 	s.drafts[draft.Site.ID] = draft
 	return nil
 }

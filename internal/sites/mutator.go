@@ -2,8 +2,10 @@ package sites
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/MattiSig/snaelda/internal/platform/ids"
@@ -14,13 +16,24 @@ import (
 )
 
 var (
-	ErrSiteNameRequired = errors.New("site name is required")
-	ErrSiteSlugInvalid  = errors.New("site slug is invalid")
-	ErrSiteSlugConflict = errors.New("site slug is already in use")
-	ErrNoSiteChanges    = errors.New("site update requires at least one change")
-	ErrPageNotFound     = errors.New("page was not found")
-	ErrBlockNotFound    = errors.New("block was not found")
-	ErrNoBlockChanges   = errors.New("block update requires at least one change")
+	ErrSiteNameRequired        = errors.New("site name is required")
+	ErrSiteSlugInvalid         = errors.New("site slug is invalid")
+	ErrSiteSlugConflict        = errors.New("site slug is already in use")
+	ErrNoSiteChanges           = errors.New("site update requires at least one change")
+	ErrPageTitleRequired       = errors.New("page title is required")
+	ErrPageSlugInvalid         = errors.New("page slug is invalid")
+	ErrPageSlugConflict        = errors.New("page slug is already in use")
+	ErrPageNotFound            = errors.New("page was not found")
+	ErrNoPageChanges           = errors.New("page update requires at least one change")
+	ErrPageLimitReached        = errors.New("site already has the maximum number of pages")
+	ErrPageOrderInvalid        = errors.New("page reorder must include every page exactly once")
+	ErrHomepageSlugLocked      = errors.New("homepage slug cannot be changed")
+	ErrHomepageDeleteForbidden = errors.New("homepage cannot be deleted")
+	ErrMinimumPagesRequired    = errors.New("site must keep at least one page")
+	ErrBlockNotFound           = errors.New("block was not found")
+	ErrNoBlockChanges          = errors.New("block update requires at least one change")
+	ErrBlockTypeRequired       = errors.New("block type is required")
+	ErrBlockOrderInvalid       = errors.New("block reorder must include every block exactly once")
 )
 
 type mutationDB interface {
@@ -31,7 +44,15 @@ type mutationDB interface {
 type Mutator interface {
 	CreateSite(ctx context.Context, workspaceID string, input CreateSiteInput) (siteconfig.SiteDraft, error)
 	UpdateSite(ctx context.Context, workspaceID string, siteID string, input UpdateSiteInput) (siteconfig.SiteDraft, error)
+	CreatePage(ctx context.Context, workspaceID string, siteID string, input CreatePageInput) (siteconfig.SiteDraft, error)
+	UpdatePage(ctx context.Context, workspaceID string, siteID string, pageID string, input UpdatePageInput) (siteconfig.SiteDraft, error)
+	DeletePage(ctx context.Context, workspaceID string, siteID string, pageID string) (siteconfig.SiteDraft, error)
+	ReorderPages(ctx context.Context, workspaceID string, siteID string, pageIDs []string) (siteconfig.SiteDraft, error)
+	CreateBlock(ctx context.Context, workspaceID string, siteID string, pageID string, input CreateBlockInput) (siteconfig.SiteDraft, error)
 	UpdateBlock(ctx context.Context, workspaceID string, siteID string, pageID string, blockID string, input UpdateBlockInput) (siteconfig.SiteDraft, error)
+	DeleteBlock(ctx context.Context, workspaceID string, siteID string, pageID string, blockID string) (siteconfig.SiteDraft, error)
+	DuplicateBlock(ctx context.Context, workspaceID string, siteID string, pageID string, blockID string) (siteconfig.SiteDraft, error)
+	ReorderBlocks(ctx context.Context, workspaceID string, siteID string, pageID string, blockIDs []string) (siteconfig.SiteDraft, error)
 	DeleteSite(ctx context.Context, workspaceID string, siteID string) error
 }
 
@@ -44,6 +65,24 @@ type CreateSiteInput struct {
 type UpdateSiteInput struct {
 	Name *string
 	Slug *string
+}
+
+type CreatePageInput struct {
+	Title               string
+	Slug                string
+	IncludeInNavigation *bool
+}
+
+type UpdatePageInput struct {
+	Title               *string
+	Slug                *string
+	SEO                 *siteconfig.SEOConfig
+	IncludeInNavigation *bool
+}
+
+type CreateBlockInput struct {
+	Type    string
+	Version string
 }
 
 type UpdateBlockInput struct {
@@ -138,6 +177,135 @@ func (m *PostgresMutator) UpdateSite(ctx context.Context, workspaceID string, si
 	return savedDraft, nil
 }
 
+func (m *PostgresMutator) CreatePage(ctx context.Context, workspaceID string, siteID string, input CreatePageInput) (siteconfig.SiteDraft, error) {
+	draft, err := m.reader.LoadDraft(ctx, siteID)
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	if len(draft.Pages) >= siteconfig.MaxPagesPerSite {
+		return siteconfig.SiteDraft{}, ErrPageLimitReached
+	}
+
+	title := strings.TrimSpace(input.Title)
+	if title == "" {
+		return siteconfig.SiteDraft{}, ErrPageTitleRequired
+	}
+
+	pageID, err := ids.New()
+	if err != nil {
+		return siteconfig.SiteDraft{}, fmt.Errorf("generate page id: %w", err)
+	}
+	slugValue, err := createPageSlug(input.Slug, title, draft.Pages, "")
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+
+	page := siteconfig.PageDraft{
+		ID:    pageID,
+		Title: title,
+		Slug:  slugValue,
+		SEO: siteconfig.SEOConfig{
+			Title:       title,
+			Description: draft.Site.SEO.Description,
+		},
+		Blocks:   []siteconfig.BlockInstance{},
+		Settings: pageSettingsValue(input.IncludeInNavigation),
+	}
+	draft.Pages = append(draft.Pages, page)
+
+	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	return m.reader.LoadDraft(ctx, siteID)
+}
+
+func (m *PostgresMutator) UpdatePage(ctx context.Context, workspaceID string, siteID string, pageID string, input UpdatePageInput) (siteconfig.SiteDraft, error) {
+	if input.Title == nil && input.Slug == nil && input.SEO == nil && input.IncludeInNavigation == nil {
+		return siteconfig.SiteDraft{}, ErrNoPageChanges
+	}
+
+	draft, err := m.reader.LoadDraft(ctx, siteID)
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	pageIndex := findPageIndex(draft.Pages, pageID)
+	if pageIndex == -1 {
+		return siteconfig.SiteDraft{}, ErrPageNotFound
+	}
+
+	page := draft.Pages[pageIndex]
+	if input.Title != nil {
+		title := strings.TrimSpace(*input.Title)
+		if title == "" {
+			return siteconfig.SiteDraft{}, ErrPageTitleRequired
+		}
+		page.Title = title
+		if page.SEO.Title == "" {
+			page.SEO.Title = title
+		}
+	}
+	if input.Slug != nil {
+		slugValue, err := createPageSlug(*input.Slug, page.Title, draft.Pages, pageID)
+		if err != nil {
+			return siteconfig.SiteDraft{}, err
+		}
+		if page.Slug == "/" && slugValue != "/" {
+			return siteconfig.SiteDraft{}, ErrHomepageSlugLocked
+		}
+		page.Slug = slugValue
+	}
+	if input.SEO != nil {
+		page.SEO = *input.SEO
+	}
+	page.Settings = pageSettingsValue(input.IncludeInNavigation, page.Settings)
+
+	draft.Pages[pageIndex] = page
+	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	return m.reader.LoadDraft(ctx, siteID)
+}
+
+func (m *PostgresMutator) DeletePage(ctx context.Context, workspaceID string, siteID string, pageID string) (siteconfig.SiteDraft, error) {
+	draft, err := m.reader.LoadDraft(ctx, siteID)
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	pageIndex := findPageIndex(draft.Pages, pageID)
+	if pageIndex == -1 {
+		return siteconfig.SiteDraft{}, ErrPageNotFound
+	}
+	if len(draft.Pages) == 1 {
+		return siteconfig.SiteDraft{}, ErrMinimumPagesRequired
+	}
+	if draft.Pages[pageIndex].Slug == "/" {
+		return siteconfig.SiteDraft{}, ErrHomepageDeleteForbidden
+	}
+
+	draft.Pages = append(draft.Pages[:pageIndex], draft.Pages[pageIndex+1:]...)
+	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	return m.reader.LoadDraft(ctx, siteID)
+}
+
+func (m *PostgresMutator) ReorderPages(ctx context.Context, workspaceID string, siteID string, pageIDs []string) (siteconfig.SiteDraft, error) {
+	draft, err := m.reader.LoadDraft(ctx, siteID)
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	reorderedPages, err := reorderPages(draft.Pages, pageIDs)
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	draft.Pages = reorderedPages
+
+	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	return m.reader.LoadDraft(ctx, siteID)
+}
+
 func (m *PostgresMutator) DeleteSite(ctx context.Context, workspaceID string, siteID string) error {
 	tag, err := m.db.Exec(ctx, `
 		delete from sites
@@ -151,6 +319,45 @@ func (m *PostgresMutator) DeleteSite(ctx context.Context, workspaceID string, si
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (m *PostgresMutator) CreateBlock(ctx context.Context, workspaceID string, siteID string, pageID string, input CreateBlockInput) (siteconfig.SiteDraft, error) {
+	draft, err := m.reader.LoadDraft(ctx, siteID)
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	pageIndex := findPageIndex(draft.Pages, pageID)
+	if pageIndex == -1 {
+		return siteconfig.SiteDraft{}, ErrPageNotFound
+	}
+
+	blockType := strings.TrimSpace(input.Type)
+	if blockType == "" {
+		return siteconfig.SiteDraft{}, ErrBlockTypeRequired
+	}
+	version := strings.TrimSpace(input.Version)
+	if version == "" {
+		version = siteconfig.BlockVersionV1
+	}
+	definition, err := siteconfig.DefaultBlockRegistry().Lookup(blockType, version)
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	blockID, err := ids.New()
+	if err != nil {
+		return siteconfig.SiteDraft{}, fmt.Errorf("generate block id: %w", err)
+	}
+
+	draft.Pages[pageIndex].Blocks = append(draft.Pages[pageIndex].Blocks, siteconfig.BlockInstance{
+		ID:      blockID,
+		Type:    definition.Type,
+		Version: definition.Version,
+		Props:   deepCloneMap(definition.DefaultProps),
+	})
+	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	return m.reader.LoadDraft(ctx, siteID)
 }
 
 func (m *PostgresMutator) UpdateBlock(ctx context.Context, workspaceID string, siteID string, pageID string, blockID string, input UpdateBlockInput) (siteconfig.SiteDraft, error) {
@@ -204,6 +411,87 @@ func (m *PostgresMutator) UpdateBlock(ctx context.Context, workspaceID string, s
 		return siteconfig.SiteDraft{}, err
 	}
 	return savedDraft, nil
+}
+
+func (m *PostgresMutator) DeleteBlock(ctx context.Context, workspaceID string, siteID string, pageID string, blockID string) (siteconfig.SiteDraft, error) {
+	draft, err := m.reader.LoadDraft(ctx, siteID)
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	pageIndex := findPageIndex(draft.Pages, pageID)
+	if pageIndex == -1 {
+		return siteconfig.SiteDraft{}, ErrPageNotFound
+	}
+	blockIndex := findBlockIndex(draft.Pages[pageIndex].Blocks, blockID)
+	if blockIndex == -1 {
+		return siteconfig.SiteDraft{}, ErrBlockNotFound
+	}
+
+	draft.Pages[pageIndex].Blocks = append(
+		draft.Pages[pageIndex].Blocks[:blockIndex],
+		draft.Pages[pageIndex].Blocks[blockIndex+1:]...,
+	)
+	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	return m.reader.LoadDraft(ctx, siteID)
+}
+
+func (m *PostgresMutator) DuplicateBlock(ctx context.Context, workspaceID string, siteID string, pageID string, blockID string) (siteconfig.SiteDraft, error) {
+	draft, err := m.reader.LoadDraft(ctx, siteID)
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	pageIndex := findPageIndex(draft.Pages, pageID)
+	if pageIndex == -1 {
+		return siteconfig.SiteDraft{}, ErrPageNotFound
+	}
+	blockIndex := findBlockIndex(draft.Pages[pageIndex].Blocks, blockID)
+	if blockIndex == -1 {
+		return siteconfig.SiteDraft{}, ErrBlockNotFound
+	}
+	newBlockID, err := ids.New()
+	if err != nil {
+		return siteconfig.SiteDraft{}, fmt.Errorf("generate duplicated block id: %w", err)
+	}
+
+	block := draft.Pages[pageIndex].Blocks[blockIndex]
+	duplicate := siteconfig.BlockInstance{
+		ID:       newBlockID,
+		Type:     block.Type,
+		Version:  block.Version,
+		Props:    deepCloneMap(block.Props),
+		Settings: deepCloneBlockSettings(block.Settings),
+	}
+	blocks := draft.Pages[pageIndex].Blocks
+	blocks = append(blocks[:blockIndex+1], append([]siteconfig.BlockInstance{duplicate}, blocks[blockIndex+1:]...)...)
+	draft.Pages[pageIndex].Blocks = blocks
+
+	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	return m.reader.LoadDraft(ctx, siteID)
+}
+
+func (m *PostgresMutator) ReorderBlocks(ctx context.Context, workspaceID string, siteID string, pageID string, blockIDs []string) (siteconfig.SiteDraft, error) {
+	draft, err := m.reader.LoadDraft(ctx, siteID)
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	pageIndex := findPageIndex(draft.Pages, pageID)
+	if pageIndex == -1 {
+		return siteconfig.SiteDraft{}, ErrPageNotFound
+	}
+	reorderedBlocks, err := reorderBlocks(draft.Pages[pageIndex].Blocks, blockIDs)
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	draft.Pages[pageIndex].Blocks = reorderedBlocks
+
+	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	return m.reader.LoadDraft(ctx, siteID)
 }
 
 func (m *PostgresMutator) createSlug(ctx context.Context, workspaceID string, requested string, name string) (string, error) {
@@ -267,6 +555,148 @@ func (m *PostgresMutator) savePrompt(ctx context.Context, workspaceID string, si
 		return ErrNotFound
 	}
 	return nil
+}
+
+func createPageSlug(requested string, title string, pages []siteconfig.PageDraft, excludePageID string) (string, error) {
+	value := strings.TrimSpace(requested)
+	if value != "" {
+		if !siteconfigPathValid(value) {
+			return "", ErrPageSlugInvalid
+		}
+		if pageSlugExists(pages, value, excludePageID) {
+			return "", ErrPageSlugConflict
+		}
+		return value, nil
+	}
+
+	basePath := slugs.PagePath(title)
+	if !pageSlugExists(pages, basePath, excludePageID) {
+		return basePath, nil
+	}
+	base := strings.TrimPrefix(basePath, "/")
+	if base == "" {
+		base = "home"
+	}
+	unique, err := slugs.EnsureUnique(base, func(candidate string) (bool, error) {
+		return pageSlugExists(pages, "/"+candidate, excludePageID), nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("generate page slug: %w", err)
+	}
+	return "/" + unique, nil
+}
+
+func pageSlugExists(pages []siteconfig.PageDraft, slugValue string, excludePageID string) bool {
+	for _, page := range pages {
+		if page.ID == excludePageID {
+			continue
+		}
+		if page.Slug == slugValue {
+			return true
+		}
+	}
+	return false
+}
+
+func siteconfigPathValid(value string) bool {
+	return value == "/" || strings.HasPrefix(value, "/") && slugs.IsValid(strings.TrimPrefix(value, "/"))
+}
+
+func pageSettingsValue(includeInNavigation *bool, existing ...map[string]any) map[string]any {
+	settings := map[string]any{}
+	if len(existing) > 0 && existing[0] != nil {
+		settings = deepCloneMap(existing[0])
+	}
+	if includeInNavigation != nil {
+		settings["includeInNavigation"] = *includeInNavigation
+	}
+	return settings
+}
+
+func findPageIndex(pages []siteconfig.PageDraft, pageID string) int {
+	for index, page := range pages {
+		if page.ID == pageID {
+			return index
+		}
+	}
+	return -1
+}
+
+func findBlockIndex(blocks []siteconfig.BlockInstance, blockID string) int {
+	for index, block := range blocks {
+		if block.ID == blockID {
+			return index
+		}
+	}
+	return -1
+}
+
+func reorderPages(pages []siteconfig.PageDraft, pageIDs []string) ([]siteconfig.PageDraft, error) {
+	if len(pages) != len(pageIDs) {
+		return nil, ErrPageOrderInvalid
+	}
+	byID := map[string]siteconfig.PageDraft{}
+	for _, page := range pages {
+		byID[page.ID] = page
+	}
+	reordered := make([]siteconfig.PageDraft, 0, len(pageIDs))
+	seen := map[string]bool{}
+	for _, pageID := range pageIDs {
+		page, ok := byID[pageID]
+		if !ok || seen[pageID] {
+			return nil, ErrPageOrderInvalid
+		}
+		seen[pageID] = true
+		reordered = append(reordered, page)
+	}
+	return reordered, nil
+}
+
+func reorderBlocks(blocks []siteconfig.BlockInstance, blockIDs []string) ([]siteconfig.BlockInstance, error) {
+	if len(blocks) != len(blockIDs) {
+		return nil, ErrBlockOrderInvalid
+	}
+	byID := map[string]siteconfig.BlockInstance{}
+	for _, block := range blocks {
+		byID[block.ID] = block
+	}
+	reordered := make([]siteconfig.BlockInstance, 0, len(blockIDs))
+	seen := map[string]bool{}
+	for _, blockID := range blockIDs {
+		block, ok := byID[blockID]
+		if !ok || seen[blockID] {
+			return nil, ErrBlockOrderInvalid
+		}
+		seen[blockID] = true
+		reordered = append(reordered, block)
+	}
+	return reordered, nil
+}
+
+func deepCloneMap(value map[string]any) map[string]any {
+	if value == nil {
+		return map[string]any{}
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return mapsClone(value)
+	}
+	var cloned map[string]any
+	if err := json.Unmarshal(raw, &cloned); err != nil {
+		return mapsClone(value)
+	}
+	return cloned
+}
+
+func mapsClone(value map[string]any) map[string]any {
+	return maps.Clone(value)
+}
+
+func deepCloneBlockSettings(value siteconfig.BlockSettings) siteconfig.BlockSettings {
+	return siteconfig.BlockSettings{
+		Hidden:   value.Hidden,
+		AnchorID: value.AnchorID,
+	}
 }
 
 func starterDraft(name string, slugValue string, prompt string) (siteconfig.SiteDraft, error) {
