@@ -1,7 +1,13 @@
 import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import type { BlockDefinition, BlockEditorField, SiteDraft } from '@/lib/api'
+import { actions, emptyState, form, panel, text } from '@/lib/styles'
+import { cn } from '@/lib/utils'
 
 type DraftBlock = SiteDraft['pages'][number]['blocks'][number]
 
@@ -35,24 +41,30 @@ export function BlockEditor({
   const fields = definition?.editorSchema ?? []
 
   return (
-    <form className="editor-panel block-editor-form" onSubmit={handleSubmit}>
-      <div className="panel-heading block-editor-heading">
+    <form className={cn(panel, 'grid gap-4 p-6 max-sm:p-4')} onSubmit={handleSubmit}>
+      <div className="mb-3 flex items-start justify-between gap-3 max-sm:flex-col">
         <div>
-          <p className="eyebrow">Block editor</p>
-          <h2>{definition?.displayName ?? block.type}</h2>
+          <p className={text.eyebrow}>Block editor</p>
+          <h2 className={text.h2}>{definition?.displayName ?? block.type}</h2>
         </div>
-        <div className="block-editor-meta">
-          <span>{block.version}</span>
-          {hidden ? <span>Hidden</span> : null}
+        <div className="flex flex-wrap gap-2">
+          <span className="rounded-full border border-border bg-[var(--surface-2)] px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] text-[var(--paper-muted)]">
+            {block.version}
+          </span>
+          {hidden ? (
+            <span className="rounded-full border border-border bg-[var(--surface-2)] px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] text-[var(--paper-muted)]">
+              Hidden
+            </span>
+          ) : null}
         </div>
       </div>
 
       {fields.length === 0 ? (
-        <div className="empty-state">
-          <p>This block does not expose editable fields yet.</p>
+        <div className={emptyState}>
+          <p className={text.p}>This block does not expose editable fields yet.</p>
         </div>
       ) : (
-        <div className="block-editor-fields">
+        <div className="grid gap-4">
           {fields.map((field) => (
             <FieldRenderer
               key={field.name}
@@ -66,17 +78,16 @@ export function BlockEditor({
         </div>
       )}
 
-      <label className="block-editor-toggle">
-        <input
-          type="checkbox"
+      <label className={form.toggle}>
+        <Checkbox
           checked={hidden}
           onChange={(event) => setHidden(event.target.checked)}
         />
         Hide this block in preview and publish output
       </label>
 
-      {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
-      {statusMessage ? <p className="form-success">{statusMessage}</p> : null}
+      {errorMessage ? <p className={text.error}>{errorMessage}</p> : null}
+      {statusMessage ? <p className={text.success}>{statusMessage}</p> : null}
 
       <Button type="submit" disabled={isSaving}>
         {isSaving ? 'Saving block...' : 'Save block'}
@@ -97,10 +108,10 @@ function FieldRenderer({
   switch (field.control) {
     case 'textarea':
       return (
-        <label className="block-field">
-          <span>{field.label}</span>
-          {field.description ? <small>{field.description}</small> : null}
-          <textarea
+        <label className={form.field}>
+          <span className={cn(text.label, 'tracking-[0.08em]')}>{field.label}</span>
+          {field.description ? <small className="text-sm text-[var(--paper-muted)]">{field.description}</small> : null}
+          <Textarea
             rows={5}
             value={asText(value)}
             placeholder={field.placeholder}
@@ -110,10 +121,10 @@ function FieldRenderer({
       )
     case 'select':
       return (
-        <label className="block-field">
-          <span>{field.label}</span>
-          {field.description ? <small>{field.description}</small> : null}
-          <select
+        <label className={form.field}>
+          <span className={cn(text.label, 'tracking-[0.08em]')}>{field.label}</span>
+          {field.description ? <small className="text-sm text-[var(--paper-muted)]">{field.description}</small> : null}
+          <Select
             value={String(value ?? '')}
             onChange={(event) => onChange(coerceValue(field, event.target.value))}
           >
@@ -123,7 +134,7 @@ function FieldRenderer({
                 {option}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
       )
     case 'link':
@@ -155,10 +166,10 @@ function FieldRenderer({
     case 'text':
     default:
       return (
-        <label className="block-field">
-          <span>{field.label}</span>
-          {field.description ? <small>{field.description}</small> : null}
-          <input
+        <label className={form.field}>
+          <span className={cn(text.label, 'tracking-[0.08em]')}>{field.label}</span>
+          {field.description ? <small className="text-sm text-[var(--paper-muted)]">{field.description}</small> : null}
+          <Input
             type="text"
             value={asText(value)}
             placeholder={field.placeholder}
@@ -189,29 +200,35 @@ function ObjectField({
     ]
 
   return (
-    <div className="block-field block-field--object">
-      <div className="block-field__header">
+    <div className={cn(form.field, 'rounded-[16px] border border-border bg-[var(--surface-2)] p-4')}>
+      <div className="flex items-start justify-between gap-3 max-sm:flex-col">
         <div>
-          <span>{field.label}</span>
-          {field.description ? <small>{field.description}</small> : null}
+          <span className={cn(text.label, 'tracking-[0.08em]')}>{field.label}</span>
+          {field.description ? <small className="mt-1 block text-sm font-normal normal-case tracking-normal text-[var(--paper-muted)]">{field.description}</small> : null}
         </div>
         {objectValue ? (
-          <button type="button" className="site-inline-link" onClick={() => onChange(undefined)}>
-            Remove
-          </button>
-        ) : (
-          <button
+          <Button
             type="button"
-            className="site-inline-link"
+            variant="plain"
+            className={actions.inlineLink}
+            onClick={() => onChange(undefined)}
+          >
+            Remove
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            variant="plain"
+            className={actions.inlineLink}
             onClick={() => onChange(buildObjectDefaults(nestedFields))}
           >
             {emptyLabel}
-          </button>
+          </Button>
         )}
       </div>
 
       {objectValue ? (
-        <div className="block-field__group">
+        <div className="grid gap-4">
           {nestedFields.map((nestedField) => (
             <FieldRenderer
               key={nestedField.name}
@@ -241,37 +258,39 @@ function RepeaterField({
   const itemFields = field.itemFields ?? []
 
   return (
-    <div className="block-field block-field--repeater">
-      <div className="block-field__header">
+    <div className={cn(form.field, 'rounded-[16px] border border-border bg-[var(--surface-2)] p-4')}>
+      <div className="flex items-start justify-between gap-3 max-sm:flex-col">
         <div>
-          <span>{field.label}</span>
-          {field.description ? <small>{field.description}</small> : null}
+          <span className={cn(text.label, 'tracking-[0.08em]')}>{field.label}</span>
+          {field.description ? <small className="mt-1 block text-sm font-normal normal-case tracking-normal text-[var(--paper-muted)]">{field.description}</small> : null}
         </div>
-        <button
+        <Button
           type="button"
-          className="site-inline-link"
+          variant="plain"
+          className={actions.inlineLink}
           onClick={() => onChange([...items, buildObjectDefaults(itemFields)])}
         >
           Add item
-        </button>
+        </Button>
       </div>
 
-      <div className="repeater-list">
+      <div className="grid gap-4">
         {items.map((item, index) => (
-          <article key={index} className="repeater-card">
-            <div className="block-field__header">
-              <strong>Item {index + 1}</strong>
-              <button
+          <article key={index} className="rounded-[14px] border border-border bg-[var(--surface-1)] p-4">
+            <div className="mb-4 flex items-start justify-between gap-3 max-sm:flex-col">
+              <strong className={cn(text.label, 'tracking-[0.08em]')}>Item {index + 1}</strong>
+              <Button
                 type="button"
-                className="site-inline-link"
+                variant="plain"
+                className={actions.inlineLink}
                 onClick={() =>
                   onChange(items.filter((_, candidateIndex) => candidateIndex !== index))
                 }
               >
                 Remove
-              </button>
+              </Button>
             </div>
-            <div className="block-field__group">
+            <div className="grid gap-4">
               {itemFields.map((nestedField) => (
                 <FieldRenderer
                   key={nestedField.name}

@@ -1,11 +1,14 @@
 import { Link, Outlet, createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
+import { Button } from '@/components/ui/button'
 import {
   APIError,
   type AuthSession,
   getCurrentSession,
   logout,
 } from '@/lib/api'
+import { cn } from '@/lib/utils'
+import { layout, paddedPanel, text } from '@/lib/styles'
 
 export const Route = createFileRoute('/app')({
   component: AppLayout,
@@ -47,11 +50,13 @@ function AppLayout() {
 
   if (errorMessage) {
     return (
-      <main className="app-shell">
-        <section className="app-content">
-          <div className="builder-panel">
-            <p className="form-error">{errorMessage}</p>
-          </div>
+      <main className={cn(layout.pageShell, layout.narrowShell, 'pt-14')}>
+        <section className={paddedPanel}>
+          <p className={text.eyebrow}>Builder unavailable</p>
+          <h1 className={cn(text.h2, 'mt-2')}>{errorMessage}</h1>
+          <p className={cn(text.p, 'mt-3')}>
+            Start the local API, then refresh this page to open the builder.
+          </p>
         </section>
       </main>
     )
@@ -59,32 +64,47 @@ function AppLayout() {
 
   if (!session) {
     return (
-      <main className="app-shell">
-        <section className="app-content">
-          <div className="builder-panel">
-            <p>Loading session...</p>
-          </div>
+      <main className={cn(layout.pageShell, layout.narrowShell, 'pt-14')}>
+        <section className={paddedPanel}>
+          <p className={text.p}>Loading your builder session...</p>
         </section>
       </main>
     )
   }
 
   return (
-    <main className="app-shell">
-      <aside className="app-sidebar">
-        <div className="app-user">
-          <span>{session.user.name || session.user.email}</span>
-          <small>{session.user.workspaceRole}</small>
+    <main className={layout.appShell}>
+      <aside className="flex flex-col gap-3 rounded-[18px] border border-border bg-[var(--surface-1)] p-4 shadow-[var(--shadow-tight)]">
+        <div className="mb-1 grid gap-3 border-b border-border pb-4">
+          <div className="flex items-center gap-3">
+            <img src="/logo.png" alt="" className="size-9 rounded-full object-contain" />
+            <span className="font-black text-[var(--paper)]">
+              {session.user.name || session.user.email}
+            </span>
+          </div>
+          <small className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--paper-muted)]">
+            {session.user.workspaceRole}
+          </small>
         </div>
-        <Link to="/app">Sites</Link>
-        <p className="app-sidebar-note">
-          Build from validated drafts, then move into preview from each site.
+        <Link
+          to="/app"
+          className="rounded-[14px] border border-transparent px-3.5 py-3 font-bold text-[var(--paper-muted)] transition-[background,border-color,color,transform] hover:-translate-y-px hover:border-border hover:bg-[var(--surface-2)] hover:text-[var(--paper)]"
+        >
+          Sites
+        </Link>
+        <p className={cn(text.p, 'mx-0.5 mt-1 text-sm')}>
+          Drafts stay editable until you publish an immutable version.
         </p>
-        <button type="button" onClick={handleSignOut}>
+        <Button
+          type="button"
+          variant="plain"
+          className="rounded-[14px] border border-transparent px-3.5 py-3 font-bold text-[var(--paper-muted)] transition-[background,border-color,color,transform] hover:-translate-y-px hover:border-border hover:bg-[var(--surface-2)] hover:text-[var(--paper)]"
+          onClick={handleSignOut}
+        >
           Sign out
-        </button>
+        </Button>
       </aside>
-      <section className="app-content">
+      <section className={layout.appContent}>
         <Outlet />
       </section>
     </main>

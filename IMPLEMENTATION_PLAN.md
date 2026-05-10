@@ -6,8 +6,9 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 
 - [x] A signed-in user can create or use a default workspace.
 - [ ] The backend is a Go modular monolith exposing the product API and owning Postgres persistence.
-- [ ] The frontend is a React application built with TanStack Start, Tailwind CSS, and shadcn/ui unless a later decision deliberately changes that stack.
-- [ ] Frontend surfaces support brand-aligned light and dark modes based on `BRANDING.md`, with dark mode required and using the sharper, slightly meaner palette described there.
+- [x] The frontend is a React application built with TanStack Start, Tailwind CSS, and shadcn/ui unless a later decision deliberately changes that stack.
+- [x] Frontend surfaces support brand-aligned light and dark modes based on `BRANDING.md`, with dark mode required and using the sharper, slightly meaner palette described there.
+  Verified on May 10, 2026 by running the builder locally at `http://localhost:3000`, confirming the new shared Tailwind + shadcn shell rendered in Playwright, toggling the app chrome between the dark default and the new warm light mode, and then signing in plus creating and previewing `Color Mode Verification Studio` without current-page console errors.
 - [x] A user can enter a prompt and get a valid structured site draft.
   Verified on May 6, 2026 by logging in locally, generating `Loom & Light Studio` from a photography prompt in Playwright, confirming the created draft contained four validated pages in the builder, and loading the generated content on `/app/sites/:siteId/preview`.
 - [x] The generated draft uses only known block types, known block versions, valid block props, valid theme tokens, and no arbitrary code.
@@ -44,7 +45,8 @@ This plan is sequenced for the shortest path to a working prototype first. The p
   Backend coverage now spans `internal/siteconfig` schema + registry validation, `internal/publishing` snapshot/publish behavior, `internal/sites` draft persistence/assembly, and handler/authorization tests across site, generation, theme, and publish routes. Verified on May 10, 2026 with `make test` after adding registry definition/props edge-case coverage for unknown versions, unsafe links, unsupported block props, duplicate definitions, and published contract regressions.
 - [x] Add frontend test setup for core builder flows and renderer smoke tests.
   Frontend coverage now runs through Vitest + Testing Library in `apps/web`, with passing tests for nested block-editor saves and hidden-state handling, shared renderer anchor/published-link resolution, and published snapshot loading/error states. Verified on May 10, 2026 with `npm run web:test`, `npm run web:lint`, and `npm run web:build`.
-- [ ] Reserve a `billing` backend module boundary for Stripe-backed workspace subscriptions, but keep payment implementation out of the first prototype loop.
+- [x] Reserve a `billing` backend module boundary for Stripe-backed workspace subscriptions, but keep payment implementation out of the first prototype loop.
+  The Go API now mounts an authenticated placeholder `billing` module alongside the existing modular boundaries so Stripe-backed subscription work can land later without reshaping the server package layout.
 
 ## Phase 1: Data Model And Draft Persistence
 
@@ -76,7 +78,8 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Implement React renderer components for those prototype blocks.
   React now renders the prototype `hero`, `text_section`, `image_text`, `features_grid`, and `cta_band` blocks in a shared `SiteDraftRenderer` used by the authenticated preview route.
 - [x] Implement React editor field metadata for those prototype blocks.
-- [ ] Build React renderer and editor surfaces with Tailwind utilities so preview, builder, and publish output stay visually consistent.
+- [x] Build React renderer and editor surfaces with Tailwind utilities so preview, builder, and publish output stay visually consistent.
+  The shared builder shell, block editor, preview renderer, public snapshot page, and route-level empty/error states now use source-owned Tailwind utility composition from `apps/web/src/lib/styles.ts` plus shadcn-wrapped controls so the authenticated builder and render surfaces stay aligned.
 - [ ] Add contract tests or generated fixtures proving Go validation accepts exactly what the React renderer/editor expects.
 - [x] Add registry tests that reject unknown blocks, unknown versions, invalid props, unsafe links, and unsupported settings.
   `internal/siteconfig` now includes registry-focused tests covering invalid block definitions, duplicate registrations, unknown versions, unsafe CTA URLs, unsupported block props, and invalid anchor settings alongside the existing draft/publish validation suite.
@@ -111,17 +114,21 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Implement Go theme read and update APIs.
 - [x] Implement a simple authenticated builder shell with site list and site detail.
   The `/app` workspace route now lists saved sites, creates drafts, and links into a functional site detail screen with metadata, page outline, rename/reslug, and delete actions.
-- [ ] Use shadcn/ui primitives for builder controls, forms, dialogs, menus, tabs, loading states, and empty/error states before creating bespoke app components.
+- [x] Use shadcn/ui primitives for builder controls, forms, dialogs, menus, tabs, loading states, and empty/error states before creating bespoke app components.
+  The current builder pass standardizes on source-owned shadcn-style `Button`, `Input`, `Textarea`, `Select`, and `Checkbox` primitives for site, page, block, theme, auth, and prompt-entry flows, with shared loading, empty, and error surfaces layered on top.
 - [x] Build the React prompt entry page, even if it initially creates a deterministic default site before AI is wired in.
   The builder home now accepts a site name plus brief, calls `POST /api/sites/generate` when a brief is provided, and still falls back to the deterministic starter draft through `POST /api/sites` when the brief is left empty.
 - [x] Add a page list and block list.
 - [x] Add a simple field editor generated from the block editor schema.
 - [x] Add a React preview route that renders the current draft through the same block renderer used by publish.
   `/app/sites/:siteId/preview` now fetches the stored draft and renders it through the shared React block renderer.
-- [ ] Add a frontend API client layer for typed calls to the Go backend.
-- [ ] Add loading, empty, and error states for the site list, builder, save actions, preview, and publish action.
+- [x] Add a frontend API client layer for typed calls to the Go backend.
+  Typed draft/auth/theme/publish client helpers now live in `apps/web/src/lib/api.ts`, including shared auth-refresh and API error handling.
+- [x] Add loading, empty, and error states for the site list, builder, save actions, preview, and publish action.
+  Route-level loading, save-state, empty-state, and error-state handling now covers login, site list, builder detail, draft preview, published snapshot loading, and publish history interactions.
 - [x] Save every block edit through backend validation rather than trusting client state.
-- [ ] Keep the editor state adapter thin and do not store raw editor/Puck state as canonical data.
+- [x] Keep the editor state adapter thin and do not store raw editor/Puck state as canonical data.
+  The current builder continues to edit canonical draft/page/block/theme data directly through typed Go API calls and does not persist any raw Puck-style client state as the source of truth.
 - [x] Confirm the prototype works without AI generation by creating a site from deterministic defaults.
   Verified on May 6, 2026 by logging in locally, creating a draft for `Moss & Thread Atelier`, editing its site metadata, and loading the authenticated preview route in Playwright.
 - [x] Confirm the block editing loop works end to end for the prototype builder.
@@ -173,7 +180,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [ ] Add optional early blocks only if user testing shows demand: logo cloud, map/location, stats/KPIs, article teaser, or allowlisted embeds.
 - [ ] Add richer page management: rename, slug edit, SEO edit, include/exclude from navigation, navigation reorder, and deletion safeguards.
 - [ ] Add theme controls for palette, font preset, button style, radius, section spacing, and image style.
-- [ ] Add Puck or another compact CMS-style editing layer if it improves authoring speed inside the React builder.
+- [ ] Add Puck or another compact CMS-style editing layer as an MVP requirement for faster visual authoring inside the React builder.
 - [ ] Build adapters from canonical draft data to editor state and back.
 - [ ] Add site-level re-prompt.
 - [ ] Add page-level re-prompt.
@@ -242,6 +249,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 
 ## Phase 12: MVP Completion
 
+- [ ] Ship the Puck/CMS-style visual editing layer in the MVP builder while keeping canonical site data in the maintained draft schema.
 - [ ] Expand generation to all required MVP blocks.
 - [ ] Support up to 10 pages per site in generation, editing, validation, and publishing.
 - [ ] Add asset upload and image library UI.

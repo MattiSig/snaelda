@@ -2,7 +2,10 @@ import { createFileRoute } from '@tanstack/react-router'
 import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { APIError, login } from '@/lib/api'
+import { cn } from '@/lib/utils'
+import { form, layout, paddedPanel, text } from '@/lib/styles'
 
 export const Route = createFileRoute('/login')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -42,11 +45,19 @@ function Login() {
   }
 
   return (
-    <main className="page-shell narrow-shell">
-      <form className="auth-panel" onSubmit={handleSubmit}>
-        <h1>Sign in</h1>
-        <label htmlFor="email">Email</label>
-        <input
+    <main className={cn(layout.pageShell, layout.narrowShell, 'pt-14')}>
+      <form className={cn(paddedPanel, form.grid, 'relative')} onSubmit={handleSubmit}>
+        <img
+          src="/logo.png"
+          alt=""
+          className="mb-2 size-16 rounded-[18px] border border-border bg-[var(--surface-2)] object-contain p-2"
+        />
+        <div className="mb-3">
+          <p className={text.eyebrow}>Builder access</p>
+          <h1 className={cn(text.h1, 'max-w-[9ch]')}>Sign in</h1>
+        </div>
+        <label htmlFor="email" className={text.label}>Email</label>
+        <Input
           id="email"
           name="email"
           type="email"
@@ -55,8 +66,8 @@ function Login() {
           onChange={(event) => setEmail(event.target.value)}
           required
         />
-        <label htmlFor="name">Name</label>
-        <input
+        <label htmlFor="name" className={text.label}>Name</label>
+        <Input
           id="name"
           name="name"
           type="text"
@@ -64,7 +75,7 @@ function Login() {
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
-        {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
+        {errorMessage ? <p className={text.error}>{errorMessage}</p> : null}
         <Button type="submit" disabled={isSubmitting}>
           {isSubmitting ? 'Signing in...' : 'Sign in'}
         </Button>

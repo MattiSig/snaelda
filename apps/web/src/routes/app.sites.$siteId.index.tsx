@@ -3,6 +3,10 @@ import type { FormEvent } from 'react'
 import { useEffect, useState } from 'react'
 import { BlockEditor } from '@/components/BlockEditor'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import {
   APIError,
   createBlock,
@@ -28,6 +32,17 @@ import {
   updateSite,
   updateSiteTheme,
 } from '@/lib/api'
+import {
+  actions,
+  emptyState,
+  form,
+  layout,
+  ribbon,
+  ribbonPanel,
+  statGrid,
+  text,
+} from '@/lib/styles'
+import { cn } from '@/lib/utils'
 
 type DraftPage = SiteDraft['pages'][number]
 
@@ -578,16 +593,16 @@ function SiteDetail() {
 
   if (isLoading) {
     return (
-      <div className="builder-panel ribbon-panel">
-        <p>Loading site...</p>
+      <div className={ribbonPanel}>
+        <p className={text.p}>Loading site...</p>
       </div>
     )
   }
 
   if (!draft) {
     return (
-      <div className="builder-panel ribbon-panel">
-        <p className="form-error">{loadErrorMessage || 'Site not found'}</p>
+      <div className={ribbonPanel}>
+        <p className={text.error}>{loadErrorMessage || 'Site not found'}</p>
       </div>
     )
   }
@@ -602,61 +617,57 @@ function SiteDetail() {
     : -1
 
   return (
-    <div className="builder-grid builder-grid--detail">
-      <section className="builder-panel ribbon-panel">
-        <div className="panel-heading">
-          <p className="eyebrow">Site</p>
-          <h1>{draft.site.name}</h1>
-          <p>
+    <div className={layout.builderGrid}>
+      <section className={ribbonPanel}>
+        <div className="mb-[22px]">
+          <p className={text.eyebrow}>Site</p>
+          <h1 className={text.h1}>{draft.site.name}</h1>
+          <p className={text.p}>
             Manage pages and approved blocks here, then keep using the validated
             preview and publish flow.
           </p>
         </div>
 
-        <dl className="metadata-list">
-          <div>
-            <dt>Status</dt>
-            <dd>{currentVersion ? 'published' : draft.site.status}</dd>
+        <dl className={statGrid.list}>
+          <div className={statGrid.item}>
+            <dt className={text.eyebrow}>Status</dt>
+            <dd className={statGrid.value}>{currentVersion ? 'published' : draft.site.status}</dd>
           </div>
-          <div>
-            <dt>Pages</dt>
-            <dd>{draft.pages.length}</dd>
+          <div className={statGrid.item}>
+            <dt className={text.eyebrow}>Pages</dt>
+            <dd className={statGrid.value}>{draft.pages.length}</dd>
           </div>
-          <div>
-            <dt>Blocks</dt>
-            <dd>{blockCount}</dd>
+          <div className={statGrid.item}>
+            <dt className={text.eyebrow}>Blocks</dt>
+            <dd className={statGrid.value}>{blockCount}</dd>
           </div>
         </dl>
 
-        <div className="site-detail-links">
-          <Link
-            to="/app/sites/$siteId/preview"
-            params={{ siteId }}
-            className="site-inline-link"
-          >
-            Open preview
-          </Link>
-          {currentVersion ? (
-            <Link
-              to="/public/$siteSlug"
-              params={{ siteSlug: draft.site.slug }}
-              className="site-inline-link"
-            >
-              Open live site
+        <div className={cn(actions.rowLarge, 'mt-[18px]')}>
+          <Button asChild variant="plain" className={actions.inlineLink}>
+            <Link to="/app/sites/$siteId/preview" params={{ siteId }}>
+              Open preview
             </Link>
+          </Button>
+          {currentVersion ? (
+            <Button asChild variant="plain" className={actions.inlineLink}>
+              <Link to="/public/$siteSlug" params={{ siteSlug: draft.site.slug }}>
+                Open live site
+              </Link>
+            </Button>
           ) : null}
         </div>
 
-        <form className="editor-panel ribbon-panel add-page-form" onSubmit={handleCreatePage}>
-          <div className="panel-heading">
+        <form className={cn(ribbonPanel, form.grid, 'mt-6')} onSubmit={handleCreatePage}>
+          <div className="mb-[22px]">
             <div>
-              <p className="eyebrow">Pages</p>
-              <h2>Add a page</h2>
+              <p className={text.eyebrow}>Pages</p>
+              <h2 className={text.h2}>Add a page</h2>
             </div>
           </div>
 
-          <label htmlFor="new-page-title">Page title</label>
-          <input
+          <label htmlFor="new-page-title" className={text.label}>Page title</label>
+          <Input
             id="new-page-title"
             value={newPageTitle}
             onChange={(event) => setNewPageTitle(event.target.value)}
@@ -664,17 +675,16 @@ function SiteDetail() {
             required
           />
 
-          <label htmlFor="new-page-slug">Slug</label>
-          <input
+          <label htmlFor="new-page-slug" className={text.label}>Slug</label>
+          <Input
             id="new-page-slug"
             value={newPageSlug}
             onChange={(event) => setNewPageSlug(event.target.value)}
             placeholder="/contact"
           />
 
-          <label className="block-editor-toggle">
-            <input
-              type="checkbox"
+          <label className={form.toggle}>
+            <Checkbox
               checked={newPageIncludeInNavigation}
               onChange={(event) => setNewPageIncludeInNavigation(event.target.checked)}
             />
@@ -686,7 +696,7 @@ function SiteDetail() {
           </Button>
         </form>
 
-        <div className="page-outline page-outline--detail">
+        <div className="mt-[18px] grid gap-[18px]">
           {draft.pages.map((page, index) => {
             const isSelectedPage = page.id === selectedPage?.id
             const isIncludedInNavigation = draft.navigation.primary.some(
@@ -696,12 +706,18 @@ function SiteDetail() {
             return (
               <article
                 key={page.id}
-                className={`page-outline__item page-outline__item--stacked${isSelectedPage ? ' is-selected' : ''}`}
+                className={cn(
+                  ribbon,
+                  'grid gap-4 rounded-[16px] border border-border bg-[var(--surface-2)] p-5',
+                  isSelectedPage &&
+                    'border-[var(--thread-teal)] bg-[color-mix(in_oklch,var(--surface-2)_78%,var(--thread-teal))]',
+                )}
               >
-                <div className="page-outline__summary">
-                  <button
+                <div className="flex items-center justify-between gap-[18px] max-sm:flex-col max-sm:items-start">
+                  <Button
                     type="button"
-                    className="page-outline__select"
+                    variant="plain"
+                    className="flex w-full items-center justify-between gap-[18px] p-0 text-left text-inherit max-sm:flex-col max-sm:items-start"
                     onClick={() => {
                       setSelectedPageId(page.id)
                       setSelectedBlockId(page.blocks[0]?.id ?? '')
@@ -711,37 +727,39 @@ function SiteDetail() {
                     }}
                   >
                     <div>
-                      <h3>{page.title}</h3>
-                      <p>{page.slug}</p>
+                      <h3 className={cn(text.h3, 'mb-2')}>{page.title}</h3>
+                      <p className={text.p}>{page.slug}</p>
                     </div>
-                    <strong>{page.blocks.length} blocks</strong>
-                  </button>
+                    <strong className="text-[0.96rem] text-primary">{page.blocks.length} blocks</strong>
+                  </Button>
 
-                  <div className="page-outline__actions">
-                    <button
+                  <div className={actions.row}>
+                    <Button
                       type="button"
-                      className="site-inline-link"
+                      variant="plain"
+                      className={actions.inlineLink}
                       disabled={index === 0 || isSavingPage}
                       onClick={() => handleMovePage(page.id, -1)}
                     >
                       Earlier
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
-                      className="site-inline-link"
+                      variant="plain"
+                      className={actions.inlineLink}
                       disabled={index === draft.pages.length - 1 || isSavingPage}
                       onClick={() => handleMovePage(page.id, 1)}
                     >
                       Later
-                    </button>
+                    </Button>
                   </div>
                 </div>
 
-                <div className="page-outline__meta">
+                <div className="text-sm text-[var(--paper-muted)]">
                   <span>{isIncludedInNavigation ? 'In navigation' : 'Hidden from navigation'}</span>
                 </div>
 
-                <div className="block-list">
+                <div className="grid gap-3">
                   {page.blocks.map((block) => {
                     const definition =
                       blockDefinitions.get(`${block.type}@${block.version}`)
@@ -749,10 +767,15 @@ function SiteDetail() {
                       page.id === selectedPage?.id && block.id === selectedBlock?.id
 
                     return (
-                      <button
+                      <Button
                         key={block.id}
                         type="button"
-                        className={`block-list__item${isSelected ? ' is-selected' : ''}`}
+                        variant="plain"
+                        className={cn(
+                          'flex items-center justify-between gap-3.5 rounded-[14px] border border-border bg-[var(--surface-1)] px-4 py-3 text-left text-[var(--paper)] transition-[background,border-color,transform] hover:-translate-y-px hover:border-[var(--thread-teal)] hover:bg-[var(--surface-3)]',
+                          isSelected &&
+                            'border-[var(--thread-teal)] bg-[var(--surface-3)]',
+                        )}
                         onClick={() => {
                           setSelectedPageId(page.id)
                           setSelectedBlockId(block.id)
@@ -762,11 +785,15 @@ function SiteDetail() {
                         }}
                       >
                         <div>
-                          <span>{definition?.displayName ?? block.type}</span>
-                          <small>{block.type}</small>
+                          <span className="block font-bold">{definition?.displayName ?? block.type}</span>
+                          <small className="text-sm text-[var(--paper-muted)]">{block.type}</small>
                         </div>
-                        {block.settings?.hidden ? <em>Hidden</em> : <em>Visible</em>}
-                      </button>
+                        {block.settings?.hidden ? (
+                          <em className="text-sm not-italic text-[var(--paper-muted)]">Hidden</em>
+                        ) : (
+                          <em className="text-sm not-italic text-[var(--paper-muted)]">Visible</em>
+                        )}
+                      </Button>
                     )
                   })}
                 </div>
@@ -776,65 +803,64 @@ function SiteDetail() {
         </div>
       </section>
 
-      <div className="builder-sidebar">
-        <section className="editor-panel ribbon-panel">
-          <div className="panel-heading">
-            <p className="eyebrow">Page details</p>
-            <h2>{selectedPage ? selectedPage.title : 'Choose a page'}</h2>
-            <p>
+      <div className={layout.builderSidebar}>
+        <section className={ribbonPanel}>
+          <div className="mb-[22px]">
+            <p className={text.eyebrow}>Page details</p>
+            <h2 className={text.h2}>{selectedPage ? selectedPage.title : 'Choose a page'}</h2>
+            <p className={text.p}>
               Edit the current page title, slug, SEO, and navigation inclusion
               before publishing the next snapshot.
             </p>
           </div>
 
           {selectedPage ? (
-            <form className="auth-panel" onSubmit={handleSavePage}>
-              <label htmlFor="page-title">Page title</label>
-              <input
+            <form className={form.grid} onSubmit={handleSavePage}>
+              <label htmlFor="page-title" className={text.label}>Page title</label>
+              <Input
                 id="page-title"
                 value={pageTitle}
                 onChange={(event) => setPageTitle(event.target.value)}
                 required
               />
 
-              <label htmlFor="page-slug">Slug</label>
-              <input
+              <label htmlFor="page-slug" className={text.label}>Slug</label>
+              <Input
                 id="page-slug"
                 value={pageSlug}
                 onChange={(event) => setPageSlug(event.target.value)}
                 required
               />
 
-              <label htmlFor="page-seo-title">SEO title</label>
-              <input
+              <label htmlFor="page-seo-title" className={text.label}>SEO title</label>
+              <Input
                 id="page-seo-title"
                 value={pageSEOTitle}
                 onChange={(event) => setPageSEOTitle(event.target.value)}
               />
 
-              <label htmlFor="page-seo-description">SEO description</label>
-              <textarea
+              <label htmlFor="page-seo-description" className={text.label}>SEO description</label>
+              <Textarea
                 id="page-seo-description"
                 rows={4}
                 value={pageSEODescription}
                 onChange={(event) => setPageSEODescription(event.target.value)}
               />
 
-              <label className="block-editor-toggle">
-                <input
-                  type="checkbox"
+              <label className={form.toggle}>
+                <Checkbox
                   checked={pageIncludeInNavigation}
                   onChange={(event) => setPageIncludeInNavigation(event.target.checked)}
                 />
                 Include this page in the primary navigation
               </label>
 
-              {pageErrorMessage ? <p className="form-error">{pageErrorMessage}</p> : null}
+              {pageErrorMessage ? <p className={text.error}>{pageErrorMessage}</p> : null}
               {pageStatusMessage ? (
-                <p className="form-success">{pageStatusMessage}</p>
+                <p className={text.success}>{pageStatusMessage}</p>
               ) : null}
 
-              <div className="builder-actions">
+              <div className={actions.row}>
                 <Button type="submit" disabled={isSavingPage}>
                   {isSavingPage ? 'Saving page...' : 'Save page'}
                 </Button>
@@ -865,43 +891,46 @@ function SiteDetail() {
               </div>
             </form>
           ) : (
-            <div className="empty-state">
-              <p>Select a page from the outline to edit its details.</p>
+            <div className={emptyState}>
+              <p className={text.p}>Select a page from the outline to edit its details.</p>
             </div>
           )}
         </section>
 
-        <section className="editor-panel ribbon-panel">
-          <div className="panel-heading">
-            <p className="eyebrow">Theme</p>
-            <h2>Set the site direction</h2>
-            <p>
+        <section className={ribbonPanel}>
+          <div className="mb-[22px]">
+            <p className={text.eyebrow}>Theme</p>
+            <h2 className={text.h2}>Set the site direction</h2>
+            <p className={text.p}>
               Keep the visual system inside the safe theme contract while tuning
               the palette, type, spacing, and corner feel.
             </p>
           </div>
 
           {themeSelection && themeOptions ? (
-            <form className="auth-panel" onSubmit={handleSaveTheme}>
-              <div className="theme-preview-card">
-                <div className="theme-preview-card__swatches">
+            <form className={form.grid} onSubmit={handleSaveTheme}>
+              <div className="rounded-[16px] border border-border bg-[var(--surface-2)] p-4">
+                <div className="grid grid-cols-2 gap-3 max-lg:grid-cols-1">
                   {Object.entries(draft.theme.tokens.colors).map(([key, value]) => (
-                    <div key={key} className="theme-swatch">
+                    <div
+                      key={key}
+                      className="flex items-center gap-3 rounded-[14px] border border-border bg-[var(--surface-1)] px-3 py-2.5"
+                    >
                       <span
-                        className="theme-swatch__chip"
+                        className="size-[34px] shrink-0 rounded-full border border-border shadow-[inset_0_0_0_1px_oklch(7%_0.022_336_/_0.12)]"
                         style={{ backgroundColor: value }}
                       />
                       <div>
-                        <strong>{formatThemeLabel(key)}</strong>
-                        <small>{value}</small>
+                        <strong className="block">{formatThemeLabel(key)}</strong>
+                        <small className="block text-[var(--paper-muted)]">{value}</small>
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <label htmlFor="theme-palette">Palette</label>
-              <select
+              <label htmlFor="theme-palette" className={text.label}>Palette</label>
+              <Select
                 id="theme-palette"
                 value={themeSelection.palette}
                 onChange={(event) =>
@@ -913,13 +942,13 @@ function SiteDetail() {
                     {option.label}
                   </option>
                 ))}
-              </select>
-              <p className="field-hint">
+              </Select>
+              <p className={form.hint}>
                 {describeThemeOption(themeOptions.palettes, themeSelection.palette)}
               </p>
 
-              <label htmlFor="theme-font-preset">Font preset</label>
-              <select
+              <label htmlFor="theme-font-preset" className={text.label}>Font preset</label>
+              <Select
                 id="theme-font-preset"
                 value={themeSelection.fontPreset}
                 onChange={(event) =>
@@ -931,13 +960,13 @@ function SiteDetail() {
                     {option.label}
                   </option>
                 ))}
-              </select>
-              <p className="field-hint">
+              </Select>
+              <p className={form.hint}>
                 {describeThemeOption(themeOptions.fontPresets, themeSelection.fontPreset)}
               </p>
 
-              <label htmlFor="theme-section-spacing">Section spacing</label>
-              <select
+              <label htmlFor="theme-section-spacing" className={text.label}>Section spacing</label>
+              <Select
                 id="theme-section-spacing"
                 value={themeSelection.sectionSpacing}
                 onChange={(event) =>
@@ -949,16 +978,16 @@ function SiteDetail() {
                     {option.label}
                   </option>
                 ))}
-              </select>
-              <p className="field-hint">
+              </Select>
+              <p className={form.hint}>
                 {describeThemeOption(
                   themeOptions.sectionSpacings,
                   themeSelection.sectionSpacing,
                 )}
               </p>
 
-              <label htmlFor="theme-radius">Corner radius</label>
-              <select
+              <label htmlFor="theme-radius" className={text.label}>Corner radius</label>
+              <Select
                 id="theme-radius"
                 value={themeSelection.radius}
                 onChange={(event) =>
@@ -970,14 +999,14 @@ function SiteDetail() {
                     {option.label}
                   </option>
                 ))}
-              </select>
-              <p className="field-hint">
+              </Select>
+              <p className={form.hint}>
                 {describeThemeOption(themeOptions.radii, themeSelection.radius)}
               </p>
 
-              {themeErrorMessage ? <p className="form-error">{themeErrorMessage}</p> : null}
+              {themeErrorMessage ? <p className={text.error}>{themeErrorMessage}</p> : null}
               {themeStatusMessage ? (
-                <p className="form-success">{themeStatusMessage}</p>
+                <p className={text.success}>{themeStatusMessage}</p>
               ) : null}
 
               <Button type="submit" disabled={isSavingTheme}>
@@ -985,22 +1014,22 @@ function SiteDetail() {
               </Button>
             </form>
           ) : (
-            <div className="empty-state">
-              <p>Loading theme controls...</p>
+            <div className={emptyState}>
+              <p className={text.p}>Loading theme controls...</p>
             </div>
           )}
         </section>
 
-        <section className="editor-panel ribbon-panel">
-          <div className="panel-heading">
-            <p className="eyebrow">Blocks</p>
-            <h2>{selectedPage ? `Add to ${selectedPage.title}` : 'Choose a page first'}</h2>
+        <section className={ribbonPanel}>
+          <div className="mb-[22px]">
+            <p className={text.eyebrow}>Blocks</p>
+            <h2 className={text.h2}>{selectedPage ? `Add to ${selectedPage.title}` : 'Choose a page first'}</h2>
           </div>
 
           {selectedPage ? (
-            <form className="auth-panel" onSubmit={handleCreateBlock}>
-              <label htmlFor="new-block-type">Approved block type</label>
-              <select
+            <form className={form.grid} onSubmit={handleCreateBlock}>
+              <label htmlFor="new-block-type" className={text.label}>Approved block type</label>
+              <Select
                 id="new-block-type"
                 value={newBlockType}
                 onChange={(event) => setNewBlockType(event.target.value)}
@@ -1013,21 +1042,21 @@ function SiteDetail() {
                     {definition.displayName}
                   </option>
                 ))}
-              </select>
+              </Select>
 
               <Button type="submit" disabled={isCreatingBlock || !newBlockType}>
                 {isCreatingBlock ? 'Adding block...' : 'Add block'}
               </Button>
             </form>
           ) : (
-            <div className="empty-state">
-              <p>Select a page before adding new blocks.</p>
+            <div className={emptyState}>
+              <p className={text.p}>Select a page before adding new blocks.</p>
             </div>
           )}
         </section>
 
         {selectedBlock ? (
-          <section className="ribbon-panel">
+          <section className={ribbon}>
             <BlockEditor
               key={selectedBlock.id}
               block={selectedBlock}
@@ -1038,7 +1067,7 @@ function SiteDetail() {
               onSave={handleSaveBlock}
             />
 
-            <div className="builder-actions builder-actions--panel">
+            <div className={actions.panelFooter}>
               <Button
                 type="button"
                 variant="outline"
@@ -1078,25 +1107,25 @@ function SiteDetail() {
             </div>
           </section>
         ) : (
-          <section className="editor-panel ribbon-panel">
-            <div className="empty-state">
-              <p>{selectedPage ? 'This page does not have any blocks yet.' : 'Select a page to work with its blocks.'}</p>
+          <section className={ribbonPanel}>
+            <div className={emptyState}>
+              <p className={text.p}>{selectedPage ? 'This page does not have any blocks yet.' : 'Select a page to work with its blocks.'}</p>
             </div>
           </section>
         )}
 
-        <section className="editor-panel ribbon-panel">
-          <div className="panel-heading">
-            <p className="eyebrow">Publish</p>
-            <h2>Release an immutable snapshot</h2>
-            <p>
+        <section className={ribbonPanel}>
+          <div className="mb-[22px]">
+            <p className={text.eyebrow}>Publish</p>
+            <h2 className={text.h2}>Release an immutable snapshot</h2>
+            <p className={text.p}>
               Publish stores the current validated draft in `site_versions` and
               serves the public route from that snapshot.
             </p>
           </div>
 
-          <label htmlFor="publish-note">Publish note</label>
-          <textarea
+          <label htmlFor="publish-note" className={text.label}>Publish note</label>
+          <Textarea
             id="publish-note"
             name="publishNote"
             rows={3}
@@ -1106,13 +1135,13 @@ function SiteDetail() {
           />
 
           {publishErrorMessage ? (
-            <p className="form-error">{publishErrorMessage}</p>
+            <p className={text.error}>{publishErrorMessage}</p>
           ) : null}
           {publishStatusMessage ? (
-            <p className="form-success">{publishStatusMessage}</p>
+            <p className={text.success}>{publishStatusMessage}</p>
           ) : null}
 
-          <div className="publish-actions">
+          <div className={actions.rowLarge}>
             <Button
               type="button"
               disabled={isPublishing || activeRollbackVersionId !== ''}
@@ -1121,44 +1150,48 @@ function SiteDetail() {
               {isPublishing ? 'Publishing...' : 'Publish snapshot'}
             </Button>
             {currentVersion ? (
-              <Link
-                to="/public/$siteSlug"
-                params={{ siteSlug: draft.site.slug }}
-                className="site-inline-link"
-              >
-                View live site
-              </Link>
+              <Button asChild variant="plain" className={actions.inlineLink}>
+                <Link to="/public/$siteSlug" params={{ siteSlug: draft.site.slug }}>
+                  View live site
+                </Link>
+              </Button>
             ) : null}
           </div>
 
-          <div className="version-list">
+          <div className="grid gap-3">
             {versions.length === 0 ? (
-              <div className="empty-state">
-                <p>No published versions yet.</p>
+              <div className={emptyState}>
+                <p className={text.p}>No published versions yet.</p>
               </div>
             ) : (
               versions.map((version) => (
-                <article key={version.id} className="version-list__item">
+                <article
+                  key={version.id}
+                  className="grid gap-2 rounded-[14px] border border-border bg-[var(--surface-2)] p-4"
+                >
                   <div>
                     <strong>
                       v{version.versionNumber}
                       {version.isCurrent ? ' current' : ''}
                     </strong>
-                    <p>{formatTimestamp(version.createdAt)}</p>
+                    <p className="m-0 text-[var(--paper-muted)]">{formatTimestamp(version.createdAt)}</p>
                   </div>
-                  {version.publishNote ? <small>{version.publishNote}</small> : null}
+                  {version.publishNote ? (
+                    <small className="m-0 text-[var(--paper-muted)]">{version.publishNote}</small>
+                  ) : null}
                   {!version.isCurrent ? (
-                    <div className="version-list__actions">
-                      <button
+                    <div className={actions.row}>
+                      <Button
                         type="button"
-                        className="site-inline-link"
+                        variant="plain"
+                        className={actions.inlineLink}
                         disabled={isPublishing || activeRollbackVersionId !== ''}
                         onClick={() => handleRollback(version)}
                       >
                         {activeRollbackVersionId === version.id
                           ? 'Rolling back...'
                           : 'Roll back live site'}
-                      </button>
+                      </Button>
                     </div>
                   ) : null}
                 </article>
@@ -1167,15 +1200,15 @@ function SiteDetail() {
           </div>
         </section>
 
-        <section className="editor-panel ribbon-panel">
-          <div className="panel-heading">
-            <p className="eyebrow">Site details</p>
-            <h2>Rename and reslug the draft</h2>
+        <section className={ribbonPanel}>
+          <div className="mb-[22px]">
+            <p className={text.eyebrow}>Site details</p>
+            <h2 className={text.h2}>Rename and reslug the draft</h2>
           </div>
 
-          <form className="auth-panel" onSubmit={handleSaveSite}>
-            <label htmlFor="site-name">Business name</label>
-            <input
+          <form className={form.grid} onSubmit={handleSaveSite}>
+            <label htmlFor="site-name" className={text.label}>Business name</label>
+            <Input
               id="site-name"
               name="name"
               value={name}
@@ -1183,8 +1216,8 @@ function SiteDetail() {
               required
             />
 
-            <label htmlFor="site-slug">Slug</label>
-            <input
+            <label htmlFor="site-slug" className={text.label}>Slug</label>
+            <Input
               id="site-slug"
               name="slug"
               value={slug}
@@ -1192,9 +1225,9 @@ function SiteDetail() {
               required
             />
 
-            {siteErrorMessage ? <p className="form-error">{siteErrorMessage}</p> : null}
+            {siteErrorMessage ? <p className={text.error}>{siteErrorMessage}</p> : null}
             {siteStatusMessage ? (
-              <p className="form-success">{siteStatusMessage}</p>
+              <p className={text.success}>{siteStatusMessage}</p>
             ) : null}
 
             <Button type="submit" disabled={isSavingSite}>

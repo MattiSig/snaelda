@@ -1,9 +1,11 @@
+import { layout, paddedPanel, text } from '@/lib/styles'
+
 export function NotFound() {
   return (
-    <main className="page-shell">
-      <section className="status-panel">
-        <p className="eyebrow">404</p>
-        <h1>Page not found.</h1>
+    <main className={layout.pageShell}>
+      <section className={paddedPanel}>
+        <p className={text.eyebrow}>404</p>
+        <h1 className={text.h1}>Page not found.</h1>
       </section>
     </main>
   )

@@ -1,7 +1,9 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { SiteDraftRenderer } from '@/components/SiteDraftRenderer'
+import { Button } from '@/components/ui/button'
 import { APIError, getSiteDraft, type SiteDraft } from '@/lib/api'
+import { actions, layout, preview, ribbonPanel, text } from '@/lib/styles'
 
 export const Route = createFileRoute('/app/sites/$siteId/preview')({
   component: DraftPreview,
@@ -37,34 +39,32 @@ function DraftPreview() {
 
   if (errorMessage) {
     return (
-      <div className="builder-panel ribbon-panel">
-        <p className="form-error">{errorMessage}</p>
+      <div className={ribbonPanel}>
+        <p className={text.error}>{errorMessage}</p>
       </div>
     )
   }
 
   if (!draft) {
     return (
-      <div className="builder-panel ribbon-panel">
-        <p>Loading preview...</p>
+      <div className={ribbonPanel}>
+        <p className={text.p}>Loading preview...</p>
       </div>
     )
   }
 
   return (
-    <div className="preview-shell">
-      <div className="preview-toolbar">
+    <div className={layout.previewShell}>
+      <div className={preview.toolbar}>
         <div>
-          <p className="eyebrow">Draft preview</p>
+          <p className={text.eyebrow}>Draft preview</p>
           <strong>{draft.site.name}</strong>
         </div>
-        <Link
-          to="/app/sites/$siteId"
-          params={{ siteId }}
-          className="site-inline-link"
-        >
-          Back to builder
-        </Link>
+        <Button asChild variant="plain" className={actions.inlineLink}>
+          <Link to="/app/sites/$siteId" params={{ siteId }}>
+            Back to builder
+          </Link>
+        </Button>
       </div>
       <SiteDraftRenderer site={draft} eyebrow="Draft preview" />
     </div>

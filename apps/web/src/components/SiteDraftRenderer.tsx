@@ -1,5 +1,8 @@
 import type { PublishedSnapshot, SiteDraft } from '@/lib/api'
+import { Button } from '@/components/ui/button'
 import { buildSiteThemeStyle } from '@/lib/site-theme'
+import { preview, text } from '@/lib/styles'
+import { cn } from '@/lib/utils'
 
 type RenderableSite = Pick<SiteDraft, 'theme' | 'navigation' | 'pages'> & {
   site: {
@@ -40,17 +43,22 @@ export function SiteDraftRenderer({
   const slugToPage = new Map(site.pages.map((page) => [page.slug, page]))
 
   return (
-    <div className="site-preview" style={buildSiteThemeStyle(site.theme)}>
-      <header className="site-preview__header">
+    <div className={preview.shell} style={buildSiteThemeStyle(site.theme)}>
+      <header className={cn(preview.frame, preview.header)}>
         <div>
-          <p className="eyebrow">{eyebrow}</p>
-          <h1>{site.site.name}</h1>
-          {site.site.seo?.description ? <p>{site.site.seo.description}</p> : null}
+          <p className={text.eyebrow}>{eyebrow}</p>
+          <h1 className="max-w-[10ch] font-serif text-[clamp(2.8rem,7vw,5.8rem)] font-bold leading-[0.96] text-[var(--site-foreground)]">
+            {site.site.name}
+          </h1>
+          {site.site.seo?.description ? (
+            <p className="text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">{site.site.seo.description}</p>
+          ) : null}
         </div>
-        <nav className="site-preview__nav" aria-label="Site navigation">
+        <nav className={preview.nav} aria-label="Site navigation">
           {site.navigation.primary.map((item) => (
             <a
               key={`${item.label}-${item.pageId ?? item.href ?? ''}`}
+              className={preview.navLink}
               href={resolveNavigationHref(
                 item,
                 pageAnchors,
@@ -67,14 +75,14 @@ export function SiteDraftRenderer({
       </header>
 
       {renderedPages.map((page) => (
-        <article key={page.id} id={pageAnchor(page.slug, page.id)} className="site-preview__page">
+        <article key={page.id} id={pageAnchor(page.slug, page.id)} className={preview.page}>
           {showPageMeta ? (
-            <div className="site-preview__page-meta">
+            <div className={preview.pageMeta}>
               <span>{page.title}</span>
-              <small>{page.slug}</small>
+              <small className="text-[color-mix(in_oklch,var(--site-foreground)_62%,var(--site-background))]">{page.slug}</small>
             </div>
           ) : null}
-          <div className="site-preview__page-stack">
+          <div className={preview.pageStack}>
             {page.blocks
               .filter((block) => !block.settings?.hidden)
               .map((block) => {
@@ -107,8 +115,8 @@ export function SiteDraftRenderer({
                     return <ImageTextBlock key={block.id} props={block.props} />
                   default:
                     return (
-                      <section key={block.id} className="site-preview__panel">
-                        <p className="eyebrow">Unsupported block</p>
+                      <section key={block.id} className={preview.panel}>
+                        <p className={text.eyebrow}>Unsupported block</p>
                         <strong>{block.type}</strong>
                       </section>
                     )
@@ -130,18 +138,17 @@ function HeroBlock({
 }) {
   const primary = asObject(props.primaryCta)
   return (
-    <section className="site-preview__hero site-preview__panel">
-      {asText(props.eyebrow) ? <p className="eyebrow">{asText(props.eyebrow)}</p> : null}
-      <h2>{asText(props.headline)}</h2>
-      {asText(props.subheadline) ? <p>{asText(props.subheadline)}</p> : null}
+    <section className={cn(preview.panel, preview.hero)}>
+      {asText(props.eyebrow) ? <p className={text.eyebrow}>{asText(props.eyebrow)}</p> : null}
+      <h2 className="max-w-[12ch] font-serif text-[clamp(2rem,4vw,3.2rem)] font-bold leading-[0.96] text-[var(--site-foreground)]">{asText(props.headline)}</h2>
+      {asText(props.subheadline) ? <p className="text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">{asText(props.subheadline)}</p> : null}
       {primary ? (
-        <div className="site-preview__actions">
-          <a
-            className="site-preview__button"
-            href={resolveHref(asText(primary.href) || '#')}
-          >
-            {asText(primary.label) ?? 'Continue'}
-          </a>
+        <div className={preview.actionRow}>
+          <Button asChild variant="plain" className={preview.button}>
+            <a href={resolveHref(asText(primary.href) || '#')}>
+              {asText(primary.label) ?? 'Continue'}
+            </a>
+          </Button>
         </div>
       ) : null}
     </section>
@@ -150,27 +157,27 @@ function HeroBlock({
 
 function TextSectionBlock({ props }: { props: Record<string, unknown> }) {
   return (
-    <section className="site-preview__panel site-preview__copy">
-      <h3>{asText(props.heading)}</h3>
-      <p>{asText(props.body)}</p>
+    <section className={preview.panel}>
+      <h3 className="font-serif text-[1.6rem] font-bold leading-[0.96] text-[var(--site-foreground)]">{asText(props.heading)}</h3>
+      <p className="text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">{asText(props.body)}</p>
     </section>
   )
 }
 
 function FeaturesGridBlock({ props }: { props: Record<string, unknown> }) {
   return (
-    <section className="site-preview__panel">
-      <div className="site-preview__section-heading">
-        <h3>{asText(props.heading)}</h3>
-        {asText(props.intro) ? <p>{asText(props.intro)}</p> : null}
+    <section className={preview.panel}>
+      <div className={preview.sectionHeading}>
+        <h3 className="font-serif text-[1.6rem] font-bold leading-[0.96] text-[var(--site-foreground)]">{asText(props.heading)}</h3>
+        {asText(props.intro) ? <p className="text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">{asText(props.intro)}</p> : null}
       </div>
-      <div className="site-preview__features">
+      <div className={preview.features}>
         {asArray(props.items).map((item, index) => {
           const value = asObject(item)
           return (
-            <article key={index} className="site-preview__feature">
-              <h4>{asText(value?.title)}</h4>
-              <p>{asText(value?.body)}</p>
+            <article key={index} className={preview.feature}>
+              <h4 className="mb-2.5 font-serif text-[1.15rem] font-bold leading-[0.96] text-[var(--site-foreground)]">{asText(value?.title)}</h4>
+              <p className="text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">{asText(value?.body)}</p>
             </article>
           )
         })}
@@ -188,18 +195,21 @@ function CTABandBlock({
 }) {
   const cta = asObject(props.cta)
   return (
-    <section className="site-preview__panel site-preview__cta">
+    <section className={cn(preview.panel, preview.actionRow)}>
       <div>
-        <h3>{asText(props.heading)}</h3>
-        <p>{asText(props.body)}</p>
+        <h3 className="font-serif text-[1.6rem] font-bold leading-[0.96] text-[var(--site-foreground)]">{asText(props.heading)}</h3>
+        <p className="text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">{asText(props.body)}</p>
       </div>
       {cta ? (
-        <a
-          className="site-preview__button site-preview__button--ghost"
-          href={resolveHref(asText(cta.href) || '#')}
+        <Button
+          asChild
+          variant="plain"
+          className={cn(preview.button, preview.ghostButton)}
         >
-          {asText(cta.label) ?? 'Open'}
-        </a>
+          <a href={resolveHref(asText(cta.href) || '#')}>
+            {asText(cta.label) ?? 'Open'}
+          </a>
+        </Button>
       ) : null}
     </section>
   )
@@ -207,12 +217,12 @@ function CTABandBlock({
 
 function ImageTextBlock({ props }: { props: Record<string, unknown> }) {
   return (
-    <section className="site-preview__panel site-preview__split">
+    <section className={cn(preview.panel, preview.split)}>
       <div>
-        <h3>{asText(props.heading)}</h3>
-        <p>{asText(props.body)}</p>
+        <h3 className="font-serif text-[1.6rem] font-bold leading-[0.96] text-[var(--site-foreground)]">{asText(props.heading)}</h3>
+        <p className="text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">{asText(props.body)}</p>
       </div>
-      <div className="site-preview__image-placeholder">
+      <div className={preview.imagePlaceholder}>
         <span>Image slot</span>
       </div>
     </section>

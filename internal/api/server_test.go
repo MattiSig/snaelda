@@ -91,6 +91,26 @@ func TestModulePlaceholderWithAuth(t *testing.T) {
 	}
 }
 
+func TestBillingModulePlaceholderWithAuth(t *testing.T) {
+	server := NewServer(ServerConfig{
+		Config: config.Config{
+			AppEnv:   "test",
+			HTTPAddr: "127.0.0.1:0",
+		},
+		Logger: slog.New(slog.DiscardHandler),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/billing", nil)
+	req.AddCookie(validAuthCookie(t))
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusNotImplemented {
+		t.Fatalf("expected status %d, got %d", http.StatusNotImplemented, res.Code)
+	}
+}
+
 func TestAuthMe(t *testing.T) {
 	server := NewServer(ServerConfig{
 		Config: config.Config{

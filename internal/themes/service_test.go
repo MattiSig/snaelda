@@ -67,7 +67,7 @@ func TestUpdateRebuildsThemeFromSelection(t *testing.T) {
 	if writer.workspaceID != "workspace-1" {
 		t.Fatalf("expected workspace id to reach writer, got %q", writer.workspaceID)
 	}
-	if writer.draft.Theme.Tokens.Colors["background"] != "#fff9f4" {
+	if writer.draft.Theme.Tokens.Colors["background"] != "#fff7ee" {
 		t.Fatalf("expected playful palette background, got %#v", writer.draft.Theme.Tokens.Colors)
 	}
 	if state.Selection.Palette != siteconfig.ThemePalettePlayfulRibbon {

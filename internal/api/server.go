@@ -9,6 +9,7 @@ import (
 
 	"github.com/MattiSig/snaelda/internal/assets"
 	"github.com/MattiSig/snaelda/internal/auth"
+	"github.com/MattiSig/snaelda/internal/billing"
 	"github.com/MattiSig/snaelda/internal/blocks"
 	"github.com/MattiSig/snaelda/internal/domains"
 	"github.com/MattiSig/snaelda/internal/forms"
@@ -110,6 +111,7 @@ func (s *Server) Handler() http.Handler {
 	mountAuthenticatedPlaceholderModule(mux, s.auth, domains.Module{})
 	mountAuthenticatedPlaceholderModule(mux, s.auth, assets.Module{})
 	mountAuthenticatedPlaceholderModule(mux, s.auth, forms.Module{})
+	mountAuthenticatedPlaceholderModule(mux, s.auth, billing.Module{})
 
 	return s.recover(s.logRequests(s.cors(mux)))
 }
