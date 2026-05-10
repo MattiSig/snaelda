@@ -40,7 +40,8 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Add a shared ID, slug, timestamp, and audit utility layer.
 - [x] Establish runtime validation with schema tooling for site drafts, published snapshots, block props, theme tokens, navigation, URLs, and form definitions.
   Runtime validation now lives in `internal/siteconfig` with canonical draft/snapshot types, a Go-owned prototype block registry, theme/navigation/URL/form validators, and regression tests for unsafe URLs, unknown blocks, page constraints, theme tokens, and publish snapshot requirements. Asset ownership checks still need to be wired into save-time persistence once asset APIs exist.
-- [ ] Add backend test setup for schema validation, registry validation, publish validation, persistence, and API authorization.
+- [x] Add backend test setup for schema validation, registry validation, publish validation, persistence, and API authorization.
+  Backend coverage now spans `internal/siteconfig` schema + registry validation, `internal/publishing` snapshot/publish behavior, `internal/sites` draft persistence/assembly, and handler/authorization tests across site, generation, theme, and publish routes. Verified on May 10, 2026 with `make test` after adding registry definition/props edge-case coverage for unknown versions, unsafe links, unsupported block props, duplicate definitions, and published contract regressions.
 - [ ] Add frontend test setup for core builder flows and renderer smoke tests.
 - [ ] Reserve a `billing` backend module boundary for Stripe-backed workspace subscriptions, but keep payment implementation out of the first prototype loop.
 
@@ -76,7 +77,8 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Implement React editor field metadata for those prototype blocks.
 - [ ] Build React renderer and editor surfaces with Tailwind utilities so preview, builder, and publish output stay visually consistent.
 - [ ] Add contract tests or generated fixtures proving Go validation accepts exactly what the React renderer/editor expects.
-- [ ] Add registry tests that reject unknown blocks, unknown versions, invalid props, unsafe links, and unsupported settings.
+- [x] Add registry tests that reject unknown blocks, unknown versions, invalid props, unsafe links, and unsupported settings.
+  `internal/siteconfig` now includes registry-focused tests covering invalid block definitions, duplicate registrations, unknown versions, unsafe CTA URLs, unsupported block props, and invalid anchor settings alongside the existing draft/publish validation suite.
 - [ ] Defer remaining MVP blocks until the prototype loop works.
 
 ## Phase 3: Theme, Navigation, And Snapshot Contracts
@@ -86,13 +88,17 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Add a small set of safe theme presets such as minimal luxury, playful startup, and calm nordic.
 - [x] Implement theme token validation and fallback generation.
 - [x] Implement CSS variable output from theme tokens in React rendering.
-- [ ] Define canonical `SiteDraft`, `PageDraft`, `BlockInstance`, `ThemeConfig`, `NavigationConfig`, and `SeoConfig` types.
-- [ ] Define published `site-config.v1` snapshot schema.
-- [ ] Generate or manually maintain frontend TypeScript types from the Go/API schema until automated type generation is added.
+- [x] Define canonical `SiteDraft`, `PageDraft`, `BlockInstance`, `ThemeConfig`, `NavigationConfig`, and `SeoConfig` types.
+  Canonical Go-owned config types now live in `internal/siteconfig/types.go` and are used directly by draft assembly, persistence, generation, theming, and publish validation.
+- [x] Define published `site-config.v1` snapshot schema.
+  Published snapshots now use the explicit `siteconfig.PublishedSnapshot` contract with `SchemaVersion` set to `site-config.v1` and enforced by `ValidatePublishedSnapshot`.
+- [x] Generate or manually maintain frontend TypeScript types from the Go/API schema until automated type generation is added.
+  The frontend currently maintains the shared draft, snapshot, version, theme, and block contract types manually in `apps/web/src/lib/api.ts`.
 - [ ] Implement navigation storage as explicit data derived from pages by default.
 - [ ] Ensure internal navigation prefers stable `pageId` references and renderer resolution to slugs.
-- [ ] Validate external navigation URLs.
-- [ ] Add publish preflight validation for homepage `/`, at least one page, max 10 pages, unique slugs, valid blocks, valid navigation, valid theme tokens, and SEO fallbacks.
+- [x] Validate external navigation URLs.
+- [x] Add publish preflight validation for homepage `/`, at least one page, max 10 pages, unique slugs, valid blocks, valid navigation, valid theme tokens, and SEO fallbacks.
+  `siteconfig.ValidateDraft` and `siteconfig.ValidatePublishedSnapshot` now enforce page/homepage/slug/navigation/theme/block rules, while `buildPublishedSnapshot` fills required SEO fallbacks before publish validation runs.
 
 ## Phase 4: React Builder And Manual Prototype Creation
 

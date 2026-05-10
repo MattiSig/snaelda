@@ -18,6 +18,16 @@ func TestValidateDraftRejectsUnknownBlock(t *testing.T) {
 	}
 }
 
+func TestValidateDraftRejectsUnknownBlockVersion(t *testing.T) {
+	draft := validDraft()
+	draft.Pages[0].Blocks[0].Version = "9.9.9"
+
+	err := ValidateDraft(draft)
+	if !hasIssue(t, err, "unknown_block_version") {
+		t.Fatalf("expected unknown block version issue, got %v", err)
+	}
+}
+
 func TestValidateDraftRejectsUnsafeBlockURL(t *testing.T) {
 	draft := validDraft()
 	draft.Pages[0].Blocks[0].Props["primaryCta"] = map[string]any{
@@ -28,6 +38,20 @@ func TestValidateDraftRejectsUnsafeBlockURL(t *testing.T) {
 	err := ValidateDraft(draft)
 	if !hasIssue(t, err, "unsafe_url") {
 		t.Fatalf("expected unsafe URL issue, got %v", err)
+	}
+}
+
+func TestValidateDraftRejectsUnsupportedBlockPropertyAndInvalidAnchor(t *testing.T) {
+	draft := validDraft()
+	draft.Pages[0].Blocks[0].Props["script"] = "alert(1)"
+	draft.Pages[0].Blocks[0].Settings.AnchorID = "123-starts-wrong"
+
+	err := ValidateDraft(draft)
+	if !hasIssue(t, err, "unknown_property") {
+		t.Fatalf("expected unknown property issue, got %v", err)
+	}
+	if !hasIssue(t, err, "invalid_anchor") {
+		t.Fatalf("expected invalid anchor issue, got %v", err)
 	}
 }
 
@@ -87,6 +111,59 @@ func TestValidatePublishedSnapshotRequiresSchemaVersionAndSEO(t *testing.T) {
 	}
 	if !hasIssue(t, err, "required") {
 		t.Fatalf("expected required SEO issue, got %v", err)
+	}
+}
+
+func TestValidatePublishedSnapshotRejectsBrokenPageAndNavigationContracts(t *testing.T) {
+	draft := validDraft()
+	snapshot := PublishedSnapshot{
+		SchemaVersion: SiteConfigVersionV1,
+		Site: PublishedSite{
+			ID:            draft.Site.ID,
+			Name:          draft.Site.Name,
+			DefaultLocale: draft.Site.DefaultLocale,
+			SEO: SEOConfig{
+				Title:       draft.Site.Name,
+				Description: "Published fallback description.",
+			},
+		},
+		Theme: draft.Theme,
+		Navigation: NavigationConfig{
+			Primary: []NavigationItem{{Label: "Missing", PageID: "page_missing"}},
+		},
+		Pages: []PageDraft{
+			{
+				ID:    "page_about",
+				Title: "About",
+				Slug:  "/about",
+				SEO: SEOConfig{
+					Title:       "About | Nordic Studio",
+					Description: "About page.",
+				},
+				Blocks: draft.Pages[0].Blocks,
+			},
+			{
+				ID:    "page_duplicate",
+				Title: "Duplicate",
+				Slug:  "/about",
+				SEO: SEOConfig{
+					Title:       "Duplicate | Nordic Studio",
+					Description: "Duplicate slug page.",
+				},
+				Blocks: draft.Pages[0].Blocks,
+			},
+		},
+	}
+
+	err := ValidatePublishedSnapshot(snapshot)
+	if !hasIssue(t, err, "duplicate_slug") {
+		t.Fatalf("expected duplicate slug issue, got %v", err)
+	}
+	if !hasIssue(t, err, "missing_homepage") {
+		t.Fatalf("expected missing homepage issue, got %v", err)
+	}
+	if !hasIssue(t, err, "unresolved_reference") {
+		t.Fatalf("expected unresolved navigation issue, got %v", err)
 	}
 }
 
