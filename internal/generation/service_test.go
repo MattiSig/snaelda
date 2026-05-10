@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -98,6 +99,108 @@ func TestGenerateRejectsConflictingRequestedSlug(t *testing.T) {
 	}
 	if failedCount != 1 {
 		t.Fatalf("expected one failed job, got %#v", store.jobs)
+	}
+}
+
+func TestRepairGenerationPlanRepairsSafeIssues(t *testing.T) {
+	pages := make([]generationPagePlan, 0, siteconfig.MaxPagesPerSite+2)
+	for index := 0; index < siteconfig.MaxPagesPerSite+2; index++ {
+		pages = append(pages, generationPagePlan{
+			Title: fmt.Sprintf("Page %d", index+1),
+			Slug:  "/duplicate",
+			Goal:  "<script>alert(1)</script>Explain the offer clearly.",
+			Blocks: []generationBlockPlan{
+				{
+					Type: "hero",
+					Props: map[string]any{
+						"headline":    fmt.Sprintf("<b>Headline %d</b>", index+1),
+						"subheadline": "<p>Structured copy without raw markup.</p>",
+						"primaryCta": map[string]any{
+							"label": "<span>Get started</span>",
+							"href":  "javascript:alert(1)",
+						},
+						"layout": "unknown",
+					},
+				},
+				{
+					Type: "script_embed",
+					Props: map[string]any{
+						"code": "<script>alert(1)</script>",
+					},
+				},
+			},
+		})
+	}
+
+	repaired := repairGenerationPlan(generationPlan{
+		SiteName:    "<strong>North Light Studio</strong>",
+		SiteGoal:    "<script>bad()</script>Turn visitors into confident inquiries.",
+		ThemePreset: "unknown-theme",
+		Theme: siteconfig.ThemeConfig{
+			Version: "theme.v0",
+			Tokens: siteconfig.ThemeTokens{
+				Colors: map[string]string{
+					"background": "warm",
+				},
+			},
+		},
+		Pages:        pages,
+		AssetsNeeded: []string{"hero-image", "hero-image", "javascript:alert(1)", "supporting-image"},
+		Assumptions: []string{
+			"<p>Default locale is English.</p>",
+			"<p>Default locale is English.</p>",
+		},
+	})
+
+	if repaired.SiteName != "North Light Studio" {
+		t.Fatalf("expected sanitized site name, got %q", repaired.SiteName)
+	}
+	if repaired.SiteGoal != "Turn visitors into confident inquiries." {
+		t.Fatalf("expected sanitized site goal, got %q", repaired.SiteGoal)
+	}
+	if repaired.ThemePreset != siteconfig.ThemePaletteCalmNordic {
+		t.Fatalf("expected fallback theme preset, got %q", repaired.ThemePreset)
+	}
+	if len(repaired.AssetsNeeded) != 2 {
+		t.Fatalf("expected repaired assets list, got %#v", repaired.AssetsNeeded)
+	}
+	if len(repaired.Assumptions) != 1 || repaired.Assumptions[0] != "Default locale is English." {
+		t.Fatalf("expected deduplicated assumptions, got %#v", repaired.Assumptions)
+	}
+	if len(repaired.Pages) != siteconfig.MaxPagesPerSite {
+		t.Fatalf("expected repaired page count to be capped, got %d", len(repaired.Pages))
+	}
+	if repaired.Pages[0].Slug != "/" {
+		t.Fatalf("expected homepage slug, got %q", repaired.Pages[0].Slug)
+	}
+	seenSlugs := map[string]bool{}
+	for index, page := range repaired.Pages {
+		if seenSlugs[page.Slug] {
+			t.Fatalf("expected unique slugs, got duplicate %q", page.Slug)
+		}
+		seenSlugs[page.Slug] = true
+		if strings.Contains(page.Goal, "<") {
+			t.Fatalf("expected sanitized page goal, got %q", page.Goal)
+		}
+		if len(page.Blocks) == 0 {
+			t.Fatalf("expected repaired blocks on page %d", index)
+		}
+		for _, block := range page.Blocks {
+			if block.Type == "script_embed" {
+				t.Fatalf("expected unsupported block to be removed, got %#v", block)
+			}
+			if strings.Contains(fmt.Sprint(block.Props), "<") {
+				t.Fatalf("expected sanitized props, got %#v", block.Props)
+			}
+		}
+	}
+
+	draft, err := buildDraftFromPlan(repaired, "north-light-studio")
+	if err != nil {
+		t.Fatalf("expected repaired plan to build, got %v", err)
+	}
+	if err := siteconfig.ValidateDraft(draft); err != nil {
+		t.Fatalf("expected repaired draft to validate, got %v", err)
 	}
 }
 

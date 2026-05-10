@@ -257,7 +257,9 @@ func requireString(path string, props map[string]any, key string, minLength int,
 		c.add(fieldPath, "invalid_type", key+" must be a string")
 		return
 	}
-	validateStringLength(fieldPath, strings.TrimSpace(text), minLength, maxLength, c)
+	trimmed := strings.TrimSpace(text)
+	validateStringLength(fieldPath, trimmed, minLength, maxLength, c)
+	validatePlainText(fieldPath, trimmed, c)
 }
 
 func optionalString(path string, props map[string]any, key string, maxLength int, c *collector) {
@@ -271,7 +273,9 @@ func optionalString(path string, props map[string]any, key string, maxLength int
 		c.add(fieldPath, "invalid_type", key+" must be a string")
 		return
 	}
-	validateStringLength(fieldPath, strings.TrimSpace(text), 0, maxLength, c)
+	trimmed := strings.TrimSpace(text)
+	validateStringLength(fieldPath, trimmed, 0, maxLength, c)
+	validatePlainText(fieldPath, trimmed, c)
 }
 
 func validateStringLength(path string, text string, minLength int, maxLength int, c *collector) {

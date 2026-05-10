@@ -137,8 +137,9 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Define structured model output for `siteName`, `siteSlug`, `siteGoal`, `theme`, `pages`, `navigation`, `assetsNeeded`, and `assumptions`.
 - [x] Use the canonical draft schema as the generation output target.
 - [x] Limit generation to the prototype block set until the core loop is stable.
-- [ ] Enforce generation guardrails: max 10 pages, known blocks only, supported versions only, safe URLs only, valid theme tokens only, no scripts, no unsupported embed code, no unsanitized HTML.
-- [ ] Add deterministic repair for safe issues such as missing optional defaults, excessive page count, duplicate slugs, and missing SEO fallbacks.
+- [x] Enforce generation guardrails: max 10 pages, known blocks only, supported versions only, safe URLs only, valid theme tokens only, no scripts, no unsupported embed code, no unsanitized HTML.
+- [x] Add deterministic repair for safe issues such as missing optional defaults, excessive page count, duplicate slugs, and missing SEO fallbacks.
+  Generation now passes every plan through a Go-side repair step before persistence: it sanitizes plain-text fields, drops unsupported blocks and unsafe CTA URLs, falls back to a valid theme preset, caps page count at 10, repairs duplicate or invalid slugs, restores homepage and SEO defaults, and inserts safe fallback blocks when a page would otherwise become invalid. Verified on May 10, 2026 with `go test ./internal/generation ./internal/siteconfig` and `make test`.
 - [ ] Add model repair or retry only after backend validation fails.
 - [x] Persist valid generated output as normalized draft rows.
 - [x] Store generation prompt, assumptions, provenance metadata, validation outcome, and summary.

@@ -71,7 +71,7 @@ func (s *Service) Generate(ctx context.Context, workspaceID string, userID strin
 		return GenerateResult{}, err
 	}
 
-	plan := buildGenerationPlan(strings.TrimSpace(input.Name), prompt)
+	plan := repairGenerationPlan(buildGenerationPlan(strings.TrimSpace(input.Name), prompt))
 	slugValue, err := s.createSlug(ctx, workspaceID, strings.TrimSpace(input.Slug), plan.SiteName)
 	if err != nil {
 		_ = s.failGenerationJob(ctx, jobID, err)

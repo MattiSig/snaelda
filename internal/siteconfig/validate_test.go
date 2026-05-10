@@ -55,6 +55,17 @@ func TestValidateDraftRejectsUnsupportedBlockPropertyAndInvalidAnchor(t *testing
 	}
 }
 
+func TestValidateDraftRejectsHTMLInPlainTextFields(t *testing.T) {
+	draft := validDraft()
+	draft.Site.Name = "<strong>Nordic Studio</strong>"
+	draft.Pages[0].Blocks[0].Props["headline"] = "<em>Clear websites for focused teams</em>"
+
+	err := ValidateDraft(draft)
+	if !hasIssue(t, err, "html_not_allowed") {
+		t.Fatalf("expected html_not_allowed issue, got %v", err)
+	}
+}
+
 func TestValidateDraftRejectsInvalidPageSet(t *testing.T) {
 	draft := validDraft()
 	draft.Pages = []PageDraft{}
@@ -164,6 +175,41 @@ func TestValidatePublishedSnapshotRejectsBrokenPageAndNavigationContracts(t *tes
 	}
 	if !hasIssue(t, err, "unresolved_reference") {
 		t.Fatalf("expected unresolved navigation issue, got %v", err)
+	}
+}
+
+func TestValidatePublishedSnapshotRejectsHTMLInSEO(t *testing.T) {
+	draft := validDraft()
+	snapshot := PublishedSnapshot{
+		SchemaVersion: SiteConfigVersionV1,
+		Site: PublishedSite{
+			ID:            draft.Site.ID,
+			Name:          draft.Site.Name,
+			DefaultLocale: draft.Site.DefaultLocale,
+			SEO: SEOConfig{
+				Title:       "<title>Nordic Studio</title>",
+				Description: "Published fallback description.",
+			},
+		},
+		Theme:      draft.Theme,
+		Navigation: draft.Navigation,
+		Pages: []PageDraft{
+			{
+				ID:    "page_home",
+				Title: "Home",
+				Slug:  "/",
+				SEO: SEOConfig{
+					Title:       "Nordic Studio",
+					Description: "<p>Published fallback description.</p>",
+				},
+				Blocks: draft.Pages[0].Blocks,
+			},
+		},
+	}
+
+	err := ValidatePublishedSnapshot(snapshot)
+	if !hasIssue(t, err, "html_not_allowed") {
+		t.Fatalf("expected html_not_allowed issue, got %v", err)
 	}
 }
 

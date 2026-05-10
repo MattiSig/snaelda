@@ -23,6 +23,7 @@ var (
 	hexColorPattern     = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$`)
 	anchorPattern       = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,79}$`)
 	unsafeControlChars  = regexp.MustCompile(`[\x00-\x1f\x7f]`)
+	unsafeMarkupPattern = regexp.MustCompile(`(?is)<\s*/?\s*[a-z][^>]*>`)
 	supportedColorKeys  = set("background", "text", "foreground", "surface", "surfaceMuted", "primary", "secondary", "accent", "muted", "border", "ring")
 	supportedTypeKeys   = set("headingFont", "bodyFont", "heading", "body", "scale")
 	supportedLayoutKeys = set("maxWidth", "contentWidth", "sectionSpacing")
@@ -329,6 +330,13 @@ func validateRequiredText(path string, value string, minLength int, maxLength in
 	}
 	if len(text) > maxLength {
 		c.add(path, "invalid_length", "value is too long")
+	}
+	validatePlainText(path, text, c)
+}
+
+func validatePlainText(path string, value string, c *collector) {
+	if unsafeMarkupPattern.MatchString(value) {
+		c.add(path, "html_not_allowed", "plain text fields cannot include HTML markup")
 	}
 }
 
