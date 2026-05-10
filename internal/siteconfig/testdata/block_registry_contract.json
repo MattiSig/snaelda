@@ -1,0 +1,411 @@
+{
+  "blockRegistry": [
+    {
+      "type": "cta_band",
+      "version": "1.0.0",
+      "displayName": "CTA band",
+      "category": "conversion",
+      "defaultProps": {
+        "body": "Invite visitors into the next step.",
+        "heading": "Ready to begin?",
+        "variant": "primary"
+      },
+      "editorSchema": [
+        {
+          "name": "heading",
+          "label": "Heading",
+          "control": "text"
+        },
+        {
+          "name": "body",
+          "label": "Body",
+          "control": "textarea"
+        },
+        {
+          "name": "cta",
+          "label": "CTA",
+          "control": "link",
+          "fields": [
+            {
+              "name": "label",
+              "label": "Label",
+              "control": "text"
+            },
+            {
+              "name": "href",
+              "label": "Link",
+              "control": "text",
+              "placeholder": "/contact"
+            }
+          ]
+        },
+        {
+          "name": "variant",
+          "label": "Variant",
+          "control": "select",
+          "options": [
+            "primary",
+            "secondary",
+            "accent"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "features_grid",
+      "version": "1.0.0",
+      "displayName": "Features grid",
+      "category": "content",
+      "defaultProps": {
+        "columns": 3,
+        "heading": "What you get",
+        "items": [
+          {
+            "body": "A concise benefit statement.",
+            "title": "Fast"
+          }
+        ]
+      },
+      "editorSchema": [
+        {
+          "name": "heading",
+          "label": "Heading",
+          "control": "text"
+        },
+        {
+          "name": "intro",
+          "label": "Intro",
+          "control": "textarea"
+        },
+        {
+          "name": "items",
+          "label": "Items",
+          "control": "repeater",
+          "itemFields": [
+            {
+              "name": "title",
+              "label": "Title",
+              "control": "text"
+            },
+            {
+              "name": "body",
+              "label": "Body",
+              "control": "textarea"
+            },
+            {
+              "name": "icon",
+              "label": "Icon label",
+              "control": "text"
+            }
+          ]
+        },
+        {
+          "name": "columns",
+          "label": "Columns",
+          "control": "select",
+          "valueType": "integer",
+          "options": [
+            "2",
+            "3",
+            "4"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "hero",
+      "version": "1.0.0",
+      "displayName": "Hero",
+      "category": "hero",
+      "defaultProps": {
+        "headline": "A focused website starts here",
+        "layout": "centered"
+      },
+      "editorSchema": [
+        {
+          "name": "eyebrow",
+          "label": "Eyebrow",
+          "control": "text"
+        },
+        {
+          "name": "headline",
+          "label": "Headline",
+          "control": "text"
+        },
+        {
+          "name": "subheadline",
+          "label": "Subheadline",
+          "control": "textarea"
+        },
+        {
+          "name": "primaryCta",
+          "label": "Primary CTA",
+          "control": "link",
+          "fields": [
+            {
+              "name": "label",
+              "label": "Label",
+              "control": "text"
+            },
+            {
+              "name": "href",
+              "label": "Link",
+              "control": "text",
+              "placeholder": "/contact"
+            }
+          ]
+        },
+        {
+          "name": "secondaryCta",
+          "label": "Secondary CTA",
+          "control": "link",
+          "fields": [
+            {
+              "name": "label",
+              "label": "Label",
+              "control": "text"
+            },
+            {
+              "name": "href",
+              "label": "Link",
+              "control": "text",
+              "placeholder": "/about"
+            }
+          ]
+        },
+        {
+          "name": "layout",
+          "label": "Layout",
+          "control": "select",
+          "options": [
+            "centered",
+            "split-left",
+            "split-right"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "image_text",
+      "version": "1.0.0",
+      "displayName": "Image and text",
+      "category": "media",
+      "defaultProps": {
+        "body": "Pair a short message with a supporting image.",
+        "heading": "Built with structure",
+        "imagePosition": "right"
+      },
+      "editorSchema": [
+        {
+          "name": "heading",
+          "label": "Heading",
+          "control": "text"
+        },
+        {
+          "name": "body",
+          "label": "Body",
+          "control": "textarea"
+        },
+        {
+          "name": "image",
+          "label": "Image",
+          "control": "asset",
+          "description": "Assets are stored by id once uploads are wired in."
+        },
+        {
+          "name": "cta",
+          "label": "CTA",
+          "control": "link",
+          "fields": [
+            {
+              "name": "label",
+              "label": "Label",
+              "control": "text"
+            },
+            {
+              "name": "href",
+              "label": "Link",
+              "control": "text",
+              "placeholder": "/contact"
+            }
+          ]
+        },
+        {
+          "name": "imagePosition",
+          "label": "Image position",
+          "control": "select",
+          "options": [
+            "left",
+            "right"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "text_section",
+      "version": "1.0.0",
+      "displayName": "Text section",
+      "category": "content",
+      "defaultProps": {
+        "alignment": "left",
+        "body": "Add focused supporting copy here.",
+        "heading": "About",
+        "width": "default"
+      },
+      "editorSchema": [
+        {
+          "name": "heading",
+          "label": "Heading",
+          "control": "text"
+        },
+        {
+          "name": "body",
+          "label": "Body",
+          "control": "textarea"
+        },
+        {
+          "name": "alignment",
+          "label": "Alignment",
+          "control": "select",
+          "options": [
+            "left",
+            "center",
+            "right"
+          ]
+        },
+        {
+          "name": "width",
+          "label": "Width",
+          "control": "select",
+          "options": [
+            "narrow",
+            "default",
+            "wide"
+          ]
+        }
+      ]
+    }
+  ],
+  "draft": {
+    "site": {
+      "id": "site_registry_contract",
+      "name": "Registry Contract Studio",
+      "slug": "registry-contract-studio",
+      "status": "draft",
+      "defaultLocale": "en",
+      "seo": {
+        "title": "Registry Contract Studio",
+        "description": "Shared block-registry fixture proving Go validation and React rendering stay aligned."
+      }
+    },
+    "theme": {
+      "version": "theme.v1",
+      "tokens": {
+        "colors": {
+          "accent": "#ff8cad",
+          "background": "#151215",
+          "border": "#5a3e57",
+          "foreground": "#f3ead8",
+          "muted": "#caa778",
+          "primary": "#8ee2d1",
+          "ring": "#f3b547",
+          "secondary": "#8fc6ff",
+          "surface": "#231c24",
+          "surfaceMuted": "#302333"
+        },
+        "typography": {
+          "bodyFont": "Avenir Next",
+          "headingFont": "Iowan Old Style"
+        },
+        "layout": {
+          "contentWidth": "720px",
+          "sectionSpacing": "96px"
+        },
+        "shape": {
+          "radius": "28px"
+        }
+      }
+    },
+    "navigation": {
+      "primary": [
+        {
+          "label": "Home",
+          "pageId": "page_home"
+        }
+      ]
+    },
+    "pages": [
+      {
+        "id": "page_home",
+        "title": "Home",
+        "slug": "/",
+        "seo": {
+          "title": "Registry Contract Studio",
+          "description": "Fixture page containing one valid instance of every Go-owned prototype block."
+        },
+        "blocks": [
+          {
+            "id": "block_01_cta_band",
+            "type": "cta_band",
+            "version": "1.0.0",
+            "props": {
+              "body": "Invite visitors into the next step.",
+              "heading": "Ready to begin?",
+              "variant": "primary"
+            },
+            "settings": {}
+          },
+          {
+            "id": "block_02_features_grid",
+            "type": "features_grid",
+            "version": "1.0.0",
+            "props": {
+              "columns": 3,
+              "heading": "What you get",
+              "items": [
+                {
+                  "body": "A concise benefit statement.",
+                  "title": "Fast"
+                }
+              ]
+            },
+            "settings": {}
+          },
+          {
+            "id": "block_03_hero",
+            "type": "hero",
+            "version": "1.0.0",
+            "props": {
+              "headline": "A focused website starts here",
+              "layout": "centered"
+            },
+            "settings": {}
+          },
+          {
+            "id": "block_04_image_text",
+            "type": "image_text",
+            "version": "1.0.0",
+            "props": {
+              "body": "Pair a short message with a supporting image.",
+              "heading": "Built with structure",
+              "imagePosition": "right"
+            },
+            "settings": {}
+          },
+          {
+            "id": "block_05_text_section",
+            "type": "text_section",
+            "version": "1.0.0",
+            "props": {
+              "alignment": "left",
+              "body": "Add focused supporting copy here.",
+              "heading": "About",
+              "width": "default"
+            },
+            "settings": {}
+          }
+        ]
+      }
+    ]
+  }
+}

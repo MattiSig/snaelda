@@ -70,7 +70,8 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 
 - [x] Define the shared `BlockDefinition` contract with type, version, display name, category, prop schema, default props, editor schema, renderer mapping, and migration hook.
   The Go-owned `siteconfig` registry now carries type, version, display name, category, default props, and recursive editor field metadata for the prototype blocks, while React consumes that contract for block editing and rendering. Renderer mapping remains owned by the React renderer switch until a more formal generated contract is added.
-- [ ] Decide the registry ownership boundary: Go owns validation schemas and persistence rules; React owns renderer components and editor field components; both must be generated from or checked against the same contract.
+- [x] Decide the registry ownership boundary: Go owns validation schemas and persistence rules; React owns renderer components and editor field components; both must be generated from or checked against the same contract.
+  Decision 0003 formalizes the boundary: `internal/siteconfig` remains the canonical source for block type/version metadata, default props, and validation, while React consumes that API-shaped contract for renderer/editor support instead of redefining schemas locally.
 - [x] Implement the registry in code rather than the database.
 - [x] Add registry lookup by `type` and `version`.
 - [x] Add validation for block existence, version existence, props shape, links, asset references, and hidden/settings fields.
@@ -80,7 +81,8 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Implement React editor field metadata for those prototype blocks.
 - [x] Build React renderer and editor surfaces with Tailwind utilities so preview, builder, and publish output stay visually consistent.
   The shared builder shell, block editor, preview renderer, public snapshot page, and route-level empty/error states now use source-owned Tailwind utility composition from `apps/web/src/lib/styles.ts` plus shadcn-wrapped controls so the authenticated builder and render surfaces stay aligned.
-- [ ] Add contract tests or generated fixtures proving Go validation accepts exactly what the React renderer/editor expects.
+- [x] Add contract tests or generated fixtures proving Go validation accepts exactly what the React renderer/editor expects.
+  Shared fixture `internal/siteconfig/testdata/block_registry_contract.json` is generated from the Go registry contract, asserted in Go against the live definitions, and imported by new React tests to prove every Go-defined prototype block renders in `SiteDraftRenderer` and opens in `BlockEditor` without falling back to unsupported UI. Verified on May 10, 2026 with `make test`, `npm run web:test`, `npm run web:lint`, and `npm run web:build`.
 - [x] Add registry tests that reject unknown blocks, unknown versions, invalid props, unsafe links, and unsupported settings.
   `internal/siteconfig` now includes registry-focused tests covering invalid block definitions, duplicate registrations, unknown versions, unsafe CTA URLs, unsupported block props, and invalid anchor settings alongside the existing draft/publish validation suite.
 - [ ] Defer remaining MVP blocks until the prototype loop works.
