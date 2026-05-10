@@ -42,7 +42,8 @@ This plan is sequenced for the shortest path to a working prototype first. The p
   Runtime validation now lives in `internal/siteconfig` with canonical draft/snapshot types, a Go-owned prototype block registry, theme/navigation/URL/form validators, and regression tests for unsafe URLs, unknown blocks, page constraints, theme tokens, and publish snapshot requirements. Asset ownership checks still need to be wired into save-time persistence once asset APIs exist.
 - [x] Add backend test setup for schema validation, registry validation, publish validation, persistence, and API authorization.
   Backend coverage now spans `internal/siteconfig` schema + registry validation, `internal/publishing` snapshot/publish behavior, `internal/sites` draft persistence/assembly, and handler/authorization tests across site, generation, theme, and publish routes. Verified on May 10, 2026 with `make test` after adding registry definition/props edge-case coverage for unknown versions, unsafe links, unsupported block props, duplicate definitions, and published contract regressions.
-- [ ] Add frontend test setup for core builder flows and renderer smoke tests.
+- [x] Add frontend test setup for core builder flows and renderer smoke tests.
+  Frontend coverage now runs through Vitest + Testing Library in `apps/web`, with passing tests for nested block-editor saves and hidden-state handling, shared renderer anchor/published-link resolution, and published snapshot loading/error states. Verified on May 10, 2026 with `npm run web:test`, `npm run web:lint`, and `npm run web:build`.
 - [ ] Reserve a `billing` backend module boundary for Stripe-backed workspace subscriptions, but keep payment implementation out of the first prototype loop.
 
 ## Phase 1: Data Model And Draft Persistence
