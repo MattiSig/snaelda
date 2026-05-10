@@ -34,6 +34,23 @@ describe('SiteDraftRenderer', () => {
     expect(screen.queryByText('Home')).toBeNull()
     expect(screen.getByText('Contact')).toBeTruthy()
   })
+
+  it('keeps published links root-relative when rendered on a hosted domain', () => {
+    render(
+      <SiteDraftRenderer
+        site={buildDraft()}
+        linkMode="published"
+        publishedBasePath=""
+      />,
+    )
+
+    const navLinks = screen.getAllByRole('link')
+    expect(navLinks[0]?.getAttribute('href')).toBe('/')
+    expect(navLinks[1]?.getAttribute('href')).toBe('/contact')
+    expect(screen.getByRole('link', { name: 'Book a visit' }).getAttribute('href')).toBe(
+      '/contact',
+    )
+  })
 })
 
 function buildDraft(): SiteDraft {

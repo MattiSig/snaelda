@@ -529,3 +529,14 @@ export async function getPublishedSite(siteSlug: string, pagePath = '/') {
     credentials: 'omit',
   })
 }
+
+export async function getPublishedSiteByHostname(hostname: string, pagePath = '/') {
+  const search = new URLSearchParams({ hostname })
+  if (pagePath && pagePath !== '/') {
+    search.set('path', pagePath)
+  }
+
+  return apiFetch<PublishedSiteResponse>(`/api/public/render?${search.toString()}`, {
+    credentials: 'omit',
+  })
+}

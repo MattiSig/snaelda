@@ -1,14 +1,30 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
+import { PublishedSitePage } from '@/components/PublishedSitePage'
+import { getHostedPublicSiteContext } from '@/lib/public-site'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { actions, form, layout, panel, text } from '@/lib/styles'
 
 export const Route = createFileRoute('/')({
+  loader: async () => ({
+    hostedPublic: await getHostedPublicSiteContext(),
+  }),
   component: Home,
 })
 
 function Home() {
+  const { hostedPublic } = Route.useLoaderData()
+
+  if (hostedPublic.isHostedPublic) {
+    return (
+      <PublishedSitePage
+        hostname={hostedPublic.hostname}
+        pagePath={hostedPublic.pagePath}
+      />
+    )
+  }
+
   return (
     <main className={cn(layout.pageShell, 'pb-12 pt-10')}>
       <section className="grid min-h-[calc(100vh-150px)] items-center gap-8 lg:grid-cols-[minmax(0,1.02fr)_minmax(360px,0.98fr)]">

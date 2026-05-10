@@ -25,6 +25,7 @@ export function SiteDraftRenderer({
   selectedPageId,
   linkMode = 'anchors',
   siteSlug,
+  publishedBasePath,
 }: {
   site: SiteDraft | PublishedSnapshot | RenderableSite
   eyebrow?: string
@@ -32,6 +33,7 @@ export function SiteDraftRenderer({
   selectedPageId?: string
   linkMode?: 'anchors' | 'published'
   siteSlug?: string
+  publishedBasePath?: string
 }) {
   const renderedPages = selectedPageId
     ? site.pages.filter((page) => page.id === selectedPageId)
@@ -66,6 +68,7 @@ export function SiteDraftRenderer({
                 slugToPage,
                 linkMode,
                 siteSlug,
+                publishedBasePath,
               )}
             >
               {item.label}
@@ -93,7 +96,13 @@ export function SiteDraftRenderer({
                         key={block.id}
                         props={block.props}
                         resolveHref={(href) =>
-                          resolvePageHref(href, slugToPage, linkMode, siteSlug)
+                          resolvePageHref(
+                            href,
+                            slugToPage,
+                            linkMode,
+                            siteSlug,
+                            publishedBasePath,
+                          )
                         }
                       />
                     )
@@ -107,7 +116,13 @@ export function SiteDraftRenderer({
                         key={block.id}
                         props={block.props}
                         resolveHref={(href) =>
-                          resolvePageHref(href, slugToPage, linkMode, siteSlug)
+                          resolvePageHref(
+                            href,
+                            slugToPage,
+                            linkMode,
+                            siteSlug,
+                            publishedBasePath,
+                          )
                         }
                       />
                     )
@@ -251,17 +266,24 @@ function resolveNavigationHref(
   slugToPage: Map<string, RoutablePage>,
   linkMode: 'anchors' | 'published',
   siteSlug?: string,
+  publishedBasePath?: string,
 ) {
   if (item.pageId && pageAnchors.has(item.pageId)) {
-    if (linkMode === 'published' && siteSlug) {
+    if (linkMode === 'published') {
       const page = pageById.get(item.pageId)
       if (page) {
-        return buildPublishedPageHref(siteSlug, page.slug)
+        return buildPublishedPageHref(page.slug, siteSlug, publishedBasePath)
       }
     }
     return `#${pageAnchors.get(item.pageId)}`
   }
-  return resolvePageHref(item.href ?? '#', slugToPage, linkMode, siteSlug)
+  return resolvePageHref(
+    item.href ?? '#',
+    slugToPage,
+    linkMode,
+    siteSlug,
+    publishedBasePath,
+  )
 }
 
 function resolvePageHref(
@@ -269,6 +291,7 @@ function resolvePageHref(
   slugToPage: Map<string, RoutablePage>,
   linkMode: 'anchors' | 'published',
   siteSlug?: string,
+  publishedBasePath?: string,
 ) {
   if (!href.startsWith('/')) {
     return href
@@ -277,17 +300,35 @@ function resolvePageHref(
   if (!page) {
     return href
   }
-  if (linkMode === 'published' && siteSlug) {
-    return buildPublishedPageHref(siteSlug, page.slug)
+  if (linkMode === 'published') {
+    return buildPublishedPageHref(page.slug, siteSlug, publishedBasePath)
   }
   return `#${pageAnchor(page.slug, page.id)}`
 }
 
-function buildPublishedPageHref(siteSlug: string, pageSlug: string) {
+function buildPublishedPageHref(
+  pageSlug: string,
+  siteSlug?: string,
+  publishedBasePath?: string,
+) {
+  const basePath = resolvePublishedBasePath(siteSlug, publishedBasePath)
   if (pageSlug === '/') {
-    return `/public/${siteSlug}`
+    return basePath || '/'
   }
-  return `/public/${siteSlug}${pageSlug}`
+  return `${basePath}${pageSlug}`
+}
+
+function resolvePublishedBasePath(siteSlug?: string, publishedBasePath?: string) {
+  if (typeof publishedBasePath === 'string') {
+    if (publishedBasePath === '/') {
+      return ''
+    }
+    return publishedBasePath.replace(/\/+$/, '')
+  }
+  if (!siteSlug) {
+    return ''
+  }
+  return `/public/${siteSlug}`
 }
 
 function pageAnchor(slug: string, pageId: string) {

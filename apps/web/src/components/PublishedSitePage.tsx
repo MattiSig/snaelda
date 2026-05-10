@@ -3,18 +3,22 @@ import { SiteDraftRenderer } from '@/components/SiteDraftRenderer'
 import {
   APIError,
   getPublishedSite,
+  getPublishedSiteByHostname,
   type PublishedSiteResponse,
 } from '@/lib/api'
 import { layout, ribbonPanel, statGrid, text } from '@/lib/styles'
 
 export function PublishedSitePage({
   siteSlug,
+  hostname,
   pagePath,
 }: {
-  siteSlug: string
+  siteSlug?: string
+  hostname?: string
   pagePath: string
 }) {
-  const requestKey = `${siteSlug}:${pagePath}`
+  const source = siteSlug ? `slug:${siteSlug}` : `host:${hostname ?? ''}`
+  const requestKey = `${source}:${pagePath}`
   const [state, setState] = useState<{
     key: string
     site: PublishedSiteResponse | null
@@ -27,8 +31,11 @@ export function PublishedSitePage({
 
   useEffect(() => {
     let isMounted = true
+    const request = siteSlug
+      ? getPublishedSite(siteSlug, pagePath)
+      : getPublishedSiteByHostname(hostname ?? '', pagePath)
 
-    getPublishedSite(siteSlug, pagePath)
+    request
       .then((response) => {
         if (isMounted) {
           setState({
@@ -53,7 +60,7 @@ export function PublishedSitePage({
     return () => {
       isMounted = false
     }
-  }, [pagePath, requestKey, siteSlug])
+  }, [hostname, pagePath, requestKey, siteSlug])
 
   const site = state.key === requestKey ? state.site : null
   const errorMessage = state.key === requestKey ? state.errorMessage : ''
@@ -98,7 +105,7 @@ export function PublishedSitePage({
           </div>
           <div className={statGrid.item}>
             <dt className={text.eyebrow}>Hostname</dt>
-            <dd className={statGrid.value}>{site.hostname || 'local path'}</dd>
+            <dd className={statGrid.value}>{site.hostname || hostname || 'local path'}</dd>
           </div>
         </dl>
       </section>
@@ -109,6 +116,7 @@ export function PublishedSitePage({
         selectedPageId={site.page.id}
         linkMode="published"
         siteSlug={site.siteSlug}
+        publishedBasePath={hostname ? '' : undefined}
       />
     </main>
   )

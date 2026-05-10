@@ -171,7 +171,12 @@ func (s *Server) recover(next http.Handler) http.Handler {
 func (s *Server) cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if origin != "" && origin == s.config.AppBaseURL {
+		switch {
+		case isPublicReadRoute(r):
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		case origin != "" && origin == s.config.AppBaseURL:
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept")
@@ -186,6 +191,10 @@ func (s *Server) cors(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func isPublicReadRoute(r *http.Request) bool {
+	return r.Method == http.MethodGet && len(r.URL.Path) >= len("/api/public/") && r.URL.Path[:len("/api/public/")] == "/api/public/"
 }
 
 func firstNonEmpty(value string, fallback string) string {

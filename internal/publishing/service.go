@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -302,9 +303,7 @@ func (s *Service) ListVersions(ctx context.Context, siteID string) ([]VersionSum
 }
 
 func (s *Service) LoadPublishedSiteBySlug(ctx context.Context, siteSlug string, pagePath string) (PublishedSiteResult, error) {
-	var result PublishedSiteResult
-	var snapshotJSON []byte
-	err := s.db.QueryRow(ctx, `
+	return s.loadPublishedSite(ctx, `
 		select s.slug,
 		       coalesce((
 		         select hostname
@@ -325,7 +324,33 @@ func (s *Service) LoadPublishedSiteBySlug(ctx context.Context, siteSlug string, 
 		where s.slug = $1
 		order by s.updated_at desc
 		limit 1
-	`, strings.TrimSpace(siteSlug)).Scan(
+	`, strings.TrimSpace(siteSlug), pagePath)
+}
+
+func (s *Service) LoadPublishedSiteByHostname(ctx context.Context, hostname string, pagePath string) (PublishedSiteResult, error) {
+	return s.loadPublishedSite(ctx, `
+		select s.slug,
+		       d.hostname,
+		       sv.id::text,
+		       sv.site_id::text,
+		       sv.version_number,
+		       sv.created_at,
+		       coalesce(sv.publish_note, ''),
+		       sv.snapshot
+		from site_domains d
+		join sites s on s.id = d.site_id
+		join site_versions sv on sv.id = s.published_version_id
+		where lower(d.hostname) = lower($1)
+		  and d.status = 'active'
+		order by d.updated_at desc, d.created_at desc
+		limit 1
+	`, normalizeHostname(hostname), pagePath)
+}
+
+func (s *Service) loadPublishedSite(ctx context.Context, query string, lookup string, pagePath string) (PublishedSiteResult, error) {
+	var result PublishedSiteResult
+	var snapshotJSON []byte
+	err := s.db.QueryRow(ctx, query, lookup).Scan(
 		&result.SiteSlug,
 		&result.Hostname,
 		&result.Version.ID,
@@ -358,6 +383,22 @@ func (s *Service) LoadPublishedSiteBySlug(ctx context.Context, siteSlug string, 
 	result.PagePath = normalizedPath
 	result.Page = page
 	return result, nil
+}
+
+func normalizeHostname(raw string) string {
+	value := strings.TrimSpace(strings.ToLower(raw))
+	if value == "" {
+		return ""
+	}
+	if host, _, err := net.SplitHostPort(value); err == nil {
+		value = host
+	} else if strings.Count(value, ":") == 1 {
+		host, port, found := strings.Cut(value, ":")
+		if found && host != "" && port != "" {
+			value = host
+		}
+	}
+	return strings.TrimSuffix(value, ".")
 }
 
 func normalizePublishedPagePath(raw string) string {

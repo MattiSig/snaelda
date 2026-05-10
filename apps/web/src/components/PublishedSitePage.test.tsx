@@ -2,8 +2,9 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PublishedSiteResponse } from '@/lib/api'
 
-const { getPublishedSiteMock } = vi.hoisted(() => ({
+const { getPublishedSiteMock, getPublishedSiteByHostnameMock } = vi.hoisted(() => ({
   getPublishedSiteMock: vi.fn(),
+  getPublishedSiteByHostnameMock: vi.fn(),
 }))
 
 vi.mock('@/lib/api', async () => {
@@ -11,6 +12,7 @@ vi.mock('@/lib/api', async () => {
   return {
     ...actual,
     getPublishedSite: getPublishedSiteMock,
+    getPublishedSiteByHostname: getPublishedSiteByHostnameMock,
   }
 })
 
@@ -20,6 +22,7 @@ import { PublishedSitePage } from './PublishedSitePage'
 describe('PublishedSitePage', () => {
   beforeEach(() => {
     getPublishedSiteMock.mockReset()
+    getPublishedSiteByHostnameMock.mockReset()
   })
 
   it('loads and renders a published snapshot page', async () => {
@@ -46,6 +49,25 @@ describe('PublishedSitePage', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Published page not found')).toBeTruthy()
+    })
+  })
+
+  it('loads and renders a published snapshot page by hostname', async () => {
+    getPublishedSiteByHostnameMock.mockResolvedValueOnce(buildPublishedSiteResponse())
+
+    render(
+      <PublishedSitePage
+        hostname="loom-light.localhost:3000"
+        pagePath="/contact"
+      />,
+    )
+
+    await waitFor(() => {
+      expect(getPublishedSiteByHostnameMock).toHaveBeenCalledWith(
+        'loom-light.localhost:3000',
+        '/contact',
+      )
+      expect(screen.getByText('loom-light.localhost')).toBeTruthy()
     })
   })
 })

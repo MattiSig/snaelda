@@ -210,6 +210,48 @@ func TestReadyWithDatabaseError(t *testing.T) {
 	}
 }
 
+func TestPublicRoutesAllowCrossOriginGET(t *testing.T) {
+	server := NewServer(ServerConfig{
+		Config: config.Config{
+			AppEnv:     "test",
+			HTTPAddr:   "127.0.0.1:0",
+			AppBaseURL: "http://localhost:3000",
+		},
+		Logger: slog.New(slog.DiscardHandler),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/public/render?hostname=demo.localhost", nil)
+	req.Header.Set("Origin", "http://demo.localhost:3000")
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+
+	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("expected wildcard origin for public route, got %q", got)
+	}
+}
+
+func TestPrivateRoutesKeepBuilderOriginPolicy(t *testing.T) {
+	server := NewServer(ServerConfig{
+		Config: config.Config{
+			AppEnv:     "test",
+			HTTPAddr:   "127.0.0.1:0",
+			AppBaseURL: "http://localhost:3000",
+		},
+		Logger: slog.New(slog.DiscardHandler),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sites", nil)
+	req.Header.Set("Origin", "http://demo.localhost:3000")
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+
+	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("expected no CORS header for non-builder private origin, got %q", got)
+	}
+}
+
 func validAuthCookie(t *testing.T) *http.Cookie {
 	t.Helper()
 

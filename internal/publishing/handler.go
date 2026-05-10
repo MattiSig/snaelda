@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/MattiSig/snaelda/internal/auth"
@@ -24,6 +26,7 @@ type Publisher interface {
 	Rollback(ctx context.Context, siteID string, versionID string, userID string) (RollbackResult, error)
 	ListVersions(ctx context.Context, siteID string) ([]VersionSummary, error)
 	LoadPublishedSiteBySlug(ctx context.Context, siteSlug string, pagePath string) (PublishedSiteResult, error)
+	LoadPublishedSiteByHostname(ctx context.Context, hostname string, pagePath string) (PublishedSiteResult, error)
 }
 
 type Authorizer interface {
@@ -47,6 +50,7 @@ func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.
 	mux.Handle("GET /api/sites/{siteId}/versions", requireUser(http.HandlerFunc(h.listVersions)))
 	mux.Handle("POST /api/sites/{siteId}/rollback/{versionId}", requireUser(http.HandlerFunc(h.rollback)))
 	mux.HandleFunc("GET /api/public/sites/{siteSlug}", h.getPublishedSite)
+	mux.HandleFunc("GET /api/public/render", h.getPublishedSiteByHostname)
 }
 
 func (h *Handler) publish(w http.ResponseWriter, r *http.Request) {
@@ -170,6 +174,31 @@ func (h *Handler) getPublishedSite(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) getPublishedSiteByHostname(w http.ResponseWriter, r *http.Request) {
+	hostname := publicHostnameFromRequest(r)
+	if hostname == "" {
+		writeError(w, http.StatusBadRequest, "invalid_hostname", "hostname is required")
+		return
+	}
+
+	pagePath := r.URL.Query().Get("path")
+	result, err := h.service.LoadPublishedSiteByHostname(r.Context(), hostname, pagePath)
+	if err != nil {
+		writePublishError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"siteSlug":  result.SiteSlug,
+		"hostname":  result.Hostname,
+		"publicUrl": h.publicURLFromHostname(result.Hostname, result.PagePath),
+		"version":   result.Version,
+		"pagePath":  result.PagePath,
+		"page":      result.Page,
+		"snapshot":  result.Snapshot,
+	})
+}
+
 func (h *Handler) publicURLFromSlug(siteSlug string) string {
 	return h.publicURLFromPath(siteSlug, "/")
 }
@@ -183,6 +212,48 @@ func (h *Handler) publicURLFromPath(siteSlug string, pagePath string) string {
 		return path
 	}
 	return h.appBaseURL + path
+}
+
+func (h *Handler) publicURLFromHostname(hostname string, pagePath string) string {
+	normalizedHostname := normalizeHostname(hostname)
+	if normalizedHostname == "" {
+		return normalizePublishedPagePath(pagePath)
+	}
+
+	scheme := "http"
+	port := ""
+	if h.appBaseURL != "" {
+		if baseURL, err := url.Parse(h.appBaseURL); err == nil {
+			if baseURL.Scheme != "" {
+				scheme = baseURL.Scheme
+			}
+			port = baseURL.Port()
+		}
+	}
+
+	host := normalizedHostname
+	if port != "" && !strings.Contains(normalizedHostname, ":") {
+		host = net.JoinHostPort(normalizedHostname, port)
+	}
+
+	return (&url.URL{
+		Scheme: scheme,
+		Host:   host,
+		Path:   normalizePublishedPagePath(pagePath),
+	}).String()
+}
+
+func publicHostnameFromRequest(r *http.Request) string {
+	for _, value := range []string{
+		r.URL.Query().Get("hostname"),
+		r.Header.Get("X-Forwarded-Host"),
+		r.Host,
+	} {
+		if normalized := normalizeHostname(value); normalized != "" {
+			return normalized
+		}
+	}
+	return ""
 }
 
 func writePublishError(w http.ResponseWriter, err error) {

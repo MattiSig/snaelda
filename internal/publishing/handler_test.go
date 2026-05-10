@@ -27,6 +27,7 @@ type fakePublisher struct {
 	rollbackUserID  string
 	rollbackVersion string
 	publishedSlug   string
+	publishedHost   string
 	publishedPath   string
 	versionSiteID   string
 	err             error
@@ -53,6 +54,12 @@ func (f *fakePublisher) ListVersions(_ context.Context, siteID string) ([]Versio
 
 func (f *fakePublisher) LoadPublishedSiteBySlug(_ context.Context, siteSlug string, pagePath string) (PublishedSiteResult, error) {
 	f.publishedSlug = siteSlug
+	f.publishedPath = pagePath
+	return f.publishedResult, f.err
+}
+
+func (f *fakePublisher) LoadPublishedSiteByHostname(_ context.Context, hostname string, pagePath string) (PublishedSiteResult, error) {
+	f.publishedHost = hostname
 	f.publishedPath = pagePath
 	return f.publishedResult, f.err
 }
@@ -239,6 +246,54 @@ func TestGetPublishedSiteReturnsSnapshotWithoutAuth(t *testing.T) {
 	}
 	if publisher.publishedPath != "/contact" {
 		t.Fatalf("expected page path to reach loader, got %q", publisher.publishedPath)
+	}
+}
+
+func TestGetPublishedSiteByHostnameReturnsSnapshotWithoutAuth(t *testing.T) {
+	publisher := &fakePublisher{
+		publishedResult: PublishedSiteResult{
+			SiteSlug: "nordic-studio",
+			Hostname: "nordic-studio.localhost",
+			Version: VersionSummary{
+				ID:            "version-2",
+				SiteID:        "site_demo",
+				VersionNumber: 2,
+				IsCurrent:     true,
+			},
+			PagePath: "/contact",
+			Page:     validSnapshotWithContact().Pages[1],
+			Snapshot: validSnapshotWithContact(),
+		},
+	}
+	handler := Handler{
+		service:    publisher,
+		authorizer: fakePublishAuthorizer{},
+		appBaseURL: "http://localhost:3000",
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/public/render?hostname=nordic-studio.localhost:3000&path=/contact", nil)
+	res := httptest.NewRecorder()
+
+	handler.getPublishedSiteByHostname(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	if publisher.publishedHost != "nordic-studio.localhost" {
+		t.Fatalf("expected normalized hostname to reach loader, got %q", publisher.publishedHost)
+	}
+	if publisher.publishedPath != "/contact" {
+		t.Fatalf("expected page path to reach loader, got %q", publisher.publishedPath)
+	}
+
+	var payload struct {
+		PublicURL string `json:"publicUrl"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.PublicURL != "http://nordic-studio.localhost:3000/contact" {
+		t.Fatalf("expected hosted public url, got %q", payload.PublicURL)
 	}
 }
 

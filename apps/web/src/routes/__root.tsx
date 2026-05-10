@@ -4,12 +4,14 @@ import {
   Link,
   Scripts,
   createRootRoute,
+  useMatches,
 } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { DefaultCatchBoundary } from '~/components/DefaultCatchBoundary'
 import { NotFound } from '~/components/NotFound'
+import type { HostedPublicSiteContext } from '~/lib/public-site'
 import { topbar } from '~/lib/styles'
 import appCss from '~/styles/app.css?url'
 
@@ -35,11 +37,21 @@ export const Route = createRootRoute({
 })
 
 function RootDocument({ children }: { children: ReactNode }) {
+  const matches = useMatches()
   useEffect(() => {
     const storedMode = window.localStorage.getItem('snaelda-color-mode')
     const nextMode = storedMode === 'light' ? 'light' : 'dark'
     document.documentElement.classList.toggle('dark', nextMode === 'dark')
   }, [])
+
+  const hostedPublic = matches
+    .map((match) => {
+      const loaderData = match.loaderData as
+        | { hostedPublic?: HostedPublicSiteContext }
+        | undefined
+      return loaderData?.hostedPublic ?? null
+    })
+    .find((value) => value?.isHostedPublic) ?? null
 
   function toggleColorMode() {
     const nextMode = document.documentElement.classList.contains('dark')
@@ -55,53 +67,55 @@ function RootDocument({ children }: { children: ReactNode }) {
         <HeadContent />
       </head>
       <body>
-        <header className={topbar.shell}>
-          <Link to="/" className={topbar.brand} activeOptions={{ exact: true }}>
-            <img
-              src="/logo.png"
-              alt=""
-              className="size-8 rounded-full object-contain"
-            />
-            Snaelda
-          </Link>
-          <div className={topbar.controls}>
-            <nav aria-label="Primary navigation" className={topbar.nav}>
-              <Link
-                to="/login"
-                search={{ redirect: '/app' }}
-                className={topbar.link}
+        {hostedPublic?.isHostedPublic ? null : (
+          <header className={topbar.shell}>
+            <Link to="/" className={topbar.brand} activeOptions={{ exact: true }}>
+              <img
+                src="/logo.png"
+                alt=""
+                className="size-8 rounded-full object-contain"
+              />
+              Snaelda
+            </Link>
+            <div className={topbar.controls}>
+              <nav aria-label="Primary navigation" className={topbar.nav}>
+                <Link
+                  to="/login"
+                  search={{ redirect: '/app' }}
+                  className={topbar.link}
+                >
+                  Sign in
+                </Link>
+                <Link to="/app" className={topbar.link}>
+                  Builder
+                </Link>
+                <Link
+                  to="/preview/$token"
+                  params={{ token: 'local' }}
+                  className={topbar.link}
+                >
+                  Preview
+                </Link>
+                <Link
+                  to="/public/$siteSlug"
+                  params={{ siteSlug: 'local' }}
+                  className={topbar.link}
+                >
+                  Public
+                </Link>
+              </nav>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="max-sm:min-h-11"
+                onClick={toggleColorMode}
               >
-                Sign in
-              </Link>
-              <Link to="/app" className={topbar.link}>
-                Builder
-              </Link>
-              <Link
-                to="/preview/$token"
-                params={{ token: 'local' }}
-                className={topbar.link}
-              >
-                Preview
-              </Link>
-              <Link
-                to="/public/$siteSlug"
-                params={{ siteSlug: 'local' }}
-                className={topbar.link}
-              >
-                Public
-              </Link>
-            </nav>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="max-sm:min-h-11"
-              onClick={toggleColorMode}
-            >
-              Toggle color mode
-            </Button>
-          </div>
-        </header>
+                Toggle color mode
+              </Button>
+            </div>
+          </header>
+        )}
         {children}
         <Scripts />
       </body>

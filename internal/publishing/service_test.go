@@ -213,7 +213,8 @@ func (s *fakePublishingStore) Query(context.Context, string, ...any) (pgx.Rows, 
 func (s *fakePublishingStore) QueryRow(_ context.Context, sql string, arguments ...any) pgx.Row {
 	switch {
 	case strings.Contains(sql, "join site_versions sv on sv.id = s.published_version_id"):
-		if strings.TrimSpace(arguments[0].(string)) != s.publishedSiteSlug {
+		lookup := strings.TrimSpace(arguments[0].(string))
+		if lookup != s.publishedSiteSlug && lookup != s.publishedHostname {
 			return fakePublishingRow{err: pgx.ErrNoRows}
 		}
 		snapshotJSON, err := json.Marshal(s.publishedSnapshot)
@@ -393,6 +394,23 @@ func TestLoadPublishedSiteBySlugRejectsUnknownPagePath(t *testing.T) {
 	_, err := service.LoadPublishedSiteBySlug(context.Background(), "nordic-studio", "/missing")
 	if !errors.Is(err, ErrPageNotFound) {
 		t.Fatalf("expected page not found, got %v", err)
+	}
+}
+
+func TestLoadPublishedSiteByHostnameResolvesRequestedPage(t *testing.T) {
+	store := newFakePublishingStore()
+	service := Service{db: store}
+
+	result, err := service.LoadPublishedSiteByHostname(context.Background(), "nordic-studio.localhost:3000", "/contact")
+	if err != nil {
+		t.Fatalf("load published site by hostname: %v", err)
+	}
+
+	if result.Hostname != "nordic-studio.localhost" {
+		t.Fatalf("expected normalized hostname, got %q", result.Hostname)
+	}
+	if result.Page.ID != "page_contact" {
+		t.Fatalf("expected contact page, got %#v", result.Page)
 	}
 }
 
