@@ -12,6 +12,10 @@ Before making frontend design decisions, read `BRANDING.md` and align layout, vi
 
 Dark mode is required for frontend work. Follow the `BRANDING.md` dark-mode direction: it should feel a bit meaner than light mode, with warmer near-black/plum backgrounds, stronger contrast, brighter ribbon colors, and a sharper, more dramatic palette while staying readable and calm.
 
+For frontend design work, also read `PRODUCT.md` before editing UI. If a `DESIGN.md` file exists, treat it as the current design-system reference for colors, typography, components, spacing, and interaction patterns. If `DESIGN.md` is absent, derive decisions from `BRANDING.md`, `PRODUCT.md`, existing UI tokens, and `logo.png`.
+
+When using the Impeccable design workflow, follow the local skill instructions in `.agents/skills/impeccable/SKILL.md` instead of copying the full skill documentation into this file. Keep `AGENTS.md` as the project-level overview and let the skill file remain the source of truth for Impeccable-specific preflight, command references, and design-law details.
+
 ## Build, Test, and Development Commands
 
 - `make dev-up`: start local Postgres and SeaweedFS via Docker Compose.
