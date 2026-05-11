@@ -43,6 +43,8 @@ tmp/
 # Local storage / uploads / artifacts
 uploads/
 artifacts/
+.playwright-mcp/*.yml
+/snaelda-*.png
 
 # Python
 __pycache__/
