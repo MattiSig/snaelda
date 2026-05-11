@@ -175,6 +175,8 @@ export type ThemeSelection = {
   fontPreset: string
   sectionSpacing: string
   radius: string
+  buttonStyle: string
+  imageStyle: string
 }
 
 export type ThemeEditorCatalog = {
@@ -182,6 +184,8 @@ export type ThemeEditorCatalog = {
   fontPresets: ThemeOption[]
   sectionSpacings: ThemeOption[]
   radii: ThemeOption[]
+  buttonStyles: ThemeOption[]
+  imageStyles: ThemeOption[]
 }
 
 export type ThemeState = {
@@ -398,6 +402,19 @@ export async function reorderPages(siteId: string, pageIds: string[]) {
     },
     body: JSON.stringify({ pageIds }),
   })
+}
+
+export async function reorderSiteNavigation(siteId: string, pageIds: string[]) {
+  return apiFetch<{ draft: SiteDraft }>(
+    `/api/sites/${siteId}/navigation/reorder`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ pageIds }),
+    },
+  )
 }
 
 export async function createBlock(

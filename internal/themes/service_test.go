@@ -60,6 +60,8 @@ func TestUpdateRebuildsThemeFromSelection(t *testing.T) {
 		FontPreset:     stringPointer(siteconfig.ThemeFontStudioSans),
 		SectionSpacing: stringPointer(siteconfig.ThemeSpacingSnug),
 		Radius:         stringPointer(siteconfig.ThemeRadiusPillowy),
+		ButtonStyle:    stringPointer(siteconfig.ThemeButtonInkSolid),
+		ImageStyle:     stringPointer(siteconfig.ThemeImagePaperCut),
 	})
 	if err != nil {
 		t.Fatalf("update theme: %v", err)
@@ -72,6 +74,12 @@ func TestUpdateRebuildsThemeFromSelection(t *testing.T) {
 	}
 	if state.Selection.Palette != siteconfig.ThemePalettePlayfulRibbon {
 		t.Fatalf("expected updated selection, got %#v", state.Selection)
+	}
+	if state.Selection.ButtonStyle != siteconfig.ThemeButtonInkSolid {
+		t.Fatalf("expected updated button style, got %#v", state.Selection)
+	}
+	if state.Selection.ImageStyle != siteconfig.ThemeImagePaperCut {
+		t.Fatalf("expected updated image style, got %#v", state.Selection)
 	}
 }
 
@@ -86,6 +94,20 @@ func TestUpdateRejectsUnknownPalette(t *testing.T) {
 	})
 	if !errors.Is(err, ErrThemePaletteInvalid) {
 		t.Fatalf("expected invalid palette error, got %v", err)
+	}
+}
+
+func TestUpdateRejectsUnknownButtonStyle(t *testing.T) {
+	service := Service{
+		reader: stubReader{draft: sampleThemeDraft()},
+		writer: &stubWriter{},
+	}
+
+	_, err := service.Update(context.Background(), "workspace-1", "site_demo", UpdateInput{
+		ButtonStyle: stringPointer("unknown"),
+	})
+	if !errors.Is(err, ErrThemeButtonStyleInvalid) {
+		t.Fatalf("expected invalid button style error, got %v", err)
 	}
 }
 

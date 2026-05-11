@@ -18,6 +18,14 @@ const (
 	ThemeRadiusTailored = "tailored"
 	ThemeRadiusSoft     = "soft"
 	ThemeRadiusPillowy  = "pillowy"
+
+	ThemeButtonRibbonFill    = "ribbon-fill"
+	ThemeButtonThreadOutline = "thread-outline"
+	ThemeButtonInkSolid      = "ink-solid"
+
+	ThemeImageSoftFrame = "soft-frame"
+	ThemeImageWovenTint = "woven-tint"
+	ThemeImagePaperCut  = "paper-cut"
 )
 
 type ThemeSelection struct {
@@ -25,6 +33,8 @@ type ThemeSelection struct {
 	FontPreset     string `json:"fontPreset"`
 	SectionSpacing string `json:"sectionSpacing"`
 	Radius         string `json:"radius"`
+	ButtonStyle    string `json:"buttonStyle"`
+	ImageStyle     string `json:"imageStyle"`
 }
 
 type ThemeOption struct {
@@ -38,6 +48,8 @@ type ThemeEditorCatalog struct {
 	FontPresets     []ThemeOption `json:"fontPresets"`
 	SectionSpacings []ThemeOption `json:"sectionSpacings"`
 	Radii           []ThemeOption `json:"radii"`
+	ButtonStyles    []ThemeOption `json:"buttonStyles"`
+	ImageStyles     []ThemeOption `json:"imageStyles"`
 }
 
 var (
@@ -112,6 +124,16 @@ var (
 		ThemeRadiusSoft:     "28px",
 		ThemeRadiusPillowy:  "32px",
 	}
+	themeButtonStyles = map[string]struct{}{
+		ThemeButtonRibbonFill:    {},
+		ThemeButtonThreadOutline: {},
+		ThemeButtonInkSolid:      {},
+	}
+	themeImageStyles = map[string]struct{}{
+		ThemeImageSoftFrame: {},
+		ThemeImageWovenTint: {},
+		ThemeImagePaperCut:  {},
+	}
 	themeCatalog = ThemeEditorCatalog{
 		Palettes: []ThemeOption{
 			{ID: ThemePaletteCalmNordic, Label: "Calm Nordic", Description: "Vellum neutrals with blue, teal, and coral held in balance."},
@@ -133,6 +155,16 @@ var (
 			{ID: ThemeRadiusSoft, Label: "Soft", Description: "Rounded panels aligned with the current prototype."},
 			{ID: ThemeRadiusPillowy, Label: "Pillowy", Description: "Extra rounded surfaces for the warmest feel."},
 		},
+		ButtonStyles: []ThemeOption{
+			{ID: ThemeButtonRibbonFill, Label: "Ribbon Fill", Description: "Primary-colored buttons that read as the clearest next step."},
+			{ID: ThemeButtonThreadOutline, Label: "Thread Outline", Description: "Lighter outlined actions that keep more of the page surface visible."},
+			{ID: ThemeButtonInkSolid, Label: "Ink Solid", Description: "High-contrast buttons with the sharpest dark-versus-light cut."},
+		},
+		ImageStyles: []ThemeOption{
+			{ID: ThemeImageSoftFrame, Label: "Soft Frame", Description: "Calm framed image slots with the least visual drama."},
+			{ID: ThemeImageWovenTint, Label: "Woven Tint", Description: "Tinted image panels that pull the ribbon palette into media areas."},
+			{ID: ThemeImagePaperCut, Label: "Paper Cut", Description: "Layered paper-like image surfaces with a warmer collage feel."},
+		},
 	}
 )
 
@@ -142,6 +174,8 @@ func DefaultThemeSelection() ThemeSelection {
 		FontPreset:     ThemeFontEditorial,
 		SectionSpacing: ThemeSpacingComfortable,
 		Radius:         ThemeRadiusSoft,
+		ButtonStyle:    ThemeButtonRibbonFill,
+		ImageStyle:     ThemeImageWovenTint,
 	}
 }
 
@@ -157,6 +191,8 @@ func ThemePreset(name string) ThemeConfig {
 			FontPreset:     ThemeFontStudioSans,
 			SectionSpacing: ThemeSpacingSnug,
 			Radius:         ThemeRadiusPillowy,
+			ButtonStyle:    ThemeButtonRibbonFill,
+			ImageStyle:     ThemeImagePaperCut,
 		})
 	case ThemePaletteMeanerDark:
 		return BuildTheme(ThemeSelection{
@@ -164,6 +200,8 @@ func ThemePreset(name string) ThemeConfig {
 			FontPreset:     ThemeFontEditorial,
 			SectionSpacing: ThemeSpacingComfortable,
 			Radius:         ThemeRadiusSoft,
+			ButtonStyle:    ThemeButtonRibbonFill,
+			ImageStyle:     ThemeImageWovenTint,
 		})
 	default:
 		return BuildTheme(ThemeSelection{
@@ -171,6 +209,8 @@ func ThemePreset(name string) ThemeConfig {
 			FontPreset:     ThemeFontBalanced,
 			SectionSpacing: ThemeSpacingComfortable,
 			Radius:         ThemeRadiusSoft,
+			ButtonStyle:    ThemeButtonThreadOutline,
+			ImageStyle:     ThemeImageSoftFrame,
 		})
 	}
 }
@@ -188,8 +228,10 @@ func BuildTheme(selection ThemeSelection) ThemeConfig {
 				"sectionSpacing": themeSectionSpacingValues[normalized.SectionSpacing],
 			},
 			Shape: map[string]any{
-				"radius": themeRadiusValues[normalized.Radius],
-				"shadow": "soft",
+				"radius":      themeRadiusValues[normalized.Radius],
+				"shadow":      "soft",
+				"buttonStyle": normalized.ButtonStyle,
+				"imageStyle":  normalized.ImageStyle,
 			},
 		},
 	}
@@ -210,6 +252,12 @@ func DetectThemeSelection(theme ThemeConfig) ThemeSelection {
 	if radius := detectThemeRadius(theme.Tokens.Shape); radius != "" {
 		selection.Radius = radius
 	}
+	if buttonStyle := detectThemeButtonStyle(theme.Tokens.Shape); buttonStyle != "" {
+		selection.ButtonStyle = buttonStyle
+	}
+	if imageStyle := detectThemeImageStyle(theme.Tokens.Shape); imageStyle != "" {
+		selection.ImageStyle = imageStyle
+	}
 
 	return selection
 }
@@ -227,6 +275,12 @@ func normalizeThemeSelection(selection ThemeSelection) ThemeSelection {
 	}
 	if _, ok := themeRadiusValues[normalized.Radius]; !ok {
 		normalized.Radius = DefaultThemeSelection().Radius
+	}
+	if _, ok := themeButtonStyles[normalized.ButtonStyle]; !ok {
+		normalized.ButtonStyle = DefaultThemeSelection().ButtonStyle
+	}
+	if _, ok := themeImageStyles[normalized.ImageStyle]; !ok {
+		normalized.ImageStyle = DefaultThemeSelection().ImageStyle
 	}
 	return normalized
 }
@@ -265,6 +319,22 @@ func detectThemeRadius(shape map[string]any) string {
 		if value == radius {
 			return id
 		}
+	}
+	return ""
+}
+
+func detectThemeButtonStyle(shape map[string]any) string {
+	value, _ := shape["buttonStyle"].(string)
+	if _, ok := themeButtonStyles[value]; ok {
+		return value
+	}
+	return ""
+}
+
+func detectThemeImageStyle(shape map[string]any) string {
+	value, _ := shape["imageStyle"].(string)
+	if _, ok := themeImageStyles[value]; ok {
+		return value
 	}
 	return ""
 }

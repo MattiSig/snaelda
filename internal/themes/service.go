@@ -13,12 +13,14 @@ import (
 )
 
 var (
-	ErrNotFound               = errors.New("theme site not found")
-	ErrNoThemeChanges         = errors.New("theme update requires at least one change")
-	ErrThemePaletteInvalid    = errors.New("theme palette is invalid")
-	ErrThemeFontPresetInvalid = errors.New("theme font preset is invalid")
-	ErrThemeSpacingInvalid    = errors.New("theme section spacing is invalid")
-	ErrThemeRadiusInvalid     = errors.New("theme radius is invalid")
+	ErrNotFound                = errors.New("theme site not found")
+	ErrNoThemeChanges          = errors.New("theme update requires at least one change")
+	ErrThemePaletteInvalid     = errors.New("theme palette is invalid")
+	ErrThemeFontPresetInvalid  = errors.New("theme font preset is invalid")
+	ErrThemeSpacingInvalid     = errors.New("theme section spacing is invalid")
+	ErrThemeRadiusInvalid      = errors.New("theme radius is invalid")
+	ErrThemeButtonStyleInvalid = errors.New("theme button style is invalid")
+	ErrThemeImageStyleInvalid  = errors.New("theme image style is invalid")
 )
 
 type DB interface {
@@ -52,6 +54,8 @@ type UpdateInput struct {
 	FontPreset     *string
 	SectionSpacing *string
 	Radius         *string
+	ButtonStyle    *string
+	ImageStyle     *string
 }
 
 func NewService(db DB) *Service {
@@ -73,7 +77,12 @@ func (s *Service) Load(ctx context.Context, siteID string) (ThemeState, error) {
 }
 
 func (s *Service) Update(ctx context.Context, workspaceID string, siteID string, input UpdateInput) (ThemeState, error) {
-	if input.Palette == nil && input.FontPreset == nil && input.SectionSpacing == nil && input.Radius == nil {
+	if input.Palette == nil &&
+		input.FontPreset == nil &&
+		input.SectionSpacing == nil &&
+		input.Radius == nil &&
+		input.ButtonStyle == nil &&
+		input.ImageStyle == nil {
 		return ThemeState{}, ErrNoThemeChanges
 	}
 
@@ -97,6 +106,12 @@ func (s *Service) Update(ctx context.Context, workspaceID string, siteID string,
 	}
 	if input.Radius != nil {
 		selection.Radius = strings.TrimSpace(*input.Radius)
+	}
+	if input.ButtonStyle != nil {
+		selection.ButtonStyle = strings.TrimSpace(*input.ButtonStyle)
+	}
+	if input.ImageStyle != nil {
+		selection.ImageStyle = strings.TrimSpace(*input.ImageStyle)
 	}
 	if err := validateSelection(selection); err != nil {
 		return ThemeState{}, err
@@ -131,6 +146,12 @@ func validateSelection(selection siteconfig.ThemeSelection) error {
 	}
 	if !hasThemeOption(catalog.Radii, selection.Radius) {
 		return ErrThemeRadiusInvalid
+	}
+	if !hasThemeOption(catalog.ButtonStyles, selection.ButtonStyle) {
+		return ErrThemeButtonStyleInvalid
+	}
+	if !hasThemeOption(catalog.ImageStyles, selection.ImageStyle) {
+		return ErrThemeImageStyleInvalid
 	}
 	return nil
 }

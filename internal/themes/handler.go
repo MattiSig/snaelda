@@ -30,6 +30,8 @@ type updateThemeRequest struct {
 	FontPreset     *string `json:"fontPreset,omitempty"`
 	SectionSpacing *string `json:"sectionSpacing,omitempty"`
 	Radius         *string `json:"radius,omitempty"`
+	ButtonStyle    *string `json:"buttonStyle,omitempty"`
+	ImageStyle     *string `json:"imageStyle,omitempty"`
 }
 
 func NewHandler(db DB) *Handler {
@@ -86,6 +88,8 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		FontPreset:     trimPointer(payload.FontPreset),
 		SectionSpacing: trimPointer(payload.SectionSpacing),
 		Radius:         trimPointer(payload.Radius),
+		ButtonStyle:    trimPointer(payload.ButtonStyle),
+		ImageStyle:     trimPointer(payload.ImageStyle),
 	})
 	if err != nil {
 		writeThemeError(w, err)
@@ -117,6 +121,10 @@ func writeThemeError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "invalid_theme_section_spacing", "theme section spacing is not supported")
 	case errors.Is(err, ErrThemeRadiusInvalid):
 		writeError(w, http.StatusBadRequest, "invalid_theme_radius", "theme radius is not supported")
+	case errors.Is(err, ErrThemeButtonStyleInvalid):
+		writeError(w, http.StatusBadRequest, "invalid_theme_button_style", "theme button style is not supported")
+	case errors.Is(err, ErrThemeImageStyleInvalid):
+		writeError(w, http.StatusBadRequest, "invalid_theme_image_style", "theme image style is not supported")
 	case errors.As(err, &validationErr):
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"error": map[string]string{

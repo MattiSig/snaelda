@@ -27,7 +27,7 @@ var (
 	supportedColorKeys  = set("background", "text", "foreground", "surface", "surfaceMuted", "primary", "secondary", "accent", "muted", "border", "ring")
 	supportedTypeKeys   = set("headingFont", "bodyFont", "heading", "body", "scale")
 	supportedLayoutKeys = set("maxWidth", "contentWidth", "sectionSpacing")
-	supportedShapeKeys  = set("radius", "shadow")
+	supportedShapeKeys  = set("radius", "shadow", "buttonStyle", "imageStyle")
 )
 
 type Validator struct {

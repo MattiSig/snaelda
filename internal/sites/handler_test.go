@@ -27,31 +27,33 @@ func (r fakeReader) LoadDraft(context.Context, string) (siteconfig.SiteDraft, er
 }
 
 type fakeMutator struct {
-	created           siteconfig.SiteDraft
-	updated           siteconfig.SiteDraft
-	pageCreated       siteconfig.SiteDraft
-	pageUpdated       siteconfig.SiteDraft
-	pageDeleted       siteconfig.SiteDraft
-	pagesReordered    siteconfig.SiteDraft
-	blockCreated      siteconfig.SiteDraft
-	blockUpdated      siteconfig.SiteDraft
-	blockDeleted      siteconfig.SiteDraft
-	blockDuplicated   siteconfig.SiteDraft
-	blocksReordered   siteconfig.SiteDraft
-	createInput       CreateSiteInput
-	updateInput       UpdateSiteInput
-	createPageInput   CreatePageInput
-	updatePageInput   UpdatePageInput
-	reorderPageIDs    []string
-	createBlockInput  CreateBlockInput
-	updateBlockInput  UpdateBlockInput
-	reorderBlockIDs   []string
-	deleteSiteID      string
-	deleteWorkspaceID string
-	pageSiteID        string
-	updatePageID      string
-	updateBlockID     string
-	err               error
+	created                  siteconfig.SiteDraft
+	updated                  siteconfig.SiteDraft
+	pageCreated              siteconfig.SiteDraft
+	pageUpdated              siteconfig.SiteDraft
+	pageDeleted              siteconfig.SiteDraft
+	pagesReordered           siteconfig.SiteDraft
+	navigationReordered      siteconfig.SiteDraft
+	blockCreated             siteconfig.SiteDraft
+	blockUpdated             siteconfig.SiteDraft
+	blockDeleted             siteconfig.SiteDraft
+	blockDuplicated          siteconfig.SiteDraft
+	blocksReordered          siteconfig.SiteDraft
+	createInput              CreateSiteInput
+	updateInput              UpdateSiteInput
+	createPageInput          CreatePageInput
+	updatePageInput          UpdatePageInput
+	reorderPageIDs           []string
+	reorderNavigationPageIDs []string
+	createBlockInput         CreateBlockInput
+	updateBlockInput         UpdateBlockInput
+	reorderBlockIDs          []string
+	deleteSiteID             string
+	deleteWorkspaceID        string
+	pageSiteID               string
+	updatePageID             string
+	updateBlockID            string
+	err                      error
 }
 
 func (m *fakeMutator) CreateSite(_ context.Context, _ string, input CreateSiteInput) (siteconfig.SiteDraft, error) {
@@ -93,6 +95,13 @@ func (m *fakeMutator) ReorderPages(_ context.Context, workspaceID string, siteID
 	m.pageSiteID = siteID
 	m.reorderPageIDs = pageIDs
 	return m.pagesReordered, m.err
+}
+
+func (m *fakeMutator) ReorderNavigation(_ context.Context, workspaceID string, siteID string, pageIDs []string) (siteconfig.SiteDraft, error) {
+	m.deleteWorkspaceID = workspaceID
+	m.pageSiteID = siteID
+	m.reorderNavigationPageIDs = pageIDs
+	return m.navigationReordered, m.err
 }
 
 func (m *fakeMutator) CreateBlock(_ context.Context, workspaceID string, siteID string, pageID string, input CreateBlockInput) (siteconfig.SiteDraft, error) {
@@ -429,6 +438,32 @@ func TestReorderPagesReturnsUpdatedDraft(t *testing.T) {
 	}
 	if len(mutator.reorderPageIDs) != 1 || mutator.reorderPageIDs[0] != "page_home" {
 		t.Fatalf("expected page reorder ids to reach mutator, got %#v", mutator.reorderPageIDs)
+	}
+}
+
+func TestReorderNavigationReturnsUpdatedDraft(t *testing.T) {
+	mutator := &fakeMutator{navigationReordered: validHandlerDraft()}
+	handler := Handler{
+		reader:     fakeReader{},
+		mutator:    mutator,
+		authorizer: fakeAuthorizer{},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/site_demo/navigation/reorder", strings.NewReader(`{"pageIds":["page_home"]}`)).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	req.SetPathValue("siteId", "site_demo")
+	res := httptest.NewRecorder()
+
+	handler.reorderNavigation(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	if len(mutator.reorderNavigationPageIDs) != 1 || mutator.reorderNavigationPageIDs[0] != "page_home" {
+		t.Fatalf("expected navigation reorder ids to reach mutator, got %#v", mutator.reorderNavigationPageIDs)
 	}
 }
 

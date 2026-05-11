@@ -332,6 +332,91 @@ func TestReorderPagesPersistsRequestedOrder(t *testing.T) {
 	}
 }
 
+func TestReorderNavigationPersistsRequestedOrderWithoutMovingExternalLinks(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := validHandlerDraft()
+	draft.Site.ID = "site-1"
+	draft.Pages = append(draft.Pages, siteconfig.PageDraft{
+		ID:    "page_contact",
+		Title: "Contact",
+		Slug:  "/contact",
+		Blocks: []siteconfig.BlockInstance{
+			{
+				ID:      "block_contact",
+				Type:    "text_section",
+				Version: siteconfig.BlockVersionV1,
+				Props: map[string]any{
+					"heading": "Contact",
+					"body":    "Contact copy.",
+				},
+			},
+		},
+		Settings: map[string]any{
+			"includeInNavigation": true,
+		},
+	})
+	draft.Navigation.Primary = []siteconfig.NavigationItem{
+		{Label: "Home", PageID: "page_home"},
+		{Label: "Contact", PageID: "page_contact"},
+		{Label: "Instagram", Href: "https://example.com/instagram"},
+	}
+	store.drafts[draft.Site.ID] = draft
+
+	mutator := &PostgresMutator{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	updated, err := mutator.ReorderNavigation(context.Background(), "workspace-1", "site-1", []string{"page_contact", "page_home"})
+	if err != nil {
+		t.Fatalf("reorder navigation: %v", err)
+	}
+	if updated.Navigation.Primary[0].PageID != "page_contact" || updated.Navigation.Primary[1].PageID != "page_home" {
+		t.Fatalf("expected navigation order to change, got %#v", updated.Navigation.Primary)
+	}
+	if got := updated.Navigation.Primary[2].Href; got != "https://example.com/instagram" {
+		t.Fatalf("expected external navigation item to stay appended, got %#v", updated.Navigation.Primary)
+	}
+}
+
+func TestReorderNavigationRejectsMissingIncludedPage(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := validHandlerDraft()
+	draft.Site.ID = "site-1"
+	draft.Pages = append(draft.Pages, siteconfig.PageDraft{
+		ID:    "page_contact",
+		Title: "Contact",
+		Slug:  "/contact",
+		Blocks: []siteconfig.BlockInstance{
+			{
+				ID:      "block_contact",
+				Type:    "text_section",
+				Version: siteconfig.BlockVersionV1,
+				Props: map[string]any{
+					"heading": "Contact",
+					"body":    "Contact copy.",
+				},
+			},
+		},
+		Settings: map[string]any{
+			"includeInNavigation": true,
+		},
+	})
+	store.drafts[draft.Site.ID] = draft
+
+	mutator := &PostgresMutator{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	_, err := mutator.ReorderNavigation(context.Background(), "workspace-1", "site-1", []string{"page_home"})
+	if !errors.Is(err, ErrNavigationOrderInvalid) {
+		t.Fatalf("expected navigation order error, got %v", err)
+	}
+}
+
 func TestCreateBlockAppendsRegistryDefaultProps(t *testing.T) {
 	store := newFakeMutationStore()
 	draft := validHandlerDraft()

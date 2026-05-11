@@ -328,7 +328,7 @@ function GalleryBlock({ props }: { props: Record<string, unknown> }) {
                 layout === 'masonry' && index % 3 === 0 && 'md:min-h-[340px]',
               )}
             >
-              <div className="grid gap-1 rounded-[calc(var(--site-radius-inner)-8px)] border border-[color-mix(in_oklch,var(--site-border)_80%,var(--site-background))] bg-[color-mix(in_oklch,var(--site-surface)_74%,transparent)] p-4 backdrop-blur-sm">
+              <div className="grid gap-1 rounded-[calc(var(--site-radius-inner)-8px)] border border-[color-mix(in_oklch,var(--site-border)_80%,var(--site-background))] bg-[var(--site-image-caption-background)] p-4 backdrop-blur-sm">
                 <strong className="font-serif text-[1.08rem] leading-tight text-[var(--site-foreground)]">{title}</strong>
                 {caption ? (
                   <p className="m-0 text-sm text-[color-mix(in_oklch,var(--site-foreground)_84%,var(--site-background))]">

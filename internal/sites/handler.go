@@ -40,6 +40,7 @@ func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.
 	mux.Handle("PATCH /api/sites/{siteId}/pages/{pageId}", requireUser(http.HandlerFunc(h.updatePage)))
 	mux.Handle("DELETE /api/sites/{siteId}/pages/{pageId}", requireUser(http.HandlerFunc(h.deletePage)))
 	mux.Handle("POST /api/sites/{siteId}/pages/reorder", requireUser(http.HandlerFunc(h.reorderPages)))
+	mux.Handle("POST /api/sites/{siteId}/navigation/reorder", requireUser(http.HandlerFunc(h.reorderNavigation)))
 	mux.Handle("POST /api/sites/{siteId}/pages/{pageId}/blocks", requireUser(http.HandlerFunc(h.createBlock)))
 	mux.Handle("PATCH /api/sites/{siteId}/pages/{pageId}/blocks/{blockId}", requireUser(http.HandlerFunc(h.updateBlock)))
 	mux.Handle("DELETE /api/sites/{siteId}/pages/{pageId}/blocks/{blockId}", requireUser(http.HandlerFunc(h.deleteBlock)))
@@ -73,6 +74,10 @@ type updatePageRequest struct {
 }
 
 type reorderPagesRequest struct {
+	PageIDs []string `json:"pageIds"`
+}
+
+type reorderNavigationRequest struct {
 	PageIDs []string `json:"pageIds"`
 }
 
@@ -338,6 +343,33 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *Handler) reorderNavigation(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	if siteID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_site_id", "site id is required")
+		return
+	}
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+
+	var payload reorderNavigationRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "request body must be valid JSON")
+		return
+	}
+
+	draft, err := h.mutator.ReorderNavigation(r.Context(), scope.WorkspaceID, siteID, payload.PageIDs)
+	if err != nil {
+		writeSiteError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"draft": draft})
+}
+
 func (h *Handler) createBlock(w http.ResponseWriter, r *http.Request) {
 	siteID := r.PathValue("siteId")
 	pageID := r.PathValue("pageId")
@@ -516,6 +548,8 @@ func writeSiteError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "no_block_changes", "at least one block field must change")
 	case errors.Is(err, ErrBlockOrderInvalid):
 		writeError(w, http.StatusBadRequest, "invalid_block_order", "block reorder must include every block exactly once")
+	case errors.Is(err, ErrNavigationOrderInvalid):
+		writeError(w, http.StatusBadRequest, "invalid_navigation_order", "navigation reorder must include every visible navigation page exactly once")
 	case errors.Is(err, siteconfig.ErrBlockTypeUnknown):
 		writeError(w, http.StatusBadRequest, "unknown_block_type", "block type is not registered")
 	case errors.Is(err, siteconfig.ErrBlockVersionUnknown):

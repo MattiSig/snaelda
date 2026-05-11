@@ -192,8 +192,10 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Extend prompt generation and repair so the implemented non-form MVP blocks can appear in generated drafts when prompts ask for gallery-heavy layouts, pricing, testimonials, FAQs, team bios, and footer structure.
 - [ ] Add the `contact_form` block once the public submissions flow is ready to store or forward real inquiries.
 - [ ] Add optional early blocks only if user testing shows demand: logo cloud, map/location, stats/KPIs, article teaser, or allowlisted embeds.
-- [ ] Add richer page management: rename, slug edit, SEO edit, include/exclude from navigation, navigation reorder, and deletion safeguards.
-- [ ] Add theme controls for palette, font preset, button style, radius, section spacing, and image style.
+- [x] Add richer page management: rename, slug edit, SEO edit, include/exclude from navigation, navigation reorder, and deletion safeguards.
+  Verified on May 11, 2026 by adding explicit primary-navigation reordering to the Go draft API plus builder UI, then logging in locally in Playwright, creating `Builder Navigation Theme Verification`, adding a `Contact` page, moving that page ahead of `Home` in the new navigation panel, and confirming the draft preview rendered the navigation in `Contact` then `Home` order without console errors while page order remained separate.
+- [x] Add theme controls for palette, font preset, button style, radius, section spacing, and image style.
+  Verified on May 11, 2026 by extending the safe theme contract with button and image style selections, saving `Ink Solid` + `Paper Cut` from the builder in Playwright, and confirming the preview route exposed the expected theme CSS variables (`--site-button-background: #f3ead8`, `--site-image-border: #ff8a9d`) with no console errors.
 - [ ] Add Puck or another compact CMS-style editing layer as an MVP requirement for faster visual authoring inside the React builder.
 - [ ] Build adapters from canonical draft data to editor state and back.
 - [ ] Add site-level re-prompt.

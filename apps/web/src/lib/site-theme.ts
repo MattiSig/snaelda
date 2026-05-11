@@ -9,6 +9,10 @@ export function buildSiteThemeStyle(theme: ThemeConfig): CSSProperties {
   const layout = theme.tokens.layout ?? {}
   const shape = theme.tokens.shape ?? {}
   const radius = asString(shape.radius) || '28px'
+  const buttonStyle = asString(shape.buttonStyle) || 'ribbon-fill'
+  const imageStyle = asString(shape.imageStyle) || 'woven-tint'
+  const buttonVars = resolveButtonVars(buttonStyle, colors)
+  const imageVars = resolveImageVars(imageStyle, colors)
 
   return {
     '--site-background': colors.background ?? '#191119',
@@ -29,6 +33,8 @@ export function buildSiteThemeStyle(theme: ThemeConfig): CSSProperties {
     '--site-content-width': asString(layout.contentWidth) || '720px',
     '--site-radius-panel': radius,
     '--site-radius-inner': innerRadius(radius),
+    ...buttonVars,
+    ...imageVars,
   } as CSSProperties
 }
 
@@ -65,4 +71,83 @@ function withAlpha(color: string, alphaHex: string) {
     return `#${expanded}${alphaHex}`
   }
   return color
+}
+
+function resolveButtonVars(style: string, colors: Record<string, string>) {
+  const background = colors.background ?? '#191119'
+  const foreground = colors.foreground ?? colors.text ?? '#f3ead8'
+  const primary = colors.primary ?? '#86d8cf'
+  const surface = colors.surface ?? '#241a24'
+  const surfaceMuted = colors.surfaceMuted ?? '#302333'
+  const border = colors.border ?? '#5a3e57'
+
+  switch (style) {
+    case 'thread-outline':
+      return {
+        '--site-button-background': surface,
+        '--site-button-foreground': primary,
+        '--site-button-border': primary,
+        '--site-button-shadow': 'none',
+        '--site-button-ghost-background': surfaceMuted,
+        '--site-button-ghost-foreground': foreground,
+        '--site-button-ghost-border': border,
+      }
+    case 'ink-solid':
+      return {
+        '--site-button-background': foreground,
+        '--site-button-foreground': background,
+        '--site-button-border': foreground,
+        '--site-button-shadow': `0 12px 24px ${withAlpha(foreground, '1f')}`,
+        '--site-button-ghost-background': surfaceMuted,
+        '--site-button-ghost-foreground': foreground,
+        '--site-button-ghost-border': foreground,
+      }
+    default:
+      return {
+        '--site-button-background': primary,
+        '--site-button-foreground': background,
+        '--site-button-border': primary,
+        '--site-button-shadow': `0 12px 24px ${withAlpha(primary, '2b')}`,
+        '--site-button-ghost-background': surfaceMuted,
+        '--site-button-ghost-foreground': foreground,
+        '--site-button-ghost-border': border,
+      }
+  }
+}
+
+function resolveImageVars(style: string, colors: Record<string, string>) {
+  const surface = colors.surface ?? '#241a24'
+  const surfaceMuted = colors.surfaceMuted ?? '#302333'
+  const primary = colors.primary ?? '#86d8cf'
+  const secondary = colors.secondary ?? '#89b9f0'
+  const accent = colors.accent ?? '#ff8a9d'
+  const border = colors.border ?? '#5a3e57'
+  const background = colors.background ?? '#191119'
+
+  switch (style) {
+    case 'soft-frame':
+      return {
+        '--site-image-background': surface,
+        '--site-image-border': border,
+        '--site-image-shadow': 'none',
+        '--site-image-tall-background': `linear-gradient(180deg, ${surface} 0%, ${surfaceMuted} 100%)`,
+        '--site-image-caption-background': withAlpha(background, '66'),
+      }
+    case 'paper-cut':
+      return {
+        '--site-image-background': `color-mix(in oklch, ${surface} 88%, ${accent})`,
+        '--site-image-border': accent,
+        '--site-image-shadow': `0 16px 32px ${withAlpha(accent, '18')}`,
+        '--site-image-tall-background': `linear-gradient(155deg, color-mix(in oklch, ${surface} 84%, ${accent}) 0%, color-mix(in oklch, ${surfaceMuted} 88%, ${secondary}) 58%, color-mix(in oklch, ${surface} 90%, ${primary}) 100%)`,
+        '--site-image-caption-background': withAlpha(surface, 'b8'),
+      }
+    default:
+      return {
+        '--site-image-background': `color-mix(in oklch, ${surface} 88%, ${secondary})`,
+        '--site-image-border': border,
+        '--site-image-shadow': `0 16px 32px ${withAlpha(primary, '18')}`,
+        '--site-image-tall-background': `linear-gradient(160deg, color-mix(in oklch, ${surface} 84%, ${primary}) 0%, ${surfaceMuted} 55%, color-mix(in oklch, ${surface} 90%, ${accent}) 100%)`,
+        '--site-image-caption-background': withAlpha(surface, 'b8'),
+      }
+  }
 }

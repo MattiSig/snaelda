@@ -34,6 +34,7 @@ var (
 	ErrNoBlockChanges          = errors.New("block update requires at least one change")
 	ErrBlockTypeRequired       = errors.New("block type is required")
 	ErrBlockOrderInvalid       = errors.New("block reorder must include every block exactly once")
+	ErrNavigationOrderInvalid  = errors.New("navigation reorder must include every visible navigation page exactly once")
 )
 
 type mutationDB interface {
@@ -48,6 +49,7 @@ type Mutator interface {
 	UpdatePage(ctx context.Context, workspaceID string, siteID string, pageID string, input UpdatePageInput) (siteconfig.SiteDraft, error)
 	DeletePage(ctx context.Context, workspaceID string, siteID string, pageID string) (siteconfig.SiteDraft, error)
 	ReorderPages(ctx context.Context, workspaceID string, siteID string, pageIDs []string) (siteconfig.SiteDraft, error)
+	ReorderNavigation(ctx context.Context, workspaceID string, siteID string, pageIDs []string) (siteconfig.SiteDraft, error)
 	CreateBlock(ctx context.Context, workspaceID string, siteID string, pageID string, input CreateBlockInput) (siteconfig.SiteDraft, error)
 	UpdateBlock(ctx context.Context, workspaceID string, siteID string, pageID string, blockID string, input UpdateBlockInput) (siteconfig.SiteDraft, error)
 	DeleteBlock(ctx context.Context, workspaceID string, siteID string, pageID string, blockID string) (siteconfig.SiteDraft, error)
@@ -303,6 +305,24 @@ func (m *PostgresMutator) ReorderPages(ctx context.Context, workspaceID string, 
 	}
 	draft.Pages = reorderedPages
 	draft.Navigation = syncNavigationWithPages(draft.Navigation, draft.Pages)
+
+	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	return m.reader.LoadDraft(ctx, siteID)
+}
+
+func (m *PostgresMutator) ReorderNavigation(ctx context.Context, workspaceID string, siteID string, pageIDs []string) (siteconfig.SiteDraft, error) {
+	draft, err := m.reader.LoadDraft(ctx, siteID)
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+
+	navigation, err := reorderNavigation(draft.Navigation, draft.Pages, pageIDs)
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	draft.Navigation = navigation
 
 	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
 		return siteconfig.SiteDraft{}, err
@@ -702,6 +722,47 @@ func reorderBlocks(blocks []siteconfig.BlockInstance, blockIDs []string) ([]site
 		reordered = append(reordered, block)
 	}
 	return reordered, nil
+}
+
+func reorderNavigation(
+	existing siteconfig.NavigationConfig,
+	pages []siteconfig.PageDraft,
+	pageIDs []string,
+) (siteconfig.NavigationConfig, error) {
+	internalPages := make(map[string]siteconfig.PageDraft, len(pages))
+	internalCount := 0
+	for _, page := range pages {
+		if !pageIncludedInNavigation(page.Settings) {
+			continue
+		}
+		internalPages[page.ID] = page
+		internalCount++
+	}
+	if len(pageIDs) != internalCount {
+		return siteconfig.NavigationConfig{}, ErrNavigationOrderInvalid
+	}
+
+	seen := make(map[string]bool, len(pageIDs))
+	reordered := make([]siteconfig.NavigationItem, 0, len(existing.Primary))
+	for _, pageID := range pageIDs {
+		page, ok := internalPages[pageID]
+		if !ok || seen[pageID] {
+			return siteconfig.NavigationConfig{}, ErrNavigationOrderInvalid
+		}
+		seen[pageID] = true
+		reordered = append(reordered, siteconfig.NavigationItem{
+			Label:  page.Title,
+			PageID: page.ID,
+		})
+	}
+
+	for _, item := range existing.Primary {
+		if item.PageID == "" && item.Href != "" {
+			reordered = append(reordered, item)
+		}
+	}
+
+	return siteconfig.NavigationConfig{Primary: reordered}, nil
 }
 
 func deepCloneMap(value map[string]any) map[string]any {

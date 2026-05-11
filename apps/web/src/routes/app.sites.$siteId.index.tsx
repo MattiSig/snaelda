@@ -22,6 +22,7 @@ import {
   rollbackSiteVersion,
   reorderBlocks,
   reorderPages,
+  reorderSiteNavigation,
   type BlockDefinition,
   type SiteDraft,
   type SiteVersion,
@@ -88,11 +89,14 @@ function SiteDetail() {
   const [siteStatusMessage, setSiteStatusMessage] = useState('')
   const [pageErrorMessage, setPageErrorMessage] = useState('')
   const [pageStatusMessage, setPageStatusMessage] = useState('')
+  const [navigationErrorMessage, setNavigationErrorMessage] = useState('')
+  const [navigationStatusMessage, setNavigationStatusMessage] = useState('')
   const [blockErrorMessage, setBlockErrorMessage] = useState('')
   const [blockStatusMessage, setBlockStatusMessage] = useState('')
   const [themeErrorMessage, setThemeErrorMessage] = useState('')
   const [themeStatusMessage, setThemeStatusMessage] = useState('')
   const [isSavingTheme, setIsSavingTheme] = useState(false)
+  const [isSavingNavigation, setIsSavingNavigation] = useState(false)
   const [publishErrorMessage, setPublishErrorMessage] = useState('')
   const [publishStatusMessage, setPublishStatusMessage] = useState('')
 
@@ -133,6 +137,8 @@ function SiteDetail() {
     setSelectedPageId(nextPage?.id ?? '')
     setSelectedBlockId(nextBlock?.id ?? '')
     syncSelectedPageFields(nextDraft, nextPage)
+    setNavigationErrorMessage('')
+    setNavigationStatusMessage('')
   }
 
   useEffect(() => {
@@ -322,6 +328,36 @@ function SiteDetail() {
       )
     } finally {
       setIsSavingPage(false)
+    }
+  }
+
+  async function handleMoveNavigation(pageId: string, direction: -1 | 1) {
+    if (!draft) {
+      return
+    }
+    const currentNavigationPages = getNavigationPages(draft)
+    const nextOrder = moveItem(currentNavigationPages, pageId, direction)
+    if (!nextOrder) {
+      return
+    }
+
+    setIsSavingNavigation(true)
+    setNavigationErrorMessage('')
+    setNavigationStatusMessage('')
+
+    try {
+      const response = await reorderSiteNavigation(
+        siteId,
+        nextOrder.map((page) => page.id),
+      )
+      applyDraftUpdate(response.draft, selectedPage?.id, selectedBlock?.id)
+      setNavigationStatusMessage('Primary navigation order updated.')
+    } catch (error) {
+      setNavigationErrorMessage(
+        error instanceof APIError ? error.message : 'Could not reorder navigation',
+      )
+    } finally {
+      setIsSavingNavigation(false)
     }
   }
 
@@ -615,6 +651,13 @@ function SiteDetail() {
   const selectedBlockIndex = selectedPage && selectedBlock
     ? selectedPage.blocks.findIndex((block) => block.id === selectedBlock.id)
     : -1
+  const navigationPages = getNavigationPages(draft)
+  const hiddenNavigationPageCount = draft.pages.filter(
+    (page) => !draft.navigation.primary.some((item) => item.pageId === page.id),
+  ).length
+  const externalNavigationCount = draft.navigation.primary.filter(
+    (item) => !item.pageId && item.href,
+  ).length
 
   return (
     <div className={layout.builderGrid}>
@@ -899,6 +942,87 @@ function SiteDetail() {
 
         <section className={ribbonPanel}>
           <div className="mb-[22px]">
+            <p className={text.eyebrow}>Navigation</p>
+            <h2 className={text.h2}>Set the menu order</h2>
+            <p className={text.p}>
+              Keep the menu page-backed, but adjust its order independently from
+              the page outline.
+            </p>
+          </div>
+
+          {navigationPages.length > 0 ? (
+            <div className="grid gap-3">
+              {navigationPages.map((page, index) => {
+                const isSelected = page.id === selectedPage?.id
+
+                return (
+                  <article
+                    key={page.id}
+                    className={cn(
+                      'grid gap-3 rounded-[14px] border border-border bg-[var(--surface-2)] p-4',
+                      isSelected &&
+                        'border-[var(--thread-teal)] bg-[color-mix(in_oklch,var(--surface-2)_80%,var(--thread-teal))]',
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <strong className="block text-[var(--paper)]">{page.title}</strong>
+                        <small className="text-[var(--paper-muted)]">{page.slug}</small>
+                      </div>
+                      <div className={actions.row}>
+                        <Button
+                          type="button"
+                          variant="plain"
+                          className={actions.inlineLink}
+                          disabled={index === 0 || isSavingNavigation}
+                          onClick={() => handleMoveNavigation(page.id, -1)}
+                        >
+                          Earlier
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="plain"
+                          className={actions.inlineLink}
+                          disabled={
+                            index === navigationPages.length - 1 || isSavingNavigation
+                          }
+                          onClick={() => handleMoveNavigation(page.id, 1)}
+                        >
+                          Later
+                        </Button>
+                      </div>
+                    </div>
+                  </article>
+                )
+              })}
+
+              {navigationErrorMessage ? (
+                <p className={text.error}>{navigationErrorMessage}</p>
+              ) : null}
+              {navigationStatusMessage ? (
+                <p className={text.success}>{navigationStatusMessage}</p>
+              ) : null}
+
+              <p className={form.hint}>
+                {hiddenNavigationPageCount > 0
+                  ? `${hiddenNavigationPageCount} page${hiddenNavigationPageCount === 1 ? '' : 's'} currently stay out of the primary navigation.`
+                  : 'Every page is currently included in the primary navigation.'}
+                {externalNavigationCount > 0
+                  ? ` ${externalNavigationCount} external link${externalNavigationCount === 1 ? '' : 's'} still stay appended after the page links.`
+                  : ''}
+              </p>
+            </div>
+          ) : (
+            <div className={emptyState}>
+              <p className={text.p}>
+                Include at least one page in the primary navigation to reorder it.
+              </p>
+            </div>
+          )}
+        </section>
+
+        <section className={ribbonPanel}>
+          <div className="mb-[22px]">
             <p className={text.eyebrow}>Theme</p>
             <h2 className={text.h2}>Set the site direction</h2>
             <p className={text.p}>
@@ -1002,6 +1126,45 @@ function SiteDetail() {
               </Select>
               <p className={form.hint}>
                 {describeThemeOption(themeOptions.radii, themeSelection.radius)}
+              </p>
+
+              <label htmlFor="theme-button-style" className={text.label}>Button style</label>
+              <Select
+                id="theme-button-style"
+                value={themeSelection.buttonStyle}
+                onChange={(event) =>
+                  handleThemeSelectionChange('buttonStyle', event.target.value)
+                }
+              >
+                {themeOptions.buttonStyles.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+              <p className={form.hint}>
+                {describeThemeOption(
+                  themeOptions.buttonStyles,
+                  themeSelection.buttonStyle,
+                )}
+              </p>
+
+              <label htmlFor="theme-image-style" className={text.label}>Image style</label>
+              <Select
+                id="theme-image-style"
+                value={themeSelection.imageStyle}
+                onChange={(event) =>
+                  handleThemeSelectionChange('imageStyle', event.target.value)
+                }
+              >
+                {themeOptions.imageStyles.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+              <p className={form.hint}>
+                {describeThemeOption(themeOptions.imageStyles, themeSelection.imageStyle)}
               </p>
 
               {themeErrorMessage ? <p className={text.error}>{themeErrorMessage}</p> : null}
@@ -1260,6 +1423,16 @@ function findNewBlock(previousPage: DraftPage | null, nextPage: DraftPage | null
   }
   const previousIDs = new Set(previousPage?.blocks.map((block) => block.id) ?? [])
   return nextPage.blocks.find((block) => !previousIDs.has(block.id)) ?? nextPage.blocks.at(-1) ?? null
+}
+
+function getNavigationPages(draft: SiteDraft) {
+  return draft.navigation.primary
+    .map((item) =>
+      item.pageId
+        ? draft.pages.find((page) => page.id === item.pageId) ?? null
+        : null,
+    )
+    .filter((page): page is DraftPage => page !== null)
 }
 
 function moveItem<T extends { id: string }>(items: T[], itemID: string, direction: -1 | 1) {
