@@ -120,8 +120,25 @@ export const preview = {
   features: 'grid grid-cols-3 gap-3.5 max-lg:grid-cols-1',
   feature:
     'rounded-[var(--site-radius-inner)] border border-[var(--site-border)] bg-[var(--site-surface-muted)] p-[18px]',
+  cardGrid: 'grid gap-3.5 md:grid-cols-2 xl:grid-cols-3',
   split:
     'grid grid-cols-[minmax(0,1.2fr)_minmax(220px,0.8fr)] gap-[18px] max-lg:grid-cols-1',
   imagePlaceholder:
     'grid min-h-[220px] place-items-center rounded-[var(--site-radius-inner)] border border-[var(--site-border)] bg-[var(--site-surface)] p-[18px] text-[color-mix(in_srgb,var(--site-foreground)_74%,transparent)]',
+  imagePlaceholderTall:
+    'grid min-h-[280px] place-items-end rounded-[var(--site-radius-inner)] border border-[var(--site-border)] bg-[linear-gradient(160deg,color-mix(in_oklch,var(--site-surface)_84%,var(--site-primary))_0%,var(--site-surface-muted)_55%,color-mix(in_oklch,var(--site-surface)_90%,var(--site-accent))_100%)] p-[18px] text-left',
+  quoteCard:
+    'grid gap-3 rounded-[var(--site-radius-inner)] border border-[var(--site-border)] bg-[linear-gradient(180deg,color-mix(in_oklch,var(--site-surface-muted)_84%,var(--site-primary))_0%,var(--site-surface-muted)_100%)] p-[20px]',
+  pricingGrid: 'grid gap-3.5 xl:grid-cols-2',
+  pricingCard:
+    'grid gap-4 rounded-[var(--site-radius-inner)] border border-[var(--site-border)] bg-[var(--site-surface)] p-[20px]',
+  chipList: 'flex flex-wrap gap-2',
+  chip:
+    'rounded-full border border-[var(--site-border)] bg-[var(--site-surface-muted)] px-3 py-1.5 text-sm text-[var(--site-foreground)]',
+  faqList: 'grid gap-3',
+  faqItem:
+    'rounded-[var(--site-radius-inner)] border border-[var(--site-border)] bg-[var(--site-surface)] p-[18px]',
+  footerShell:
+    'grid gap-5 rounded-[var(--site-radius-panel)] border border-[var(--site-border)] bg-[linear-gradient(180deg,color-mix(in_oklch,var(--site-surface)_76%,var(--site-secondary))_0%,var(--site-surface-muted)_100%)] p-[calc(var(--site-section-spacing,96px)*0.24)] lg:grid-cols-[minmax(0,1.15fr)_minmax(260px,0.85fr)]',
+  footerLinks: 'flex flex-wrap gap-2.5',
 }

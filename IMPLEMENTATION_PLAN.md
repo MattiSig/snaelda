@@ -187,7 +187,10 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 
 ## Phase 7: Builder Fleshing After The Prototype Works
 
-- [ ] Add the remaining MVP blocks: `gallery`, `testimonials`, `pricing_packages`, `contact_form`, `faq`, `team_profile_cards`, and `footer`.
+- [x] Add the remaining non-form MVP blocks: `gallery`, `testimonials`, `pricing_packages`, `faq`, `team_profile_cards`, and `footer`.
+  Verified on May 11, 2026 by extending the Go-owned block registry, validation, generation repair, and React preview/publish renderer; running `go test ./...`, `npm run web:test`, `npm run web:lint`, and `npm run web:build`; then logging into the seeded local builder in Playwright, adding a `gallery` block to `Nordic Studio`, opening draft preview, confirming the new section rendered, and checking that the page had no console errors.
+- [x] Extend prompt generation and repair so the implemented non-form MVP blocks can appear in generated drafts when prompts ask for gallery-heavy layouts, pricing, testimonials, FAQs, team bios, and footer structure.
+- [ ] Add the `contact_form` block once the public submissions flow is ready to store or forward real inquiries.
 - [ ] Add optional early blocks only if user testing shows demand: logo cloud, map/location, stats/KPIs, article teaser, or allowlisted embeds.
 - [ ] Add richer page management: rename, slug edit, SEO edit, include/exclude from navigation, navigation reorder, and deletion safeguards.
 - [ ] Add theme controls for palette, font preset, button style, radius, section spacing, and image style.
@@ -261,7 +264,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 ## Phase 12: MVP Completion
 
 - [ ] Ship the Puck/CMS-style visual editing layer in the MVP builder while keeping canonical site data in the maintained draft schema.
-- [ ] Expand generation to all required MVP blocks.
+- [ ] Expand generation to every required MVP block, including `contact_form` once the submissions path exists.
 - [ ] Support up to 10 pages per site in generation, editing, validation, and publishing.
 - [ ] Add asset upload and image library UI.
 - [ ] Add basic SEO editing and publish-generated SEO artifacts.

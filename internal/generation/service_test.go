@@ -153,6 +153,43 @@ func TestGenerateRetriesPlannerAfterValidationFailure(t *testing.T) {
 	}
 }
 
+func TestGenerateUsesExtendedMVPBlocksWhenPromptCallsForThem(t *testing.T) {
+	store := newFakeGenerationStore()
+
+	service := Service{
+		db:     store,
+		writer: store,
+	}
+
+	result, err := service.Generate(context.Background(), "workspace-1", "user-1", GenerateInput{
+		Name:   "North Light Studio",
+		Prompt: "A photography studio website with a gallery, pricing, testimonials, team bios, and FAQ for new clients.",
+	})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	blockTypes := map[string]bool{}
+	for _, page := range result.Draft.Pages {
+		for _, block := range page.Blocks {
+			blockTypes[block.Type] = true
+		}
+	}
+
+	for _, blockType := range []string{
+		"gallery",
+		"pricing_packages",
+		"testimonials",
+		"team_profile_cards",
+		"faq",
+		"footer",
+	} {
+		if !blockTypes[blockType] {
+			t.Fatalf("expected generated draft to include %s, got %#v", blockType, blockTypes)
+		}
+	}
+}
+
 func TestGenerateFailsAfterValidationRetryExhausted(t *testing.T) {
 	store := newFakeGenerationStore()
 	store.saveDraftErrors = []error{

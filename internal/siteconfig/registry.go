@@ -71,11 +71,17 @@ func NewBlockRegistry(definitions ...BlockDefinition) (*BlockRegistry, error) {
 
 func DefaultBlockRegistry() *BlockRegistry {
 	registry, err := NewBlockRegistry(
-		heroBlockDefinition(),
-		textSectionBlockDefinition(),
-		imageTextBlockDefinition(),
-		featuresGridBlockDefinition(),
 		ctaBandBlockDefinition(),
+		faqBlockDefinition(),
+		featuresGridBlockDefinition(),
+		footerBlockDefinition(),
+		galleryBlockDefinition(),
+		heroBlockDefinition(),
+		imageTextBlockDefinition(),
+		pricingPackagesBlockDefinition(),
+		teamProfileCardsBlockDefinition(),
+		testimonialsBlockDefinition(),
+		textSectionBlockDefinition(),
 	)
 	if err != nil {
 		panic(err)

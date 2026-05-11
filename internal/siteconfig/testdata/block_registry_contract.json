@@ -52,6 +52,50 @@
       ]
     },
     {
+      "type": "faq",
+      "version": "1.0.0",
+      "displayName": "FAQ",
+      "category": "content",
+      "defaultProps": {
+        "heading": "Questions people ask first",
+        "items": [
+          {
+            "answer": "Use this answer to reduce hesitation and set expectations clearly.",
+            "question": "What should someone know before they reach out?"
+          }
+        ]
+      },
+      "editorSchema": [
+        {
+          "name": "heading",
+          "label": "Heading",
+          "control": "text"
+        },
+        {
+          "name": "intro",
+          "label": "Intro",
+          "control": "textarea"
+        },
+        {
+          "name": "items",
+          "label": "Questions",
+          "control": "repeater",
+          "itemFields": [
+            {
+              "name": "question",
+              "label": "Question",
+              "control": "text"
+            },
+            {
+              "name": "answer",
+              "label": "Answer",
+              "control": "textarea"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "type": "features_grid",
       "version": "1.0.0",
       "displayName": "Features grid",
@@ -108,6 +152,142 @@
             "2",
             "3",
             "4"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "footer",
+      "version": "1.0.0",
+      "displayName": "Footer",
+      "category": "content",
+      "defaultProps": {
+        "copyright": "Copyright 2026 Site name",
+        "navigationLinks": [
+          {
+            "href": "/contact",
+            "label": "Contact"
+          }
+        ],
+        "siteName": "Site name",
+        "tagline": "A short closing line that reinforces the tone of the site."
+      },
+      "editorSchema": [
+        {
+          "name": "siteName",
+          "label": "Site name",
+          "control": "text"
+        },
+        {
+          "name": "tagline",
+          "label": "Tagline",
+          "control": "textarea"
+        },
+        {
+          "name": "contactLine",
+          "label": "Contact line",
+          "control": "text"
+        },
+        {
+          "name": "copyright",
+          "label": "Copyright",
+          "control": "text"
+        },
+        {
+          "name": "navigationLinks",
+          "label": "Navigation links",
+          "control": "repeater",
+          "itemFields": [
+            {
+              "name": "label",
+              "label": "Label",
+              "control": "text"
+            },
+            {
+              "name": "href",
+              "label": "Link",
+              "control": "text",
+              "placeholder": "/contact"
+            }
+          ]
+        },
+        {
+          "name": "socialLinks",
+          "label": "Social links",
+          "control": "repeater",
+          "itemFields": [
+            {
+              "name": "label",
+              "label": "Label",
+              "control": "text"
+            },
+            {
+              "name": "href",
+              "label": "Link",
+              "control": "text",
+              "placeholder": "https://instagram.com/example"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "gallery",
+      "version": "1.0.0",
+      "displayName": "Gallery",
+      "category": "media",
+      "defaultProps": {
+        "heading": "Selected work",
+        "images": [
+          {
+            "caption": "Describe the work, material, or project shown here.",
+            "title": "Feature image"
+          }
+        ],
+        "layout": "grid"
+      },
+      "editorSchema": [
+        {
+          "name": "heading",
+          "label": "Heading",
+          "control": "text"
+        },
+        {
+          "name": "intro",
+          "label": "Intro",
+          "control": "textarea"
+        },
+        {
+          "name": "layout",
+          "label": "Layout",
+          "control": "select",
+          "options": [
+            "grid",
+            "masonry",
+            "spotlight"
+          ]
+        },
+        {
+          "name": "images",
+          "label": "Images",
+          "control": "repeater",
+          "itemFields": [
+            {
+              "name": "title",
+              "label": "Title",
+              "control": "text"
+            },
+            {
+              "name": "caption",
+              "label": "Caption",
+              "control": "textarea"
+            },
+            {
+              "name": "image",
+              "label": "Image",
+              "control": "asset",
+              "description": "Optional for now. Preview falls back to a crafted placeholder until uploads are wired in."
+            }
           ]
         }
       ]
@@ -242,6 +422,228 @@
       ]
     },
     {
+      "type": "pricing_packages",
+      "version": "1.0.0",
+      "displayName": "Pricing packages",
+      "category": "conversion",
+      "defaultProps": {
+        "heading": "Packages",
+        "plans": [
+          {
+            "description": "A focused entry package for simple needs.",
+            "features": [
+              {
+                "text": "One clear outcome"
+              },
+              {
+                "text": "Friendly handoff"
+              }
+            ],
+            "name": "Starter",
+            "price": "$450"
+          }
+        ]
+      },
+      "editorSchema": [
+        {
+          "name": "heading",
+          "label": "Heading",
+          "control": "text"
+        },
+        {
+          "name": "intro",
+          "label": "Intro",
+          "control": "textarea"
+        },
+        {
+          "name": "plans",
+          "label": "Plans",
+          "control": "repeater",
+          "itemFields": [
+            {
+              "name": "name",
+              "label": "Name",
+              "control": "text"
+            },
+            {
+              "name": "price",
+              "label": "Price",
+              "control": "text"
+            },
+            {
+              "name": "description",
+              "label": "Description",
+              "control": "textarea"
+            },
+            {
+              "name": "features",
+              "label": "Features",
+              "control": "repeater",
+              "itemFields": [
+                {
+                  "name": "text",
+                  "label": "Feature",
+                  "control": "text"
+                }
+              ]
+            },
+            {
+              "name": "cta",
+              "label": "CTA",
+              "control": "link",
+              "fields": [
+                {
+                  "name": "label",
+                  "label": "Label",
+                  "control": "text"
+                },
+                {
+                  "name": "href",
+                  "label": "Link",
+                  "control": "text",
+                  "placeholder": "/contact"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "team_profile_cards",
+      "version": "1.0.0",
+      "displayName": "Team profile cards",
+      "category": "content",
+      "defaultProps": {
+        "heading": "The people behind the work",
+        "people": [
+          {
+            "bio": "Add a short bio that explains the person’s focus and perspective.",
+            "links": [
+              {
+                "href": "/about",
+                "label": "Profile"
+              }
+            ],
+            "name": "Team member",
+            "role": "Role"
+          }
+        ]
+      },
+      "editorSchema": [
+        {
+          "name": "heading",
+          "label": "Heading",
+          "control": "text"
+        },
+        {
+          "name": "intro",
+          "label": "Intro",
+          "control": "textarea"
+        },
+        {
+          "name": "people",
+          "label": "People",
+          "control": "repeater",
+          "itemFields": [
+            {
+              "name": "name",
+              "label": "Name",
+              "control": "text"
+            },
+            {
+              "name": "role",
+              "label": "Role",
+              "control": "text"
+            },
+            {
+              "name": "bio",
+              "label": "Bio",
+              "control": "textarea"
+            },
+            {
+              "name": "photo",
+              "label": "Photo",
+              "control": "asset"
+            },
+            {
+              "name": "links",
+              "label": "Links",
+              "control": "repeater",
+              "itemFields": [
+                {
+                  "name": "label",
+                  "label": "Label",
+                  "control": "text"
+                },
+                {
+                  "name": "href",
+                  "label": "Link",
+                  "control": "text",
+                  "placeholder": "/about"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "testimonials",
+      "version": "1.0.0",
+      "displayName": "Testimonials",
+      "category": "content",
+      "defaultProps": {
+        "heading": "What clients say",
+        "items": [
+          {
+            "name": "Client name",
+            "quote": "Add a short testimonial that sounds specific, calm, and believable.",
+            "role": "Client role or company"
+          }
+        ]
+      },
+      "editorSchema": [
+        {
+          "name": "heading",
+          "label": "Heading",
+          "control": "text"
+        },
+        {
+          "name": "intro",
+          "label": "Intro",
+          "control": "textarea"
+        },
+        {
+          "name": "items",
+          "label": "Testimonials",
+          "control": "repeater",
+          "itemFields": [
+            {
+              "name": "quote",
+              "label": "Quote",
+              "control": "textarea"
+            },
+            {
+              "name": "name",
+              "label": "Name",
+              "control": "text"
+            },
+            {
+              "name": "role",
+              "label": "Role",
+              "control": "text"
+            },
+            {
+              "name": "avatar",
+              "label": "Avatar",
+              "control": "asset"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "type": "text_section",
       "version": "1.0.0",
       "displayName": "Text section",
@@ -356,7 +758,22 @@
             "settings": {}
           },
           {
-            "id": "block_02_features_grid",
+            "id": "block_02_faq",
+            "type": "faq",
+            "version": "1.0.0",
+            "props": {
+              "heading": "Questions people ask first",
+              "items": [
+                {
+                  "answer": "Use this answer to reduce hesitation and set expectations clearly.",
+                  "question": "What should someone know before they reach out?"
+                }
+              ]
+            },
+            "settings": {}
+          },
+          {
+            "id": "block_03_features_grid",
             "type": "features_grid",
             "version": "1.0.0",
             "props": {
@@ -372,7 +789,40 @@
             "settings": {}
           },
           {
-            "id": "block_03_hero",
+            "id": "block_04_footer",
+            "type": "footer",
+            "version": "1.0.0",
+            "props": {
+              "copyright": "Copyright 2026 Site name",
+              "navigationLinks": [
+                {
+                  "href": "/contact",
+                  "label": "Contact"
+                }
+              ],
+              "siteName": "Site name",
+              "tagline": "A short closing line that reinforces the tone of the site."
+            },
+            "settings": {}
+          },
+          {
+            "id": "block_05_gallery",
+            "type": "gallery",
+            "version": "1.0.0",
+            "props": {
+              "heading": "Selected work",
+              "images": [
+                {
+                  "caption": "Describe the work, material, or project shown here.",
+                  "title": "Feature image"
+                }
+              ],
+              "layout": "grid"
+            },
+            "settings": {}
+          },
+          {
+            "id": "block_06_hero",
             "type": "hero",
             "version": "1.0.0",
             "props": {
@@ -382,7 +832,7 @@
             "settings": {}
           },
           {
-            "id": "block_04_image_text",
+            "id": "block_07_image_text",
             "type": "image_text",
             "version": "1.0.0",
             "props": {
@@ -393,7 +843,69 @@
             "settings": {}
           },
           {
-            "id": "block_05_text_section",
+            "id": "block_08_pricing_packages",
+            "type": "pricing_packages",
+            "version": "1.0.0",
+            "props": {
+              "heading": "Packages",
+              "plans": [
+                {
+                  "description": "A focused entry package for simple needs.",
+                  "features": [
+                    {
+                      "text": "One clear outcome"
+                    },
+                    {
+                      "text": "Friendly handoff"
+                    }
+                  ],
+                  "name": "Starter",
+                  "price": "$450"
+                }
+              ]
+            },
+            "settings": {}
+          },
+          {
+            "id": "block_09_team_profile_cards",
+            "type": "team_profile_cards",
+            "version": "1.0.0",
+            "props": {
+              "heading": "The people behind the work",
+              "people": [
+                {
+                  "bio": "Add a short bio that explains the person’s focus and perspective.",
+                  "links": [
+                    {
+                      "href": "/about",
+                      "label": "Profile"
+                    }
+                  ],
+                  "name": "Team member",
+                  "role": "Role"
+                }
+              ]
+            },
+            "settings": {}
+          },
+          {
+            "id": "block_10_testimonials",
+            "type": "testimonials",
+            "version": "1.0.0",
+            "props": {
+              "heading": "What clients say",
+              "items": [
+                {
+                  "name": "Client name",
+                  "quote": "Add a short testimonial that sounds specific, calm, and believable.",
+                  "role": "Client role or company"
+                }
+              ]
+            },
+            "settings": {}
+          },
+          {
+            "id": "block_11_text_section",
             "type": "text_section",
             "version": "1.0.0",
             "props": {

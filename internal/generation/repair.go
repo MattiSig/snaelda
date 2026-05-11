@@ -272,6 +272,24 @@ func repairBlockPlan(block generationBlockPlan, pageTitle string, pageGoal strin
 	case "features_grid":
 		props := repairFeaturesGridProps(block.Props, pageTitle, pageGoal)
 		return generationBlockPlan{Type: "features_grid", Purpose: cleanGeneratedText(block.Purpose, 280), Props: props}, true
+	case "gallery":
+		props := repairGalleryProps(block.Props, pageTitle, pageGoal)
+		return generationBlockPlan{Type: "gallery", Purpose: cleanGeneratedText(block.Purpose, 280), Props: props}, true
+	case "testimonials":
+		props := repairTestimonialsProps(block.Props, pageTitle)
+		return generationBlockPlan{Type: "testimonials", Purpose: cleanGeneratedText(block.Purpose, 280), Props: props}, true
+	case "pricing_packages":
+		props := repairPricingPackagesProps(block.Props, pageTitle, pageSlug)
+		return generationBlockPlan{Type: "pricing_packages", Purpose: cleanGeneratedText(block.Purpose, 280), Props: props}, true
+	case "faq":
+		props := repairFAQProps(block.Props, pageTitle)
+		return generationBlockPlan{Type: "faq", Purpose: cleanGeneratedText(block.Purpose, 280), Props: props}, true
+	case "team_profile_cards":
+		props := repairTeamProfileCardsProps(block.Props, pageTitle)
+		return generationBlockPlan{Type: "team_profile_cards", Purpose: cleanGeneratedText(block.Purpose, 280), Props: props}, true
+	case "footer":
+		props := repairFooterProps(block.Props, pageTitle)
+		return generationBlockPlan{Type: "footer", Purpose: cleanGeneratedText(block.Purpose, 280), Props: props}, true
 	case "cta_band":
 		props := repairCTABandProps(block.Props, pageTitle, pageSlug)
 		return generationBlockPlan{Type: "cta_band", Purpose: cleanGeneratedText(block.Purpose, 280), Props: props}, true
@@ -368,6 +386,253 @@ func repairFeaturesGridProps(props map[string]any, pageTitle string, pageGoal st
 	}
 }
 
+func repairGalleryProps(props map[string]any, pageTitle string, pageGoal string) map[string]any {
+	images := make([]any, 0)
+	if rawItems, ok := props["images"].([]any); ok {
+		for _, raw := range rawItems {
+			item, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			title := readGeneratedText(item, "title", 80)
+			caption := readGeneratedText(item, "caption", 240)
+			if title == "" {
+				title = firstNonEmpty(caption, pageTitle)
+			}
+			if title == "" {
+				continue
+			}
+			next := map[string]any{
+				"title": title,
+			}
+			if caption != "" {
+				next["caption"] = caption
+			}
+			if image := repairImage(item["image"]); image != nil {
+				next["image"] = image
+			}
+			images = append(images, next)
+			if len(images) == 12 {
+				break
+			}
+		}
+	}
+	if len(images) == 0 {
+		images = append(images, map[string]any{
+			"title":   firstNonEmpty(pageTitle, "Gallery highlight"),
+			"caption": firstNonEmpty(pageGoal, "Add a short note describing the image or work shown here."),
+		})
+	}
+
+	return map[string]any{
+		"heading": firstNonEmpty(readGeneratedText(props, "heading", 120), pageTitle),
+		"intro":   readGeneratedText(props, "intro", 500),
+		"images":  images,
+		"layout":  readEnum(props, "layout", "grid", "grid", "masonry", "spotlight"),
+	}
+}
+
+func repairTestimonialsProps(props map[string]any, pageTitle string) map[string]any {
+	items := make([]any, 0)
+	if rawItems, ok := props["items"].([]any); ok {
+		for _, raw := range rawItems {
+			item, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			quote := readGeneratedText(item, "quote", 320)
+			name := readGeneratedText(item, "name", 80)
+			if quote == "" || name == "" {
+				continue
+			}
+			next := map[string]any{
+				"quote": quote,
+				"name":  name,
+			}
+			if role := readGeneratedText(item, "role", 120); role != "" {
+				next["role"] = role
+			}
+			if avatar := repairImage(item["avatar"]); avatar != nil {
+				next["avatar"] = avatar
+			}
+			items = append(items, next)
+			if len(items) == 6 {
+				break
+			}
+		}
+	}
+	if len(items) == 0 {
+		items = append(items, map[string]any{
+			"quote": "Add one concise testimonial that speaks to the actual experience of working together.",
+			"name":  "Client name",
+			"role":  "Client role",
+		})
+	}
+
+	return map[string]any{
+		"heading": firstNonEmpty(readGeneratedText(props, "heading", 120), pageTitle),
+		"intro":   readGeneratedText(props, "intro", 500),
+		"items":   items,
+	}
+}
+
+func repairPricingPackagesProps(props map[string]any, pageTitle string, pageSlug string) map[string]any {
+	plans := make([]any, 0)
+	if rawPlans, ok := props["plans"].([]any); ok {
+		for _, raw := range rawPlans {
+			plan, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			name := readGeneratedText(plan, "name", 80)
+			price := readGeneratedText(plan, "price", 40)
+			description := readGeneratedText(plan, "description", 240)
+			if name == "" || price == "" || description == "" {
+				continue
+			}
+			next := map[string]any{
+				"name":        name,
+				"price":       price,
+				"description": description,
+			}
+			features := repairFeatureList(plan["features"])
+			if len(features) == 0 {
+				features = []any{map[string]any{"text": "Add one focused feature"}}
+			}
+			next["features"] = features
+			if cta := repairCTA(plan["cta"], "Get in touch", fallbackGeneratedCTAHref(pageSlug)); cta != nil {
+				next["cta"] = cta
+			}
+			plans = append(plans, next)
+			if len(plans) == 4 {
+				break
+			}
+		}
+	}
+	if len(plans) == 0 {
+		plans = append(plans, map[string]any{
+			"name":        firstNonEmpty(pageTitle, "Starter"),
+			"price":       "From $350",
+			"description": "Add a clear starting point so visitors can understand scope before they reach out.",
+			"features":    []any{map[string]any{"text": "Focused scope"}},
+			"cta":         map[string]any{"label": "Ask about fit", "href": fallbackGeneratedCTAHref(pageSlug)},
+		})
+	}
+
+	return map[string]any{
+		"heading": firstNonEmpty(readGeneratedText(props, "heading", 120), pageTitle),
+		"intro":   readGeneratedText(props, "intro", 500),
+		"plans":   plans,
+	}
+}
+
+func repairFAQProps(props map[string]any, pageTitle string) map[string]any {
+	items := make([]any, 0)
+	if rawItems, ok := props["items"].([]any); ok {
+		for _, raw := range rawItems {
+			item, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			question := readGeneratedText(item, "question", 140)
+			answer := readGeneratedText(item, "answer", 400)
+			if question == "" || answer == "" {
+				continue
+			}
+			items = append(items, map[string]any{
+				"question": question,
+				"answer":   answer,
+			})
+			if len(items) == 10 {
+				break
+			}
+		}
+	}
+	if len(items) == 0 {
+		items = append(items, map[string]any{
+			"question": "What should someone know before reaching out?",
+			"answer":   "Add one practical answer that reduces hesitation and points toward the next step.",
+		})
+	}
+
+	return map[string]any{
+		"heading": firstNonEmpty(readGeneratedText(props, "heading", 120), pageTitle),
+		"intro":   readGeneratedText(props, "intro", 500),
+		"items":   items,
+	}
+}
+
+func repairTeamProfileCardsProps(props map[string]any, pageTitle string) map[string]any {
+	people := make([]any, 0)
+	if rawPeople, ok := props["people"].([]any); ok {
+		for _, raw := range rawPeople {
+			person, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			name := readGeneratedText(person, "name", 80)
+			role := readGeneratedText(person, "role", 80)
+			bio := readGeneratedText(person, "bio", 400)
+			if name == "" || role == "" || bio == "" {
+				continue
+			}
+			next := map[string]any{
+				"name": name,
+				"role": role,
+				"bio":  bio,
+			}
+			if photo := repairImage(person["photo"]); photo != nil {
+				next["photo"] = photo
+			}
+			if links := repairLinkList(person["links"], 3); len(links) > 0 {
+				next["links"] = links
+			}
+			people = append(people, next)
+			if len(people) == 8 {
+				break
+			}
+		}
+	}
+	if len(people) == 0 {
+		people = append(people, map[string]any{
+			"name": "Founder",
+			"role": "Lead contact",
+			"bio":  "Add a short bio that explains who this person is and what they bring to the work.",
+			"links": []any{
+				map[string]any{
+					"label": "Get in touch",
+					"href":  "/contact",
+				},
+			},
+		})
+	}
+
+	return map[string]any{
+		"heading": firstNonEmpty(readGeneratedText(props, "heading", 120), pageTitle),
+		"intro":   readGeneratedText(props, "intro", 500),
+		"people":  people,
+	}
+}
+
+func repairFooterProps(props map[string]any, pageTitle string) map[string]any {
+	navigationLinks := repairLinkList(props["navigationLinks"], 6)
+	if len(navigationLinks) == 0 {
+		navigationLinks = []any{
+			map[string]any{"label": "Home", "href": "/"},
+			map[string]any{"label": "Contact", "href": "/contact"},
+		}
+	}
+
+	return map[string]any{
+		"siteName":        firstNonEmpty(readGeneratedText(props, "siteName", 120), pageTitle),
+		"tagline":         readGeneratedText(props, "tagline", 240),
+		"contactLine":     readGeneratedText(props, "contactLine", 180),
+		"copyright":       firstNonEmpty(readGeneratedText(props, "copyright", 120), "Copyright 2026 "+pageTitle),
+		"navigationLinks": navigationLinks,
+		"socialLinks":     repairLinkList(props["socialLinks"], 6),
+	}
+}
+
 func repairCTABandProps(props map[string]any, pageTitle string, pageSlug string) map[string]any {
 	repaired := map[string]any{
 		"heading": firstNonEmpty(readGeneratedText(props, "heading", 120), pageTitle),
@@ -417,6 +682,56 @@ func repairImage(value any) map[string]any {
 		repaired["alt"] = alt
 	}
 	return repaired
+}
+
+func repairFeatureList(value any) []any {
+	values, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	features := make([]any, 0, len(values))
+	for _, raw := range values {
+		item, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		text := readGeneratedText(item, "text", 120)
+		if text == "" {
+			continue
+		}
+		features = append(features, map[string]any{"text": text})
+		if len(features) == 6 {
+			break
+		}
+	}
+	return features
+}
+
+func repairLinkList(value any, limit int) []any {
+	values, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	links := make([]any, 0, len(values))
+	for _, raw := range values {
+		item, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		label := readGeneratedText(item, "label", 40)
+		href := readSafeURL(item, "href", "")
+		if label == "" || href == "" {
+			continue
+		}
+		links = append(links, map[string]any{
+			"label": label,
+			"href":  href,
+		})
+		if len(links) == limit {
+			break
+		}
+	}
+	return links
 }
 
 func fallbackGeneratedCTAHref(pageSlug string) string {
@@ -478,6 +793,13 @@ func extractPageDescription(blocks []generationBlockPlan) string {
 			}
 		case "features_grid":
 			if text := readGeneratedText(block.Props, "intro", 180); text != "" {
+				return text
+			}
+		case "gallery", "testimonials", "pricing_packages", "faq", "team_profile_cards", "footer":
+			if text := readGeneratedText(block.Props, "intro", 180); text != "" {
+				return text
+			}
+			if text := readGeneratedText(block.Props, "tagline", 180); text != "" {
 				return text
 			}
 		}

@@ -51,6 +51,22 @@ describe('SiteDraftRenderer', () => {
       '/contact',
     )
   })
+
+  it('renders the added MVP content blocks without fallback UI', () => {
+    render(<SiteDraftRenderer site={buildExtendedDraft()} />)
+
+    expect(screen.queryByText('Unsupported block')).toBeNull()
+    expect(screen.getByText('Selected work')).toBeTruthy()
+    expect(screen.getByText('What clients tend to notice')).toBeTruthy()
+    expect(screen.getByText('Packages and starting points')).toBeTruthy()
+    expect(screen.getByText('Questions people ask before they reach out')).toBeTruthy()
+    expect(screen.getByText('People behind the work')).toBeTruthy()
+    expect(
+      screen
+        .getAllByRole('link', { name: 'Contact' })
+        .some((link) => link.getAttribute('href') === '#page-contact'),
+    ).toBe(true)
+  })
 })
 
 function buildDraft(): SiteDraft {
@@ -155,6 +171,135 @@ function buildDraft(): SiteDraft {
             settings: {},
           },
         ],
+      },
+    ],
+  }
+}
+
+function buildExtendedDraft(): SiteDraft {
+  return {
+    ...buildDraft(),
+    pages: [
+      {
+        id: 'page-home',
+        title: 'Home',
+        slug: '/',
+        blocks: [
+          {
+            id: 'block-gallery',
+            type: 'gallery',
+            version: '1.0.0',
+            props: {
+              heading: 'Selected work',
+              intro: 'A tighter visual proof section.',
+              layout: 'grid',
+              images: [
+                {
+                  title: 'Signature image',
+                  caption: 'A crafted placeholder for the first gallery slot.',
+                },
+              ],
+            },
+            settings: {},
+          },
+          {
+            id: 'block-testimonials',
+            type: 'testimonials',
+            version: '1.0.0',
+            props: {
+              heading: 'What clients tend to notice',
+              items: [
+                {
+                  quote: 'Calm process, sharp result.',
+                  name: 'Mira',
+                  role: 'Client',
+                },
+              ],
+            },
+            settings: {},
+          },
+          {
+            id: 'block-pricing',
+            type: 'pricing_packages',
+            version: '1.0.0',
+            props: {
+              heading: 'Packages and starting points',
+              plans: [
+                {
+                  name: 'Starter',
+                  price: 'From $350',
+                  description: 'A compact package.',
+                  features: [{ text: 'Focused scope' }],
+                  cta: {
+                    label: 'Ask about fit',
+                    href: '/contact',
+                  },
+                },
+              ],
+            },
+            settings: {},
+          },
+          {
+            id: 'block-faq',
+            type: 'faq',
+            version: '1.0.0',
+            props: {
+              heading: 'Questions people ask before they reach out',
+              items: [
+                {
+                  question: 'What should I send first?',
+                  answer: 'A short note about timing and scope.',
+                },
+              ],
+            },
+            settings: {},
+          },
+          {
+            id: 'block-team',
+            type: 'team_profile_cards',
+            version: '1.0.0',
+            props: {
+              heading: 'People behind the work',
+              people: [
+                {
+                  name: 'Founder',
+                  role: 'Lead contact',
+                  bio: 'Owns the work and the relationship.',
+                  links: [
+                    {
+                      label: 'Contact',
+                      href: '/contact',
+                    },
+                  ],
+                },
+              ],
+            },
+            settings: {},
+          },
+          {
+            id: 'block-footer',
+            type: 'footer',
+            version: '1.0.0',
+            props: {
+              siteName: 'Loom & Light',
+              tagline: 'A short closing line.',
+              copyright: 'Copyright 2026 Loom & Light',
+              navigationLinks: [
+                {
+                  label: 'Contact',
+                  href: '/contact',
+                },
+              ],
+            },
+            settings: {},
+          },
+        ],
+      },
+      {
+        id: 'page-contact',
+        title: 'Contact',
+        slug: '/contact',
+        blocks: [],
       },
     ],
   }

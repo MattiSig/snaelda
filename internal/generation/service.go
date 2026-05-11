@@ -181,21 +181,25 @@ type generationBlockPlan struct {
 }
 
 type promptProfile struct {
-	Category       string
-	CategoryLabel  string
-	ThemePreset    string
-	PrimaryCTA     string
-	ServicesTitle  string
-	ServicesIntro  string
-	FeatureItems   []map[string]any
-	AboutHeading   string
-	AboutBody      string
-	GalleryHeading string
-	GalleryBody    string
-	ContactHeading string
-	ContactBody    string
-	WantsGallery   bool
-	WantsWorkshops bool
+	Category          string
+	CategoryLabel     string
+	ThemePreset       string
+	PrimaryCTA        string
+	ServicesTitle     string
+	ServicesIntro     string
+	FeatureItems      []map[string]any
+	AboutHeading      string
+	AboutBody         string
+	GalleryHeading    string
+	GalleryBody       string
+	ContactHeading    string
+	ContactBody       string
+	WantsGallery      bool
+	WantsWorkshops    bool
+	WantsPricing      bool
+	WantsTestimonials bool
+	WantsFAQ          bool
+	WantsTeam         bool
 }
 
 func (s *Service) createGenerationJob(ctx context.Context, workspaceID string, userID string, input generationInputContext) (string, error) {
@@ -558,6 +562,18 @@ func profilePrompt(prompt string) promptProfile {
 	if hasAny(lower, "workshop", "workshops", "class", "classes", "course", "courses") {
 		profile.WantsWorkshops = true
 	}
+	if hasAny(lower, "price", "pricing", "package", "packages", "rates") {
+		profile.WantsPricing = true
+	}
+	if hasAny(lower, "testimonial", "testimonials", "review", "reviews", "social proof") {
+		profile.WantsTestimonials = true
+	}
+	if hasAny(lower, "faq", "frequently asked", "common questions", "questions") {
+		profile.WantsFAQ = true
+	}
+	if hasAny(lower, "team", "staff", "our people", "founder", "bios", "bio") {
+		profile.WantsTeam = true
+	}
 
 	return profile
 }
@@ -568,6 +584,73 @@ func homePagePlan(siteName string, prompt string, profile promptProfile, primary
 		description = clampSentence(siteGoalForCategory(profile.Category), 180)
 	}
 
+	blocks := []generationBlockPlan{
+		{
+			Type:    "hero",
+			Purpose: "Position the business in one clear screen with a single primary call to action.",
+			Props: map[string]any{
+				"eyebrow":     profile.CategoryLabel,
+				"headline":    homeHeadline(siteName, profile),
+				"subheadline": homeSubheadline(profile),
+				"primaryCta": map[string]any{
+					"label": profile.PrimaryCTA,
+					"href":  primaryCTAHref,
+				},
+				"layout": "split-left",
+			},
+		},
+		{
+			Type:    "text_section",
+			Purpose: "Turn the prompt into a short promise that explains how the work feels and why it matters.",
+			Props: map[string]any{
+				"heading":   "A first draft shaped around the actual work",
+				"body":      aboutIntro(profile),
+				"alignment": "left",
+				"width":     "default",
+			},
+		},
+		{
+			Type:    "features_grid",
+			Purpose: "List the main offers or reasons to trust the business in a scan-friendly format.",
+			Props: map[string]any{
+				"heading": profile.ServicesTitle,
+				"intro":   profile.ServicesIntro,
+				"columns": 3,
+				"items":   toAnySlice(profile.FeatureItems),
+			},
+		},
+		{
+			Type:    "image_text",
+			Purpose: "Reserve a visual slot and explain the experience, not just the deliverables.",
+			Props: map[string]any{
+				"heading":       "How the work usually feels",
+				"body":          workProcessCopy(profile),
+				"imagePosition": "right",
+			},
+		},
+	}
+	if profile.WantsTeam && profile.WantsGallery {
+		blocks = append(blocks, teamProfileCardsBlockPlan(profile))
+	}
+	if profile.WantsTestimonials {
+		blocks = append(blocks, testimonialsBlockPlan(profile))
+	}
+	if profile.WantsPricing {
+		blocks = append(blocks, pricingPackagesBlockPlan(profile, primaryCTAHref))
+	}
+	blocks = append(blocks, generationBlockPlan{
+		Type:    "cta_band",
+		Purpose: "Close the homepage with the single action the business most wants from new visitors.",
+		Props: map[string]any{
+			"heading": profile.ContactHeading,
+			"body":    profile.ContactBody,
+			"cta": map[string]any{
+				"label": profile.PrimaryCTA,
+				"href":  primaryCTAHref,
+			},
+		},
+	})
+
 	return generationPagePlan{
 		Title: "Home",
 		Slug:  "/",
@@ -576,67 +659,49 @@ func homePagePlan(siteName string, prompt string, profile promptProfile, primary
 			Title:       clampSentence(siteName, 70),
 			Description: description,
 		},
-		Blocks: []generationBlockPlan{
-			{
-				Type:    "hero",
-				Purpose: "Position the business in one clear screen with a single primary call to action.",
-				Props: map[string]any{
-					"eyebrow":     profile.CategoryLabel,
-					"headline":    homeHeadline(siteName, profile),
-					"subheadline": homeSubheadline(profile),
-					"primaryCta": map[string]any{
-						"label": profile.PrimaryCTA,
-						"href":  primaryCTAHref,
-					},
-					"layout": "split-left",
-				},
-			},
-			{
-				Type:    "text_section",
-				Purpose: "Turn the prompt into a short promise that explains how the work feels and why it matters.",
-				Props: map[string]any{
-					"heading":   "A first draft shaped around the actual work",
-					"body":      aboutIntro(profile),
-					"alignment": "left",
-					"width":     "default",
-				},
-			},
-			{
-				Type:    "features_grid",
-				Purpose: "List the main offers or reasons to trust the business in a scan-friendly format.",
-				Props: map[string]any{
-					"heading": profile.ServicesTitle,
-					"intro":   profile.ServicesIntro,
-					"columns": 3,
-					"items":   toAnySlice(profile.FeatureItems),
-				},
-			},
-			{
-				Type:    "image_text",
-				Purpose: "Reserve a visual slot and explain the experience, not just the deliverables.",
-				Props: map[string]any{
-					"heading":       "How the work usually feels",
-					"body":          workProcessCopy(profile),
-					"imagePosition": "right",
-				},
-			},
-			{
-				Type:    "cta_band",
-				Purpose: "Close the homepage with the single action the business most wants from new visitors.",
-				Props: map[string]any{
-					"heading": profile.ContactHeading,
-					"body":    profile.ContactBody,
-					"cta": map[string]any{
-						"label": profile.PrimaryCTA,
-						"href":  primaryCTAHref,
-					},
-				},
-			},
-		},
+		Blocks: blocks,
 	}
 }
 
 func servicesPagePlan(siteName string, profile promptProfile) generationPagePlan {
+	blocks := []generationBlockPlan{
+		{
+			Type:    "text_section",
+			Purpose: "Open the services page with a practical framing paragraph.",
+			Props: map[string]any{
+				"heading":   profile.ServicesTitle,
+				"body":      profile.ServicesIntro,
+				"alignment": "left",
+				"width":     "wide",
+			},
+		},
+		{
+			Type:    "features_grid",
+			Purpose: "Break services into scannable sections that map to real customer questions.",
+			Props: map[string]any{
+				"heading": "What this includes",
+				"intro":   "Use these cards to outline the typical formats, deliverables, or ways someone can work with you.",
+				"columns": 3,
+				"items":   toAnySlice(profile.FeatureItems),
+			},
+		},
+	}
+	if profile.WantsPricing {
+		blocks = append(blocks, pricingPackagesBlockPlan(profile, "/contact"))
+	}
+	blocks = append(blocks, generationBlockPlan{
+		Type:    "cta_band",
+		Purpose: "Push the reader to contact once the offer is clear enough.",
+		Props: map[string]any{
+			"heading": "Need a version of this tailored to your project?",
+			"body":    "Invite people to ask about timing, scope, or fit instead of making them guess how to start.",
+			"cta": map[string]any{
+				"label": profile.PrimaryCTA,
+				"href":  "/contact",
+			},
+		},
+	})
+
 	return generationPagePlan{
 		Title: "Services",
 		Slug:  "/services",
@@ -645,40 +710,7 @@ func servicesPagePlan(siteName string, profile promptProfile) generationPagePlan
 			Title:       clampSentence("Services | "+siteName, 70),
 			Description: clampSentence(profile.ServicesIntro, 180),
 		},
-		Blocks: []generationBlockPlan{
-			{
-				Type:    "text_section",
-				Purpose: "Open the services page with a practical framing paragraph.",
-				Props: map[string]any{
-					"heading":   profile.ServicesTitle,
-					"body":      profile.ServicesIntro,
-					"alignment": "left",
-					"width":     "wide",
-				},
-			},
-			{
-				Type:    "features_grid",
-				Purpose: "Break services into scannable sections that map to real customer questions.",
-				Props: map[string]any{
-					"heading": "What this includes",
-					"intro":   "Use these cards to outline the typical formats, deliverables, or ways someone can work with you.",
-					"columns": 3,
-					"items":   toAnySlice(profile.FeatureItems),
-				},
-			},
-			{
-				Type:    "cta_band",
-				Purpose: "Push the reader to contact once the offer is clear enough.",
-				Props: map[string]any{
-					"heading": "Need a version of this tailored to your project?",
-					"body":    "Invite people to ask about timing, scope, or fit instead of making them guess how to start.",
-					"cta": map[string]any{
-						"label": profile.PrimaryCTA,
-						"href":  "/contact",
-					},
-				},
-			},
-		},
+		Blocks: blocks,
 	}
 }
 
@@ -735,6 +767,43 @@ func workshopsPagePlan(siteName string, profile promptProfile) generationPagePla
 }
 
 func aboutPagePlan(siteName string, profile promptProfile) generationPagePlan {
+	blocks := []generationBlockPlan{
+		{
+			Type:    "text_section",
+			Purpose: "Tell the origin story without making the visitor work to find the point.",
+			Props: map[string]any{
+				"heading":   profile.AboutHeading,
+				"body":      profile.AboutBody,
+				"alignment": "left",
+				"width":     "default",
+			},
+		},
+		{
+			Type:    "image_text",
+			Purpose: "Pair a visual slot with a practical explanation of the process or point of view.",
+			Props: map[string]any{
+				"heading":       "Why people come back",
+				"body":          workProcessCopy(profile),
+				"imagePosition": "left",
+			},
+		},
+	}
+	if profile.WantsTeam {
+		blocks = append(blocks, teamProfileCardsBlockPlan(profile))
+	}
+	blocks = append(blocks, generationBlockPlan{
+		Type:    "cta_band",
+		Purpose: "Bridge the story back to action.",
+		Props: map[string]any{
+			"heading": "If the approach fits, the next step should be simple",
+			"body":    "Use the close of this page to invite a visit, a question, or a booking without changing tone.",
+			"cta": map[string]any{
+				"label": profile.PrimaryCTA,
+				"href":  "/contact",
+			},
+		},
+	})
+
 	return generationPagePlan{
 		Title: "About",
 		Slug:  "/about",
@@ -743,49 +812,11 @@ func aboutPagePlan(siteName string, profile promptProfile) generationPagePlan {
 			Title:       clampSentence("About | "+siteName, 70),
 			Description: clampSentence(profile.AboutBody, 180),
 		},
-		Blocks: []generationBlockPlan{
-			{
-				Type:    "text_section",
-				Purpose: "Tell the origin story without making the visitor work to find the point.",
-				Props: map[string]any{
-					"heading":   profile.AboutHeading,
-					"body":      profile.AboutBody,
-					"alignment": "left",
-					"width":     "default",
-				},
-			},
-			{
-				Type:    "image_text",
-				Purpose: "Pair a visual slot with a practical explanation of the process or point of view.",
-				Props: map[string]any{
-					"heading":       "Why people come back",
-					"body":          workProcessCopy(profile),
-					"imagePosition": "left",
-				},
-			},
-			{
-				Type:    "cta_band",
-				Purpose: "Bridge the story back to action.",
-				Props: map[string]any{
-					"heading": "If the approach fits, the next step should be simple",
-					"body":    "Use the close of this page to invite a visit, a question, or a booking without changing tone.",
-					"cta": map[string]any{
-						"label": profile.PrimaryCTA,
-						"href":  "/contact",
-					},
-				},
-			},
-		},
+		Blocks: blocks,
 	}
 }
 
 func galleryPagePlan(siteName string, profile promptProfile) generationPagePlan {
-	items := []map[string]any{
-		{"title": "Recent highlights", "body": "A small set of examples that show range while still feeling edited and intentional."},
-		{"title": "Style cues", "body": "Use captions or section text to explain the materials, mood, or process behind the work."},
-		{"title": "What to ask for", "body": "Point people toward the kinds of commissions, sessions, or collaborations that make sense here."},
-	}
-
 	return generationPagePlan{
 		Title: "Gallery",
 		Slug:  "/gallery",
@@ -806,22 +837,17 @@ func galleryPagePlan(siteName string, profile promptProfile) generationPagePlan 
 				},
 			},
 			{
-				Type:    "image_text",
-				Purpose: "Reserve a large visual area and explain what the visitor is looking at.",
+				Type:    "gallery",
+				Purpose: "Show a small, structured set of visual highlights with captions until uploads are fully wired in.",
 				Props: map[string]any{
-					"heading":       "One representative feature can carry the page for now",
-					"body":          "Use the image slot for a hero example, then tighten the surrounding copy so the page still works before asset uploads are fully built out.",
-					"imagePosition": "right",
-				},
-			},
-			{
-				Type:    "features_grid",
-				Purpose: "Turn the rest of the gallery page into a structured proof section.",
-				Props: map[string]any{
-					"heading": "What this work tends to show",
-					"intro":   "Use short cards to explain medium, style, or project types until a richer gallery block exists.",
-					"columns": 3,
-					"items":   toAnySlice(items),
+					"heading": "A small set of representative highlights",
+					"intro":   "These slots can hold portfolio images, event examples, or product shots without needing a larger media system yet.",
+					"layout":  "masonry",
+					"images": toAnySlice([]map[string]any{
+						{"title": "Signature example", "caption": "Use the first slot for the work that best captures the tone of the business."},
+						{"title": "Process detail", "caption": "Add a closer view that shows texture, materials, or the way the work is made."},
+						{"title": "Finished outcome", "caption": "Use the final slot to show the result in context so visitors can picture the real-world use."},
+					}),
 				},
 			},
 			{
@@ -841,6 +867,51 @@ func galleryPagePlan(siteName string, profile promptProfile) generationPagePlan 
 }
 
 func contactPagePlan(siteName string, profile promptProfile) generationPagePlan {
+	blocks := []generationBlockPlan{
+		{
+			Type:    "hero",
+			Purpose: "Lead with the contact promise instead of a cold form placeholder.",
+			Props: map[string]any{
+				"eyebrow":     "Contact",
+				"headline":    profile.ContactHeading,
+				"subheadline": profile.ContactBody,
+				"primaryCta": map[string]any{
+					"label": "Send an inquiry",
+					"href":  "mailto:hello@example.com",
+				},
+				"layout": "centered",
+			},
+		},
+		{
+			Type:    "text_section",
+			Purpose: "Add the practical details that reduce hesitation.",
+			Props: map[string]any{
+				"heading":   "What to include when you reach out",
+				"body":      "A short note about timing, budget, scale, or the kind of help you need is enough to start a useful conversation.",
+				"alignment": "left",
+				"width":     "default",
+			},
+		},
+	}
+	if profile.WantsFAQ {
+		blocks = append(blocks, faqBlockPlan(profile))
+	}
+	blocks = append(blocks,
+		generationBlockPlan{
+			Type:    "cta_band",
+			Purpose: "Repeat the action so the page does not end ambiguously.",
+			Props: map[string]any{
+				"heading": "Prefer email first?",
+				"body":    "Until forms are live, this can point to email, a booking tool, or another direct contact path.",
+				"cta": map[string]any{
+					"label": "Email hello@example.com",
+					"href":  "mailto:hello@example.com",
+				},
+			},
+		},
+		footerBlockPlan(siteName, profile),
+	)
+
 	return generationPagePlan{
 		Title: "Contact",
 		Slug:  "/contact",
@@ -849,45 +920,212 @@ func contactPagePlan(siteName string, profile promptProfile) generationPagePlan 
 			Title:       clampSentence("Contact | "+siteName, 70),
 			Description: clampSentence(profile.ContactBody, 180),
 		},
-		Blocks: []generationBlockPlan{
-			{
-				Type:    "hero",
-				Purpose: "Lead with the contact promise instead of a cold form placeholder.",
-				Props: map[string]any{
-					"eyebrow":     "Contact",
-					"headline":    profile.ContactHeading,
-					"subheadline": profile.ContactBody,
-					"primaryCta": map[string]any{
-						"label": "Send an inquiry",
-						"href":  "mailto:hello@example.com",
-					},
-					"layout": "centered",
-				},
-			},
-			{
-				Type:    "text_section",
-				Purpose: "Add the practical details that reduce hesitation.",
-				Props: map[string]any{
-					"heading":   "What to include when you reach out",
-					"body":      "A short note about timing, budget, scale, or the kind of help you need is enough to start a useful conversation.",
-					"alignment": "left",
-					"width":     "default",
-				},
-			},
-			{
-				Type:    "cta_band",
-				Purpose: "Repeat the action so the page does not end ambiguously.",
-				Props: map[string]any{
-					"heading": "Prefer email first?",
-					"body":    "Until forms are live, this can point to email, a booking tool, or another direct contact path.",
-					"cta": map[string]any{
-						"label": "Email hello@example.com",
-						"href":  "mailto:hello@example.com",
-					},
-				},
-			},
+		Blocks: blocks,
+	}
+}
+
+func testimonialsBlockPlan(profile promptProfile) generationBlockPlan {
+	return generationBlockPlan{
+		Type:    "testimonials",
+		Purpose: "Use believable, specific testimonials to add social proof without inflating the tone.",
+		Props: map[string]any{
+			"heading": "What clients tend to notice",
+			"intro":   "Keep the quotes short, concrete, and tied to the real experience of working together.",
+			"items":   toAnySlice(testimonialItemsForProfile(profile)),
 		},
 	}
+}
+
+func pricingPackagesBlockPlan(profile promptProfile, href string) generationBlockPlan {
+	return generationBlockPlan{
+		Type:    "pricing_packages",
+		Purpose: "Make the offer feel tangible with a small set of packages or starting points.",
+		Props: map[string]any{
+			"heading": "Packages and starting points",
+			"intro":   "Use these as clear entry points so visitors can understand scale before they reach out.",
+			"plans":   toAnySlice(pricingPlansForProfile(profile, href)),
+		},
+	}
+}
+
+func faqBlockPlan(profile promptProfile) generationBlockPlan {
+	return generationBlockPlan{
+		Type:    "faq",
+		Purpose: "Answer the questions that most often slow down a first inquiry.",
+		Props: map[string]any{
+			"heading": "Questions people ask before they reach out",
+			"intro":   "Use this space to lower friction, set expectations, and make the next step feel straightforward.",
+			"items":   toAnySlice(faqItemsForProfile(profile)),
+		},
+	}
+}
+
+func teamProfileCardsBlockPlan(profile promptProfile) generationBlockPlan {
+	return generationBlockPlan{
+		Type:    "team_profile_cards",
+		Purpose: "Introduce the people behind the work so the site feels personal and accountable.",
+		Props: map[string]any{
+			"heading": "People behind the work",
+			"intro":   "A small team section works best when it explains what each person actually brings to the client experience.",
+			"people":  toAnySlice(teamPeopleForProfile(profile)),
+		},
+	}
+}
+
+func footerBlockPlan(siteName string, profile promptProfile) generationBlockPlan {
+	return generationBlockPlan{
+		Type:    "footer",
+		Purpose: "Close the page with practical navigation and a final tone-setting line.",
+		Props: map[string]any{
+			"siteName":        siteName,
+			"tagline":         footerTagline(profile),
+			"contactLine":     "hello@example.com",
+			"copyright":       "Copyright 2026 " + siteName,
+			"navigationLinks": toAnySlice(footerNavigationLinks(profile)),
+			"socialLinks":     []any{},
+		},
+	}
+}
+
+func pricingPlansForProfile(profile promptProfile, href string) []map[string]any {
+	switch profile.Category {
+	case "photography":
+		return []map[string]any{
+			{
+				"name":        "Portrait session",
+				"price":       "From $450",
+				"description": "A focused session for individuals, couples, or families who want relaxed direction and a tidy final gallery.",
+				"features":    toAnySlice([]map[string]any{{"text": "Planning call"}, {"text": "Edited image set"}, {"text": "Private gallery"}}),
+				"cta":         map[string]any{"label": "Ask about sessions", "href": href},
+			},
+			{
+				"name":        "Brand coverage",
+				"price":       "From $900",
+				"description": "A half-day or full-day package for launches, campaigns, or small-business website imagery.",
+				"features":    toAnySlice([]map[string]any{{"text": "Shot list support"}, {"text": "Usage-ready edits"}, {"text": "Delivery plan"}}),
+				"cta":         map[string]any{"label": "Plan your shoot", "href": href},
+			},
+		}
+	case "wellness":
+		return []map[string]any{
+			{
+				"name":        "Private sessions",
+				"price":       "From $120",
+				"description": "One-to-one work for people who want dedicated support and a calmer starting point.",
+				"features":    toAnySlice([]map[string]any{{"text": "Individual pacing"}, {"text": "Practical guidance"}, {"text": "Follow-up notes"}}),
+				"cta":         map[string]any{"label": "Ask about sessions", "href": href},
+			},
+			{
+				"name":        "Small-group series",
+				"price":       "From $280",
+				"description": "A short series for people who want continuity, structure, and a shared rhythm.",
+				"features":    toAnySlice([]map[string]any{{"text": "Group format"}, {"text": "Repeat sessions"}, {"text": "Clear next steps"}}),
+				"cta":         map[string]any{"label": "Ask about dates", "href": href},
+			},
+		}
+	default:
+		return []map[string]any{
+			{
+				"name":        "Starter",
+				"price":       "From $350",
+				"description": "A smaller package for focused work where the goal and scope are already fairly clear.",
+				"features":    toAnySlice([]map[string]any{{"text": "Defined scope"}, {"text": "Clear timeline"}, {"text": "Simple handoff"}}),
+				"cta":         map[string]any{"label": "Ask about fit", "href": href},
+			},
+			{
+				"name":        "Signature",
+				"price":       "From $900",
+				"description": "A broader package for projects that need more collaboration, shaping, or coverage.",
+				"features":    toAnySlice([]map[string]any{{"text": "Collaborative planning"}, {"text": "More coverage"}, {"text": "Refined delivery"}}),
+				"cta":         map[string]any{"label": "Start the conversation", "href": href},
+			},
+		}
+	}
+}
+
+func testimonialItemsForProfile(profile promptProfile) []map[string]any {
+	switch profile.Category {
+	case "photography":
+		return []map[string]any{
+			{"quote": "The whole process felt calm and clear, and the photos still looked like us instead of a version of us trying too hard.", "name": "Mira L.", "role": "Portrait client"},
+			{"quote": "We got a set of images that finally made the website feel current, consistent, and ready to send people to.", "name": "Aren Studio", "role": "Brand client"},
+		}
+	case "wellness":
+		return []map[string]any{
+			{"quote": "The sessions felt grounded from the first minute, and I left knowing exactly what I wanted to keep practicing.", "name": "Elin S.", "role": "Private client"},
+			{"quote": "Everything was explained plainly, which made it much easier to book than other places I looked at.", "name": "Johan K.", "role": "New client"},
+		}
+	default:
+		return []map[string]any{
+			{"quote": "The whole thing felt surprisingly easy, and the result looked more polished than I expected this early in the process.", "name": "Nora P.", "role": "Client"},
+			{"quote": "Clear communication, no fuss, and a final result that actually matched how we wanted the business to come across.", "name": "S. Berg", "role": "Owner"},
+		}
+	}
+}
+
+func faqItemsForProfile(profile promptProfile) []map[string]any {
+	switch profile.Category {
+	case "photography":
+		return []map[string]any{
+			{"question": "How much detail should I send in the first email?", "answer": "A short note about the kind of shoot, rough timing, and what you need the images to do is enough to start."},
+			{"question": "Do I need a final brief before reaching out?", "answer": "No. A rough idea is fine, and the specifics can be shaped together once the first conversation starts."},
+		}
+	case "wellness":
+		return []map[string]any{
+			{"question": "How do I know if this is the right fit for me?", "answer": "Use the first conversation to ask practical questions about pace, format, and what support usually looks like."},
+			{"question": "What should I bring to the first session?", "answer": "A short sense of what feels difficult right now and what kind of support you hope to get is usually enough."},
+		}
+	default:
+		return []map[string]any{
+			{"question": "What should someone include in the first inquiry?", "answer": "A little context about timing, scope, and the kind of help you need is enough to get a useful conversation started."},
+			{"question": "Do you work with smaller projects as well?", "answer": "Use this answer to clarify whether there is a minimum scope, a starter package, or a referral path when something is too small."},
+		}
+	}
+}
+
+func teamPeopleForProfile(profile promptProfile) []map[string]any {
+	switch profile.Category {
+	case "creative":
+		return []map[string]any{
+			{"name": "Creative lead", "role": "Direction and framing", "bio": "Shapes the brief, keeps the work focused, and makes sure the final result still sounds like the business.", "links": toAnySlice([]map[string]any{{"label": "Start a project", "href": "/contact"}})},
+			{"name": "Project partner", "role": "Planning and delivery", "bio": "Handles timing, revisions, and the practical details that keep a small project from turning into a long one.", "links": toAnySlice([]map[string]any{{"label": "Ask a question", "href": "/contact"}})},
+		}
+	default:
+		return []map[string]any{
+			{"name": "Founder", "role": "Lead point of contact", "bio": "Owns the work, keeps communication direct, and stays close to the details that shape the final experience.", "links": toAnySlice([]map[string]any{{"label": "Get in touch", "href": "/contact"}})},
+		}
+	}
+}
+
+func footerTagline(profile promptProfile) string {
+	switch profile.Category {
+	case "photography":
+		return "Calm planning, honest images, and a straightforward path to booking."
+	case "wellness":
+		return "Grounded support, plain language, and a gentler first step."
+	case "craft":
+		return "Handmade work, practical beauty, and room to learn by doing."
+	default:
+		return "A small, focused website that keeps the next step close."
+	}
+}
+
+func footerNavigationLinks(profile promptProfile) []map[string]any {
+	links := []map[string]any{
+		{"label": "Home", "href": "/"},
+	}
+	if profile.WantsWorkshops {
+		links = append(links, map[string]any{"label": "Workshops", "href": "/workshops"})
+	} else {
+		links = append(links, map[string]any{"label": "Services", "href": "/services"})
+	}
+	if profile.WantsGallery {
+		links = append(links, map[string]any{"label": "Gallery", "href": "/gallery"})
+	} else {
+		links = append(links, map[string]any{"label": "About", "href": "/about"})
+	}
+	links = append(links, map[string]any{"label": "Contact", "href": "/contact"})
+	return links
 }
 
 func deriveSiteName(nameHint string, profile promptProfile) string {
