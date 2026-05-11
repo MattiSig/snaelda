@@ -212,6 +212,7 @@ func (m *PostgresMutator) CreatePage(ctx context.Context, workspaceID string, si
 		Settings: pageSettingsValue(input.IncludeInNavigation),
 	}
 	draft.Pages = append(draft.Pages, page)
+	draft.Navigation = syncNavigationWithPages(draft.Navigation, draft.Pages)
 
 	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
 		return siteconfig.SiteDraft{}, err
@@ -260,6 +261,7 @@ func (m *PostgresMutator) UpdatePage(ctx context.Context, workspaceID string, si
 	page.Settings = pageSettingsValue(input.IncludeInNavigation, page.Settings)
 
 	draft.Pages[pageIndex] = page
+	draft.Navigation = syncNavigationWithPages(draft.Navigation, draft.Pages)
 	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
 		return siteconfig.SiteDraft{}, err
 	}
@@ -283,6 +285,7 @@ func (m *PostgresMutator) DeletePage(ctx context.Context, workspaceID string, si
 	}
 
 	draft.Pages = append(draft.Pages[:pageIndex], draft.Pages[pageIndex+1:]...)
+	draft.Navigation = syncNavigationWithPages(draft.Navigation, draft.Pages)
 	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
 		return siteconfig.SiteDraft{}, err
 	}
@@ -299,6 +302,7 @@ func (m *PostgresMutator) ReorderPages(ctx context.Context, workspaceID string, 
 		return siteconfig.SiteDraft{}, err
 	}
 	draft.Pages = reorderedPages
+	draft.Navigation = syncNavigationWithPages(draft.Navigation, draft.Pages)
 
 	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
 		return siteconfig.SiteDraft{}, err
@@ -611,6 +615,33 @@ func pageSettingsValue(includeInNavigation *bool, existing ...map[string]any) ma
 		settings["includeInNavigation"] = *includeInNavigation
 	}
 	return settings
+}
+
+func syncNavigationWithPages(
+	existing siteconfig.NavigationConfig,
+	pages []siteconfig.PageDraft,
+) siteconfig.NavigationConfig {
+	externalItems := make([]siteconfig.NavigationItem, 0, len(existing.Primary))
+	for _, item := range existing.Primary {
+		if item.PageID == "" && item.Href != "" {
+			externalItems = append(externalItems, item)
+		}
+	}
+
+	navigation := siteconfig.NavigationConfig{
+		Primary: make([]siteconfig.NavigationItem, 0, len(pages)+len(externalItems)),
+	}
+	for _, page := range pages {
+		if !pageIncludedInNavigation(page.Settings) {
+			continue
+		}
+		navigation.Primary = append(navigation.Primary, siteconfig.NavigationItem{
+			Label:  page.Title,
+			PageID: page.ID,
+		})
+	}
+	navigation.Primary = append(navigation.Primary, externalItems...)
+	return navigation
 }
 
 func findPageIndex(pages []siteconfig.PageDraft, pageID string) int {

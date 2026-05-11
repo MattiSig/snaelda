@@ -1,6 +1,7 @@
 package sites
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -48,6 +49,8 @@ type siteRow struct {
 	Status        string
 	DefaultLocale string
 	SEO           siteconfig.SEOConfig
+	Navigation    siteconfig.NavigationConfig
+	HasNavigation bool
 }
 
 type themeRow struct {
@@ -159,7 +162,7 @@ func (r *PostgresReader) loadNormalizedDraft(ctx context.Context, siteID string)
 	if err != nil {
 		return NormalizedDraftRows{}, fmt.Errorf("load site: %w", err)
 	}
-	if err := decodeNestedSEO(siteSettingsJSON, &site.SEO); err != nil {
+	if err := decodeSiteSettings(siteSettingsJSON, &site); err != nil {
 		return NormalizedDraftRows{}, fmt.Errorf("decode site settings: %w", err)
 	}
 
@@ -293,9 +296,6 @@ func AssembleDraft(rows NormalizedDraftRows) siteconfig.SiteDraft {
 	})
 
 	draftPages := make([]siteconfig.PageDraft, 0, len(pages))
-	navigation := siteconfig.NavigationConfig{
-		Primary: make([]siteconfig.NavigationItem, 0, len(pages)),
-	}
 	for _, page := range pages {
 		draftBlocks := make([]siteconfig.BlockInstance, 0, len(blocksByPage[page.ID]))
 		for _, block := range blocksByPage[page.ID] {
@@ -319,12 +319,11 @@ func AssembleDraft(rows NormalizedDraftRows) siteconfig.SiteDraft {
 			Blocks:   draftBlocks,
 			Settings: page.Settings,
 		})
-		if pageIncludedInNavigation(page.Settings) {
-			navigation.Primary = append(navigation.Primary, siteconfig.NavigationItem{
-				Label:  page.Title,
-				PageID: page.ID,
-			})
-		}
+	}
+
+	navigation := rows.Site.Navigation
+	if !rows.Site.HasNavigation {
+		navigation = navigationFromPageRows(pages)
 	}
 
 	return siteconfig.SiteDraft{
@@ -342,6 +341,22 @@ func AssembleDraft(rows NormalizedDraftRows) siteconfig.SiteDraft {
 	}
 }
 
+func navigationFromPageRows(pages []pageRow) siteconfig.NavigationConfig {
+	navigation := siteconfig.NavigationConfig{
+		Primary: make([]siteconfig.NavigationItem, 0, len(pages)),
+	}
+	for _, page := range pages {
+		if !pageIncludedInNavigation(page.Settings) {
+			continue
+		}
+		navigation.Primary = append(navigation.Primary, siteconfig.NavigationItem{
+			Label:  page.Title,
+			PageID: page.ID,
+		})
+	}
+	return navigation
+}
+
 func pageIncludedInNavigation(settings map[string]any) bool {
 	if settings == nil {
 		return true
@@ -357,14 +372,25 @@ func pageIncludedInNavigation(settings map[string]any) bool {
 	return include
 }
 
-func decodeNestedSEO(raw []byte, dest *siteconfig.SEOConfig) error {
+func decodeSiteSettings(raw []byte, site *siteRow) error {
 	var settings struct {
-		SEO siteconfig.SEOConfig `json:"seo"`
+		SEO        siteconfig.SEOConfig `json:"seo"`
+		Navigation json.RawMessage      `json:"navigation"`
 	}
 	if err := decodeJSON(raw, &settings); err != nil {
 		return err
 	}
-	*dest = settings.SEO
+	site.SEO = settings.SEO
+	navigationRaw := bytes.TrimSpace(settings.Navigation)
+	if len(navigationRaw) == 0 || string(navigationRaw) == "null" {
+		site.Navigation = siteconfig.NavigationConfig{}
+		site.HasNavigation = false
+		return nil
+	}
+	if err := json.Unmarshal(navigationRaw, &site.Navigation); err != nil {
+		return err
+	}
+	site.HasNavigation = true
 	return nil
 }
 

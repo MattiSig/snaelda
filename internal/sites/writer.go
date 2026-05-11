@@ -116,6 +116,8 @@ func normalizeDraft(draft siteconfig.SiteDraft) (NormalizedDraftRows, error) {
 			Status:        siteStatus,
 			DefaultLocale: defaultLocale,
 			SEO:           draft.Site.SEO,
+			Navigation:    draft.Navigation,
+			HasNavigation: true,
 		},
 		Theme: themeRow{
 			Version: draft.Theme.Version,
@@ -136,7 +138,8 @@ func countBlocks(pages []siteconfig.PageDraft) int {
 
 func saveSite(ctx context.Context, tx pgx.Tx, workspaceID string, site siteRow) error {
 	settingsJSON, err := marshalJSON(map[string]any{
-		"seo": site.SEO,
+		"seo":        site.SEO,
+		"navigation": site.Navigation,
 	})
 	if err != nil {
 		return fmt.Errorf("encode site settings: %w", err)

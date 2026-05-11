@@ -2,6 +2,7 @@ package sites
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -135,6 +136,47 @@ func TestAssembleDraftFromNormalizedRows(t *testing.T) {
 	}
 }
 
+func TestAssembleDraftPreservesExplicitStoredNavigation(t *testing.T) {
+	rows := NormalizedDraftRows{
+		Site: siteRow{
+			ID:            "site_demo",
+			Name:          "Nordic Studio",
+			Slug:          "nordic-studio",
+			Status:        "draft",
+			DefaultLocale: "en",
+			Navigation: siteconfig.NavigationConfig{
+				Primary: []siteconfig.NavigationItem{
+					{Label: "Start here", PageID: "page_home"},
+					{Label: "Book", Href: "https://example.com/book"},
+				},
+			},
+			HasNavigation: true,
+		},
+		Theme: themeRow{
+			Version: siteconfig.ThemeVersionV1,
+			Tokens: siteconfig.ThemeTokens{
+				Colors: map[string]string{
+					"background": "#f8f7f4",
+					"foreground": "#1d2520",
+					"primary":    "#315c4f",
+				},
+			},
+		},
+		Pages: []pageRow{
+			{ID: "page_contact", Title: "Contact", Slug: "/contact", Sort: 1},
+			{ID: "page_home", Title: "Home", Slug: "/", Sort: 0},
+		},
+	}
+
+	draft := AssembleDraft(rows)
+	if got := draft.Navigation.Primary[0].Label; got != "Start here" {
+		t.Fatalf("expected explicit navigation label to survive assembly, got %q", got)
+	}
+	if got := draft.Navigation.Primary[1].Href; got != "https://example.com/book" {
+		t.Fatalf("expected explicit external navigation link to survive assembly, got %q", got)
+	}
+}
+
 func TestNormalizeDraftForPersistence(t *testing.T) {
 	draft := validPersistenceDraft()
 
@@ -163,6 +205,12 @@ func TestNormalizeDraftForPersistence(t *testing.T) {
 	}
 	if rows.Blocks[1].Settings.AnchorID != "details" {
 		t.Fatalf("expected anchor setting to persist, got %q", rows.Blocks[1].Settings.AnchorID)
+	}
+	if !rows.Site.HasNavigation {
+		t.Fatal("expected explicit navigation to be marked for persistence")
+	}
+	if len(rows.Site.Navigation.Primary) != 1 || rows.Site.Navigation.Primary[0].PageID != "00000000-0000-4000-8000-000000000501" {
+		t.Fatalf("expected navigation to persist, got %#v", rows.Site.Navigation.Primary)
 	}
 }
 
@@ -197,6 +245,19 @@ func TestSaveDraftPersistsCanonicalDraftInTransaction(t *testing.T) {
 	}
 	if hidden, ok := tx.execs[6].args[8].(bool); !ok || !hidden {
 		t.Fatalf("expected hidden block flag in is_hidden argument, got %#v", tx.execs[6].args[8])
+	}
+	siteSettingsJSON, ok := tx.execs[0].args[6].([]byte)
+	if !ok {
+		t.Fatalf("expected site settings JSON bytes, got %#v", tx.execs[0].args[6])
+	}
+	var siteSettings struct {
+		Navigation siteconfig.NavigationConfig `json:"navigation"`
+	}
+	if err := json.Unmarshal(siteSettingsJSON, &siteSettings); err != nil {
+		t.Fatalf("decode saved site settings: %v", err)
+	}
+	if len(siteSettings.Navigation.Primary) != 1 || siteSettings.Navigation.Primary[0].PageID != "00000000-0000-4000-8000-000000000501" {
+		t.Fatalf("expected saved site settings to include navigation, got %#v", siteSettings.Navigation.Primary)
 	}
 }
 

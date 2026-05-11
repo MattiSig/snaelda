@@ -5,7 +5,8 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 ## Prototype Success Criteria
 
 - [x] A signed-in user can create or use a default workspace.
-- [ ] The backend is a Go modular monolith exposing the product API and owning Postgres persistence.
+- [x] The backend is a Go modular monolith exposing the product API and owning Postgres persistence.
+  Verified on May 11, 2026 by inspecting `internal/api/server.go` plus the Postgres-backed `auth`, `sites`, `themes`, `generation`, `publishing`, and authorization modules mounted behind the Go HTTP API; the React app consumes those APIs and does not own persistence.
 - [x] The frontend is a React application built with TanStack Start, Tailwind CSS, and shadcn/ui unless a later decision deliberately changes that stack.
 - [x] Frontend surfaces support brand-aligned light and dark modes based on `BRANDING.md`, with dark mode required and using the sharper, slightly meaner palette described there.
   Verified on May 10, 2026 by running the builder locally at `http://localhost:3000`, confirming the new shared Tailwind + shadcn shell rendered in Playwright, toggling the app chrome between the dark default and the new warm light mode, and then signing in plus creating and previewing `Color Mode Verification Studio` without current-page console errors.
@@ -100,8 +101,9 @@ This plan is sequenced for the shortest path to a working prototype first. The p
   Published snapshots now use the explicit `siteconfig.PublishedSnapshot` contract with `SchemaVersion` set to `site-config.v1` and enforced by `ValidatePublishedSnapshot`.
 - [x] Generate or manually maintain frontend TypeScript types from the Go/API schema until automated type generation is added.
   The frontend currently maintains the shared draft, snapshot, version, theme, and block contract types manually in `apps/web/src/lib/api.ts`.
-- [ ] Implement navigation storage as explicit data derived from pages by default.
-- [ ] Ensure internal navigation prefers stable `pageId` references and renderer resolution to slugs.
+- [x] Implement navigation storage as explicit data derived from pages by default.
+- [x] Ensure internal navigation prefers stable `pageId` references and renderer resolution to slugs.
+  Verified on May 11, 2026 by persisting explicit `site.settings.navigation` data from canonical drafts, syncing page-backed navigation items by `pageId` across page create/update/delete/reorder flows, querying Postgres after saving the seeded `Nordic Studio` draft, and then renaming `Contact` to `Reach us`, reloading the builder, publishing, and following the hosted navigation from `http://nordic-studio.localhost:3000/` to `/contact` in Playwright with no console errors.
 - [x] Validate external navigation URLs.
 - [x] Add publish preflight validation for homepage `/`, at least one page, max 10 pages, unique slugs, valid blocks, valid navigation, valid theme tokens, and SEO fallbacks.
   `siteconfig.ValidateDraft` and `siteconfig.ValidatePublishedSnapshot` now enforce page/homepage/slug/navigation/theme/block rules, while `buildPublishedSnapshot` fills required SEO fallbacks before publish validation runs.
