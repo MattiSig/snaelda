@@ -164,7 +164,8 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Decide the first artifact generation path: React SSR/render command invoked by Go, React public route rendering from snapshot, or Go serving prebuilt React-generated artifacts.
   Decision recorded on May 10, 2026: the prototype now uses the React public route rendering path backed by immutable published snapshots. The Go API resolves `site_domains` plus `published_version_id`, and the TanStack Start public-serving layer renders the selected snapshot for either the local `/public/:siteSlug` fallback or the hosted-domain request path.
 - [ ] Generate page HTML artifacts from the snapshot using the maintained React block renderer.
-- [ ] Generate `sitemap.xml`, `robots.txt`, canonical metadata, and basic social metadata.
+- [x] Generate `sitemap.xml`, `robots.txt`, canonical metadata, and basic social metadata.
+  Verified on May 11, 2026 by publishing the seeded `Nordic Studio` site locally, loading both `http://localhost:3000/public/nordic-studio/contact` and `http://nordic-studio.localhost:3000/contact` in Playwright, confirming SSR-driven title/description/canonical/Open Graph metadata on the published page, and then loading both hosted and path-based `sitemap.xml` plus hosted `robots.txt` routes with no browser console errors.
 - [ ] Store artifacts in object storage or a local artifact adapter for the first prototype.
 - [x] Update `sites.published_version_id` only after snapshot and artifact creation succeeds.
 - [x] Create or update the default subdomain record `{site-slug}.platform.com` or local equivalent.

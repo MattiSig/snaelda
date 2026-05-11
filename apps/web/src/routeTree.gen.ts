@@ -9,6 +9,8 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as SplatRouteImport } from './routes/$'
@@ -17,11 +19,23 @@ import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as PublicSiteSlugRouteImport } from './routes/public.$siteSlug'
 import { Route as PreviewTokenRouteImport } from './routes/preview.$token'
 import { Route as PublicSiteSlugIndexRouteImport } from './routes/public.$siteSlug.index'
+import { Route as PublicSiteSlugSitemapDotxmlRouteImport } from './routes/public.$siteSlug.sitemap[.]xml'
+import { Route as PublicSiteSlugRobotsDottxtRouteImport } from './routes/public.$siteSlug.robots[.]txt'
 import { Route as PublicSiteSlugSplatRouteImport } from './routes/public.$siteSlug.$'
 import { Route as AppSitesSiteIdRouteImport } from './routes/app.sites.$siteId'
 import { Route as AppSitesSiteIdIndexRouteImport } from './routes/app.sites.$siteId.index'
 import { Route as AppSitesSiteIdPreviewRouteImport } from './routes/app.sites.$siteId.preview'
 
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
+  id: '/robots.txt',
+  path: '/robots.txt',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -62,6 +76,18 @@ const PublicSiteSlugIndexRoute = PublicSiteSlugIndexRouteImport.update({
   path: '/',
   getParentRoute: () => PublicSiteSlugRoute,
 } as any)
+const PublicSiteSlugSitemapDotxmlRoute =
+  PublicSiteSlugSitemapDotxmlRouteImport.update({
+    id: '/sitemap.xml',
+    path: '/sitemap.xml',
+    getParentRoute: () => PublicSiteSlugRoute,
+  } as any)
+const PublicSiteSlugRobotsDottxtRoute =
+  PublicSiteSlugRobotsDottxtRouteImport.update({
+    id: '/robots.txt',
+    path: '/robots.txt',
+    getParentRoute: () => PublicSiteSlugRoute,
+  } as any)
 const PublicSiteSlugSplatRoute = PublicSiteSlugSplatRouteImport.update({
   id: '/$',
   path: '/$',
@@ -88,11 +114,15 @@ export interface FileRoutesByFullPath {
   '/$': typeof SplatRoute
   '/app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/robots.txt': typeof RobotsDottxtRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/preview/$token': typeof PreviewTokenRoute
   '/public/$siteSlug': typeof PublicSiteSlugRouteWithChildren
   '/app/': typeof AppIndexRoute
   '/app/sites/$siteId': typeof AppSitesSiteIdRouteWithChildren
   '/public/$siteSlug/$': typeof PublicSiteSlugSplatRoute
+  '/public/$siteSlug/robots.txt': typeof PublicSiteSlugRobotsDottxtRoute
+  '/public/$siteSlug/sitemap.xml': typeof PublicSiteSlugSitemapDotxmlRoute
   '/public/$siteSlug/': typeof PublicSiteSlugIndexRoute
   '/app/sites/$siteId/preview': typeof AppSitesSiteIdPreviewRoute
   '/app/sites/$siteId/': typeof AppSitesSiteIdIndexRoute
@@ -101,9 +131,13 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
   '/login': typeof LoginRoute
+  '/robots.txt': typeof RobotsDottxtRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/preview/$token': typeof PreviewTokenRoute
   '/app': typeof AppIndexRoute
   '/public/$siteSlug/$': typeof PublicSiteSlugSplatRoute
+  '/public/$siteSlug/robots.txt': typeof PublicSiteSlugRobotsDottxtRoute
+  '/public/$siteSlug/sitemap.xml': typeof PublicSiteSlugSitemapDotxmlRoute
   '/public/$siteSlug': typeof PublicSiteSlugIndexRoute
   '/app/sites/$siteId/preview': typeof AppSitesSiteIdPreviewRoute
   '/app/sites/$siteId': typeof AppSitesSiteIdIndexRoute
@@ -114,11 +148,15 @@ export interface FileRoutesById {
   '/$': typeof SplatRoute
   '/app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/robots.txt': typeof RobotsDottxtRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/preview/$token': typeof PreviewTokenRoute
   '/public/$siteSlug': typeof PublicSiteSlugRouteWithChildren
   '/app/': typeof AppIndexRoute
   '/app/sites/$siteId': typeof AppSitesSiteIdRouteWithChildren
   '/public/$siteSlug/$': typeof PublicSiteSlugSplatRoute
+  '/public/$siteSlug/robots.txt': typeof PublicSiteSlugRobotsDottxtRoute
+  '/public/$siteSlug/sitemap.xml': typeof PublicSiteSlugSitemapDotxmlRoute
   '/public/$siteSlug/': typeof PublicSiteSlugIndexRoute
   '/app/sites/$siteId/preview': typeof AppSitesSiteIdPreviewRoute
   '/app/sites/$siteId/': typeof AppSitesSiteIdIndexRoute
@@ -130,11 +168,15 @@ export interface FileRouteTypes {
     | '/$'
     | '/app'
     | '/login'
+    | '/robots.txt'
+    | '/sitemap.xml'
     | '/preview/$token'
     | '/public/$siteSlug'
     | '/app/'
     | '/app/sites/$siteId'
     | '/public/$siteSlug/$'
+    | '/public/$siteSlug/robots.txt'
+    | '/public/$siteSlug/sitemap.xml'
     | '/public/$siteSlug/'
     | '/app/sites/$siteId/preview'
     | '/app/sites/$siteId/'
@@ -143,9 +185,13 @@ export interface FileRouteTypes {
     | '/'
     | '/$'
     | '/login'
+    | '/robots.txt'
+    | '/sitemap.xml'
     | '/preview/$token'
     | '/app'
     | '/public/$siteSlug/$'
+    | '/public/$siteSlug/robots.txt'
+    | '/public/$siteSlug/sitemap.xml'
     | '/public/$siteSlug'
     | '/app/sites/$siteId/preview'
     | '/app/sites/$siteId'
@@ -155,11 +201,15 @@ export interface FileRouteTypes {
     | '/$'
     | '/app'
     | '/login'
+    | '/robots.txt'
+    | '/sitemap.xml'
     | '/preview/$token'
     | '/public/$siteSlug'
     | '/app/'
     | '/app/sites/$siteId'
     | '/public/$siteSlug/$'
+    | '/public/$siteSlug/robots.txt'
+    | '/public/$siteSlug/sitemap.xml'
     | '/public/$siteSlug/'
     | '/app/sites/$siteId/preview'
     | '/app/sites/$siteId/'
@@ -170,12 +220,28 @@ export interface RootRouteChildren {
   SplatRoute: typeof SplatRoute
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
+  RobotsDottxtRoute: typeof RobotsDottxtRoute
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   PreviewTokenRoute: typeof PreviewTokenRoute
   PublicSiteSlugRoute: typeof PublicSiteSlugRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/robots.txt': {
+      id: '/robots.txt'
+      path: '/robots.txt'
+      fullPath: '/robots.txt'
+      preLoaderRoute: typeof RobotsDottxtRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -230,6 +296,20 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/public/$siteSlug/'
       preLoaderRoute: typeof PublicSiteSlugIndexRouteImport
+      parentRoute: typeof PublicSiteSlugRoute
+    }
+    '/public/$siteSlug/sitemap.xml': {
+      id: '/public/$siteSlug/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/public/$siteSlug/sitemap.xml'
+      preLoaderRoute: typeof PublicSiteSlugSitemapDotxmlRouteImport
+      parentRoute: typeof PublicSiteSlugRoute
+    }
+    '/public/$siteSlug/robots.txt': {
+      id: '/public/$siteSlug/robots.txt'
+      path: '/robots.txt'
+      fullPath: '/public/$siteSlug/robots.txt'
+      preLoaderRoute: typeof PublicSiteSlugRobotsDottxtRouteImport
       parentRoute: typeof PublicSiteSlugRoute
     }
     '/public/$siteSlug/$': {
@@ -291,11 +371,15 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 interface PublicSiteSlugRouteChildren {
   PublicSiteSlugSplatRoute: typeof PublicSiteSlugSplatRoute
+  PublicSiteSlugRobotsDottxtRoute: typeof PublicSiteSlugRobotsDottxtRoute
+  PublicSiteSlugSitemapDotxmlRoute: typeof PublicSiteSlugSitemapDotxmlRoute
   PublicSiteSlugIndexRoute: typeof PublicSiteSlugIndexRoute
 }
 
 const PublicSiteSlugRouteChildren: PublicSiteSlugRouteChildren = {
   PublicSiteSlugSplatRoute: PublicSiteSlugSplatRoute,
+  PublicSiteSlugRobotsDottxtRoute: PublicSiteSlugRobotsDottxtRoute,
+  PublicSiteSlugSitemapDotxmlRoute: PublicSiteSlugSitemapDotxmlRoute,
   PublicSiteSlugIndexRoute: PublicSiteSlugIndexRoute,
 }
 
@@ -308,6 +392,8 @@ const rootRouteChildren: RootRouteChildren = {
   SplatRoute: SplatRoute,
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
+  RobotsDottxtRoute: RobotsDottxtRoute,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
   PreviewTokenRoute: PreviewTokenRoute,
   PublicSiteSlugRoute: PublicSiteSlugRouteWithChildren,
 }

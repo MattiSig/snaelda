@@ -1,74 +1,26 @@
-import { render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
 import type { PublishedSiteResponse } from '@/lib/api'
-
-const { getPublishedSiteMock, getPublishedSiteByHostnameMock } = vi.hoisted(() => ({
-  getPublishedSiteMock: vi.fn(),
-  getPublishedSiteByHostnameMock: vi.fn(),
-}))
-
-vi.mock('@/lib/api', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api')
-  return {
-    ...actual,
-    getPublishedSite: getPublishedSiteMock,
-    getPublishedSiteByHostname: getPublishedSiteByHostnameMock,
-  }
-})
-
-import { APIError } from '@/lib/api'
 import { PublishedSitePage } from './PublishedSitePage'
 
 describe('PublishedSitePage', () => {
-  beforeEach(() => {
-    getPublishedSiteMock.mockReset()
-    getPublishedSiteByHostnameMock.mockReset()
+  it('renders a published snapshot page', () => {
+    render(<PublishedSitePage site={buildPublishedSiteResponse()} />)
+
+    expect(screen.getByText('/contact')).toBeTruthy()
+    expect(screen.getByText('loom-light.localhost')).toBeTruthy()
+    expect(screen.getByText('Drop by the shop')).toBeTruthy()
   })
 
-  it('loads and renders a published snapshot page', async () => {
-    getPublishedSiteMock.mockResolvedValueOnce(buildPublishedSiteResponse())
-
-    render(<PublishedSitePage siteSlug="loom-light" pagePath="/contact" />)
-
-    expect(screen.getByText('Loading published page...')).toBeTruthy()
-
-    await waitFor(() => {
-      expect(getPublishedSiteMock).toHaveBeenCalledWith('loom-light', '/contact')
-      expect(screen.getByText('/contact')).toBeTruthy()
-      expect(screen.getByText('loom-light.localhost')).toBeTruthy()
-      expect(screen.getByText('Drop by the shop')).toBeTruthy()
-    })
-  })
-
-  it('shows an API error message when the published page request fails', async () => {
-    getPublishedSiteMock.mockRejectedValueOnce(
-      new APIError(404, { message: 'Published page not found' }),
-    )
-
-    render(<PublishedSitePage siteSlug="missing-site" pagePath="/" />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Published page not found')).toBeTruthy()
-    })
-  })
-
-  it('loads and renders a published snapshot page by hostname', async () => {
-    getPublishedSiteByHostnameMock.mockResolvedValueOnce(buildPublishedSiteResponse())
-
+  it('shows an error message when published content could not load', () => {
     render(
       <PublishedSitePage
-        hostname="loom-light.localhost:3000"
-        pagePath="/contact"
+        site={null}
+        errorMessage="Published page not found"
       />,
     )
 
-    await waitFor(() => {
-      expect(getPublishedSiteByHostnameMock).toHaveBeenCalledWith(
-        'loom-light.localhost:3000',
-        '/contact',
-      )
-      expect(screen.getByText('loom-light.localhost')).toBeTruthy()
-    })
+    expect(screen.getByText('Published page not found')).toBeTruthy()
   })
 })
 

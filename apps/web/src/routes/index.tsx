@@ -1,5 +1,10 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { PublishedSitePage } from '@/components/PublishedSitePage'
+import { getPublishedSiteByHostname } from '@/lib/api'
+import {
+  buildPublishedPageHead,
+  loadPublishedSitePageData,
+} from '@/lib/published-site'
 import { getHostedPublicSiteContext } from '@/lib/public-site'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -7,20 +12,32 @@ import { cn } from '@/lib/utils'
 import { actions, form, layout, panel, text } from '@/lib/styles'
 
 export const Route = createFileRoute('/')({
-  loader: async () => ({
-    hostedPublic: await getHostedPublicSiteContext(),
-  }),
+  loader: async () => {
+    const hostedPublic = await getHostedPublicSiteContext()
+    return {
+      hostedPublic,
+      published: hostedPublic.isHostedPublic
+        ? await loadPublishedSitePageData(() =>
+            getPublishedSiteByHostname(
+              hostedPublic.hostname,
+              hostedPublic.pagePath,
+            ),
+          )
+        : { site: null, errorMessage: '' },
+    }
+  },
+  head: ({ loaderData }) => buildPublishedPageHead(loaderData?.published.site),
   component: Home,
 })
 
 function Home() {
-  const { hostedPublic } = Route.useLoaderData()
+  const { hostedPublic, published } = Route.useLoaderData()
 
   if (hostedPublic.isHostedPublic) {
     return (
       <PublishedSitePage
-        hostname={hostedPublic.hostname}
-        pagePath={hostedPublic.pagePath}
+        site={published.site}
+        errorMessage={published.errorMessage}
       />
     )
   }
