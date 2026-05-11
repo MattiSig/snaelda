@@ -104,7 +104,7 @@ func (s *Server) Handler() http.Handler {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, generation.Module{})
 	}
 	if store, ok := s.database.(publishing.DB); ok {
-		publishing.NewHandler(store, s.config.AppBaseURL).Mount(mux, s.auth.RequireUser)
+		publishing.NewHandler(store, s.config.AppBaseURL, s.config.PublishedArtifactsDir).Mount(mux, s.auth.RequireUser)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, publishing.Module{})
 	}

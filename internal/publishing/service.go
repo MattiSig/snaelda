@@ -65,9 +65,18 @@ type PublishedSiteResult struct {
 	Snapshot siteconfig.PublishedSnapshot `json:"snapshot"`
 }
 
+type ServiceConfig struct {
+	AppBaseURL   string
+	ArtifactsDir string
+	Renderer     ArtifactRenderer
+	Store        ArtifactStore
+}
+
 type Service struct {
-	db     DB
-	reader sites.Reader
+	db       DB
+	reader   sites.Reader
+	renderer ArtifactRenderer
+	store    ArtifactStore
 }
 
 type siteMetadata struct {
@@ -75,10 +84,21 @@ type siteMetadata struct {
 	SiteSlug    string
 }
 
-func NewService(db DB) *Service {
+func NewService(db DB, cfg ServiceConfig) *Service {
+	renderer := cfg.Renderer
+	if renderer == nil {
+		renderer = newCommandArtifactRenderer(cfg.AppBaseURL)
+	}
+	store := cfg.Store
+	if store == nil {
+		store = newLocalArtifactStore(cfg.ArtifactsDir)
+	}
+
 	return &Service{
-		db:     db,
-		reader: sites.NewPostgresReader(db),
+		db:       db,
+		reader:   sites.NewPostgresReader(db),
+		renderer: renderer,
+		store:    store,
 	}
 }
 
@@ -135,6 +155,24 @@ func (s *Service) Publish(ctx context.Context, siteID string, userID string, inp
 		return PublishResult{}, fmt.Errorf("insert published version: %w", err)
 	}
 
+	hostname, err := ensureSubdomain(ctx, tx, siteID, metadata.SiteSlug)
+	if err != nil {
+		return PublishResult{}, err
+	}
+
+	artifacts, err := s.renderer.Render(ctx, ArtifactRenderInput{
+		SiteSlug: metadata.SiteSlug,
+		Hostname: hostname,
+		Version:  version,
+		Snapshot: snapshot,
+	})
+	if err != nil {
+		return PublishResult{}, err
+	}
+	if err := s.store.Save(ctx, siteID, version.ID, artifacts); err != nil {
+		return PublishResult{}, fmt.Errorf("store published artifacts: %w", err)
+	}
+
 	tag, err := tx.Exec(ctx, `
 		update sites
 		set published_version_id = $2::uuid,
@@ -146,11 +184,6 @@ func (s *Service) Publish(ctx context.Context, siteID string, userID string, inp
 	}
 	if tag.RowsAffected() == 0 {
 		return PublishResult{}, ErrNotFound
-	}
-
-	hostname, err := ensureSubdomain(ctx, tx, siteID, metadata.SiteSlug)
-	if err != nil {
-		return PublishResult{}, err
 	}
 
 	if err := recordAuditEvent(ctx, tx, audit.Event{

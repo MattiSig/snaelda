@@ -8,22 +8,23 @@ import (
 )
 
 type Config struct {
-	AppEnv              string
-	HTTPAddr            string
-	AppBaseURL          string
-	DatabaseURL         string
-	AuthJWTSecret       string
-	AuthIssuer          string
-	AuthAudience        string
-	AuthAccessTokenTTL  time.Duration
-	AuthRefreshTokenTTL time.Duration
-	AuthCookieSecure    bool
-	S3Endpoint          string
-	S3Bucket            string
-	S3Region            string
-	S3AccessKeyID       string
-	S3SecretAccessKey   string
-	S3ForcePathStyle    bool
+	AppEnv                string
+	HTTPAddr              string
+	AppBaseURL            string
+	DatabaseURL           string
+	AuthJWTSecret         string
+	AuthIssuer            string
+	AuthAudience          string
+	AuthAccessTokenTTL    time.Duration
+	AuthRefreshTokenTTL   time.Duration
+	AuthCookieSecure      bool
+	PublishedArtifactsDir string
+	S3Endpoint            string
+	S3Bucket              string
+	S3Region              string
+	S3AccessKeyID         string
+	S3SecretAccessKey     string
+	S3ForcePathStyle      bool
 }
 
 func Load() (Config, error) {
@@ -46,22 +47,23 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
-		AppEnv:              appEnv,
-		HTTPAddr:            getEnv("HTTP_ADDR", ":8080"),
-		AppBaseURL:          getEnv("APP_BASE_URL", "http://localhost:3000"),
-		DatabaseURL:         os.Getenv("DATABASE_URL"),
-		AuthJWTSecret:       getEnv("AUTH_JWT_SECRET", "development-auth-secret-change-me"),
-		AuthIssuer:          getEnv("AUTH_ISSUER", "snaelda-api"),
-		AuthAudience:        getEnv("AUTH_AUDIENCE", "snaelda-web"),
-		AuthAccessTokenTTL:  accessTokenTTL,
-		AuthRefreshTokenTTL: refreshTokenTTL,
-		AuthCookieSecure:    cookieSecure,
-		S3Endpoint:          getEnv("S3_ENDPOINT", "http://localhost:8333"),
-		S3Bucket:            getEnv("S3_BUCKET", "snaelda-local"),
-		S3Region:            getEnv("S3_REGION", "us-east-1"),
-		S3AccessKeyID:       getEnv("S3_ACCESS_KEY_ID", "snaelda"),
-		S3SecretAccessKey:   getEnv("S3_SECRET_ACCESS_KEY", "snaelda-secret"),
-		S3ForcePathStyle:    forcePathStyle,
+		AppEnv:                appEnv,
+		HTTPAddr:              getEnv("HTTP_ADDR", ":8080"),
+		AppBaseURL:            getEnv("APP_BASE_URL", "http://localhost:3000"),
+		DatabaseURL:           os.Getenv("DATABASE_URL"),
+		AuthJWTSecret:         getEnv("AUTH_JWT_SECRET", "development-auth-secret-change-me"),
+		AuthIssuer:            getEnv("AUTH_ISSUER", "snaelda-api"),
+		AuthAudience:          getEnv("AUTH_AUDIENCE", "snaelda-web"),
+		AuthAccessTokenTTL:    accessTokenTTL,
+		AuthRefreshTokenTTL:   refreshTokenTTL,
+		AuthCookieSecure:      cookieSecure,
+		PublishedArtifactsDir: getEnv("PUBLISHED_ARTIFACTS_DIR", "var/published-artifacts"),
+		S3Endpoint:            getEnv("S3_ENDPOINT", "http://localhost:8333"),
+		S3Bucket:              getEnv("S3_BUCKET", "snaelda-local"),
+		S3Region:              getEnv("S3_REGION", "us-east-1"),
+		S3AccessKeyID:         getEnv("S3_ACCESS_KEY_ID", "snaelda"),
+		S3SecretAccessKey:     getEnv("S3_SECRET_ACCESS_KEY", "snaelda-secret"),
+		S3ForcePathStyle:      forcePathStyle,
 	}
 
 	if cfg.AppEnv == "" {

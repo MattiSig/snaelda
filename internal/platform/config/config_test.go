@@ -47,6 +47,9 @@ func TestLoadUsesLocalStorageDefaults(t *testing.T) {
 	if cfg.AuthCookieSecure {
 		t.Fatal("expected insecure auth cookie in test")
 	}
+	if cfg.PublishedArtifactsDir != "var/published-artifacts" {
+		t.Fatalf("expected default published artifacts dir, got %q", cfg.PublishedArtifactsDir)
+	}
 }
 
 func TestLoadAllowsStorageOverrides(t *testing.T) {
@@ -57,6 +60,7 @@ func TestLoadAllowsStorageOverrides(t *testing.T) {
 	t.Setenv("S3_ACCESS_KEY_ID", "custom-key")
 	t.Setenv("S3_SECRET_ACCESS_KEY", "custom-secret")
 	t.Setenv("S3_FORCE_PATH_STYLE", "false")
+	t.Setenv("PUBLISHED_ARTIFACTS_DIR", "/tmp/snaelda-artifacts")
 
 	cfg, err := Load()
 	if err != nil {
@@ -80,6 +84,9 @@ func TestLoadAllowsStorageOverrides(t *testing.T) {
 	}
 	if cfg.S3ForcePathStyle {
 		t.Fatal("expected path-style override to be false")
+	}
+	if cfg.PublishedArtifactsDir != "/tmp/snaelda-artifacts" {
+		t.Fatalf("expected overridden published artifacts dir, got %q", cfg.PublishedArtifactsDir)
 	}
 }
 
@@ -132,4 +139,5 @@ func unsetStorageEnv(t *testing.T) {
 	t.Setenv("S3_ACCESS_KEY_ID", "")
 	t.Setenv("S3_SECRET_ACCESS_KEY", "")
 	t.Setenv("S3_FORCE_PATH_STYLE", "")
+	t.Setenv("PUBLISHED_ARTIFACTS_DIR", "")
 }

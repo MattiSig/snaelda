@@ -37,9 +37,12 @@ type publishRequest struct {
 	PublishNote string `json:"publishNote,omitempty"`
 }
 
-func NewHandler(db DB, appBaseURL string) *Handler {
+func NewHandler(db DB, appBaseURL string, artifactsDir string) *Handler {
 	return &Handler{
-		service:    NewService(db),
+		service: NewService(db, ServiceConfig{
+			AppBaseURL:   appBaseURL,
+			ArtifactsDir: artifactsDir,
+		}),
 		authorizer: authorization.New(db),
 		appBaseURL: strings.TrimRight(appBaseURL, "/"),
 	}
