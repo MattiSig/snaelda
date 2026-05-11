@@ -70,6 +70,7 @@ type ServiceConfig struct {
 	ArtifactsDir string
 	Renderer     ArtifactRenderer
 	Store        ArtifactStore
+	Cache        publishedSiteCache
 }
 
 type Service struct {
@@ -77,11 +78,18 @@ type Service struct {
 	reader   sites.Reader
 	renderer ArtifactRenderer
 	store    ArtifactStore
+	cache    publishedSiteCache
 }
 
 type siteMetadata struct {
 	WorkspaceID string
 	SiteSlug    string
+}
+
+type publishedSiteLookup struct {
+	SiteSlug string
+	Hostname string
+	Version  VersionSummary
 }
 
 func NewService(db DB, cfg ServiceConfig) *Service {
@@ -93,12 +101,17 @@ func NewService(db DB, cfg ServiceConfig) *Service {
 	if store == nil {
 		store = newLocalArtifactStore(cfg.ArtifactsDir)
 	}
+	cache := cfg.Cache
+	if cache == nil {
+		cache = newMemoryPublishedSiteCache()
+	}
 
 	return &Service{
 		db:       db,
 		reader:   sites.NewPostgresReader(db),
 		renderer: renderer,
 		store:    store,
+		cache:    cache,
 	}
 }
 
@@ -205,6 +218,7 @@ func (s *Service) Publish(ctx context.Context, siteID string, userID string, inp
 	if err := tx.Commit(ctx); err != nil {
 		return PublishResult{}, fmt.Errorf("commit publish transaction: %w", err)
 	}
+	s.invalidatePublishedSiteCache(siteID)
 
 	return PublishResult{
 		Version:  version,
@@ -292,6 +306,7 @@ func (s *Service) Rollback(ctx context.Context, siteID string, versionID string,
 	if err := tx.Commit(ctx); err != nil {
 		return RollbackResult{}, fmt.Errorf("commit rollback transaction: %w", err)
 	}
+	s.invalidatePublishedSiteCache(siteID)
 
 	return result, nil
 }
@@ -336,7 +351,7 @@ func (s *Service) ListVersions(ctx context.Context, siteID string) ([]VersionSum
 }
 
 func (s *Service) LoadPublishedSiteBySlug(ctx context.Context, siteSlug string, pagePath string) (PublishedSiteResult, error) {
-	return s.loadPublishedSite(ctx, `
+	lookup, snapshot, err := s.loadPublishedSiteLookup(ctx, `
 		select s.slug,
 		       coalesce((
 		         select hostname
@@ -357,11 +372,21 @@ func (s *Service) LoadPublishedSiteBySlug(ctx context.Context, siteSlug string, 
 		where s.slug = $1
 		order by s.updated_at desc
 		limit 1
-	`, strings.TrimSpace(siteSlug), pagePath)
+	`, strings.TrimSpace(siteSlug))
+	if err != nil {
+		return PublishedSiteResult{}, err
+	}
+	s.storePublishedLookupCaches(lookup, snapshot)
+	return s.resolvePublishedSiteResult(ctx, lookup, &snapshot, pagePath)
 }
 
 func (s *Service) LoadPublishedSiteByHostname(ctx context.Context, hostname string, pagePath string) (PublishedSiteResult, error) {
-	return s.loadPublishedSite(ctx, `
+	normalizedHostname := normalizeHostname(hostname)
+	if lookup, ok := s.loadCachedDomainLookup(normalizedHostname); ok {
+		return s.resolvePublishedSiteResult(ctx, lookup, nil, pagePath)
+	}
+
+	lookup, snapshot, err := s.loadPublishedSiteLookup(ctx, `
 		select s.slug,
 		       d.hostname,
 		       sv.id::text,
@@ -377,11 +402,16 @@ func (s *Service) LoadPublishedSiteByHostname(ctx context.Context, hostname stri
 		  and d.status = 'active'
 		order by d.updated_at desc, d.created_at desc
 		limit 1
-	`, normalizeHostname(hostname), pagePath)
+	`, normalizedHostname)
+	if err != nil {
+		return PublishedSiteResult{}, err
+	}
+	s.storePublishedLookupCaches(lookup, snapshot)
+	return s.resolvePublishedSiteResult(ctx, lookup, &snapshot, pagePath)
 }
 
-func (s *Service) loadPublishedSite(ctx context.Context, query string, lookup string, pagePath string) (PublishedSiteResult, error) {
-	var result PublishedSiteResult
+func (s *Service) loadPublishedSiteLookup(ctx context.Context, query string, lookup string) (publishedSiteLookup, siteconfig.PublishedSnapshot, error) {
+	var result publishedSiteLookup
 	var snapshotJSON []byte
 	err := s.db.QueryRow(ctx, query, lookup).Scan(
 		&result.SiteSlug,
@@ -394,28 +424,144 @@ func (s *Service) loadPublishedSite(ctx context.Context, query string, lookup st
 		&snapshotJSON,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return PublishedSiteResult{}, ErrNotFound
+		return publishedSiteLookup{}, siteconfig.PublishedSnapshot{}, ErrNotFound
 	}
 	if err != nil {
-		return PublishedSiteResult{}, fmt.Errorf("load published site: %w", err)
+		return publishedSiteLookup{}, siteconfig.PublishedSnapshot{}, fmt.Errorf("load published site: %w", err)
 	}
 
 	result.Version.IsCurrent = true
-	if err := json.Unmarshal(snapshotJSON, &result.Snapshot); err != nil {
-		return PublishedSiteResult{}, fmt.Errorf("decode published snapshot: %w", err)
+	snapshot, err := decodePublishedSnapshot(snapshotJSON)
+	if err != nil {
+		return publishedSiteLookup{}, siteconfig.PublishedSnapshot{}, err
 	}
-	if err := siteconfig.ValidatePublishedSnapshot(result.Snapshot); err != nil {
-		return PublishedSiteResult{}, fmt.Errorf("published snapshot is invalid: %w", err)
+	return result, snapshot, nil
+}
+
+func (s *Service) resolvePublishedSiteResult(ctx context.Context, lookup publishedSiteLookup, initialSnapshot *siteconfig.PublishedSnapshot, pagePath string) (PublishedSiteResult, error) {
+	snapshot, err := s.loadPublishedSnapshot(ctx, lookup, initialSnapshot)
+	if err != nil {
+		return PublishedSiteResult{}, err
+	}
+
+	result := PublishedSiteResult{
+		SiteSlug: lookup.SiteSlug,
+		Hostname: lookup.Hostname,
+		Version:  lookup.Version,
+		Snapshot: snapshot,
 	}
 
 	normalizedPath := normalizePublishedPagePath(pagePath)
-	page, err := resolvePublishedPage(result.Snapshot, normalizedPath)
+	if page, ok := s.loadCachedPage(lookup.Version.SiteID, lookup.Version.ID, normalizedPath); ok {
+		result.PagePath = normalizedPath
+		result.Page = page
+		return result, nil
+	}
+
+	page, err := resolvePublishedPage(snapshot, normalizedPath)
 	if err != nil {
 		return PublishedSiteResult{}, err
 	}
 	result.PagePath = normalizedPath
 	result.Page = page
+	s.storeCachedPage(lookup.Version.SiteID, lookup.Version.ID, normalizedPath, page)
 	return result, nil
+}
+
+func (s *Service) loadPublishedSnapshot(ctx context.Context, lookup publishedSiteLookup, initialSnapshot *siteconfig.PublishedSnapshot) (siteconfig.PublishedSnapshot, error) {
+	if snapshot, ok := s.loadCachedSnapshot(lookup.Version.SiteID, lookup.Version.ID); ok {
+		return snapshot, nil
+	}
+	if initialSnapshot != nil {
+		s.storeCachedSnapshot(lookup.Version.SiteID, lookup.Version.ID, *initialSnapshot)
+		return *initialSnapshot, nil
+	}
+
+	var snapshotJSON []byte
+	if err := s.db.QueryRow(ctx, `
+		select snapshot
+		from site_versions
+		where site_id = $1::uuid
+		  and id = $2::uuid
+	`, lookup.Version.SiteID, lookup.Version.ID).Scan(&snapshotJSON); errors.Is(err, pgx.ErrNoRows) {
+		return siteconfig.PublishedSnapshot{}, ErrNotFound
+	} else if err != nil {
+		return siteconfig.PublishedSnapshot{}, fmt.Errorf("load published snapshot: %w", err)
+	}
+
+	snapshot, err := decodePublishedSnapshot(snapshotJSON)
+	if err != nil {
+		return siteconfig.PublishedSnapshot{}, err
+	}
+	s.storeCachedSnapshot(lookup.Version.SiteID, lookup.Version.ID, snapshot)
+	return snapshot, nil
+}
+
+func decodePublishedSnapshot(snapshotJSON []byte) (siteconfig.PublishedSnapshot, error) {
+	var snapshot siteconfig.PublishedSnapshot
+	if err := json.Unmarshal(snapshotJSON, &snapshot); err != nil {
+		return siteconfig.PublishedSnapshot{}, fmt.Errorf("decode published snapshot: %w", err)
+	}
+	if err := siteconfig.ValidatePublishedSnapshot(snapshot); err != nil {
+		return siteconfig.PublishedSnapshot{}, fmt.Errorf("published snapshot is invalid: %w", err)
+	}
+	return snapshot, nil
+}
+
+func (s *Service) loadCachedDomainLookup(hostname string) (publishedSiteLookup, bool) {
+	if s.cache == nil {
+		return publishedSiteLookup{}, false
+	}
+	return s.cache.LoadDomain(hostname)
+}
+
+func (s *Service) loadCachedSnapshot(siteID string, versionID string) (siteconfig.PublishedSnapshot, bool) {
+	if s.cache == nil {
+		return siteconfig.PublishedSnapshot{}, false
+	}
+	return s.cache.LoadSnapshot(siteID, versionID)
+}
+
+func (s *Service) loadCachedPage(siteID string, versionID string, pagePath string) (siteconfig.PageDraft, bool) {
+	if s.cache == nil {
+		return siteconfig.PageDraft{}, false
+	}
+	return s.cache.LoadPage(siteID, versionID, pagePath)
+}
+
+func (s *Service) storePublishedLookupCaches(lookup publishedSiteLookup, snapshot siteconfig.PublishedSnapshot) {
+	if lookup.Hostname != "" {
+		s.storeCachedDomainLookup(lookup.Hostname, lookup)
+	}
+	s.storeCachedSnapshot(lookup.Version.SiteID, lookup.Version.ID, snapshot)
+}
+
+func (s *Service) storeCachedDomainLookup(hostname string, lookup publishedSiteLookup) {
+	if s.cache == nil {
+		return
+	}
+	s.cache.StoreDomain(hostname, lookup)
+}
+
+func (s *Service) storeCachedSnapshot(siteID string, versionID string, snapshot siteconfig.PublishedSnapshot) {
+	if s.cache == nil {
+		return
+	}
+	s.cache.StoreSnapshot(siteID, versionID, snapshot)
+}
+
+func (s *Service) storeCachedPage(siteID string, versionID string, pagePath string, page siteconfig.PageDraft) {
+	if s.cache == nil {
+		return
+	}
+	s.cache.StorePage(siteID, versionID, pagePath, page)
+}
+
+func (s *Service) invalidatePublishedSiteCache(siteID string) {
+	if s.cache == nil {
+		return
+	}
+	s.cache.InvalidateSite(siteID)
 }
 
 func normalizeHostname(raw string) string {

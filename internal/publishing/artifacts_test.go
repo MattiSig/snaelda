@@ -159,6 +159,58 @@ func TestPublishDoesNotMarkSiteLiveWhenArtifactStorageFails(t *testing.T) {
 	}
 }
 
+func TestPublishInvalidatesPublishedSiteCacheAfterCommit(t *testing.T) {
+	db := &fakeArtifactPublishDB{
+		tx: &fakeArtifactPublishTx{
+			siteID:      "00000000-0000-4000-8000-000000000201",
+			workspaceID: "00000000-0000-4000-8000-000000000101",
+			siteSlug:    "nordic-studio",
+			versionID:   "00000000-0000-4000-8000-000000000701",
+			createdAt:   time.Date(2026, 5, 11, 9, 30, 0, 0, time.UTC),
+			nextVersion: 3,
+		},
+	}
+	cache := newMemoryPublishedSiteCache()
+	cache.StoreDomain("nordic-studio.localhost", publishedSiteLookup{
+		SiteSlug: "nordic-studio",
+		Hostname: "nordic-studio.localhost",
+		Version: VersionSummary{
+			ID:            "00000000-0000-4000-8000-000000000699",
+			SiteID:        "00000000-0000-4000-8000-000000000201",
+			VersionNumber: 2,
+		},
+	})
+	cache.StoreSnapshot("00000000-0000-4000-8000-000000000201", "00000000-0000-4000-8000-000000000699", validPublishedSnapshotWithContact())
+	cache.StorePage("00000000-0000-4000-8000-000000000201", "00000000-0000-4000-8000-000000000699", "/contact", validPublishedSnapshotWithContact().Pages[1])
+	service := Service{
+		db:       db,
+		reader:   fakeDraftReader{draft: buildArtifactDraft()},
+		renderer: &fakeArtifactRenderer{bundle: ArtifactBundle{SchemaVersion: "published_artifacts.v1"}},
+		store:    &fakeArtifactStore{},
+		cache:    cache,
+	}
+
+	_, err := service.Publish(
+		context.Background(),
+		"00000000-0000-4000-8000-000000000201",
+		"00000000-0000-4000-8000-000000000001",
+		PublishInput{PublishNote: "Launch day"},
+	)
+	if err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+
+	if _, ok := cache.LoadDomain("nordic-studio.localhost"); ok {
+		t.Fatal("expected publish to invalidate domain cache")
+	}
+	if _, ok := cache.LoadSnapshot("00000000-0000-4000-8000-000000000201", "00000000-0000-4000-8000-000000000699"); ok {
+		t.Fatal("expected publish to invalidate snapshot cache")
+	}
+	if _, ok := cache.LoadPage("00000000-0000-4000-8000-000000000201", "00000000-0000-4000-8000-000000000699", "/contact"); ok {
+		t.Fatal("expected publish to invalidate page cache")
+	}
+}
+
 type fakeDraftReader struct {
 	draft siteconfig.SiteDraft
 	err   error

@@ -160,11 +160,14 @@ func (fakePublishingReader) LoadDraft(context.Context, string) (siteconfig.SiteD
 }
 
 type fakePublishingStore struct {
-	tx                *fakePublishingTx
-	publishedSiteSlug string
-	publishedHostname string
-	publishedVersion  VersionSummary
-	publishedSnapshot siteconfig.PublishedSnapshot
+	tx                  *fakePublishingTx
+	publishedSiteSlug   string
+	publishedHostname   string
+	publishedVersion    VersionSummary
+	publishedSnapshot   siteconfig.PublishedSnapshot
+	slugLookupCount     int
+	hostnameLookupCount int
+	snapshotLookupCount int
 }
 
 func newFakePublishingStore() *fakePublishingStore {
@@ -212,9 +215,10 @@ func (s *fakePublishingStore) Query(context.Context, string, ...any) (pgx.Rows, 
 
 func (s *fakePublishingStore) QueryRow(_ context.Context, sql string, arguments ...any) pgx.Row {
 	switch {
-	case strings.Contains(sql, "join site_versions sv on sv.id = s.published_version_id"):
+	case strings.Contains(sql, "where s.slug = $1"):
+		s.slugLookupCount++
 		lookup := strings.TrimSpace(arguments[0].(string))
-		if lookup != s.publishedSiteSlug && lookup != s.publishedHostname {
+		if lookup != s.publishedSiteSlug {
 			return fakePublishingRow{err: pgx.ErrNoRows}
 		}
 		snapshotJSON, err := json.Marshal(s.publishedSnapshot)
@@ -231,6 +235,33 @@ func (s *fakePublishingStore) QueryRow(_ context.Context, sql string, arguments 
 			s.publishedVersion.PublishNote,
 			snapshotJSON,
 		}}
+	case strings.Contains(sql, "from site_domains d") && strings.Contains(sql, "join site_versions sv on sv.id = s.published_version_id"):
+		s.hostnameLookupCount++
+		lookup := strings.TrimSpace(arguments[0].(string))
+		if lookup != s.publishedHostname {
+			return fakePublishingRow{err: pgx.ErrNoRows}
+		}
+		snapshotJSON, err := json.Marshal(s.publishedSnapshot)
+		if err != nil {
+			return fakePublishingRow{err: err}
+		}
+		return fakePublishingRow{values: []any{
+			s.publishedSiteSlug,
+			s.publishedHostname,
+			s.publishedVersion.ID,
+			s.publishedVersion.SiteID,
+			s.publishedVersion.VersionNumber,
+			s.publishedVersion.CreatedAt,
+			s.publishedVersion.PublishNote,
+			snapshotJSON,
+		}}
+	case strings.Contains(sql, "select snapshot") && strings.Contains(sql, "from site_versions"):
+		s.snapshotLookupCount++
+		snapshotJSON, err := json.Marshal(s.publishedSnapshot)
+		if err != nil {
+			return fakePublishingRow{err: err}
+		}
+		return fakePublishingRow{values: []any{snapshotJSON}}
 	default:
 		return fakePublishingRow{err: errors.New("query row is not implemented in fakePublishingStore")}
 	}
@@ -411,6 +442,77 @@ func TestLoadPublishedSiteByHostnameResolvesRequestedPage(t *testing.T) {
 	}
 	if result.Page.ID != "page_contact" {
 		t.Fatalf("expected contact page, got %#v", result.Page)
+	}
+}
+
+func TestLoadPublishedSiteByHostnameWarmsCachesAndAvoidsSecondLookup(t *testing.T) {
+	store := newFakePublishingStore()
+	cache := newMemoryPublishedSiteCache()
+	service := Service{
+		db:    store,
+		cache: cache,
+	}
+
+	first, err := service.LoadPublishedSiteByHostname(context.Background(), "nordic-studio.localhost", "/contact")
+	if err != nil {
+		t.Fatalf("first hosted lookup: %v", err)
+	}
+	second, err := service.LoadPublishedSiteByHostname(context.Background(), "nordic-studio.localhost", "/contact")
+	if err != nil {
+		t.Fatalf("second hosted lookup: %v", err)
+	}
+
+	if first.Page.ID != second.Page.ID {
+		t.Fatalf("expected cached hosted lookup to return same page, got first=%#v second=%#v", first.Page, second.Page)
+	}
+	if store.hostnameLookupCount != 1 {
+		t.Fatalf("expected one hostname lookup query, got %d", store.hostnameLookupCount)
+	}
+	if _, ok := cache.LoadDomain("nordic-studio.localhost"); !ok {
+		t.Fatal("expected domain lookup cache entry")
+	}
+	if _, ok := cache.LoadSnapshot(first.Version.SiteID, first.Version.ID); !ok {
+		t.Fatal("expected published snapshot cache entry")
+	}
+	if _, ok := cache.LoadPage(first.Version.SiteID, first.Version.ID, "/contact"); !ok {
+		t.Fatal("expected page cache entry")
+	}
+}
+
+func TestRollbackInvalidatesPublishedSiteCache(t *testing.T) {
+	store := newFakePublishingStore()
+	cache := newMemoryPublishedSiteCache()
+	cache.StoreDomain(store.publishedHostname, publishedSiteLookup{
+		SiteSlug: store.publishedSiteSlug,
+		Hostname: store.publishedHostname,
+		Version:  store.publishedVersion,
+	})
+	cache.StoreSnapshot(store.publishedVersion.SiteID, store.publishedVersion.ID, store.publishedSnapshot)
+	cache.StorePage(store.publishedVersion.SiteID, store.publishedVersion.ID, "/contact", store.publishedSnapshot.Pages[1])
+	service := Service{
+		db:     store,
+		reader: fakePublishingReader{},
+		cache:  cache,
+	}
+
+	_, err := service.Rollback(
+		context.Background(),
+		"00000000-0000-4000-8000-000000000201",
+		"00000000-0000-4000-8000-000000000701",
+		"00000000-0000-4000-8000-000000000001",
+	)
+	if err != nil {
+		t.Fatalf("rollback: %v", err)
+	}
+
+	if _, ok := cache.LoadDomain(store.publishedHostname); ok {
+		t.Fatal("expected rollback to invalidate domain cache")
+	}
+	if _, ok := cache.LoadSnapshot(store.publishedVersion.SiteID, store.publishedVersion.ID); ok {
+		t.Fatal("expected rollback to invalidate snapshot cache")
+	}
+	if _, ok := cache.LoadPage(store.publishedVersion.SiteID, store.publishedVersion.ID, "/contact"); ok {
+		t.Fatal("expected rollback to invalidate page cache")
 	}
 }
 

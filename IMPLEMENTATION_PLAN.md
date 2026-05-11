@@ -152,7 +152,8 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Enforce generation guardrails: max 10 pages, known blocks only, supported versions only, safe URLs only, valid theme tokens only, no scripts, no unsupported embed code, no unsanitized HTML.
 - [x] Add deterministic repair for safe issues such as missing optional defaults, excessive page count, duplicate slugs, and missing SEO fallbacks.
   Generation now passes every plan through a Go-side repair step before persistence: it sanitizes plain-text fields, drops unsupported blocks and unsafe CTA URLs, falls back to a valid theme preset, caps page count at 10, repairs duplicate or invalid slugs, restores homepage and SEO defaults, and inserts safe fallback blocks when a page would otherwise become invalid. Verified on May 10, 2026 with `go test ./internal/generation ./internal/siteconfig` and `make test`.
-- [ ] Add model repair or retry only after backend validation fails.
+- [x] Add model repair or retry only after backend validation fails.
+  Verified on May 11, 2026 by adding a validation-feedback retry loop in `internal/generation` that reruns plan construction only after draft persistence returns backend validation issues, records retry counts in generation summary metadata, preserves validation issues on failed jobs, and passes new retry/exhaustion coverage in `go test ./internal/generation` plus `make test`.
 - [x] Persist valid generated output as normalized draft rows.
 - [x] Store generation prompt, assumptions, provenance metadata, validation outcome, and summary.
 - [x] Return the created site draft and send the user to the builder preview.
@@ -176,8 +177,10 @@ This plan is sequenced for the shortest path to a working prototype first. The p
   Local-equivalent published path resolution was first verified on May 7, 2026: after publishing `Public Path Verification Studio` in Playwright, both `/public/public-path-verification-studio` and `/public/public-path-verification-studio/contact` loaded the expected snapshot-backed pages and the in-site navigation moved between them without browser console errors.
   Hostname-based lookup through `site_domains` was verified on May 10, 2026 by publishing the seeded `Nordic Studio` site, loading `http://nordic-studio.localhost:3000/` and `http://nordic-studio.localhost:3000/contact` in Playwright, confirming the hosted route resolved from the assigned domain, checking that the public shell rendered without the builder chrome, and confirming there were no current-page console errors while in-site navigation stayed on root-relative hosted paths.
 - [x] Serve public pages from published artifacts or published snapshots, never from draft rows.
-- [ ] Add cache keys for domain lookup, published snapshots, and page artifacts.
-- [ ] Invalidate public cache on publish and rollback.
+- [x] Add cache keys for domain lookup, published snapshots, and page artifacts.
+  Verified on May 11, 2026 by adding an in-memory published-site cache in `internal/publishing` keyed separately for hostname lookup, `site_id:version_id` snapshots, and `site_id:version_id:path` page resolution, with tests proving cache warmup and repeat hosted requests in `go test ./internal/publishing` and `make test`.
+- [x] Invalidate public cache on publish and rollback.
+  Verified on May 11, 2026 by wiring site-scoped cache invalidation into successful publish and rollback commits in `internal/publishing`, then covering both flows with cache-eviction tests in `go test ./internal/publishing` and `make test`.
 - [x] Implement version list and rollback by setting `sites.published_version_id` to an existing version.
 - [x] Write audit events for publish and rollback.
   Verified on May 7, 2026 by logging in locally, creating `Rollback Verification Loom`, publishing version 1 from the builder in Playwright, editing and publishing version 2, rolling the live site back to version 1 from the new publish history UI, confirming the builder marked `v1` current again, and reloading `/public/rollback-verification-loom` to confirm it served the original published snapshot while the draft still retained the newer editable headline.

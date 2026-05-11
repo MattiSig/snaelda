@@ -22,6 +22,8 @@ var (
 	ErrSiteSlugConflict = errors.New("site slug is already in use")
 )
 
+const maxGenerationValidationAttempts = 2
+
 type DB interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
@@ -43,15 +45,24 @@ type GenerateResult struct {
 	Draft siteconfig.SiteDraft `json:"draft"`
 }
 
+type generationPlanFeedback struct {
+	Attempt          int
+	ValidationIssues []siteconfig.Issue
+}
+
+type generationPlanBuilder func(context.Context, generationInputContext, generationPlanFeedback) (generationPlan, error)
+
 type Service struct {
-	db     DB
-	writer draftWriter
+	db      DB
+	writer  draftWriter
+	planner generationPlanBuilder
 }
 
 func NewService(db DB) *Service {
 	return &Service{
-		db:     db,
-		writer: sites.NewPostgresWriter(db),
+		db:      db,
+		writer:  sites.NewPostgresWriter(db),
+		planner: defaultGenerationPlanBuilder,
 	}
 }
 
@@ -71,25 +82,13 @@ func (s *Service) Generate(ctx context.Context, workspaceID string, userID strin
 		return GenerateResult{}, err
 	}
 
-	plan := repairGenerationPlan(buildGenerationPlan(strings.TrimSpace(input.Name), prompt))
-	slugValue, err := s.createSlug(ctx, workspaceID, strings.TrimSpace(input.Slug), plan.SiteName)
+	plan, draft, validationRetryCount, err := s.generateDraftWithRetry(ctx, workspaceID, inputContext)
 	if err != nil {
 		_ = s.failGenerationJob(ctx, jobID, err)
 		return GenerateResult{}, err
 	}
 
-	draft, err := buildDraftFromPlan(plan, slugValue)
-	if err != nil {
-		_ = s.failGenerationJob(ctx, jobID, err)
-		return GenerateResult{}, err
-	}
-
-	if err := s.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
-		_ = s.failGenerationJob(ctx, jobID, err)
-		return GenerateResult{}, err
-	}
-
-	metadataErr := s.saveSiteMetadata(ctx, workspaceID, draft.Site.ID, prompt, plan)
+	metadataErr := s.saveSiteMetadata(ctx, workspaceID, draft.Site.ID, prompt, plan, validationRetryCount)
 	jobErr := s.completeGenerationJob(ctx, jobID, draft.Site.ID, plan)
 	if metadataErr != nil || jobErr != nil {
 		return GenerateResult{
@@ -102,6 +101,53 @@ func (s *Service) Generate(ctx context.Context, workspaceID string, userID strin
 		JobID: jobID,
 		Draft: draft,
 	}, nil
+}
+
+func defaultGenerationPlanBuilder(_ context.Context, input generationInputContext, _ generationPlanFeedback) (generationPlan, error) {
+	return buildGenerationPlan(input.NameHint, input.Prompt), nil
+}
+
+func (s *Service) generateDraftWithRetry(ctx context.Context, workspaceID string, input generationInputContext) (generationPlan, siteconfig.SiteDraft, int, error) {
+	feedback := generationPlanFeedback{}
+	for attempt := 1; attempt <= maxGenerationValidationAttempts; attempt++ {
+		feedback.Attempt = attempt
+
+		plan, err := s.buildPlan(ctx, input, feedback)
+		if err != nil {
+			return generationPlan{}, siteconfig.SiteDraft{}, attempt - 1, fmt.Errorf("build generation plan: %w", err)
+		}
+		plan = repairGenerationPlan(plan)
+
+		slugValue, err := s.createSlug(ctx, workspaceID, input.SlugHint, plan.SiteName)
+		if err != nil {
+			return generationPlan{}, siteconfig.SiteDraft{}, attempt - 1, err
+		}
+
+		draft, err := buildDraftFromPlan(plan, slugValue)
+		if err == nil {
+			err = s.writer.SaveDraft(ctx, workspaceID, draft)
+		}
+		if err == nil {
+			return plan, draft, attempt - 1, nil
+		}
+
+		var validationErr siteconfig.ValidationError
+		if attempt < maxGenerationValidationAttempts && errors.As(err, &validationErr) {
+			feedback.ValidationIssues = append([]siteconfig.Issue(nil), validationErr.Issues...)
+			continue
+		}
+
+		return generationPlan{}, siteconfig.SiteDraft{}, attempt - 1, err
+	}
+
+	return generationPlan{}, siteconfig.SiteDraft{}, maxGenerationValidationAttempts - 1, errors.New("generation retry attempts exhausted")
+}
+
+func (s *Service) buildPlan(ctx context.Context, input generationInputContext, feedback generationPlanFeedback) (generationPlan, error) {
+	if s.planner != nil {
+		return s.planner(ctx, input, feedback)
+	}
+	return defaultGenerationPlanBuilder(ctx, input, feedback)
 }
 
 type generationInputContext struct {
@@ -193,9 +239,14 @@ func (s *Service) failGenerationJob(ctx context.Context, jobID string, cause err
 	if jobID == "" {
 		return nil
 	}
-	errorJSON, err := json.Marshal(map[string]any{
+	payload := map[string]any{
 		"message": cause.Error(),
-	})
+	}
+	var validationErr siteconfig.ValidationError
+	if errors.As(cause, &validationErr) {
+		payload["issues"] = validationErr.Issues
+	}
+	errorJSON, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("encode generation error: %w", err)
 	}
@@ -212,13 +263,14 @@ func (s *Service) failGenerationJob(ctx context.Context, jobID string, cause err
 	return nil
 }
 
-func (s *Service) saveSiteMetadata(ctx context.Context, workspaceID string, siteID string, prompt string, plan generationPlan) error {
+func (s *Service) saveSiteMetadata(ctx context.Context, workspaceID string, siteID string, prompt string, plan generationPlan, validationRetryCount int) error {
 	summaryJSON, err := json.Marshal(map[string]any{
-		"siteGoal":     plan.SiteGoal,
-		"themePreset":  plan.ThemePreset,
-		"assetsNeeded": plan.AssetsNeeded,
-		"assumptions":  plan.Assumptions,
-		"pageCount":    len(plan.Pages),
+		"siteGoal":             plan.SiteGoal,
+		"themePreset":          plan.ThemePreset,
+		"assetsNeeded":         plan.AssetsNeeded,
+		"assumptions":          plan.Assumptions,
+		"pageCount":            len(plan.Pages),
+		"validationRetryCount": validationRetryCount,
 	})
 	if err != nil {
 		return fmt.Errorf("encode generation summary: %w", err)

@@ -102,6 +102,109 @@ func TestGenerateRejectsConflictingRequestedSlug(t *testing.T) {
 	}
 }
 
+func TestGenerateRetriesPlannerAfterValidationFailure(t *testing.T) {
+	store := newFakeGenerationStore()
+	store.saveDraftErrors = []error{
+		siteconfig.ValidationError{Issues: []siteconfig.Issue{{
+			Path:    "pages[0].blocks[0].props.headline",
+			Code:    "required",
+			Message: "headline is required",
+		}}},
+	}
+	feedbacks := []generationPlanFeedback{}
+
+	service := Service{
+		db:     store,
+		writer: store,
+		planner: func(_ context.Context, input generationInputContext, feedback generationPlanFeedback) (generationPlan, error) {
+			feedbacks = append(feedbacks, feedback)
+			return buildGenerationPlan(input.NameHint, input.Prompt), nil
+		},
+	}
+
+	result, err := service.Generate(context.Background(), "workspace-1", "user-1", GenerateInput{
+		Name:   "North Light Studio",
+		Prompt: "A calm portfolio site for a photography studio that needs a gallery, service overview, and booking CTA.",
+	})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	if result.Draft.Site.ID == "" {
+		t.Fatalf("expected saved draft after retry, got %#v", result.Draft.Site)
+	}
+	if len(feedbacks) != 2 {
+		t.Fatalf("expected planner to run twice, got %#v", feedbacks)
+	}
+	if feedbacks[0].Attempt != 1 || len(feedbacks[0].ValidationIssues) != 0 {
+		t.Fatalf("expected first attempt to have no validation feedback, got %#v", feedbacks[0])
+	}
+	if feedbacks[1].Attempt != 2 || len(feedbacks[1].ValidationIssues) != 1 {
+		t.Fatalf("expected second attempt to receive validation issues, got %#v", feedbacks[1])
+	}
+	if feedbacks[1].ValidationIssues[0].Code != "required" {
+		t.Fatalf("expected validation issue code to be forwarded, got %#v", feedbacks[1].ValidationIssues)
+	}
+	if store.saveDraftCalls != 2 {
+		t.Fatalf("expected draft save to retry once, got %d calls", store.saveDraftCalls)
+	}
+	if store.summary[result.Draft.Site.ID]["validationRetryCount"] != float64(1) {
+		t.Fatalf("expected summary to track validation retry count, got %#v", store.summary[result.Draft.Site.ID])
+	}
+}
+
+func TestGenerateFailsAfterValidationRetryExhausted(t *testing.T) {
+	store := newFakeGenerationStore()
+	store.saveDraftErrors = []error{
+		siteconfig.ValidationError{Issues: []siteconfig.Issue{{
+			Path:    "pages[0].blocks[0].props.headline",
+			Code:    "required",
+			Message: "headline is required",
+		}}},
+		siteconfig.ValidationError{Issues: []siteconfig.Issue{{
+			Path:    "pages[0].blocks[0].props.headline",
+			Code:    "required",
+			Message: "headline is required",
+		}}},
+	}
+	planCalls := 0
+
+	service := Service{
+		db:     store,
+		writer: store,
+		planner: func(_ context.Context, input generationInputContext, feedback generationPlanFeedback) (generationPlan, error) {
+			planCalls++
+			return buildGenerationPlan(input.NameHint, input.Prompt), nil
+		},
+	}
+
+	_, err := service.Generate(context.Background(), "workspace-1", "user-1", GenerateInput{
+		Name:   "North Light Studio",
+		Prompt: "A calm portfolio site for a photography studio that needs a gallery, service overview, and booking CTA.",
+	})
+	var validationErr siteconfig.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected validation error after retry exhaustion, got %v", err)
+	}
+	if planCalls != 2 {
+		t.Fatalf("expected two planner attempts, got %d", planCalls)
+	}
+	if store.saveDraftCalls != 2 {
+		t.Fatalf("expected two draft save attempts, got %d", store.saveDraftCalls)
+	}
+	for _, job := range store.jobs {
+		if job.Status != "failed" {
+			continue
+		}
+		issues, ok := job.Error["issues"].([]any)
+		if !ok || len(issues) != 1 {
+			t.Fatalf("expected failed job to include validation issues, got %#v", job.Error)
+		}
+		return
+	}
+	t.Fatalf("expected failed generation job, got %#v", store.jobs)
+}
+
 func TestRepairGenerationPlanRepairsSafeIssues(t *testing.T) {
 	pages := make([]generationPagePlan, 0, siteconfig.MaxPagesPerSite+2)
 	for index := 0; index < siteconfig.MaxPagesPerSite+2; index++ {
@@ -205,11 +308,13 @@ func TestRepairGenerationPlanRepairsSafeIssues(t *testing.T) {
 }
 
 type fakeGenerationStore struct {
-	drafts  map[string]siteconfig.SiteDraft
-	jobs    map[string]fakeGenerationJob
-	slugs   map[string]bool
-	prompts map[string]string
-	summary map[string]map[string]any
+	drafts          map[string]siteconfig.SiteDraft
+	jobs            map[string]fakeGenerationJob
+	slugs           map[string]bool
+	prompts         map[string]string
+	summary         map[string]map[string]any
+	saveDraftErrors []error
+	saveDraftCalls  int
 }
 
 type fakeGenerationJob struct {
@@ -231,6 +336,14 @@ func newFakeGenerationStore() *fakeGenerationStore {
 }
 
 func (s *fakeGenerationStore) SaveDraft(_ context.Context, _ string, draft siteconfig.SiteDraft) error {
+	s.saveDraftCalls++
+	if len(s.saveDraftErrors) > 0 {
+		err := s.saveDraftErrors[0]
+		s.saveDraftErrors = s.saveDraftErrors[1:]
+		if err != nil {
+			return err
+		}
+	}
 	if err := siteconfig.ValidateDraft(draft); err != nil {
 		return err
 	}
