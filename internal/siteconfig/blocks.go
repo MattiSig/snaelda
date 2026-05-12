@@ -169,6 +169,66 @@ func ctaBandBlockDefinition() BlockDefinition {
 	}
 }
 
+func contactFormBlockDefinition() BlockDefinition {
+	return BlockDefinition{
+		Type:        "contact_form",
+		Version:     BlockVersionV1,
+		DisplayName: "Contact form",
+		Category:    BlockCategoryConversion,
+		DefaultProps: map[string]any{
+			"heading":     "Start the conversation",
+			"intro":       "Share a few details and I will get back to you shortly.",
+			"submitLabel": "Send inquiry",
+			"fields": []any{
+				map[string]any{
+					"name":     "name",
+					"label":    "Name",
+					"type":     "name",
+					"required": true,
+				},
+				map[string]any{
+					"name":     "email",
+					"label":    "Email",
+					"type":     "email",
+					"required": true,
+				},
+				map[string]any{
+					"name":     "message",
+					"label":    "Message",
+					"type":     "message",
+					"required": true,
+				},
+			},
+			"successMessage": "Thanks. Your message is on its way.",
+		},
+		EditorSchema: []EditorField{
+			{Name: "heading", Label: "Heading", Control: "text"},
+			{Name: "intro", Label: "Intro", Control: "textarea"},
+			{Name: "submitLabel", Label: "Submit label", Control: "text"},
+			{
+				Name:    "fields",
+				Label:   "Form fields",
+				Control: "repeater",
+				ItemFields: []EditorField{
+					{Name: "name", Label: "Field name", Control: "text", Placeholder: "email"},
+					{Name: "label", Label: "Label", Control: "text"},
+					{Name: "type", Label: "Field type", Control: "select", Options: []string{"name", "email", "phone", "message", "select"}},
+					{Name: "required", Label: "Required", Control: "checkbox"},
+					{
+						Name:        "options",
+						Label:       "Select options",
+						Control:     "string_list",
+						Description: "One option per line. Only used when the field type is select.",
+					},
+				},
+			},
+			{Name: "successMessage", Label: "Success message", Control: "textarea"},
+			{Name: "notificationEmail", Label: "Notification email", Control: "text"},
+		},
+		ValidateProps: validateContactFormProps,
+	}
+}
+
 func galleryBlockDefinition() BlockDefinition {
 	return BlockDefinition{
 		Type:        "gallery",
@@ -527,6 +587,38 @@ func validateGalleryProps(path string, props map[string]any, c *collector) {
 		requireString(itemPath, item, "title", 1, 80, c)
 		optionalString(itemPath, item, "caption", 240, c)
 		optionalImage(itemPath, item, "image", c)
+	}
+}
+
+func validateContactFormProps(path string, props map[string]any, c *collector) {
+	requireKnownProps(path, props, c, "heading", "intro", "submitLabel", "fields", "successMessage", "notificationEmail")
+	requireString(path, props, "heading", 1, 120, c)
+	optionalString(path, props, "intro", 600, c)
+	requireString(path, props, "submitLabel", 1, 40, c)
+	optionalString(path, props, "successMessage", 200, c)
+	optionalString(path, props, "notificationEmail", 160, c)
+
+	definition, err := FormDefinitionFromProps(props)
+	if validationErr, ok := err.(ValidationError); ok {
+		for _, issue := range validationErr.Issues {
+			message := issue.Message
+			if issue.Path == "form" {
+				c.add(path, issue.Code, message)
+				continue
+			}
+			c.add(strings.Replace(issue.Path, "form", path, 1), issue.Code, message)
+		}
+		return
+	}
+	if err != nil {
+		c.add(path, "invalid_form", err.Error())
+		return
+	}
+
+	for index, field := range definition.Fields {
+		if field.Type == "select" && len(field.Options) == 0 {
+			c.add(fmt.Sprintf("%s.fields[%d].options", path, index), "required", "select fields must include options")
+		}
 	}
 }
 

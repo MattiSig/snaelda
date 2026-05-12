@@ -25,6 +25,7 @@ import {
   duplicateBlock,
   getSiteDraft,
   getSiteTheme,
+  listSiteFormSubmissions,
   listSiteAssets,
   listSiteVersions,
   publishSite,
@@ -34,11 +35,14 @@ import {
   reorderSiteNavigation,
   type AssetRecord,
   type BlockDefinition,
+  type FormSubmissionRecord,
+  type FormSubmissionStatus,
   type SiteDraft,
   type SiteVersion,
   type ThemeEditorCatalog,
   type ThemeSelection,
   updateBlock,
+  updateFormSubmission,
   updatePage,
   updateSite,
   updateSiteTheme,
@@ -82,6 +86,9 @@ function SiteDetail() {
   const [pageIncludeInNavigation, setPageIncludeInNavigation] = useState(true)
   const [newBlockType, setNewBlockType] = useState('')
   const [siteAssets, setSiteAssets] = useState<AssetRecord[]>([])
+  const [formSubmissions, setFormSubmissions] = useState<FormSubmissionRecord[]>(
+    [],
+  )
   const [assetAltText, setAssetAltText] = useState('')
   const [assetFile, setAssetFile] = useState<File | null>(null)
   const [assetInputKey, setAssetInputKey] = useState(0)
@@ -117,10 +124,13 @@ function SiteDetail() {
   const [isSavingTheme, setIsSavingTheme] = useState(false)
   const [isSavingNavigation, setIsSavingNavigation] = useState(false)
   const [isUploadingAsset, setIsUploadingAsset] = useState(false)
+  const [activeSubmissionId, setActiveSubmissionId] = useState('')
   const [publishErrorMessage, setPublishErrorMessage] = useState('')
   const [publishStatusMessage, setPublishStatusMessage] = useState('')
   const [assetErrorMessage, setAssetErrorMessage] = useState('')
   const [assetStatusMessage, setAssetStatusMessage] = useState('')
+  const [submissionErrorMessage, setSubmissionErrorMessage] = useState('')
+  const [submissionStatusMessage, setSubmissionStatusMessage] = useState('')
 
   function syncSelectedPageFields(
     nextDraft: SiteDraft,
@@ -174,9 +184,16 @@ function SiteDetail() {
       listSiteVersions(siteId),
       getSiteTheme(siteId),
       listSiteAssets(siteId),
+      listSiteFormSubmissions(siteId),
     ])
       .then(
-        ([draftResponse, versionResponse, themeResponse, assetResponse]) => {
+        ([
+          draftResponse,
+          versionResponse,
+          themeResponse,
+          assetResponse,
+          submissionResponse,
+        ]) => {
           if (!isMounted) {
             return
           }
@@ -188,6 +205,7 @@ function SiteDetail() {
           setThemeSelection(themeResponse.selection)
           setThemeOptions(themeResponse.options)
           setSiteAssets(assetResponse.assets)
+          setFormSubmissions(submissionResponse.submissions)
           setName(draftResponse.draft.site.name)
           setSlug(draftResponse.draft.site.slug)
           const initialPage = draftResponse.draft.pages[0] ?? null
@@ -550,6 +568,33 @@ function SiteDetail() {
     }
   }
 
+  async function handleUpdateSubmissionStatus(
+    submissionId: string,
+    status: FormSubmissionStatus,
+  ) {
+    setActiveSubmissionId(submissionId)
+    setSubmissionErrorMessage('')
+    setSubmissionStatusMessage('')
+
+    try {
+      const response = await updateFormSubmission(submissionId, { status })
+      setFormSubmissions((current) =>
+        current.map((submission) =>
+          submission.id === submissionId ? response.submission : submission,
+        ),
+      )
+      setSubmissionStatusMessage('Submission status saved.')
+    } catch (error) {
+      setSubmissionErrorMessage(
+        error instanceof APIError
+          ? error.message
+          : 'Could not update submission status',
+      )
+    } finally {
+      setActiveSubmissionId('')
+    }
+  }
+
   async function handleCreateBlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const blockTypeToCreate = newBlockType || blockRegistry[0]?.type || ''
@@ -792,6 +837,9 @@ function SiteDetail() {
   const externalNavigationCount = draft.navigation.primary.filter(
     (item) => !item.pageId && item.href,
   ).length
+  const hasContactForm = draft.pages.some((page) =>
+    page.blocks.some((block) => block.type === 'contact_form'),
+  )
 
   return (
     <div className={layout.builderGrid}>
@@ -1512,6 +1560,87 @@ function SiteDetail() {
 
         <section className={ribbonPanel}>
           <div className="mb-[22px]">
+            <p className={text.eyebrow}>Inquiries</p>
+            <h2 className={text.h2}>Review contact form submissions</h2>
+            <p className={text.p}>
+              MVP stores submissions in-app only. Update their status here as
+              you triage new messages.
+            </p>
+          </div>
+
+          {submissionErrorMessage ? (
+            <p className={text.error}>{submissionErrorMessage}</p>
+          ) : null}
+          {submissionStatusMessage ? (
+            <p className={text.success}>{submissionStatusMessage}</p>
+          ) : null}
+
+          <div className="mt-5 grid gap-3">
+            {formSubmissions.length > 0 ? (
+              formSubmissions.map((submission) => (
+                <article
+                  key={submission.id}
+                  className="grid gap-3 rounded-[14px] border border-border bg-[var(--surface-2)] p-4"
+                >
+                  <div className="flex items-start justify-between gap-3 max-sm:flex-col">
+                    <div>
+                      <strong className="block text-[var(--paper)]">
+                        {String(
+                          submission.payload['name'] ||
+                            submission.payload['email'] ||
+                            'New inquiry',
+                        )}
+                      </strong>
+                      <small className="text-[var(--paper-muted)]">
+                        {submission.pageTitle || 'Stored submission'} ·{' '}
+                        {formatTimestamp(submission.createdAt)}
+                      </small>
+                    </div>
+                    <Select
+                      value={submission.status}
+                      disabled={activeSubmissionId === submission.id}
+                      onChange={(event) =>
+                        handleUpdateSubmissionStatus(
+                          submission.id,
+                          event.target.value as FormSubmissionStatus,
+                        )
+                      }
+                    >
+                      <option value="new">New</option>
+                      <option value="reviewed">Reviewed</option>
+                      <option value="resolved">Resolved</option>
+                      <option value="spam">Spam</option>
+                    </Select>
+                  </div>
+
+                  <div className="grid gap-2">
+                    {Object.entries(submission.payload).map(([key, value]) => (
+                      <div key={key} className="grid gap-1">
+                        <strong className="text-sm uppercase tracking-[0.08em] text-[var(--paper-muted)]">
+                          {formatSubmissionKey(key)}
+                        </strong>
+                        <p className="m-0 whitespace-pre-wrap text-[var(--paper)]">
+                          {String(value)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              ))
+            ) : (
+              <div className={emptyState}>
+                <p className={text.p}>
+                  {hasContactForm
+                    ? 'No submissions yet. Published and preview contact forms will start listing messages here.'
+                    : 'Add a contact form block to start collecting inquiries.'}
+                </p>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className={ribbonPanel}>
+          <div className="mb-[22px]">
             <p className={text.eyebrow}>Blocks</p>
             <h2 className={text.h2}>
               {selectedPage
@@ -1818,6 +1947,10 @@ function moveItem<T extends { id: string }>(
     reordered[index],
   ]
   return reordered
+}
+
+function formatSubmissionKey(value: string) {
+  return value.replaceAll('_', ' ').replace(/^./, (char) => char.toUpperCase())
 }
 
 function formatTimestamp(value: string) {

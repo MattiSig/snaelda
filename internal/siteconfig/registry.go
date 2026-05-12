@@ -71,6 +71,7 @@ func NewBlockRegistry(definitions ...BlockDefinition) (*BlockRegistry, error) {
 
 func DefaultBlockRegistry() *BlockRegistry {
 	registry, err := NewBlockRegistry(
+		contactFormBlockDefinition(),
 		ctaBandBlockDefinition(),
 		faqBlockDefinition(),
 		featuresGridBlockDefinition(),

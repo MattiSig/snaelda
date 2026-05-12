@@ -1,6 +1,106 @@
 {
   "blockRegistry": [
     {
+      "type": "contact_form",
+      "version": "1.0.0",
+      "displayName": "Contact form",
+      "category": "conversion",
+      "defaultProps": {
+        "fields": [
+          {
+            "label": "Name",
+            "name": "name",
+            "required": true,
+            "type": "name"
+          },
+          {
+            "label": "Email",
+            "name": "email",
+            "required": true,
+            "type": "email"
+          },
+          {
+            "label": "Message",
+            "name": "message",
+            "required": true,
+            "type": "message"
+          }
+        ],
+        "heading": "Start the conversation",
+        "intro": "Share a few details and I will get back to you shortly.",
+        "submitLabel": "Send inquiry",
+        "successMessage": "Thanks. Your message is on its way."
+      },
+      "editorSchema": [
+        {
+          "name": "heading",
+          "label": "Heading",
+          "control": "text"
+        },
+        {
+          "name": "intro",
+          "label": "Intro",
+          "control": "textarea"
+        },
+        {
+          "name": "submitLabel",
+          "label": "Submit label",
+          "control": "text"
+        },
+        {
+          "name": "fields",
+          "label": "Form fields",
+          "control": "repeater",
+          "itemFields": [
+            {
+              "name": "name",
+              "label": "Field name",
+              "control": "text",
+              "placeholder": "email"
+            },
+            {
+              "name": "label",
+              "label": "Label",
+              "control": "text"
+            },
+            {
+              "name": "type",
+              "label": "Field type",
+              "control": "select",
+              "options": [
+                "name",
+                "email",
+                "phone",
+                "message",
+                "select"
+              ]
+            },
+            {
+              "name": "required",
+              "label": "Required",
+              "control": "checkbox"
+            },
+            {
+              "name": "options",
+              "label": "Select options",
+              "control": "string_list",
+              "description": "One option per line. Only used when the field type is select."
+            }
+          ]
+        },
+        {
+          "name": "successMessage",
+          "label": "Success message",
+          "control": "textarea"
+        },
+        {
+          "name": "notificationEmail",
+          "label": "Notification email",
+          "control": "text"
+        }
+      ]
+    },
+    {
       "type": "cta_band",
       "version": "1.0.0",
       "displayName": "CTA band",
@@ -753,7 +853,39 @@
         },
         "blocks": [
           {
-            "id": "block_01_cta_band",
+            "id": "block_01_contact_form",
+            "type": "contact_form",
+            "version": "1.0.0",
+            "props": {
+              "fields": [
+                {
+                  "label": "Name",
+                  "name": "name",
+                  "required": true,
+                  "type": "name"
+                },
+                {
+                  "label": "Email",
+                  "name": "email",
+                  "required": true,
+                  "type": "email"
+                },
+                {
+                  "label": "Message",
+                  "name": "message",
+                  "required": true,
+                  "type": "message"
+                }
+              ],
+              "heading": "Start the conversation",
+              "intro": "Share a few details and I will get back to you shortly.",
+              "submitLabel": "Send inquiry",
+              "successMessage": "Thanks. Your message is on its way."
+            },
+            "settings": {}
+          },
+          {
+            "id": "block_02_cta_band",
             "type": "cta_band",
             "version": "1.0.0",
             "props": {
@@ -764,7 +896,7 @@
             "settings": {}
           },
           {
-            "id": "block_02_faq",
+            "id": "block_03_faq",
             "type": "faq",
             "version": "1.0.0",
             "props": {
@@ -779,7 +911,7 @@
             "settings": {}
           },
           {
-            "id": "block_03_features_grid",
+            "id": "block_04_features_grid",
             "type": "features_grid",
             "version": "1.0.0",
             "props": {
@@ -795,7 +927,7 @@
             "settings": {}
           },
           {
-            "id": "block_04_footer",
+            "id": "block_05_footer",
             "type": "footer",
             "version": "1.0.0",
             "props": {
@@ -812,7 +944,7 @@
             "settings": {}
           },
           {
-            "id": "block_05_gallery",
+            "id": "block_06_gallery",
             "type": "gallery",
             "version": "1.0.0",
             "props": {
@@ -828,7 +960,7 @@
             "settings": {}
           },
           {
-            "id": "block_06_hero",
+            "id": "block_07_hero",
             "type": "hero",
             "version": "1.0.0",
             "props": {
@@ -838,7 +970,7 @@
             "settings": {}
           },
           {
-            "id": "block_07_image_text",
+            "id": "block_08_image_text",
             "type": "image_text",
             "version": "1.0.0",
             "props": {
@@ -849,7 +981,7 @@
             "settings": {}
           },
           {
-            "id": "block_08_pricing_packages",
+            "id": "block_09_pricing_packages",
             "type": "pricing_packages",
             "version": "1.0.0",
             "props": {
@@ -873,7 +1005,7 @@
             "settings": {}
           },
           {
-            "id": "block_09_team_profile_cards",
+            "id": "block_10_team_profile_cards",
             "type": "team_profile_cards",
             "version": "1.0.0",
             "props": {
@@ -895,7 +1027,7 @@
             "settings": {}
           },
           {
-            "id": "block_10_testimonials",
+            "id": "block_11_testimonials",
             "type": "testimonials",
             "version": "1.0.0",
             "props": {
@@ -911,7 +1043,7 @@
             "settings": {}
           },
           {
-            "id": "block_11_text_section",
+            "id": "block_12_text_section",
             "type": "text_section",
             "version": "1.0.0",
             "props": {

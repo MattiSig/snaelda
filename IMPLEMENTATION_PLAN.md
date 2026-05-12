@@ -190,7 +190,8 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Add the remaining non-form MVP blocks: `gallery`, `testimonials`, `pricing_packages`, `faq`, `team_profile_cards`, and `footer`.
   Verified on May 11, 2026 by extending the Go-owned block registry, validation, generation repair, and React preview/publish renderer; running `go test ./...`, `npm run web:test`, `npm run web:lint`, and `npm run web:build`; then logging into the seeded local builder in Playwright, adding a `gallery` block to `Nordic Studio`, opening draft preview, confirming the new section rendered, and checking that the page had no console errors.
 - [x] Extend prompt generation and repair so the implemented non-form MVP blocks can appear in generated drafts when prompts ask for gallery-heavy layouts, pricing, testimonials, FAQs, team bios, and footer structure.
-- [ ] Add the `contact_form` block once the public submissions flow is ready to store or forward real inquiries.
+- [x] Add the `contact_form` block once the public submissions flow is ready to store or forward real inquiries.
+  Verified on May 12, 2026 by extending the Go-owned block registry plus React renderer/editor contract with `contact_form`, then creating `Contact Form Verification Studio` in Playwright, adding the block in the builder, and successfully submitting the rendered preview form through the new public forms API.
 - [ ] Add optional early blocks only if user testing shows demand: logo cloud, map/location, stats/KPIs, article teaser, or allowlisted embeds.
 - [x] Add richer page management: rename, slug edit, SEO edit, include/exclude from navigation, navigation reorder, and deletion safeguards.
   Verified on May 11, 2026 by adding explicit primary-navigation reordering to the Go draft API plus builder UI, then logging in locally in Playwright, creating `Builder Navigation Theme Verification`, adding a `Contact` page, moving that page ahead of `Home` in the new navigation panel, and confirming the draft preview rendered the navigation in `Contact` then `Home` order without console errors while page order remained separate.
@@ -225,15 +226,17 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 
 ## Phase 9: Forms, Submissions, And Notifications
 
-- [ ] Implement the `contact_form` block with allowlisted MVP fields: name, email, optional phone, message, and optional select.
-- [ ] Validate public form payloads against the stored block definition.
-- [ ] Rate-limit public form submissions.
-- [ ] Store submissions in `form_submissions`.
+- [x] Implement the `contact_form` block with allowlisted MVP fields: name, email, optional phone, message, and optional select.
+- [x] Validate public form payloads against the stored block definition.
+- [x] Rate-limit public form submissions.
+- [x] Store submissions in `form_submissions`.
 - [ ] Add spam scoring or basic spam filtering.
-- [ ] Add submission list and status update APIs.
-- [ ] Decide whether MVP sends email notifications, stores submissions only, or does both.
+- [x] Add submission list and status update APIs.
+- [x] Decide whether MVP sends email notifications, stores submissions only, or does both.
+  MVP decision on May 12, 2026: store submissions in-app only for now. The builder now lists stored inquiries and lets owners/editors update status without sending email yet.
 - [ ] Add email forwarding if selected for MVP.
-- [ ] Ensure public form responses do not leak site internals.
+- [x] Ensure public form responses do not leak site internals.
+  Verified on May 12, 2026 with `make test`, `npm run web:test`, `npm run web:lint`, `npm run web:build`, and a live Playwright flow that created `Contact Form Verification Studio`, added a `contact_form` block, submitted `Ada Lovelace` from draft preview, reloaded the builder to confirm the stored inquiry appeared under the new submissions panel, and changed its status to `reviewed` with no browser console errors.
 
 ## Phase 10: Security, Caching, And Observability
 

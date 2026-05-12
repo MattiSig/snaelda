@@ -1,7 +1,11 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SiteDraft } from '@/lib/api'
 import { SiteDraftRenderer } from './SiteDraftRenderer'
+
+beforeEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('SiteDraftRenderer', () => {
   it('renders visible blocks and resolves draft-page links to anchors', () => {
@@ -83,6 +87,38 @@ describe('SiteDraftRenderer', () => {
         .getAllByRole('link', { name: 'Contact' })
         .some((link) => link.getAttribute('href') === '#page-contact'),
     ).toBe(true)
+  })
+
+  it('submits contact form blocks through the public forms API', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      json: async () => ({
+        status: 'accepted',
+        message: 'Thanks. Your message is on its way.',
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<SiteDraftRenderer site={buildContactFormDraft()} />)
+
+    fireEvent.change(screen.getByLabelText('Email *'), {
+      target: { value: 'ada@example.com' },
+    })
+    fireEvent.change(screen.getByLabelText('Message *'), {
+      target: { value: 'Need a warmer site direction.' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Send inquiry' }))
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+    expect(fetchMock.mock.calls[0]?.[0].toString()).toContain(
+      '/api/public/forms/site-1/block-contact/submit',
+    )
+    expect(
+      screen.getByText('Thanks. Your message is on its way.'),
+    ).toBeTruthy()
   })
 })
 
@@ -321,6 +357,47 @@ function buildExtendedDraft(): SiteDraft {
         title: 'Contact',
         slug: '/contact',
         blocks: [],
+      },
+    ],
+  }
+}
+
+function buildContactFormDraft(): SiteDraft {
+  return {
+    ...buildDraft(),
+    pages: [
+      {
+        id: 'page-home',
+        title: 'Home',
+        slug: '/',
+        blocks: [
+          {
+            id: 'block-contact',
+            type: 'contact_form',
+            version: '1.0.0',
+            props: {
+              heading: 'Start the conversation',
+              intro: 'Share a few details and I will get back to you shortly.',
+              submitLabel: 'Send inquiry',
+              fields: [
+                {
+                  name: 'email',
+                  label: 'Email',
+                  type: 'email',
+                  required: true,
+                },
+                {
+                  name: 'message',
+                  label: 'Message',
+                  type: 'message',
+                  required: true,
+                },
+              ],
+              successMessage: 'Thanks. Your message is on its way.',
+            },
+            settings: {},
+          },
+        ],
       },
     ],
   }

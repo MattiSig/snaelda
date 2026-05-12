@@ -143,6 +143,18 @@ function FieldRenderer({
           />
         </label>
       )
+    case 'checkbox':
+      return (
+        <label className={form.toggle}>
+          <Checkbox
+            checked={Boolean(value)}
+            onChange={(event) => onChange(event.target.checked)}
+          />
+          <span className={cn(text.label, 'tracking-[0.08em]')}>
+            {field.label}
+          </span>
+        </label>
+      )
     case 'select':
       return (
         <label className={form.field}>
@@ -196,6 +208,25 @@ function FieldRenderer({
           assetLibrary={assetLibrary}
           onChange={onChange}
         />
+      )
+    case 'string_list':
+      return (
+        <label className={form.field}>
+          <span className={cn(text.label, 'tracking-[0.08em]')}>
+            {field.label}
+          </span>
+          {field.description ? (
+            <small className="text-sm text-[var(--paper-muted)]">
+              {field.description}
+            </small>
+          ) : null}
+          <Textarea
+            rows={4}
+            value={asStringList(value).join('\n')}
+            placeholder={field.placeholder}
+            onChange={(event) => onChange(parseStringList(event.target.value))}
+          />
+        </label>
       )
     case 'text':
     default:
@@ -545,6 +576,14 @@ function buildObjectDefaults(fields: BlockEditorField[]) {
       result[field.name] = []
       return result
     }
+    if (field.control === 'string_list') {
+      result[field.name] = []
+      return result
+    }
+    if (field.control === 'checkbox') {
+      result[field.name] = false
+      return result
+    }
     if (field.control === 'link' || field.control === 'asset') {
       result[field.name] = buildObjectDefaults(field.fields ?? [])
       return result
@@ -583,6 +622,11 @@ function cleanObject(value: Record<string, unknown>) {
 
 function cleanValue(value: unknown): unknown {
   if (Array.isArray(value)) {
+    if (value.every((entry) => typeof entry === 'string')) {
+      return value
+        .map((entry) => String(entry).trim())
+        .filter((entry) => entry.length > 0)
+    }
     return value.map((entry) => cleanValue(entry))
   }
   if (value && typeof value === 'object') {
@@ -613,4 +657,18 @@ function asObjectArray(value: unknown) {
   return value
     .map((entry) => asObject(entry))
     .filter((entry): entry is Record<string, unknown> => entry !== null)
+}
+
+function asStringList(value: unknown) {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value.filter((entry): entry is string => typeof entry === 'string')
+}
+
+function parseStringList(value: string) {
+  return value
+    .split('\n')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
 }

@@ -1,5 +1,15 @@
-import type { PublishedSnapshot, SiteDraft } from '@/lib/api'
+import type { FormEvent } from 'react'
+import { useState } from 'react'
+import {
+  APIError,
+  submitPublicForm,
+  type PublishedSnapshot,
+  type SiteDraft,
+} from '@/lib/api'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import { buildDraftAssetURL, buildPublishedAssetURL } from '@/lib/assets'
 import { buildSiteThemeStyle } from '@/lib/site-theme'
 import { preview, text } from '@/lib/styles'
@@ -7,6 +17,7 @@ import { cn } from '@/lib/utils'
 
 type RenderableSite = Pick<SiteDraft, 'theme' | 'navigation' | 'pages'> & {
   site: {
+    id?: string
     name: string
     seo?: {
       description?: string
@@ -139,6 +150,16 @@ export function SiteDraftRenderer({
                             publishedBasePath,
                           )
                         }
+                      />
+                    )
+                  case 'contact_form':
+                    return (
+                      <ContactFormBlock
+                        key={block.id}
+                        siteId={site.site.id}
+                        pageId={page.id}
+                        blockId={block.id}
+                        props={block.props}
                       />
                     )
                   case 'image_text':
@@ -380,6 +401,142 @@ function CTABandBlock({
           </a>
         </Button>
       ) : null}
+    </section>
+  )
+}
+
+function ContactFormBlock({
+  siteId,
+  pageId,
+  blockId,
+  props,
+}: {
+  siteId?: string
+  pageId: string
+  blockId: string
+  props: Record<string, unknown>
+}) {
+  const [values, setValues] = useState<Record<string, string>>({})
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
+  const fields = asFormFields(props.fields)
+  const submitLabel = asText(props.submitLabel) || 'Send message'
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!siteId) {
+      setErrorMessage('This form is not connected to a site yet.')
+      setSuccessMessage('')
+      return
+    }
+
+    setIsSubmitting(true)
+    setErrorMessage('')
+    setSuccessMessage('')
+
+    try {
+      const payload = fields.reduce<Record<string, unknown>>((result, field) => {
+        result[field.name] = values[field.name] ?? ''
+        return result
+      }, {})
+      const response = await submitPublicForm(siteId, blockId, payload)
+      setValues({})
+      setSuccessMessage(response.message)
+    } catch (error) {
+      setErrorMessage(
+        error instanceof APIError ? error.message : 'Could not send message',
+      )
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <section className={preview.panel}>
+      <div className="mb-5 grid gap-2">
+        <p className={text.eyebrow}>Contact form</p>
+        <h3 className="font-serif text-[1.6rem] font-bold leading-[0.96] text-[var(--site-foreground)]">
+          {asText(props.heading)}
+        </h3>
+        {asText(props.intro) ? (
+          <p className="text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
+            {asText(props.intro)}
+          </p>
+        ) : null}
+      </div>
+
+      <form className="grid gap-4" onSubmit={handleSubmit}>
+        {fields.map((field) => (
+          <label key={field.name} className="grid gap-2">
+            <span className={cn(text.label, 'tracking-[0.08em]')}>
+              {field.label}
+              {field.required ? ' *' : ''}
+            </span>
+            {field.type === 'message' ? (
+              <Textarea
+                name={field.name}
+                rows={5}
+                required={field.required}
+                value={values[field.name] ?? ''}
+                placeholder={formPlaceholder(field)}
+                onChange={(event) =>
+                  setValues((current) => ({
+                    ...current,
+                    [field.name]: event.target.value,
+                  }))
+                }
+              />
+            ) : field.type === 'select' ? (
+              <Select
+                name={field.name}
+                required={field.required}
+                value={values[field.name] ?? ''}
+                onChange={(event) =>
+                  setValues((current) => ({
+                    ...current,
+                    [field.name]: event.target.value,
+                  }))
+                }
+              >
+                <option value="">Select an option</option>
+                {field.options.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Select>
+            ) : (
+              <Input
+                name={field.name}
+                type={field.type === 'email' ? 'email' : 'text'}
+                required={field.required}
+                value={values[field.name] ?? ''}
+                placeholder={formPlaceholder(field)}
+                onChange={(event) =>
+                  setValues((current) => ({
+                    ...current,
+                    [field.name]: event.target.value,
+                  }))
+                }
+              />
+            )}
+          </label>
+        ))}
+
+        <input type="hidden" name="pageId" value={pageId} />
+
+        {errorMessage ? <p className={text.error}>{errorMessage}</p> : null}
+        {successMessage ? (
+          <p className={text.success} aria-live="polite">
+            {successMessage}
+          </p>
+        ) : null}
+
+        <Button type="submit" disabled={isSubmitting}>
+          {isSubmitting ? 'Sending...' : submitLabel}
+        </Button>
+      </form>
     </section>
   )
 }
@@ -841,6 +998,50 @@ function asObject(value: unknown) {
     return null
   }
   return value as Record<string, unknown>
+}
+
+function asFormFields(value: unknown) {
+  return asArray(value)
+    .map((entry) => asObject(entry))
+    .filter(
+      (
+        entry,
+      ): entry is {
+        name?: unknown
+        label?: unknown
+        type?: unknown
+        required?: unknown
+        options?: unknown
+      } => entry !== null,
+    )
+    .map((field) => ({
+      name: asText(field.name),
+      label: asText(field.label) || asText(field.name),
+      type: asText(field.type),
+      required: Boolean(field.required),
+      options: asStringArray(field.options),
+    }))
+    .filter((field) => field.name && field.type)
+}
+
+function asStringArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value.filter((entry): entry is string => typeof entry === 'string')
+}
+
+function formPlaceholder(field: { name: string; type: string }) {
+  switch (field.type) {
+    case 'email':
+      return 'name@example.com'
+    case 'phone':
+      return '+46 70 000 00 00'
+    case 'message':
+      return 'Tell me a little about the project.'
+    default:
+      return field.name
+  }
 }
 
 function AssetImage({

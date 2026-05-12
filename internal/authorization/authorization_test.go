@@ -39,6 +39,7 @@ func (r fakeRow) Scan(dest ...any) error {
 		r.scope.PageID,
 		r.scope.BlockID,
 		r.scope.AssetID,
+		r.scope.SubmissionID,
 		r.scope.Role,
 	}
 	for index, value := range values {
@@ -101,6 +102,15 @@ func TestRequireResourceScopes(t *testing.T) {
 			scope:       Scope{WorkspaceID: "workspace-1", SiteID: "site-1", AssetID: "asset-1", Role: RoleEditor},
 			require: func(a *Authorizer, ctx context.Context, id string) (Scope, error) {
 				return a.RequireAsset(ctx, id)
+			},
+		},
+		{
+			name:        "submission",
+			resourceID:  "submission-1",
+			tableMarker: "from form_submissions",
+			scope:       Scope{WorkspaceID: "workspace-1", SiteID: "site-1", PageID: "page-1", BlockID: "block-1", SubmissionID: "submission-1", Role: RoleEditor},
+			require: func(a *Authorizer, ctx context.Context, id string) (Scope, error) {
+				return a.RequireFormSubmission(ctx, id)
 			},
 		},
 	}

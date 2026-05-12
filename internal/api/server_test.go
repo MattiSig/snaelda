@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -228,6 +229,30 @@ func TestPublicRoutesAllowCrossOriginGET(t *testing.T) {
 
 	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "*" {
 		t.Fatalf("expected wildcard origin for public route, got %q", got)
+	}
+}
+
+func TestPublicFormRoutesAllowCrossOriginPOST(t *testing.T) {
+	server := NewServer(ServerConfig{
+		Config: config.Config{
+			AppEnv:     "test",
+			HTTPAddr:   "127.0.0.1:0",
+			AppBaseURL: "http://localhost:3000",
+		},
+		Logger: slog.New(slog.DiscardHandler),
+	})
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/public/forms/site-1/block-1/submit", nil)
+	req.Header.Set("Origin", "http://demo.localhost:3000")
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+
+	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("expected wildcard origin for public form route, got %q", got)
+	}
+	if got := res.Header().Get("Access-Control-Allow-Methods"); !strings.Contains(got, "POST") {
+		t.Fatalf("expected public form route to allow POST, got %q", got)
 	}
 }
 

@@ -32,12 +32,13 @@ type Authorizer struct {
 }
 
 type Scope struct {
-	WorkspaceID string
-	SiteID      string
-	PageID      string
-	BlockID     string
-	AssetID     string
-	Role        string
+	WorkspaceID  string
+	SiteID       string
+	PageID       string
+	BlockID      string
+	AssetID      string
+	SubmissionID string
+	Role         string
 }
 
 func New(store Store) *Authorizer {
@@ -69,6 +70,7 @@ func (a *Authorizer) RequireWorkspaceMember(ctx context.Context, workspaceID str
 		       ''::text as page_id,
 		       ''::text as block_id,
 		       ''::text as asset_id,
+		       ''::text as submission_id,
 		       wm.role
 		from workspace_members wm
 		where wm.workspace_id = $1
@@ -93,6 +95,7 @@ func (a *Authorizer) RequireSite(ctx context.Context, siteID string, allowedRole
 		       ''::text as page_id,
 		       ''::text as block_id,
 		       ''::text as asset_id,
+		       ''::text as submission_id,
 		       wm.role
 		from sites s
 		join workspace_members wm on wm.workspace_id = s.workspace_id
@@ -118,6 +121,7 @@ func (a *Authorizer) RequirePage(ctx context.Context, pageID string, allowedRole
 		       p.id::text as page_id,
 		       ''::text as block_id,
 		       ''::text as asset_id,
+		       ''::text as submission_id,
 		       wm.role
 		from pages p
 		join sites s on s.id = p.site_id
@@ -144,6 +148,7 @@ func (a *Authorizer) RequireBlock(ctx context.Context, blockID string, allowedRo
 		       b.page_id::text,
 		       b.id::text as block_id,
 		       ''::text as asset_id,
+		       ''::text as submission_id,
 		       wm.role
 		from block_instances b
 		join sites s on s.id = b.site_id
@@ -170,12 +175,40 @@ func (a *Authorizer) RequireAsset(ctx context.Context, assetID string, allowedRo
 		       ''::text as page_id,
 		       ''::text as block_id,
 		       a.id::text as asset_id,
+		       ''::text as submission_id,
 		       wm.role
 		from assets a
 		join workspace_members wm on wm.workspace_id = a.workspace_id
 		where a.id = $1
 		  and wm.user_id = $2
 	`, allowedRoles, assetID, user.ID)
+}
+
+func (a *Authorizer) RequireFormSubmission(ctx context.Context, submissionID string, allowedRoles ...string) (Scope, error) {
+	submissionID = strings.TrimSpace(submissionID)
+	if submissionID == "" {
+		return Scope{}, ErrInvalidResourceID
+	}
+
+	user, err := RequireUser(ctx)
+	if err != nil {
+		return Scope{}, err
+	}
+
+	return a.requireScope(ctx, "form submission", `
+		select s.workspace_id::text,
+		       fs.site_id::text as site_id,
+		       coalesce(fs.page_id::text, '') as page_id,
+		       coalesce(fs.block_id::text, '') as block_id,
+		       ''::text as asset_id,
+		       fs.id::text as submission_id,
+		       wm.role
+		from form_submissions fs
+		join sites s on s.id = fs.site_id
+		join workspace_members wm on wm.workspace_id = s.workspace_id
+		where fs.id = $1
+		  and wm.user_id = $2
+	`, allowedRoles, submissionID, user.ID)
 }
 
 func (a *Authorizer) requireScope(ctx context.Context, resource string, sql string, allowedRoles []string, args ...any) (Scope, error) {
@@ -190,6 +223,7 @@ func (a *Authorizer) requireScope(ctx context.Context, resource string, sql stri
 		&scope.PageID,
 		&scope.BlockID,
 		&scope.AssetID,
+		&scope.SubmissionID,
 		&scope.Role,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {

@@ -1,6 +1,7 @@
 package siteconfig
 
 import (
+	"fmt"
 	"net/mail"
 	"regexp"
 )
@@ -14,6 +15,98 @@ func ValidateFormDefinition(definition FormDefinition) error {
 	var c collector
 	validateFormDefinition("form", definition, &c)
 	return c.err()
+}
+
+func FormDefinitionFromProps(props map[string]any) (FormDefinition, error) {
+	definition := FormDefinition{}
+	if props == nil {
+		return definition, ValidationError{Issues: []Issue{{
+			Path:    "form.fields",
+			Code:    "required",
+			Message: "form must include at least one field",
+		}}}
+	}
+
+	fieldsValue, ok := props["fields"]
+	if !ok {
+		return definition, ValidationError{Issues: []Issue{{
+			Path:    "form.fields",
+			Code:    "required",
+			Message: "form must include at least one field",
+		}}}
+	}
+
+	fields, ok := asSlice(fieldsValue)
+	if !ok {
+		return definition, ValidationError{Issues: []Issue{{
+			Path:    "form.fields",
+			Code:    "invalid_type",
+			Message: "fields must be an array",
+		}}}
+	}
+
+	definition.Fields = make([]FormField, 0, len(fields))
+	for index, value := range fields {
+		fieldObject, ok := asObject(value)
+		if !ok {
+			return definition, ValidationError{Issues: []Issue{{
+				Path:    fmt.Sprintf("form.fields[%d]", index),
+				Code:    "invalid_type",
+				Message: "field must be an object",
+			}}}
+		}
+
+		field := FormField{}
+		if text, ok := fieldObject["name"].(string); ok {
+			field.Name = text
+		}
+		if text, ok := fieldObject["label"].(string); ok {
+			field.Label = text
+		}
+		if text, ok := fieldObject["type"].(string); ok {
+			field.Type = text
+		}
+		if required, ok := fieldObject["required"].(bool); ok {
+			field.Required = required
+		}
+		if optionsValue, ok := fieldObject["options"]; ok {
+			options, ok := asSlice(optionsValue)
+			if !ok {
+				return definition, ValidationError{Issues: []Issue{{
+					Path:    fmt.Sprintf("form.fields[%d].options", index),
+					Code:    "invalid_type",
+					Message: "options must be an array",
+				}}}
+			}
+			field.Options = make([]string, 0, len(options))
+			for optionIndex, optionValue := range options {
+				text, ok := optionValue.(string)
+				if !ok {
+					return definition, ValidationError{Issues: []Issue{{
+						Path:    fmt.Sprintf("form.fields[%d].options[%d]", index, optionIndex),
+						Code:    "invalid_type",
+						Message: "option must be a string",
+					}}}
+				}
+				field.Options = append(field.Options, text)
+			}
+		}
+
+		definition.Fields = append(definition.Fields, field)
+	}
+
+	if text, ok := props["successMessage"].(string); ok {
+		definition.SuccessMessage = text
+	}
+	if text, ok := props["notificationEmail"].(string); ok {
+		definition.NotificationEmail = text
+	}
+
+	if err := ValidateFormDefinition(definition); err != nil {
+		return FormDefinition{}, err
+	}
+
+	return definition, nil
 }
 
 func validateFormDefinition(path string, definition FormDefinition, c *collector) {

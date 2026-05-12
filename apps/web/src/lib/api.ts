@@ -222,6 +222,19 @@ export type AssetRecord = {
   createdAt: string
 }
 
+export type FormSubmissionStatus = 'new' | 'reviewed' | 'resolved' | 'spam'
+
+export type FormSubmissionRecord = {
+  id: string
+  siteId: string
+  pageId?: string
+  blockId?: string
+  status: FormSubmissionStatus
+  payload: Record<string, unknown>
+  createdAt: string
+  pageTitle?: string
+}
+
 export type AssetUploadTicket = {
   asset: AssetRecord
   upload: {
@@ -284,6 +297,31 @@ export async function apiFetch<T>(
       return apiFetch<T>(path, init, false)
     }
 
+    const payload = await response.json().catch(() => null)
+    throw new APIError(response.status, payload)
+  }
+
+  if (response.status === 204) {
+    return undefined as T
+  }
+
+  return response.json() as Promise<T>
+}
+
+async function publicAPIRequest<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const response = await fetch(new URL(path, getAPIBaseURL()), {
+    credentials: 'omit',
+    headers: {
+      Accept: 'application/json',
+      ...init.headers,
+    },
+    ...init,
+  })
+
+  if (!response.ok) {
     const payload = await response.json().catch(() => null)
     throw new APIError(response.status, payload)
   }
@@ -430,6 +468,30 @@ export async function completeAssetUpload(
 
 export async function listSiteAssets(siteId: string) {
   return apiFetch<{ assets: AssetRecord[] }>(`/api/sites/${siteId}/assets`)
+}
+
+export async function listSiteFormSubmissions(siteId: string) {
+  return apiFetch<{ submissions: FormSubmissionRecord[] }>(
+    `/api/sites/${siteId}/form-submissions`,
+  )
+}
+
+export async function updateFormSubmission(
+  submissionId: string,
+  input: {
+    status: FormSubmissionStatus
+  },
+) {
+  return apiFetch<{ submission: FormSubmissionRecord }>(
+    `/api/form-submissions/${submissionId}`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    },
+  )
 }
 
 export async function updateAsset(
@@ -652,11 +714,8 @@ export async function getPublishedSite(siteSlug: string, pagePath = '/') {
   }
 
   const suffix = search.size > 0 ? `?${search.toString()}` : ''
-  return apiFetch<PublishedSiteResponse>(
+  return publicAPIRequest<PublishedSiteResponse>(
     `/api/public/sites/${siteSlug}${suffix}`,
-    {
-      credentials: 'omit',
-    },
   )
 }
 
@@ -669,10 +728,24 @@ export async function getPublishedSiteByHostname(
     search.set('path', pagePath)
   }
 
-  return apiFetch<PublishedSiteResponse>(
+  return publicAPIRequest<PublishedSiteResponse>(
     `/api/public/render?${search.toString()}`,
+  )
+}
+
+export async function submitPublicForm(
+  siteId: string,
+  blockId: string,
+  payload: Record<string, unknown>,
+) {
+  return publicAPIRequest<{ status: string; message: string }>(
+    `/api/public/forms/${siteId}/${blockId}/submit`,
     {
-      credentials: 'omit',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ payload }),
     },
   )
 }

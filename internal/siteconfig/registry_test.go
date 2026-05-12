@@ -107,8 +107,8 @@ func TestBlockRegistryDefinitionsAreSorted(t *testing.T) {
 	registry := DefaultBlockRegistry()
 
 	definitions := registry.Definitions()
-	if len(definitions) != 11 {
-		t.Fatalf("expected eleven definitions, got %d", len(definitions))
+	if len(definitions) != 12 {
+		t.Fatalf("expected twelve definitions, got %d", len(definitions))
 	}
 
 	got := make([]string, 0, len(definitions))
@@ -117,6 +117,7 @@ func TestBlockRegistryDefinitionsAreSorted(t *testing.T) {
 	}
 
 	want := []string{
+		"contact_form@1.0.0",
 		"cta_band@1.0.0",
 		"faq@1.0.0",
 		"features_grid@1.0.0",
@@ -133,6 +134,30 @@ func TestBlockRegistryDefinitionsAreSorted(t *testing.T) {
 		if got[index] != want[index] {
 			t.Fatalf("expected sorted definitions %v, got %v", want, got)
 		}
+	}
+}
+
+func TestBlockRegistryValidatePropsRejectsInvalidContactFormContract(t *testing.T) {
+	registry := DefaultBlockRegistry()
+
+	err := registry.ValidateProps("contact_form", BlockVersionV1, "props", map[string]any{
+		"heading":     "Reach out",
+		"submitLabel": "Send",
+		"fields": []any{
+			map[string]any{
+				"name":     "contact_reason",
+				"label":    "Reason",
+				"type":     "select",
+				"required": true,
+			},
+		},
+		"notificationEmail": "not-an-email",
+	})
+	if !hasValidationIssue(err, "required") {
+		t.Fatalf("expected select options issue, got %v", err)
+	}
+	if !hasValidationIssue(err, "invalid_email") {
+		t.Fatalf("expected invalid notification email issue, got %v", err)
 	}
 }
 
