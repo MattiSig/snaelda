@@ -41,7 +41,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Add shared authorization helpers that verify workspace membership and resource ownership.
 - [x] Add a shared ID, slug, timestamp, and audit utility layer.
 - [x] Establish runtime validation with schema tooling for site drafts, published snapshots, block props, theme tokens, navigation, URLs, and form definitions.
-  Runtime validation now lives in `internal/siteconfig` with canonical draft/snapshot types, a Go-owned prototype block registry, theme/navigation/URL/form validators, and regression tests for unsafe URLs, unknown blocks, page constraints, theme tokens, and publish snapshot requirements. Asset ownership checks still need to be wired into save-time persistence once asset APIs exist.
+  Runtime validation now lives in `internal/siteconfig` with canonical draft/snapshot types, a Go-owned prototype block registry, theme/navigation/URL/form validators, and regression tests for unsafe URLs, unknown blocks, page constraints, theme tokens, and publish snapshot requirements. Asset ownership checks are now also enforced during draft persistence so block `assetId` references must resolve inside the same workspace and site before saves succeed.
 - [x] Add backend test setup for schema validation, registry validation, publish validation, persistence, and API authorization.
   Backend coverage now spans `internal/siteconfig` schema + registry validation, `internal/publishing` snapshot/publish behavior, `internal/sites` draft persistence/assembly, and handler/authorization tests across site, generation, theme, and publish routes. Verified on May 10, 2026 with `make test` after adding registry definition/props edge-case coverage for unknown versions, unsafe links, unsupported block props, duplicate definitions, and published contract regressions.
 - [x] Add frontend test setup for core builder flows and renderer smoke tests.
@@ -206,13 +206,14 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 
 ## Phase 8: Assets And Starter Images
 
-- [ ] Use SeaweedFS S3 API as the default local object storage target.
-- [ ] Keep the storage interface S3-compatible so production can use AWS S3, Cloudflare R2, MinIO, or another compatible backend without changing asset code.
-- [ ] Implement signed upload URL creation.
-- [ ] Implement upload completion and asset metadata persistence.
+- [x] Use SeaweedFS S3 API as the default local object storage target.
+- [x] Keep the storage interface S3-compatible so production can use AWS S3, Cloudflare R2, MinIO, or another compatible backend without changing asset code.
+- [x] Implement signed upload URL creation.
+- [x] Implement upload completion and asset metadata persistence.
 - [ ] Add asset picker support in block editors.
 - [ ] Store asset ownership, storage key, public or signed URL behavior, alt text, dimensions, file type, file size, and upload metadata.
-- [ ] Validate that referenced assets belong to the same workspace or site before saving block props.
+- [x] Validate that referenced assets belong to the same workspace or site before saving block props.
+  Verified on May 12, 2026 by replacing the placeholder `assets` module with authenticated Go handlers for `POST /api/assets/upload-url`, `POST /api/assets/complete`, `GET /api/sites/:siteId/assets`, `PATCH /api/assets/:assetId`, and `DELETE /api/assets/:assetId`; backing them with an S3-compatible storage adapter configured for local SeaweedFS; adding draft-persistence checks that reject cross-site or cross-workspace `assetId` references; and then running `make test`, `npm run web:test`, `npm run web:lint`, `npm run web:build`, plus a live `curl` flow against a local API on `:18080` that logged in, created an upload URL, uploaded a PNG through SeaweedFS, completed the asset, updated alt text, listed the site assets, and deleted the uploaded asset successfully.
 - [ ] Resolve `assetId` references to optimized URLs during preview and publish.
 - [ ] Add safe placeholders, gradients, or stock defaults for missing imagery.
 - [ ] Optionally add backend-owned Unsplash search through a constrained `search_unsplash_images(query, orientation, count)` tool.

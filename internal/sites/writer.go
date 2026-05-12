@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/MattiSig/snaelda/internal/siteconfig"
 	"github.com/jackc/pgx/v5"
@@ -21,10 +22,15 @@ type Writer interface {
 }
 
 type PostgresWriter struct {
-	db transactionStarter
+	db writerDB
 }
 
-func NewPostgresWriter(db transactionStarter) *PostgresWriter {
+type writerDB interface {
+	transactionStarter
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+func NewPostgresWriter(db writerDB) *PostgresWriter {
 	return &PostgresWriter{db: db}
 }
 
@@ -34,6 +40,9 @@ func (w *PostgresWriter) SaveDraft(ctx context.Context, workspaceID string, draf
 	}
 	rows, err := normalizeDraft(draft)
 	if err != nil {
+		return err
+	}
+	if err := w.validateAssetReferences(ctx, workspaceID, draft.Site.ID, draft.Pages); err != nil {
 		return err
 	}
 
@@ -276,4 +285,111 @@ func requireRowsAffected(tag pgconn.CommandTag, operation string) error {
 		return fmt.Errorf("%s: no rows affected", operation)
 	}
 	return nil
+}
+
+type assetReference struct {
+	ID   string
+	Path string
+}
+
+func (w *PostgresWriter) validateAssetReferences(ctx context.Context, workspaceID string, siteID string, pages []siteconfig.PageDraft) error {
+	references := collectAssetReferences(pages)
+	if len(references) == 0 {
+		return nil
+	}
+
+	assetIDs := []string{}
+	for _, reference := range references {
+		if !slices.Contains(assetIDs, reference.ID) {
+			assetIDs = append(assetIDs, reference.ID)
+		}
+	}
+
+	var matchesJSON []byte
+	if err := w.db.QueryRow(ctx, `
+		select coalesce(
+			jsonb_agg(
+				jsonb_build_object(
+					'id', id::text,
+					'siteId', coalesce(site_id::text, '')
+				)
+			),
+			'[]'::jsonb
+		)
+		from assets
+		where workspace_id = $1
+		  and id::text = any($2)
+	`, workspaceID, assetIDs).Scan(&matchesJSON); err != nil {
+		return fmt.Errorf("validate draft asset references: %w", err)
+	}
+
+	type assetMatch struct {
+		ID     string `json:"id"`
+		SiteID string `json:"siteId"`
+	}
+	matches := []assetMatch{}
+	if err := json.Unmarshal(matchesJSON, &matches); err != nil {
+		return fmt.Errorf("decode asset reference validation: %w", err)
+	}
+
+	allowed := map[string]string{}
+	for _, match := range matches {
+		allowed[match.ID] = match.SiteID
+	}
+
+	issues := []siteconfig.Issue{}
+	for _, reference := range references {
+		referencedSiteID, ok := allowed[reference.ID]
+		if !ok {
+			issues = append(issues, siteconfig.Issue{
+				Path:    reference.Path,
+				Code:    "invalid_asset_reference",
+				Message: "referenced asset does not belong to this workspace",
+			})
+			continue
+		}
+		if referencedSiteID != "" && referencedSiteID != siteID {
+			issues = append(issues, siteconfig.Issue{
+				Path:    reference.Path,
+				Code:    "invalid_asset_reference",
+				Message: "referenced asset belongs to a different site",
+			})
+		}
+	}
+	if len(issues) > 0 {
+		return siteconfig.ValidationError{Issues: issues}
+	}
+	return nil
+}
+
+func collectAssetReferences(pages []siteconfig.PageDraft) []assetReference {
+	references := []assetReference{}
+	for pageIndex, page := range pages {
+		for blockIndex, block := range page.Blocks {
+			path := fmt.Sprintf("pages[%d].blocks[%d].props", pageIndex, blockIndex)
+			references = append(references, collectAssetReferencesFromValue(path, block.Props)...)
+		}
+	}
+	return references
+}
+
+func collectAssetReferencesFromValue(path string, value any) []assetReference {
+	references := []assetReference{}
+	switch typed := value.(type) {
+	case map[string]any:
+		if assetID, ok := typed["assetId"].(string); ok && assetID != "" {
+			references = append(references, assetReference{
+				ID:   assetID,
+				Path: path + ".assetId",
+			})
+		}
+		for key, nested := range typed {
+			references = append(references, collectAssetReferencesFromValue(path+"."+key, nested)...)
+		}
+	case []any:
+		for index, nested := range typed {
+			references = append(references, collectAssetReferencesFromValue(fmt.Sprintf("%s[%d]", path, index), nested)...)
+		}
+	}
+	return references
 }

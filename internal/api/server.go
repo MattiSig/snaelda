@@ -109,7 +109,24 @@ func (s *Server) Handler() http.Handler {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, publishing.Module{})
 	}
 	mountAuthenticatedPlaceholderModule(mux, s.auth, domains.Module{})
-	mountAuthenticatedPlaceholderModule(mux, s.auth, assets.Module{})
+	if store, ok := s.database.(assets.DB); ok {
+		storage, err := assets.NewS3Storage(assets.StorageConfig{
+			Endpoint:        s.config.S3Endpoint,
+			Bucket:          s.config.S3Bucket,
+			Region:          s.config.S3Region,
+			AccessKeyID:     s.config.S3AccessKeyID,
+			SecretAccessKey: s.config.S3SecretAccessKey,
+			ForcePathStyle:  s.config.S3ForcePathStyle,
+		})
+		if err != nil {
+			s.logger.Error("configure asset storage", "error", err)
+			mountAuthenticatedPlaceholderModule(mux, s.auth, assets.Module{})
+		} else {
+			assets.NewHandler(store, storage).Mount(mux, s.auth.RequireUser)
+		}
+	} else {
+		mountAuthenticatedPlaceholderModule(mux, s.auth, assets.Module{})
+	}
 	mountAuthenticatedPlaceholderModule(mux, s.auth, forms.Module{})
 	mountAuthenticatedPlaceholderModule(mux, s.auth, billing.Module{})
 

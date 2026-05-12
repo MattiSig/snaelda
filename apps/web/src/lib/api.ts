@@ -194,6 +194,40 @@ export type ThemeState = {
   options: ThemeEditorCatalog
 }
 
+export type AssetMetadata = {
+  fileName?: string
+  contentType?: string
+  requestedSizeBytes?: number
+  sizeBytes?: number
+  etag?: string
+  uploadStatus?: string
+  uploadedAt?: string
+}
+
+export type AssetRecord = {
+  id: string
+  workspaceId: string
+  siteId?: string
+  kind: string
+  storageKey: string
+  publicUrl?: string
+  downloadUrl?: string
+  altText?: string
+  metadata: AssetMetadata
+  createdBy?: string
+  createdAt: string
+}
+
+export type AssetUploadTicket = {
+  asset: AssetRecord
+  upload: {
+    url: string
+    method: string
+    headers?: Record<string, string>
+    expiresAt: string
+  }
+}
+
 export type SiteVersionsResponse = {
   versions: SiteVersion[]
 }
@@ -346,6 +380,63 @@ export async function updateSiteTheme(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(input),
+  })
+}
+
+export async function createAssetUploadURL(input: {
+  siteId: string
+  fileName: string
+  contentType: string
+  sizeBytes: number
+  kind?: string
+  altText?: string
+}) {
+  return apiFetch<AssetUploadTicket>('/api/assets/upload-url', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  })
+}
+
+export async function completeAssetUpload(
+  assetId: string,
+  input: {
+    altText?: string
+  } = {},
+) {
+  return apiFetch<{ asset: AssetRecord }>('/api/assets/complete', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ assetId, ...input }),
+  })
+}
+
+export async function listSiteAssets(siteId: string) {
+  return apiFetch<{ assets: AssetRecord[] }>(`/api/sites/${siteId}/assets`)
+}
+
+export async function updateAsset(
+  assetId: string,
+  input: {
+    altText?: string
+  },
+) {
+  return apiFetch<{ asset: AssetRecord }>(`/api/assets/${assetId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  })
+}
+
+export async function deleteAsset(assetId: string) {
+  return apiFetch<void>(`/api/assets/${assetId}`, {
+    method: 'DELETE',
   })
 }
 

@@ -288,6 +288,32 @@ func TestSaveDraftRejectsMoreThanTenPagesBeforeWriting(t *testing.T) {
 	}
 }
 
+func TestSaveDraftRejectsAssetFromDifferentSite(t *testing.T) {
+	tx := &fakeDraftTx{}
+	db := &fakeDraftDB{
+		tx:       tx,
+		queryRow: fakeDraftRow{json: []byte(`[{"id":"asset-1","siteId":"site-2"}]`)},
+	}
+	writer := NewPostgresWriter(db)
+	draft := validPersistenceDraft()
+	draft.Pages[0].Blocks[0].Props["image"] = map[string]any{
+		"assetId": "asset-1",
+		"alt":     "Hero",
+	}
+
+	err := writer.SaveDraft(context.Background(), "00000000-0000-4000-8000-000000000101", draft)
+	var validationErr siteconfig.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected validation error, got %v", err)
+	}
+	if !validationErr.Has("invalid_asset_reference") {
+		t.Fatalf("expected invalid asset reference issue, got %#v", validationErr.Issues)
+	}
+	if db.beginCount != 0 {
+		t.Fatalf("expected asset validation before transaction, got %d begins", db.beginCount)
+	}
+}
+
 func validPersistenceDraft() siteconfig.SiteDraft {
 	return siteconfig.SiteDraft{
 		Site: siteconfig.DraftSite{
@@ -348,11 +374,19 @@ func validPersistenceDraft() siteconfig.SiteDraft {
 type fakeDraftDB struct {
 	tx         *fakeDraftTx
 	beginCount int
+	queryRow   pgx.Row
 }
 
 func (db *fakeDraftDB) BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error) {
 	db.beginCount++
 	return db.tx, nil
+}
+
+func (db *fakeDraftDB) QueryRow(context.Context, string, ...any) pgx.Row {
+	if db.queryRow != nil {
+		return db.queryRow
+	}
+	return fakeDraftRow{json: []byte(`[]`)}
 }
 
 type fakeExec struct {
@@ -410,5 +444,18 @@ func (tx *fakeDraftTx) QueryRow(context.Context, string, ...any) pgx.Row {
 }
 
 func (tx *fakeDraftTx) Conn() *pgx.Conn {
+	return nil
+}
+
+type fakeDraftRow struct {
+	json []byte
+	err  error
+}
+
+func (r fakeDraftRow) Scan(dest ...any) error {
+	if r.err != nil {
+		return r.err
+	}
+	*dest[0].(*[]byte) = r.json
 	return nil
 }
