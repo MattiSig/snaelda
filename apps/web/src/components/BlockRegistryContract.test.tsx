@@ -28,19 +28,23 @@ describe('Go block registry contract', () => {
     expect(screen.queryByText('Unsupported block')).toBeNull()
 
     for (const definition of fixture.blockRegistry) {
-      expect(fixtureBlocks.has(`${definition.type}@${definition.version}`)).toBe(true)
+      expect(
+        fixtureBlocks.has(`${definition.type}@${definition.version}`),
+      ).toBe(true)
     }
   })
 
   it.each(
-    fixture.blockRegistry.map((definition) => [
-      `${definition.type}@${definition.version}`,
-      definition,
-    ] as const),
+    fixture.blockRegistry.map(
+      (definition) =>
+        [`${definition.type}@${definition.version}`, definition] as const,
+    ),
   )('renders editor controls for %s', (_key, definition) => {
     const block = fixtureBlocks.get(`${definition.type}@${definition.version}`)
     if (!block) {
-      throw new Error(`Missing fixture block for ${definition.type}@${definition.version}`)
+      throw new Error(
+        `Missing fixture block for ${definition.type}@${definition.version}`,
+      )
     }
 
     render(
@@ -50,11 +54,14 @@ describe('Go block registry contract', () => {
         isSaving={false}
         errorMessage=""
         statusMessage=""
+        assetLibrary={[]}
         onSave={vi.fn()}
       />,
     )
 
-    expect(screen.getByRole('heading', { name: definition.displayName })).toBeTruthy()
+    expect(
+      screen.getByRole('heading', { name: definition.displayName }),
+    ).toBeTruthy()
     expect(
       screen.queryByText('This block does not expose editable fields yet.'),
     ).toBeNull()

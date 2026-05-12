@@ -14,6 +14,8 @@ import (
 type AssetService interface {
 	CreateUpload(ctx context.Context, input CreateUploadInput) (CreateUploadResult, error)
 	CompleteUpload(ctx context.Context, assetID string, input CompleteUploadInput) (Asset, error)
+	DownloadURL(ctx context.Context, assetID string) (string, error)
+	PublicDownloadURLBySiteSlug(ctx context.Context, siteSlug string, assetID string) (string, error)
 	ListBySite(ctx context.Context, siteID string) ([]Asset, error)
 	Update(ctx context.Context, assetID string, input UpdateAssetInput) (Asset, error)
 	Delete(ctx context.Context, assetID string) error
@@ -41,6 +43,8 @@ type createUploadRequest struct {
 type completeUploadRequest struct {
 	AssetID string  `json:"assetId"`
 	AltText *string `json:"altText,omitempty"`
+	Width   *int    `json:"width,omitempty"`
+	Height  *int    `json:"height,omitempty"`
 }
 
 type updateAssetRequest struct {
@@ -57,9 +61,11 @@ func NewHandler(db DB, storage Storage) *Handler {
 func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.Handler) {
 	mux.Handle("POST /api/assets/upload-url", requireUser(http.HandlerFunc(h.createUploadURL)))
 	mux.Handle("POST /api/assets/complete", requireUser(http.HandlerFunc(h.completeUpload)))
+	mux.Handle("GET /api/assets/{assetId}/content", requireUser(http.HandlerFunc(h.redirectAssetContent)))
 	mux.Handle("GET /api/sites/{siteId}/assets", requireUser(http.HandlerFunc(h.listSiteAssets)))
 	mux.Handle("PATCH /api/assets/{assetId}", requireUser(http.HandlerFunc(h.updateAsset)))
 	mux.Handle("DELETE /api/assets/{assetId}", requireUser(http.HandlerFunc(h.deleteAsset)))
+	mux.HandleFunc("GET /api/public/sites/{siteSlug}/assets/{assetId}", h.redirectPublicAssetContent)
 }
 
 func (h *Handler) createUploadURL(w http.ResponseWriter, r *http.Request) {
@@ -113,6 +119,8 @@ func (h *Handler) completeUpload(w http.ResponseWriter, r *http.Request) {
 
 	asset, err := h.service.CompleteUpload(r.Context(), assetID, CompleteUploadInput{
 		AltText: payload.AltText,
+		Width:   payload.Width,
+		Height:  payload.Height,
 	})
 	if err != nil {
 		writeAssetError(w, err)
@@ -120,6 +128,39 @@ func (h *Handler) completeUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"asset": asset})
+}
+
+func (h *Handler) redirectAssetContent(w http.ResponseWriter, r *http.Request) {
+	assetID := strings.TrimSpace(r.PathValue("assetId"))
+	if _, err := h.authorizer.RequireAsset(r.Context(), assetID, authorization.RoleOwner, authorization.RoleEditor); err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+
+	downloadURL, err := h.service.DownloadURL(r.Context(), assetID)
+	if err != nil {
+		writeAssetError(w, err)
+		return
+	}
+
+	http.Redirect(w, r, downloadURL, http.StatusTemporaryRedirect)
+}
+
+func (h *Handler) redirectPublicAssetContent(w http.ResponseWriter, r *http.Request) {
+	siteSlug := strings.TrimSpace(r.PathValue("siteSlug"))
+	assetID := strings.TrimSpace(r.PathValue("assetId"))
+	if siteSlug == "" || assetID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_public_asset", "site slug and asset id are required")
+		return
+	}
+
+	downloadURL, err := h.service.PublicDownloadURLBySiteSlug(r.Context(), siteSlug, assetID)
+	if err != nil {
+		writeAssetError(w, err)
+		return
+	}
+
+	http.Redirect(w, r, downloadURL, http.StatusTemporaryRedirect)
 }
 
 func (h *Handler) listSiteAssets(w http.ResponseWriter, r *http.Request) {

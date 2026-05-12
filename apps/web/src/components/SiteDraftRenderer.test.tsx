@@ -10,11 +10,18 @@ describe('SiteDraftRenderer', () => {
     const navLinks = screen.getAllByRole('link')
     expect(navLinks[0]?.getAttribute('href')).toBe('#page-home')
     expect(navLinks[1]?.getAttribute('href')).toBe('#page-contact')
-    expect(screen.getByRole('link', { name: 'Book a visit' }).getAttribute('href')).toBe(
-      '#page-contact',
-    )
+    expect(
+      screen.getByRole('link', { name: 'Book a visit' }).getAttribute('href'),
+    ).toBe('#page-contact')
+    expect(
+      screen
+        .getByAltText('Studio shelves in warm afternoon light')
+        .getAttribute('src'),
+    ).toBe('http://localhost:8080/api/assets/asset-hero/content')
     expect(screen.getByText('Friendly yarn for colder days.')).toBeTruthy()
-    expect(screen.queryByText('This hidden block should never render.')).toBeNull()
+    expect(
+      screen.queryByText('This hidden block should never render.'),
+    ).toBeNull()
   })
 
   it('resolves published links and narrows rendering to the selected page', () => {
@@ -40,6 +47,7 @@ describe('SiteDraftRenderer', () => {
       <SiteDraftRenderer
         site={buildDraft()}
         linkMode="published"
+        siteSlug="loom-light"
         publishedBasePath=""
       />,
     )
@@ -47,8 +55,15 @@ describe('SiteDraftRenderer', () => {
     const navLinks = screen.getAllByRole('link')
     expect(navLinks[0]?.getAttribute('href')).toBe('/')
     expect(navLinks[1]?.getAttribute('href')).toBe('/contact')
-    expect(screen.getByRole('link', { name: 'Book a visit' }).getAttribute('href')).toBe(
-      '/contact',
+    expect(
+      screen.getByRole('link', { name: 'Book a visit' }).getAttribute('href'),
+    ).toBe('/contact')
+    expect(
+      screen
+        .getByAltText('Studio shelves in warm afternoon light')
+        .getAttribute('src'),
+    ).toBe(
+      'http://localhost:8080/api/public/sites/loom-light/assets/asset-hero',
     )
   })
 
@@ -59,7 +74,9 @@ describe('SiteDraftRenderer', () => {
     expect(screen.getByText('Selected work')).toBeTruthy()
     expect(screen.getByText('What clients tend to notice')).toBeTruthy()
     expect(screen.getByText('Packages and starting points')).toBeTruthy()
-    expect(screen.getByText('Questions people ask before they reach out')).toBeTruthy()
+    expect(
+      screen.getByText('Questions people ask before they reach out'),
+    ).toBeTruthy()
     expect(screen.getByText('People behind the work')).toBeTruthy()
     expect(
       screen
@@ -134,6 +151,10 @@ function buildDraft(): SiteDraft {
               eyebrow: 'Prompt-built sites',
               headline: 'Publish a proper site before lunch.',
               subheadline: 'Friendly yarn for colder days.',
+              image: {
+                assetId: 'asset-hero',
+                alt: 'Studio shelves in warm afternoon light',
+              },
               primaryCta: {
                 label: 'Book a visit',
                 href: '/contact',

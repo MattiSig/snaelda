@@ -1,8 +1,10 @@
 export type APIErrorPayload = {
-  error?: string | {
-    code?: string
-    message?: string
-  }
+  error?:
+    | string
+    | {
+        code?: string
+        message?: string
+      }
   code?: string
   message?: string
 }
@@ -199,6 +201,8 @@ export type AssetMetadata = {
   contentType?: string
   requestedSizeBytes?: number
   sizeBytes?: number
+  width?: number
+  height?: number
   etag?: string
   uploadStatus?: string
   uploadedAt?: string
@@ -245,7 +249,14 @@ export type PublishedSiteResponse = {
 const defaultAPIBaseURL = 'http://localhost:8080'
 
 export function getAPIBaseURL() {
-  return import.meta.env.VITE_API_BASE_URL ?? defaultAPIBaseURL
+  return viteEnv('VITE_API_BASE_URL') ?? defaultAPIBaseURL
+}
+
+function viteEnv(name: string) {
+  const meta = import.meta as ImportMeta & {
+    env?: Record<string, string | undefined>
+  }
+  return meta.env?.[name]
 }
 
 export async function apiFetch<T>(
@@ -404,6 +415,8 @@ export async function completeAssetUpload(
   assetId: string,
   input: {
     altText?: string
+    width?: number
+    height?: number
   } = {},
 ) {
   return apiFetch<{ asset: AssetRecord }>('/api/assets/complete', {
@@ -470,19 +483,25 @@ export async function updatePage(
     includeInNavigation?: boolean
   },
 ) {
-  return apiFetch<{ draft: SiteDraft }>(`/api/sites/${siteId}/pages/${pageId}`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
+  return apiFetch<{ draft: SiteDraft }>(
+    `/api/sites/${siteId}/pages/${pageId}`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
     },
-    body: JSON.stringify(input),
-  })
+  )
 }
 
 export async function deletePage(siteId: string, pageId: string) {
-  return apiFetch<{ draft: SiteDraft }>(`/api/sites/${siteId}/pages/${pageId}`, {
-    method: 'DELETE',
-  })
+  return apiFetch<{ draft: SiteDraft }>(
+    `/api/sites/${siteId}/pages/${pageId}`,
+    {
+      method: 'DELETE',
+    },
+  )
 }
 
 export async function reorderPages(siteId: string, pageIds: string[]) {
@@ -633,18 +652,27 @@ export async function getPublishedSite(siteSlug: string, pagePath = '/') {
   }
 
   const suffix = search.size > 0 ? `?${search.toString()}` : ''
-  return apiFetch<PublishedSiteResponse>(`/api/public/sites/${siteSlug}${suffix}`, {
-    credentials: 'omit',
-  })
+  return apiFetch<PublishedSiteResponse>(
+    `/api/public/sites/${siteSlug}${suffix}`,
+    {
+      credentials: 'omit',
+    },
+  )
 }
 
-export async function getPublishedSiteByHostname(hostname: string, pagePath = '/') {
+export async function getPublishedSiteByHostname(
+  hostname: string,
+  pagePath = '/',
+) {
   const search = new URLSearchParams({ hostname })
   if (pagePath && pagePath !== '/') {
     search.set('path', pagePath)
   }
 
-  return apiFetch<PublishedSiteResponse>(`/api/public/render?${search.toString()}`, {
-    credentials: 'omit',
-  })
+  return apiFetch<PublishedSiteResponse>(
+    `/api/public/render?${search.toString()}`,
+    {
+      credentials: 'omit',
+    },
+  )
 }

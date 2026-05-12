@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { BlockDefinition, SiteDraft } from '@/lib/api'
 import { BlockEditor } from './BlockEditor'
@@ -13,6 +19,7 @@ describe('BlockEditor', () => {
         isSaving={false}
         errorMessage=""
         statusMessage=""
+        assetLibrary={[]}
         onSave={vi.fn()}
       />,
     )
@@ -42,6 +49,7 @@ describe('BlockEditor', () => {
         isSaving={false}
         errorMessage=""
         statusMessage=""
+        assetLibrary={[]}
         onSave={onSave}
       />,
     )
@@ -84,6 +92,67 @@ describe('BlockEditor', () => {
           ],
         },
         true,
+      )
+    })
+  })
+
+  it('selects uploaded assets instead of raw ids', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined)
+
+    render(
+      <BlockEditor
+        block={buildBlock({
+          props: {},
+        })}
+        definition={{
+          type: 'image_text',
+          version: '1.0.0',
+          displayName: 'Image and text',
+          category: 'media',
+          editorSchema: [
+            {
+              name: 'image',
+              label: 'Image',
+              control: 'asset',
+            },
+          ],
+        }}
+        isSaving={false}
+        errorMessage=""
+        statusMessage=""
+        assetLibrary={[
+          {
+            id: 'asset-1',
+            workspaceId: 'workspace-1',
+            siteId: 'site-1',
+            kind: 'image',
+            storageKey: 'key-1',
+            altText: 'Warm studio portrait',
+            metadata: {
+              fileName: 'portrait.png',
+              contentType: 'image/png',
+            },
+            createdAt: '2026-05-12T10:00:00Z',
+          },
+        ]}
+        onSave={onSave}
+      />,
+    )
+
+    fireEvent.change(screen.getByLabelText('Uploaded image'), {
+      target: { value: 'asset-1' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save block' }))
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith(
+        {
+          image: {
+            assetId: 'asset-1',
+            alt: 'Warm studio portrait',
+          },
+        },
+        false,
       )
     })
   })

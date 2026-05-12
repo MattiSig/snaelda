@@ -73,6 +73,8 @@ type AssetMetadata struct {
 	ContentType        string     `json:"contentType,omitempty"`
 	RequestedSizeBytes int64      `json:"requestedSizeBytes,omitempty"`
 	SizeBytes          int64      `json:"sizeBytes,omitempty"`
+	Width              int        `json:"width,omitempty"`
+	Height             int        `json:"height,omitempty"`
 	ETag               string     `json:"etag,omitempty"`
 	UploadStatus       string     `json:"uploadStatus,omitempty"`
 	UploadedAt         *time.Time `json:"uploadedAt,omitempty"`
@@ -96,6 +98,8 @@ type CreateUploadResult struct {
 
 type CompleteUploadInput struct {
 	AltText *string
+	Width   *int
+	Height  *int
 }
 
 type UpdateAssetInput struct {
@@ -205,6 +209,12 @@ func (s *Service) CompleteUpload(ctx context.Context, assetID string, input Comp
 	asset.Metadata.UploadStatus = "uploaded"
 	now := time.Now().UTC()
 	asset.Metadata.UploadedAt = &now
+	if input.Width != nil && *input.Width > 0 {
+		asset.Metadata.Width = *input.Width
+	}
+	if input.Height != nil && *input.Height > 0 {
+		asset.Metadata.Height = *input.Height
+	}
 	if input.AltText != nil {
 		asset.AltText = normalizeAltText(*input.AltText)
 	}
@@ -223,7 +233,7 @@ func (s *Service) CompleteUpload(ctx context.Context, assetID string, input Comp
 		return Asset{}, fmt.Errorf("complete asset upload: %w", err)
 	}
 
-	asset.DownloadURL, err = s.storage.CreateDownloadURL(ctx, asset.StorageKey, s.downloadURLTTL)
+	asset.DownloadURL, err = s.downloadURLForAsset(ctx, asset)
 	if err != nil {
 		return Asset{}, err
 	}
@@ -259,7 +269,7 @@ func (s *Service) ListBySite(ctx context.Context, siteID string) ([]Asset, error
 			return nil, err
 		}
 		if asset.Metadata.UploadStatus == "uploaded" {
-			asset.DownloadURL, err = s.storage.CreateDownloadURL(ctx, asset.StorageKey, s.downloadURLTTL)
+			asset.DownloadURL, err = s.downloadURLForAsset(ctx, asset)
 			if err != nil {
 				return nil, err
 			}
@@ -296,13 +306,48 @@ func (s *Service) Update(ctx context.Context, assetID string, input UpdateAssetI
 	}
 
 	if asset.Metadata.UploadStatus == "uploaded" {
-		asset.DownloadURL, err = s.storage.CreateDownloadURL(ctx, asset.StorageKey, s.downloadURLTTL)
+		asset.DownloadURL, err = s.downloadURLForAsset(ctx, asset)
 		if err != nil {
 			return Asset{}, err
 		}
 	}
 
 	return asset, nil
+}
+
+func (s *Service) DownloadURL(ctx context.Context, assetID string) (string, error) {
+	asset, err := s.loadAsset(ctx, assetID)
+	if err != nil {
+		return "", err
+	}
+	return s.downloadURLForAsset(ctx, asset)
+}
+
+func (s *Service) PublicDownloadURLBySiteSlug(ctx context.Context, siteSlug string, assetID string) (string, error) {
+	asset, err := scanAssetRow(s.db.QueryRow(ctx, `
+		select a.id::text,
+		       a.workspace_id::text,
+		       coalesce(a.site_id::text, ''),
+		       a.kind,
+		       a.storage_key,
+		       coalesce(a.public_url, ''),
+		       coalesce(a.alt_text, ''),
+		       a.metadata,
+		       coalesce(a.created_by::text, ''),
+		       a.created_at
+		from assets a
+		join sites s on s.id = a.site_id
+		where s.slug = $1
+		  and a.id = $2
+		  and s.published_version_id is not null
+	`, strings.TrimSpace(siteSlug), strings.TrimSpace(assetID)))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrAssetNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("load public asset: %w", err)
+	}
+	return s.downloadURLForAsset(ctx, asset)
 }
 
 func (s *Service) Delete(ctx context.Context, assetID string) error {
@@ -408,4 +453,14 @@ func normalizeAltText(value string) string {
 		return value[:maxAltTextLen]
 	}
 	return value
+}
+
+func (s *Service) downloadURLForAsset(ctx context.Context, asset Asset) (string, error) {
+	if asset.Metadata.UploadStatus != "uploaded" {
+		return "", ErrAssetUploadIncomplete
+	}
+	if strings.TrimSpace(asset.PublicURL) != "" {
+		return asset.PublicURL, nil
+	}
+	return s.storage.CreateDownloadURL(ctx, asset.StorageKey, s.downloadURLTTL)
 }

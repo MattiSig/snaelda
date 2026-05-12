@@ -6,8 +6,11 @@ export type HostedPublicSiteContext = {
   pagePath: string
 }
 
-export const getHostedPublicSiteContext = createServerFn({ method: 'GET' }).handler(async () => {
-  const { getRequestHost, getRequestUrl } = await import('@tanstack/start-server-core')
+export const getHostedPublicSiteContext = createServerFn({
+  method: 'GET',
+}).handler(async () => {
+  const { getRequestHost, getRequestUrl } =
+    await import('@tanstack/start-server-core')
 
   return resolveHostedPublicSiteContext({
     hostname: getRequestHost({ xForwardedHost: true }),
@@ -25,14 +28,18 @@ export function resolveHostedPublicSiteContext(input: {
   const hostname = normalizeHost(input.hostname)
 
   return {
-    isHostedPublic: hostname !== '' && hostname !== normalizeHost(getAppBaseURLHost()),
+    isHostedPublic:
+      hostname !== '' && hostname !== normalizeHost(getAppBaseURLHost()),
     hostname,
     pagePath: normalizePagePath(input.pagePath),
   }
 }
 
 export function getAppBaseURL() {
-  return import.meta.env.VITE_APP_BASE_URL ?? 'http://localhost:3000'
+  const meta = import.meta as ImportMeta & {
+    env?: Record<string, string | undefined>
+  }
+  return meta.env?.VITE_APP_BASE_URL ?? 'http://localhost:3000'
 }
 
 export function getAppBaseURLHost() {

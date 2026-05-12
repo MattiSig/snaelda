@@ -8,8 +8,16 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import {
+  buildDraftAssetURL,
+  describeAssetDimensions,
+  formatAssetFileSize,
+  readImageDimensions,
+} from '@/lib/assets'
+import {
   APIError,
+  completeAssetUpload,
   createBlock,
+  createAssetUploadURL,
   createPage,
   deleteBlock,
   deletePage,
@@ -17,12 +25,14 @@ import {
   duplicateBlock,
   getSiteDraft,
   getSiteTheme,
+  listSiteAssets,
   listSiteVersions,
   publishSite,
   rollbackSiteVersion,
   reorderBlocks,
   reorderPages,
   reorderSiteNavigation,
+  type AssetRecord,
   type BlockDefinition,
   type SiteDraft,
   type SiteVersion,
@@ -63,13 +73,18 @@ function SiteDetail() {
   const [versions, setVersions] = useState<SiteVersion[]>([])
   const [newPageTitle, setNewPageTitle] = useState('')
   const [newPageSlug, setNewPageSlug] = useState('')
-  const [newPageIncludeInNavigation, setNewPageIncludeInNavigation] = useState(true)
+  const [newPageIncludeInNavigation, setNewPageIncludeInNavigation] =
+    useState(true)
   const [pageTitle, setPageTitle] = useState('')
   const [pageSlug, setPageSlug] = useState('')
   const [pageSEOTitle, setPageSEOTitle] = useState('')
   const [pageSEODescription, setPageSEODescription] = useState('')
   const [pageIncludeInNavigation, setPageIncludeInNavigation] = useState(true)
   const [newBlockType, setNewBlockType] = useState('')
+  const [siteAssets, setSiteAssets] = useState<AssetRecord[]>([])
+  const [assetAltText, setAssetAltText] = useState('')
+  const [assetFile, setAssetFile] = useState<File | null>(null)
+  const [assetInputKey, setAssetInputKey] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [isSavingSite, setIsSavingSite] = useState(false)
   const [isCreatingPage, setIsCreatingPage] = useState(false)
@@ -82,8 +97,12 @@ function SiteDetail() {
   const [isPublishing, setIsPublishing] = useState(false)
   const [activeRollbackVersionId, setActiveRollbackVersionId] = useState('')
   const [publishNote, setPublishNote] = useState('')
-  const [themeSelection, setThemeSelection] = useState<ThemeSelection | null>(null)
-  const [themeOptions, setThemeOptions] = useState<ThemeEditorCatalog | null>(null)
+  const [themeSelection, setThemeSelection] = useState<ThemeSelection | null>(
+    null,
+  )
+  const [themeOptions, setThemeOptions] = useState<ThemeEditorCatalog | null>(
+    null,
+  )
   const [loadErrorMessage, setLoadErrorMessage] = useState('')
   const [siteErrorMessage, setSiteErrorMessage] = useState('')
   const [siteStatusMessage, setSiteStatusMessage] = useState('')
@@ -97,10 +116,16 @@ function SiteDetail() {
   const [themeStatusMessage, setThemeStatusMessage] = useState('')
   const [isSavingTheme, setIsSavingTheme] = useState(false)
   const [isSavingNavigation, setIsSavingNavigation] = useState(false)
+  const [isUploadingAsset, setIsUploadingAsset] = useState(false)
   const [publishErrorMessage, setPublishErrorMessage] = useState('')
   const [publishStatusMessage, setPublishStatusMessage] = useState('')
+  const [assetErrorMessage, setAssetErrorMessage] = useState('')
+  const [assetStatusMessage, setAssetStatusMessage] = useState('')
 
-  function syncSelectedPageFields(nextDraft: SiteDraft, nextPage: DraftPage | null) {
+  function syncSelectedPageFields(
+    nextDraft: SiteDraft,
+    nextPage: DraftPage | null,
+  ) {
     if (!nextPage) {
       setPageTitle('')
       setPageSlug('')
@@ -144,25 +169,35 @@ function SiteDetail() {
   useEffect(() => {
     let isMounted = true
 
-    Promise.all([getSiteDraft(siteId), listSiteVersions(siteId), getSiteTheme(siteId)])
-      .then(([draftResponse, versionResponse, themeResponse]) => {
-        if (!isMounted) {
-          return
-        }
-        setBlockRegistry(draftResponse.blockRegistry)
-        setNewBlockType((current) => current || draftResponse.blockRegistry[0]?.type || '')
-        setVersions(versionResponse.versions)
-        setThemeSelection(themeResponse.selection)
-        setThemeOptions(themeResponse.options)
-        setName(draftResponse.draft.site.name)
-        setSlug(draftResponse.draft.site.slug)
-        const initialPage = draftResponse.draft.pages[0] ?? null
-        setDraft(draftResponse.draft)
-        setSelectedPageId(initialPage?.id ?? '')
-        setSelectedBlockId(initialPage?.blocks[0]?.id ?? '')
-        syncSelectedPageFields(draftResponse.draft, initialPage)
-        setIsLoading(false)
-      })
+    Promise.all([
+      getSiteDraft(siteId),
+      listSiteVersions(siteId),
+      getSiteTheme(siteId),
+      listSiteAssets(siteId),
+    ])
+      .then(
+        ([draftResponse, versionResponse, themeResponse, assetResponse]) => {
+          if (!isMounted) {
+            return
+          }
+          setBlockRegistry(draftResponse.blockRegistry)
+          setNewBlockType(
+            (current) => current || draftResponse.blockRegistry[0]?.type || '',
+          )
+          setVersions(versionResponse.versions)
+          setThemeSelection(themeResponse.selection)
+          setThemeOptions(themeResponse.options)
+          setSiteAssets(assetResponse.assets)
+          setName(draftResponse.draft.site.name)
+          setSlug(draftResponse.draft.site.slug)
+          const initialPage = draftResponse.draft.pages[0] ?? null
+          setDraft(draftResponse.draft)
+          setSelectedPageId(initialPage?.id ?? '')
+          setSelectedBlockId(initialPage?.blocks[0]?.id ?? '')
+          syncSelectedPageFields(draftResponse.draft, initialPage)
+          setIsLoading(false)
+        },
+      )
       .catch((error) => {
         if (!isMounted) {
           return
@@ -186,7 +221,9 @@ function SiteDetail() {
   )
 
   const selectedPage =
-    draft?.pages.find((page) => page.id === selectedPageId) ?? draft?.pages[0] ?? null
+    draft?.pages.find((page) => page.id === selectedPageId) ??
+    draft?.pages[0] ??
+    null
   const selectedBlock =
     selectedPage?.blocks.find((block) => block.id === selectedBlockId) ??
     selectedPage?.blocks[0] ??
@@ -229,7 +266,11 @@ function SiteDetail() {
         includeInNavigation: newPageIncludeInNavigation,
       })
       const createdPage = findNewPage(draft, response.draft)
-      applyDraftUpdate(response.draft, createdPage?.id, createdPage?.blocks[0]?.id)
+      applyDraftUpdate(
+        response.draft,
+        createdPage?.id,
+        createdPage?.blocks[0]?.id,
+      )
       setNewPageTitle('')
       setNewPageSlug('')
       setNewPageIncludeInNavigation(true)
@@ -354,7 +395,9 @@ function SiteDetail() {
       setNavigationStatusMessage('Primary navigation order updated.')
     } catch (error) {
       setNavigationErrorMessage(
-        error instanceof APIError ? error.message : 'Could not reorder navigation',
+        error instanceof APIError
+          ? error.message
+          : 'Could not reorder navigation',
       )
     } finally {
       setIsSavingNavigation(false)
@@ -374,10 +417,15 @@ function SiteDetail() {
     setBlockStatusMessage('')
 
     try {
-      const response = await updateBlock(siteId, selectedPage.id, selectedBlock.id, {
-        props,
-        hidden,
-      })
+      const response = await updateBlock(
+        siteId,
+        selectedPage.id,
+        selectedBlock.id,
+        {
+          props,
+          hidden,
+        },
+      )
       applyDraftUpdate(response.draft, selectedPage.id, selectedBlock.id)
       setBlockStatusMessage('Block changes saved.')
     } catch (error) {
@@ -386,6 +434,71 @@ function SiteDetail() {
       )
     } finally {
       setIsSavingBlock(false)
+    }
+  }
+
+  async function handleUploadAsset(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!assetFile) {
+      setAssetErrorMessage('Choose an image file before uploading.')
+      setAssetStatusMessage('')
+      return
+    }
+
+    setIsUploadingAsset(true)
+    setAssetErrorMessage('')
+    setAssetStatusMessage('')
+
+    try {
+      const ticket = await createAssetUploadURL({
+        siteId,
+        fileName: assetFile.name,
+        contentType: assetFile.type,
+        sizeBytes: assetFile.size,
+        altText: assetAltText || undefined,
+      })
+
+      const uploadHeaders = new Headers(ticket.upload.headers ?? {})
+      if (!uploadHeaders.has('Content-Type') && assetFile.type) {
+        uploadHeaders.set('Content-Type', assetFile.type)
+      }
+
+      const uploadResponse = await fetch(ticket.upload.url, {
+        method: ticket.upload.method || 'PUT',
+        headers: uploadHeaders,
+        body: assetFile,
+      })
+      if (!uploadResponse.ok) {
+        throw new Error(
+          `Storage upload failed with status ${uploadResponse.status}`,
+        )
+      }
+
+      const dimensions = await readImageDimensions(assetFile).catch(() => null)
+      const completed = await completeAssetUpload(ticket.asset.id, {
+        altText: assetAltText || undefined,
+        width: dimensions?.width,
+        height: dimensions?.height,
+      })
+
+      setSiteAssets((current) => [
+        completed.asset,
+        ...current.filter((asset) => asset.id !== completed.asset.id),
+      ])
+      setAssetFile(null)
+      setAssetAltText('')
+      setAssetInputKey((current) => current + 1)
+      setAssetStatusMessage('Asset uploaded and ready for block fields.')
+    } catch (error) {
+      setAssetErrorMessage(
+        error instanceof APIError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : 'Could not upload asset',
+      )
+    } finally {
+      setIsUploadingAsset(false)
     }
   }
 
@@ -454,7 +567,8 @@ function SiteDetail() {
       })
       const createdBlock = findNewBlock(
         draft?.pages.find((page) => page.id === selectedPage.id) ?? null,
-        response.draft.pages.find((page) => page.id === selectedPage.id) ?? null,
+        response.draft.pages.find((page) => page.id === selectedPage.id) ??
+          null,
       )
       applyDraftUpdate(response.draft, selectedPage.id, createdBlock?.id)
       setBlockStatusMessage('Block added to the page.')
@@ -477,10 +591,15 @@ function SiteDetail() {
     setBlockStatusMessage('')
 
     try {
-      const response = await duplicateBlock(siteId, selectedPage.id, selectedBlock.id)
+      const response = await duplicateBlock(
+        siteId,
+        selectedPage.id,
+        selectedBlock.id,
+      )
       const duplicatedBlock = findNewBlock(
         draft?.pages.find((page) => page.id === selectedPage.id) ?? null,
-        response.draft.pages.find((page) => page.id === selectedPage.id) ?? null,
+        response.draft.pages.find((page) => page.id === selectedPage.id) ??
+          null,
       )
       applyDraftUpdate(response.draft, selectedPage.id, duplicatedBlock?.id)
       setBlockStatusMessage('Block duplicated.')
@@ -509,7 +628,11 @@ function SiteDetail() {
     setBlockStatusMessage('')
 
     try {
-      const response = await deleteBlock(siteId, selectedPage.id, selectedBlock.id)
+      const response = await deleteBlock(
+        siteId,
+        selectedPage.id,
+        selectedBlock.id,
+      )
       applyDraftUpdate(response.draft, selectedPage.id)
       setBlockStatusMessage('Block removed from the page.')
     } catch (error) {
@@ -525,7 +648,9 @@ function SiteDetail() {
     if (!draft || !selectedPage || !selectedBlock) {
       return
     }
-    const page = draft.pages.find((candidate) => candidate.id === selectedPage.id)
+    const page = draft.pages.find(
+      (candidate) => candidate.id === selectedPage.id,
+    )
     if (!page) {
       return
     }
@@ -586,7 +711,9 @@ function SiteDetail() {
       const response = await publishSite(siteId, { publishNote })
       const versionResponse = await listSiteVersions(siteId)
       setVersions(versionResponse.versions)
-      setPublishStatusMessage(`Published version ${response.version.versionNumber}.`)
+      setPublishStatusMessage(
+        `Published version ${response.version.versionNumber}.`,
+      )
     } catch (error) {
       setPublishErrorMessage(
         error instanceof APIError ? error.message : 'Could not publish site',
@@ -643,14 +770,21 @@ function SiteDetail() {
     )
   }
 
-  const blockCount = draft.pages.reduce((count, page) => count + page.blocks.length, 0)
+  const blockCount = draft.pages.reduce(
+    (count, page) => count + page.blocks.length,
+    0,
+  )
   const currentVersion = versions.find((version) => version.isCurrent) ?? null
+  const uploadedSiteAssets = siteAssets.filter(
+    (asset) => asset.metadata.uploadStatus === 'uploaded',
+  )
   const selectedPageIndex = selectedPage
     ? draft.pages.findIndex((page) => page.id === selectedPage.id)
     : -1
-  const selectedBlockIndex = selectedPage && selectedBlock
-    ? selectedPage.blocks.findIndex((block) => block.id === selectedBlock.id)
-    : -1
+  const selectedBlockIndex =
+    selectedPage && selectedBlock
+      ? selectedPage.blocks.findIndex((block) => block.id === selectedBlock.id)
+      : -1
   const navigationPages = getNavigationPages(draft)
   const hiddenNavigationPageCount = draft.pages.filter(
     (page) => !draft.navigation.primary.some((item) => item.pageId === page.id),
@@ -674,7 +808,9 @@ function SiteDetail() {
         <dl className={statGrid.list}>
           <div className={statGrid.item}>
             <dt className={text.eyebrow}>Status</dt>
-            <dd className={statGrid.value}>{currentVersion ? 'published' : draft.site.status}</dd>
+            <dd className={statGrid.value}>
+              {currentVersion ? 'published' : draft.site.status}
+            </dd>
           </div>
           <div className={statGrid.item}>
             <dt className={text.eyebrow}>Pages</dt>
@@ -694,14 +830,20 @@ function SiteDetail() {
           </Button>
           {currentVersion ? (
             <Button asChild variant="plain" className={actions.inlineLink}>
-              <Link to="/public/$siteSlug" params={{ siteSlug: draft.site.slug }}>
+              <Link
+                to="/public/$siteSlug"
+                params={{ siteSlug: draft.site.slug }}
+              >
                 Open live site
               </Link>
             </Button>
           ) : null}
         </div>
 
-        <form className={cn(ribbonPanel, form.grid, 'mt-6')} onSubmit={handleCreatePage}>
+        <form
+          className={cn(ribbonPanel, form.grid, 'mt-6')}
+          onSubmit={handleCreatePage}
+        >
           <div className="mb-[22px]">
             <div>
               <p className={text.eyebrow}>Pages</p>
@@ -709,7 +851,9 @@ function SiteDetail() {
             </div>
           </div>
 
-          <label htmlFor="new-page-title" className={text.label}>Page title</label>
+          <label htmlFor="new-page-title" className={text.label}>
+            Page title
+          </label>
           <Input
             id="new-page-title"
             value={newPageTitle}
@@ -718,7 +862,9 @@ function SiteDetail() {
             required
           />
 
-          <label htmlFor="new-page-slug" className={text.label}>Slug</label>
+          <label htmlFor="new-page-slug" className={text.label}>
+            Slug
+          </label>
           <Input
             id="new-page-slug"
             value={newPageSlug}
@@ -729,7 +875,9 @@ function SiteDetail() {
           <label className={form.toggle}>
             <Checkbox
               checked={newPageIncludeInNavigation}
-              onChange={(event) => setNewPageIncludeInNavigation(event.target.checked)}
+              onChange={(event) =>
+                setNewPageIncludeInNavigation(event.target.checked)
+              }
             />
             Include this page in site navigation
           </label>
@@ -773,7 +921,9 @@ function SiteDetail() {
                       <h3 className={cn(text.h3, 'mb-2')}>{page.title}</h3>
                       <p className={text.p}>{page.slug}</p>
                     </div>
-                    <strong className="text-[0.96rem] text-primary">{page.blocks.length} blocks</strong>
+                    <strong className="text-[0.96rem] text-primary">
+                      {page.blocks.length} blocks
+                    </strong>
                   </Button>
 
                   <div className={actions.row}>
@@ -790,7 +940,9 @@ function SiteDetail() {
                       type="button"
                       variant="plain"
                       className={actions.inlineLink}
-                      disabled={index === draft.pages.length - 1 || isSavingPage}
+                      disabled={
+                        index === draft.pages.length - 1 || isSavingPage
+                      }
                       onClick={() => handleMovePage(page.id, 1)}
                     >
                       Later
@@ -799,15 +951,21 @@ function SiteDetail() {
                 </div>
 
                 <div className="text-sm text-[var(--paper-muted)]">
-                  <span>{isIncludedInNavigation ? 'In navigation' : 'Hidden from navigation'}</span>
+                  <span>
+                    {isIncludedInNavigation
+                      ? 'In navigation'
+                      : 'Hidden from navigation'}
+                  </span>
                 </div>
 
                 <div className="grid gap-3">
                   {page.blocks.map((block) => {
-                    const definition =
-                      blockDefinitions.get(`${block.type}@${block.version}`)
+                    const definition = blockDefinitions.get(
+                      `${block.type}@${block.version}`,
+                    )
                     const isSelected =
-                      page.id === selectedPage?.id && block.id === selectedBlock?.id
+                      page.id === selectedPage?.id &&
+                      block.id === selectedBlock?.id
 
                     return (
                       <Button
@@ -828,13 +986,21 @@ function SiteDetail() {
                         }}
                       >
                         <div>
-                          <span className="block font-bold">{definition?.displayName ?? block.type}</span>
-                          <small className="text-sm text-[var(--paper-muted)]">{block.type}</small>
+                          <span className="block font-bold">
+                            {definition?.displayName ?? block.type}
+                          </span>
+                          <small className="text-sm text-[var(--paper-muted)]">
+                            {block.type}
+                          </small>
                         </div>
                         {block.settings?.hidden ? (
-                          <em className="text-sm not-italic text-[var(--paper-muted)]">Hidden</em>
+                          <em className="text-sm not-italic text-[var(--paper-muted)]">
+                            Hidden
+                          </em>
                         ) : (
-                          <em className="text-sm not-italic text-[var(--paper-muted)]">Visible</em>
+                          <em className="text-sm not-italic text-[var(--paper-muted)]">
+                            Visible
+                          </em>
                         )}
                       </Button>
                     )
@@ -850,7 +1016,9 @@ function SiteDetail() {
         <section className={ribbonPanel}>
           <div className="mb-[22px]">
             <p className={text.eyebrow}>Page details</p>
-            <h2 className={text.h2}>{selectedPage ? selectedPage.title : 'Choose a page'}</h2>
+            <h2 className={text.h2}>
+              {selectedPage ? selectedPage.title : 'Choose a page'}
+            </h2>
             <p className={text.p}>
               Edit the current page title, slug, SEO, and navigation inclusion
               before publishing the next snapshot.
@@ -859,7 +1027,9 @@ function SiteDetail() {
 
           {selectedPage ? (
             <form className={form.grid} onSubmit={handleSavePage}>
-              <label htmlFor="page-title" className={text.label}>Page title</label>
+              <label htmlFor="page-title" className={text.label}>
+                Page title
+              </label>
               <Input
                 id="page-title"
                 value={pageTitle}
@@ -867,7 +1037,9 @@ function SiteDetail() {
                 required
               />
 
-              <label htmlFor="page-slug" className={text.label}>Slug</label>
+              <label htmlFor="page-slug" className={text.label}>
+                Slug
+              </label>
               <Input
                 id="page-slug"
                 value={pageSlug}
@@ -875,14 +1047,18 @@ function SiteDetail() {
                 required
               />
 
-              <label htmlFor="page-seo-title" className={text.label}>SEO title</label>
+              <label htmlFor="page-seo-title" className={text.label}>
+                SEO title
+              </label>
               <Input
                 id="page-seo-title"
                 value={pageSEOTitle}
                 onChange={(event) => setPageSEOTitle(event.target.value)}
               />
 
-              <label htmlFor="page-seo-description" className={text.label}>SEO description</label>
+              <label htmlFor="page-seo-description" className={text.label}>
+                SEO description
+              </label>
               <Textarea
                 id="page-seo-description"
                 rows={4}
@@ -893,12 +1069,16 @@ function SiteDetail() {
               <label className={form.toggle}>
                 <Checkbox
                   checked={pageIncludeInNavigation}
-                  onChange={(event) => setPageIncludeInNavigation(event.target.checked)}
+                  onChange={(event) =>
+                    setPageIncludeInNavigation(event.target.checked)
+                  }
                 />
                 Include this page in the primary navigation
               </label>
 
-              {pageErrorMessage ? <p className={text.error}>{pageErrorMessage}</p> : null}
+              {pageErrorMessage ? (
+                <p className={text.error}>{pageErrorMessage}</p>
+              ) : null}
               {pageStatusMessage ? (
                 <p className={text.success}>{pageStatusMessage}</p>
               ) : null}
@@ -918,7 +1098,9 @@ function SiteDetail() {
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={selectedPageIndex === draft.pages.length - 1 || isSavingPage}
+                  disabled={
+                    selectedPageIndex === draft.pages.length - 1 || isSavingPage
+                  }
                   onClick={() => handleMovePage(selectedPage.id, 1)}
                 >
                   Move later
@@ -935,7 +1117,9 @@ function SiteDetail() {
             </form>
           ) : (
             <div className={emptyState}>
-              <p className={text.p}>Select a page from the outline to edit its details.</p>
+              <p className={text.p}>
+                Select a page from the outline to edit its details.
+              </p>
             </div>
           )}
         </section>
@@ -966,8 +1150,12 @@ function SiteDetail() {
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <strong className="block text-[var(--paper)]">{page.title}</strong>
-                        <small className="text-[var(--paper-muted)]">{page.slug}</small>
+                        <strong className="block text-[var(--paper)]">
+                          {page.title}
+                        </strong>
+                        <small className="text-[var(--paper-muted)]">
+                          {page.slug}
+                        </small>
                       </div>
                       <div className={actions.row}>
                         <Button
@@ -984,7 +1172,8 @@ function SiteDetail() {
                           variant="plain"
                           className={actions.inlineLink}
                           disabled={
-                            index === navigationPages.length - 1 || isSavingNavigation
+                            index === navigationPages.length - 1 ||
+                            isSavingNavigation
                           }
                           onClick={() => handleMoveNavigation(page.id, 1)}
                         >
@@ -1015,7 +1204,8 @@ function SiteDetail() {
           ) : (
             <div className={emptyState}>
               <p className={text.p}>
-                Include at least one page in the primary navigation to reorder it.
+                Include at least one page in the primary navigation to reorder
+                it.
               </p>
             </div>
           )}
@@ -1035,25 +1225,33 @@ function SiteDetail() {
             <form className={form.grid} onSubmit={handleSaveTheme}>
               <div className="rounded-[16px] border border-border bg-[var(--surface-2)] p-4">
                 <div className="grid grid-cols-2 gap-3 max-lg:grid-cols-1">
-                  {Object.entries(draft.theme.tokens.colors).map(([key, value]) => (
-                    <div
-                      key={key}
-                      className="flex items-center gap-3 rounded-[14px] border border-border bg-[var(--surface-1)] px-3 py-2.5"
-                    >
-                      <span
-                        className="size-[34px] shrink-0 rounded-full border border-border shadow-[inset_0_0_0_1px_oklch(7%_0.022_336_/_0.12)]"
-                        style={{ backgroundColor: value }}
-                      />
-                      <div>
-                        <strong className="block">{formatThemeLabel(key)}</strong>
-                        <small className="block text-[var(--paper-muted)]">{value}</small>
+                  {Object.entries(draft.theme.tokens.colors).map(
+                    ([key, value]) => (
+                      <div
+                        key={key}
+                        className="flex items-center gap-3 rounded-[14px] border border-border bg-[var(--surface-1)] px-3 py-2.5"
+                      >
+                        <span
+                          className="size-[34px] shrink-0 rounded-full border border-border shadow-[inset_0_0_0_1px_oklch(7%_0.022_336_/_0.12)]"
+                          style={{ backgroundColor: value }}
+                        />
+                        <div>
+                          <strong className="block">
+                            {formatThemeLabel(key)}
+                          </strong>
+                          <small className="block text-[var(--paper-muted)]">
+                            {value}
+                          </small>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ),
+                  )}
                 </div>
               </div>
 
-              <label htmlFor="theme-palette" className={text.label}>Palette</label>
+              <label htmlFor="theme-palette" className={text.label}>
+                Palette
+              </label>
               <Select
                 id="theme-palette"
                 value={themeSelection.palette}
@@ -1068,10 +1266,15 @@ function SiteDetail() {
                 ))}
               </Select>
               <p className={form.hint}>
-                {describeThemeOption(themeOptions.palettes, themeSelection.palette)}
+                {describeThemeOption(
+                  themeOptions.palettes,
+                  themeSelection.palette,
+                )}
               </p>
 
-              <label htmlFor="theme-font-preset" className={text.label}>Font preset</label>
+              <label htmlFor="theme-font-preset" className={text.label}>
+                Font preset
+              </label>
               <Select
                 id="theme-font-preset"
                 value={themeSelection.fontPreset}
@@ -1086,15 +1289,23 @@ function SiteDetail() {
                 ))}
               </Select>
               <p className={form.hint}>
-                {describeThemeOption(themeOptions.fontPresets, themeSelection.fontPreset)}
+                {describeThemeOption(
+                  themeOptions.fontPresets,
+                  themeSelection.fontPreset,
+                )}
               </p>
 
-              <label htmlFor="theme-section-spacing" className={text.label}>Section spacing</label>
+              <label htmlFor="theme-section-spacing" className={text.label}>
+                Section spacing
+              </label>
               <Select
                 id="theme-section-spacing"
                 value={themeSelection.sectionSpacing}
                 onChange={(event) =>
-                  handleThemeSelectionChange('sectionSpacing', event.target.value)
+                  handleThemeSelectionChange(
+                    'sectionSpacing',
+                    event.target.value,
+                  )
                 }
               >
                 {themeOptions.sectionSpacings.map((option) => (
@@ -1110,7 +1321,9 @@ function SiteDetail() {
                 )}
               </p>
 
-              <label htmlFor="theme-radius" className={text.label}>Corner radius</label>
+              <label htmlFor="theme-radius" className={text.label}>
+                Corner radius
+              </label>
               <Select
                 id="theme-radius"
                 value={themeSelection.radius}
@@ -1128,7 +1341,9 @@ function SiteDetail() {
                 {describeThemeOption(themeOptions.radii, themeSelection.radius)}
               </p>
 
-              <label htmlFor="theme-button-style" className={text.label}>Button style</label>
+              <label htmlFor="theme-button-style" className={text.label}>
+                Button style
+              </label>
               <Select
                 id="theme-button-style"
                 value={themeSelection.buttonStyle}
@@ -1149,7 +1364,9 @@ function SiteDetail() {
                 )}
               </p>
 
-              <label htmlFor="theme-image-style" className={text.label}>Image style</label>
+              <label htmlFor="theme-image-style" className={text.label}>
+                Image style
+              </label>
               <Select
                 id="theme-image-style"
                 value={themeSelection.imageStyle}
@@ -1164,10 +1381,15 @@ function SiteDetail() {
                 ))}
               </Select>
               <p className={form.hint}>
-                {describeThemeOption(themeOptions.imageStyles, themeSelection.imageStyle)}
+                {describeThemeOption(
+                  themeOptions.imageStyles,
+                  themeSelection.imageStyle,
+                )}
               </p>
 
-              {themeErrorMessage ? <p className={text.error}>{themeErrorMessage}</p> : null}
+              {themeErrorMessage ? (
+                <p className={text.error}>{themeErrorMessage}</p>
+              ) : null}
               {themeStatusMessage ? (
                 <p className={text.success}>{themeStatusMessage}</p>
               ) : null}
@@ -1185,13 +1407,124 @@ function SiteDetail() {
 
         <section className={ribbonPanel}>
           <div className="mb-[22px]">
+            <p className={text.eyebrow}>Assets</p>
+            <h2 className={text.h2}>Upload the site image library</h2>
+            <p className={text.p}>
+              Reuse uploaded images across hero, gallery, profile, and
+              supporting media blocks without typing raw asset ids.
+            </p>
+          </div>
+
+          <form className={form.grid} onSubmit={handleUploadAsset}>
+            <label htmlFor="asset-file" className={text.label}>
+              Image file
+            </label>
+            <Input
+              key={assetInputKey}
+              id="asset-file"
+              type="file"
+              accept="image/avif,image/gif,image/jpeg,image/png,image/webp"
+              onChange={(event) =>
+                setAssetFile(event.target.files?.[0] ?? null)
+              }
+            />
+
+            <label htmlFor="asset-alt-text" className={text.label}>
+              Default alt text
+            </label>
+            <Input
+              id="asset-alt-text"
+              value={assetAltText}
+              onChange={(event) => setAssetAltText(event.target.value)}
+              placeholder="Describe what the image shows"
+            />
+
+            {assetErrorMessage ? (
+              <p className={text.error}>{assetErrorMessage}</p>
+            ) : null}
+            {assetStatusMessage ? (
+              <p className={text.success}>{assetStatusMessage}</p>
+            ) : null}
+
+            <Button type="submit" disabled={isUploadingAsset || !assetFile}>
+              {isUploadingAsset ? 'Uploading asset...' : 'Upload asset'}
+            </Button>
+          </form>
+
+          <div className="mt-5 grid gap-3">
+            {siteAssets.length > 0 ? (
+              siteAssets.map((asset) => (
+                <article
+                  key={asset.id}
+                  className="grid gap-3 rounded-[14px] border border-border bg-[var(--surface-2)] p-4"
+                >
+                  <div className="grid gap-3 sm:grid-cols-[120px_minmax(0,1fr)] sm:items-start">
+                    {asset.metadata.uploadStatus === 'uploaded' ? (
+                      <img
+                        src={buildDraftAssetURL(asset.id)}
+                        alt={
+                          asset.altText ||
+                          asset.metadata.fileName ||
+                          'Uploaded site asset'
+                        }
+                        className="h-[108px] w-full rounded-[12px] border border-border bg-[var(--surface-1)] object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="grid h-[108px] w-full place-items-center rounded-[12px] border border-dashed border-border bg-[var(--surface-1)] text-sm text-[var(--paper-muted)]">
+                        Processing upload
+                      </div>
+                    )}
+                    <div className="grid gap-1">
+                      <strong className="text-[var(--paper)]">
+                        {asset.metadata.fileName || asset.id}
+                      </strong>
+                      <small className="text-[var(--paper-muted)]">
+                        {asset.metadata.contentType || 'Image'} ·{' '}
+                        {formatAssetFileSize(
+                          asset.metadata.sizeBytes ||
+                            asset.metadata.requestedSizeBytes,
+                        )}
+                      </small>
+                      <small className="text-[var(--paper-muted)]">
+                        {describeAssetDimensions(asset)} ·{' '}
+                        {asset.metadata.uploadStatus || 'pending'}
+                      </small>
+                      {asset.altText ? (
+                        <p className="m-0 text-sm text-[var(--paper-muted)]">
+                          Alt: {asset.altText}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <div className={emptyState}>
+                <p className={text.p}>
+                  No site assets yet. Upload the first image here, then pick it
+                  in any asset-enabled block field below.
+                </p>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className={ribbonPanel}>
+          <div className="mb-[22px]">
             <p className={text.eyebrow}>Blocks</p>
-            <h2 className={text.h2}>{selectedPage ? `Add to ${selectedPage.title}` : 'Choose a page first'}</h2>
+            <h2 className={text.h2}>
+              {selectedPage
+                ? `Add to ${selectedPage.title}`
+                : 'Choose a page first'}
+            </h2>
           </div>
 
           {selectedPage ? (
             <form className={form.grid} onSubmit={handleCreateBlock}>
-              <label htmlFor="new-block-type" className={text.label}>Approved block type</label>
+              <label htmlFor="new-block-type" className={text.label}>
+                Approved block type
+              </label>
               <Select
                 id="new-block-type"
                 value={newBlockType}
@@ -1227,6 +1560,7 @@ function SiteDetail() {
               isSaving={isSavingBlock}
               errorMessage={blockErrorMessage}
               statusMessage={blockStatusMessage}
+              assetLibrary={uploadedSiteAssets}
               onSave={handleSaveBlock}
             />
 
@@ -1272,7 +1606,11 @@ function SiteDetail() {
         ) : (
           <section className={ribbonPanel}>
             <div className={emptyState}>
-              <p className={text.p}>{selectedPage ? 'This page does not have any blocks yet.' : 'Select a page to work with its blocks.'}</p>
+              <p className={text.p}>
+                {selectedPage
+                  ? 'This page does not have any blocks yet.'
+                  : 'Select a page to work with its blocks.'}
+              </p>
             </div>
           </section>
         )}
@@ -1287,7 +1625,9 @@ function SiteDetail() {
             </p>
           </div>
 
-          <label htmlFor="publish-note" className={text.label}>Publish note</label>
+          <label htmlFor="publish-note" className={text.label}>
+            Publish note
+          </label>
           <Textarea
             id="publish-note"
             name="publishNote"
@@ -1314,7 +1654,10 @@ function SiteDetail() {
             </Button>
             {currentVersion ? (
               <Button asChild variant="plain" className={actions.inlineLink}>
-                <Link to="/public/$siteSlug" params={{ siteSlug: draft.site.slug }}>
+                <Link
+                  to="/public/$siteSlug"
+                  params={{ siteSlug: draft.site.slug }}
+                >
                   View live site
                 </Link>
               </Button>
@@ -1337,10 +1680,14 @@ function SiteDetail() {
                       v{version.versionNumber}
                       {version.isCurrent ? ' current' : ''}
                     </strong>
-                    <p className="m-0 text-[var(--paper-muted)]">{formatTimestamp(version.createdAt)}</p>
+                    <p className="m-0 text-[var(--paper-muted)]">
+                      {formatTimestamp(version.createdAt)}
+                    </p>
                   </div>
                   {version.publishNote ? (
-                    <small className="m-0 text-[var(--paper-muted)]">{version.publishNote}</small>
+                    <small className="m-0 text-[var(--paper-muted)]">
+                      {version.publishNote}
+                    </small>
                   ) : null}
                   {!version.isCurrent ? (
                     <div className={actions.row}>
@@ -1348,7 +1695,9 @@ function SiteDetail() {
                         type="button"
                         variant="plain"
                         className={actions.inlineLink}
-                        disabled={isPublishing || activeRollbackVersionId !== ''}
+                        disabled={
+                          isPublishing || activeRollbackVersionId !== ''
+                        }
                         onClick={() => handleRollback(version)}
                       >
                         {activeRollbackVersionId === version.id
@@ -1370,7 +1719,9 @@ function SiteDetail() {
           </div>
 
           <form className={form.grid} onSubmit={handleSaveSite}>
-            <label htmlFor="site-name" className={text.label}>Business name</label>
+            <label htmlFor="site-name" className={text.label}>
+              Business name
+            </label>
             <Input
               id="site-name"
               name="name"
@@ -1379,7 +1730,9 @@ function SiteDetail() {
               required
             />
 
-            <label htmlFor="site-slug" className={text.label}>Slug</label>
+            <label htmlFor="site-slug" className={text.label}>
+              Slug
+            </label>
             <Input
               id="site-slug"
               name="slug"
@@ -1388,7 +1741,9 @@ function SiteDetail() {
               required
             />
 
-            {siteErrorMessage ? <p className={text.error}>{siteErrorMessage}</p> : null}
+            {siteErrorMessage ? (
+              <p className={text.error}>{siteErrorMessage}</p>
+            ) : null}
             {siteStatusMessage ? (
               <p className={text.success}>{siteStatusMessage}</p>
             ) : null}
@@ -1414,35 +1769,54 @@ function SiteDetail() {
 
 function findNewPage(previousDraft: SiteDraft | null, nextDraft: SiteDraft) {
   const previousIDs = new Set(previousDraft?.pages.map((page) => page.id) ?? [])
-  return nextDraft.pages.find((page) => !previousIDs.has(page.id)) ?? nextDraft.pages.at(-1)
+  return (
+    nextDraft.pages.find((page) => !previousIDs.has(page.id)) ??
+    nextDraft.pages.at(-1)
+  )
 }
 
-function findNewBlock(previousPage: DraftPage | null, nextPage: DraftPage | null) {
+function findNewBlock(
+  previousPage: DraftPage | null,
+  nextPage: DraftPage | null,
+) {
   if (!nextPage) {
     return null
   }
-  const previousIDs = new Set(previousPage?.blocks.map((block) => block.id) ?? [])
-  return nextPage.blocks.find((block) => !previousIDs.has(block.id)) ?? nextPage.blocks.at(-1) ?? null
+  const previousIDs = new Set(
+    previousPage?.blocks.map((block) => block.id) ?? [],
+  )
+  return (
+    nextPage.blocks.find((block) => !previousIDs.has(block.id)) ??
+    nextPage.blocks.at(-1) ??
+    null
+  )
 }
 
 function getNavigationPages(draft: SiteDraft) {
   return draft.navigation.primary
     .map((item) =>
       item.pageId
-        ? draft.pages.find((page) => page.id === item.pageId) ?? null
+        ? (draft.pages.find((page) => page.id === item.pageId) ?? null)
         : null,
     )
     .filter((page): page is DraftPage => page !== null)
 }
 
-function moveItem<T extends { id: string }>(items: T[], itemID: string, direction: -1 | 1) {
+function moveItem<T extends { id: string }>(
+  items: T[],
+  itemID: string,
+  direction: -1 | 1,
+) {
   const index = items.findIndex((item) => item.id === itemID)
   const nextIndex = index + direction
   if (index === -1 || nextIndex < 0 || nextIndex >= items.length) {
     return null
   }
   const reordered = [...items]
-  ;[reordered[index], reordered[nextIndex]] = [reordered[nextIndex], reordered[index]]
+  ;[reordered[index], reordered[nextIndex]] = [
+    reordered[nextIndex],
+    reordered[index],
+  ]
   return reordered
 }
 

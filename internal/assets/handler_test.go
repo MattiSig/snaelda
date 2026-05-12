@@ -63,9 +63,33 @@ func TestDeleteAssetHandler(t *testing.T) {
 	}
 }
 
+func TestRedirectPublicAssetContentHandler(t *testing.T) {
+	handler := &Handler{
+		service: &fakeAssetService{
+			publicDownloadURL: "http://download.test/public-asset",
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/public/sites/loom-light/assets/asset-1", nil)
+	req.SetPathValue("siteSlug", "loom-light")
+	req.SetPathValue("assetId", "asset-1")
+	res := httptest.NewRecorder()
+
+	handler.redirectPublicAssetContent(res, req)
+
+	if res.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected status %d, got %d", http.StatusTemporaryRedirect, res.Code)
+	}
+	if location := res.Header().Get("Location"); location != "http://download.test/public-asset" {
+		t.Fatalf("expected redirect location, got %q", location)
+	}
+}
+
 type fakeAssetService struct {
 	createUploadResult CreateUploadResult
 	createUploadErr    error
+	downloadURL        string
+	publicDownloadURL  string
 }
 
 func (s *fakeAssetService) CreateUpload(context.Context, CreateUploadInput) (CreateUploadResult, error) {
@@ -74,6 +98,14 @@ func (s *fakeAssetService) CreateUpload(context.Context, CreateUploadInput) (Cre
 
 func (s *fakeAssetService) CompleteUpload(context.Context, string, CompleteUploadInput) (Asset, error) {
 	return Asset{}, nil
+}
+
+func (s *fakeAssetService) DownloadURL(context.Context, string) (string, error) {
+	return s.downloadURL, nil
+}
+
+func (s *fakeAssetService) PublicDownloadURLBySiteSlug(context.Context, string, string) (string, error) {
+	return s.publicDownloadURL, nil
 }
 
 func (s *fakeAssetService) ListBySite(context.Context, string) ([]Asset, error) {

@@ -210,11 +210,14 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Keep the storage interface S3-compatible so production can use AWS S3, Cloudflare R2, MinIO, or another compatible backend without changing asset code.
 - [x] Implement signed upload URL creation.
 - [x] Implement upload completion and asset metadata persistence.
-- [ ] Add asset picker support in block editors.
-- [ ] Store asset ownership, storage key, public or signed URL behavior, alt text, dimensions, file type, file size, and upload metadata.
+- [x] Add asset picker support in block editors.
+  Verified on May 12, 2026 by wiring the site-detail builder to the existing upload flow, adding a site asset library plus asset-picker controls for asset-enabled block fields, and then using Playwright to upload `logo.png`, select it in the hero block for `Asset Picker Verification`, save the block, and confirm the selected image preview rendered from the authenticated asset-content route.
+- [x] Store asset ownership, storage key, public or signed URL behavior, alt text, dimensions, file type, file size, and upload metadata.
+  Verified on May 12, 2026 by extending completed asset metadata with stored image dimensions from the browser upload flow while preserving workspace/site ownership, storage keys, signed-download behavior, alt text, content type, byte size, upload status, ETag, and upload timestamps in the Go-backed `assets` service and tests.
 - [x] Validate that referenced assets belong to the same workspace or site before saving block props.
   Verified on May 12, 2026 by replacing the placeholder `assets` module with authenticated Go handlers for `POST /api/assets/upload-url`, `POST /api/assets/complete`, `GET /api/sites/:siteId/assets`, `PATCH /api/assets/:assetId`, and `DELETE /api/assets/:assetId`; backing them with an S3-compatible storage adapter configured for local SeaweedFS; adding draft-persistence checks that reject cross-site or cross-workspace `assetId` references; and then running `make test`, `npm run web:test`, `npm run web:lint`, `npm run web:build`, plus a live `curl` flow against a local API on `:18080` that logged in, created an upload URL, uploaded a PNG through SeaweedFS, completed the asset, updated alt text, listed the site assets, and deleted the uploaded asset successfully.
-- [ ] Resolve `assetId` references to optimized URLs during preview and publish.
+- [x] Resolve `assetId` references to optimized URLs during preview and publish.
+  Verified on May 12, 2026 by adding stable authenticated and public asset-content routes in the Go API, updating the shared React renderer to resolve block `assetId` references through those routes for draft preview, publish-time artifact rendering, and live public pages, and then confirming in Playwright that `Asset Picker Verification` rendered the uploaded hero image on both `/app/sites/:siteId/preview` and `/public/asset-picker-verification`.
 - [ ] Add safe placeholders, gradients, or stock defaults for missing imagery.
 - [ ] Optionally add backend-owned Unsplash search through a constrained `search_unsplash_images(query, orientation, count)` tool.
 - [ ] Store source and attribution metadata for starter images.

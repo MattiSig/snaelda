@@ -286,7 +286,7 @@
               "name": "image",
               "label": "Image",
               "control": "asset",
-              "description": "Optional for now. Preview falls back to a crafted placeholder until uploads are wired in."
+              "description": "Choose one uploaded image from the site asset library."
             }
           ]
         }
@@ -354,6 +354,12 @@
           ]
         },
         {
+          "name": "image",
+          "label": "Hero image",
+          "control": "asset",
+          "description": "Pick an uploaded image for split or supporting hero layouts."
+        },
+        {
           "name": "layout",
           "label": "Layout",
           "control": "select",
@@ -390,7 +396,7 @@
           "name": "image",
           "label": "Image",
           "control": "asset",
-          "description": "Assets are stored by id once uploads are wired in."
+          "description": "Choose one uploaded image from the site asset library."
         },
         {
           "name": "cta",

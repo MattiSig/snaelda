@@ -72,7 +72,13 @@ func TestCompleteUploadPersistsUploadedMetadata(t *testing.T) {
 	service := NewService(store, storage)
 	altText := "Updated alt"
 
-	asset, err := service.CompleteUpload(context.Background(), "asset-1", CompleteUploadInput{AltText: &altText})
+	width := 1440
+	height := 960
+	asset, err := service.CompleteUpload(context.Background(), "asset-1", CompleteUploadInput{
+		AltText: &altText,
+		Width:   &width,
+		Height:  &height,
+	})
 	if err != nil {
 		t.Fatalf("complete upload: %v", err)
 	}
@@ -88,6 +94,9 @@ func TestCompleteUploadPersistsUploadedMetadata(t *testing.T) {
 	}
 	if asset.AltText != "Updated alt" {
 		t.Fatalf("expected alt text update, got %q", asset.AltText)
+	}
+	if asset.Metadata.Width != width || asset.Metadata.Height != height {
+		t.Fatalf("expected dimensions %dx%d, got %dx%d", width, height, asset.Metadata.Width, asset.Metadata.Height)
 	}
 }
 
@@ -147,6 +156,34 @@ func TestDeleteRemovesStorageObjectAndRow(t *testing.T) {
 	}
 }
 
+func TestPublicDownloadURLBySiteSlugRequiresPublishedSite(t *testing.T) {
+	store := newFakeAssetStore()
+	store.siteSlugs["site-1"] = "loom-light"
+	store.publishedSites["site-1"] = true
+	store.assets["asset-1"] = storedAsset{
+		Asset: Asset{
+			ID:          "asset-1",
+			WorkspaceID: "workspace-1",
+			SiteID:      "site-1",
+			Kind:        "image",
+			StorageKey:  "key-1",
+			Metadata: AssetMetadata{
+				UploadStatus: "uploaded",
+			},
+			CreatedAt: time.Now().UTC(),
+		},
+	}
+	service := NewService(store, &fakeStorage{downloadURL: "http://download.test/public"})
+
+	downloadURL, err := service.PublicDownloadURLBySiteSlug(context.Background(), "loom-light", "asset-1")
+	if err != nil {
+		t.Fatalf("public download url: %v", err)
+	}
+	if downloadURL != "http://download.test/public" {
+		t.Fatalf("expected public download url, got %q", downloadURL)
+	}
+}
+
 type fakeStorage struct {
 	upload      PresignedUpload
 	head        ObjectHead
@@ -181,11 +218,17 @@ type storedAsset struct {
 }
 
 type fakeAssetStore struct {
-	assets map[string]storedAsset
+	assets         map[string]storedAsset
+	siteSlugs      map[string]string
+	publishedSites map[string]bool
 }
 
 func newFakeAssetStore() *fakeAssetStore {
-	return &fakeAssetStore{assets: map[string]storedAsset{}}
+	return &fakeAssetStore{
+		assets:         map[string]storedAsset{},
+		siteSlugs:      map[string]string{},
+		publishedSites: map[string]bool{},
+	}
 }
 
 func (s *fakeAssetStore) Query(_ context.Context, sql string, args ...any) (pgx.Rows, error) {
@@ -229,6 +272,18 @@ func (s *fakeAssetStore) QueryRow(_ context.Context, sql string, args ...any) pg
 		s.assets[id] = asset
 		return fakeAssetRow{createdAt: asset.CreatedAt}
 	case strings.Contains(sql, "from assets"):
+		if len(args) == 2 {
+			siteSlug := args[0].(string)
+			assetID := args[1].(string)
+			asset, ok := s.assets[assetID]
+			if !ok {
+				return fakeAssetRow{err: pgx.ErrNoRows}
+			}
+			if s.siteSlugs[asset.SiteID] != siteSlug || !s.publishedSites[asset.SiteID] {
+				return fakeAssetRow{err: pgx.ErrNoRows}
+			}
+			return fakeAssetRow{asset: &asset.Asset}
+		}
 		id := args[0].(string)
 		asset, ok := s.assets[id]
 		if !ok {
