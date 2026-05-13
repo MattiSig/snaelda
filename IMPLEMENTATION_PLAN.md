@@ -273,8 +273,10 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 
 ## Phase 12: MVP Completion
 
-- [ ] Ship the Puck/CMS-style visual editing layer in the MVP builder while keeping canonical site data in the maintained draft schema.
-- [ ] Expand generation to every required MVP block, including `contact_form` once the submissions path exists.
+- [x] Ship the Puck/CMS-style visual editing layer in the MVP builder while keeping canonical site data in the maintained draft schema.
+  Verified on May 13, 2026 by running `npm run web:test`, `npm run web:lint`, `npm run web:build`, and `make test`, then opening the live builder in Playwright at `http://localhost:3000/app/sites/:siteId`, confirming the renderer-backed canvas showed the page with production preview styling, and reordering visible blocks through drag and drop without current-page console errors.
+- [x] Expand generation to every required MVP block, including `contact_form` once the submissions path exists.
+  Verified on May 13, 2026 by generating `Phase Seven Prompt Proof` from a prompt that explicitly asked for pricing, testimonials, team bios, a gallery, FAQ, and contact flow, then confirming in Playwright that the generated draft surfaced `team_profile_cards`, `testimonials`, `pricing_packages`, `footer`, and a contact page with `faq`, `contact_form`, `cta_band`, and `footer` blocks.
 - [ ] Support up to 10 pages per site in generation, editing, validation, and publishing.
 - [ ] Add asset upload and image library UI.
 - [ ] Add basic SEO editing and publish-generated SEO artifacts.
