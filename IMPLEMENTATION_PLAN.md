@@ -197,12 +197,13 @@ This plan is sequenced for the shortest path to a working prototype first. The p
   Verified on May 11, 2026 by adding explicit primary-navigation reordering to the Go draft API plus builder UI, then logging in locally in Playwright, creating `Builder Navigation Theme Verification`, adding a `Contact` page, moving that page ahead of `Home` in the new navigation panel, and confirming the draft preview rendered the navigation in `Contact` then `Home` order without console errors while page order remained separate.
 - [x] Add theme controls for palette, font preset, button style, radius, section spacing, and image style.
   Verified on May 11, 2026 by extending the safe theme contract with button and image style selections, saving `Ink Solid` + `Paper Cut` from the builder in Playwright, and confirming the preview route exposed the expected theme CSS variables (`--site-button-background: #f3ead8`, `--site-image-border: #ff8a9d`) with no console errors.
-- [ ] Add Puck or another compact CMS-style editing layer as an MVP requirement for faster visual authoring inside the React builder.
-- [ ] Build adapters from canonical draft data to editor state and back.
-- [ ] Add site-level re-prompt.
-- [ ] Add page-level re-prompt.
-- [ ] Capture an undoable draft revision before destructive site-level or page-level re-prompt replacement.
-- [ ] Make re-prompt behavior explicit in the UI as a replacement action, not a vague merge.
+- [x] Add Puck or another compact CMS-style editing layer as an MVP requirement for faster visual authoring inside the React builder.
+- [x] Build adapters from canonical draft data to editor state and back.
+- [x] Add site-level re-prompt.
+- [x] Add page-level re-prompt.
+- [x] Capture an undoable draft revision before destructive site-level or page-level re-prompt replacement.
+- [x] Make re-prompt behavior explicit in the UI as a replacement action, not a vague merge.
+  Verified on May 13, 2026 by replacing the summary-card canvas with a renderer-backed editor canvas that wraps the maintained `SiteDraftRenderer`, adding canonical builder adapters plus hidden-block handling, wiring draft revision capture and restore through the Go generation service plus `draft_revisions`, extending generation/repair so contact forms and footers survive prompt output, and then validating the live builder in Playwright on `http://localhost:3000` by opening `Loom & Light Studio`, reordering rendered blocks through drag/drop, running a page re-prompt that added pricing content, and undoing that replacement with no current-page console errors.
 - [ ] Defer block-level prompting until site-level and page-level prompting are stable.
 
 ## Phase 8: Assets And Starter Images

@@ -120,6 +120,21 @@ describe('SiteDraftRenderer', () => {
       screen.getByText('Thanks. Your message is on its way.'),
     ).toBeTruthy()
   })
+
+  it('supports block wrappers for editor chrome without rendering hidden blocks', () => {
+    render(
+      <SiteDraftRenderer
+        site={buildDraft()}
+        renderBlock={({ block, children }) => (
+          <div key={block.id} data-testid="editor-block">
+            {children}
+          </div>
+        )}
+      />,
+    )
+
+    expect(screen.getAllByTestId('editor-block')).toHaveLength(2)
+  })
 })
 
 function buildDraft(): SiteDraft {

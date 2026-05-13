@@ -1,9 +1,9 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import type { FormEvent } from 'react'
 import { useEffect, useState } from 'react'
-import { BlockEditor } from '@/components/BlockEditor'
+import { PuckBuilder } from '@/components/PuckBuilder'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
+
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
@@ -29,6 +29,8 @@ import {
   listSiteAssets,
   listSiteVersions,
   publishSite,
+  repromptPage,
+  repromptSite,
   rollbackSiteVersion,
   reorderBlocks,
   reorderPages,
@@ -46,15 +48,13 @@ import {
   updatePage,
   updateSite,
   updateSiteTheme,
+  undoSiteReprompt,
 } from '@/lib/api'
 import {
   actions,
   emptyState,
   form,
-  layout,
-  ribbon,
   ribbonPanel,
-  statGrid,
   text,
 } from '@/lib/styles'
 import { cn } from '@/lib/utils'
@@ -104,6 +104,8 @@ function SiteDetail() {
   const [isPublishing, setIsPublishing] = useState(false)
   const [activeRollbackVersionId, setActiveRollbackVersionId] = useState('')
   const [publishNote, setPublishNote] = useState('')
+  const [siteReprompt, setSiteReprompt] = useState('')
+  const [pageReprompt, setPageReprompt] = useState('')
   const [themeSelection, setThemeSelection] = useState<ThemeSelection | null>(
     null,
   )
@@ -124,6 +126,9 @@ function SiteDetail() {
   const [isSavingTheme, setIsSavingTheme] = useState(false)
   const [isSavingNavigation, setIsSavingNavigation] = useState(false)
   const [isUploadingAsset, setIsUploadingAsset] = useState(false)
+  const [isRepromptingSite, setIsRepromptingSite] = useState(false)
+  const [isRepromptingPage, setIsRepromptingPage] = useState(false)
+  const [isUndoingReprompt, setIsUndoingReprompt] = useState(false)
   const [activeSubmissionId, setActiveSubmissionId] = useState('')
   const [publishErrorMessage, setPublishErrorMessage] = useState('')
   const [publishStatusMessage, setPublishStatusMessage] = useState('')
@@ -131,6 +136,8 @@ function SiteDetail() {
   const [assetStatusMessage, setAssetStatusMessage] = useState('')
   const [submissionErrorMessage, setSubmissionErrorMessage] = useState('')
   const [submissionStatusMessage, setSubmissionStatusMessage] = useState('')
+  const [repromptErrorMessage, setRepromptErrorMessage] = useState('')
+  const [repromptStatusMessage, setRepromptStatusMessage] = useState('')
 
   function syncSelectedPageFields(
     nextDraft: SiteDraft,
@@ -725,6 +732,176 @@ function SiteDetail() {
     }
   }
 
+  async function handleReorderBlocks(blockIds: string[]) {
+    if (!selectedPage) return
+    setIsMutatingBlocks(true)
+    setBlockErrorMessage('')
+    setBlockStatusMessage('')
+
+    try {
+      const response = await reorderBlocks(siteId, selectedPage.id, blockIds)
+      applyDraftUpdate(response.draft, selectedPage.id, selectedBlock?.id)
+      setBlockStatusMessage('Blocks reordered.')
+    } catch (error) {
+      setBlockErrorMessage(
+        error instanceof APIError ? error.message : 'Could not reorder blocks',
+      )
+    } finally {
+      setIsMutatingBlocks(false)
+    }
+  }
+
+  async function handleDropPaletteBlock(blockType: string, targetIndex: number) {
+    if (!selectedPage) return
+    setIsCreatingBlock(true)
+    setBlockErrorMessage('')
+    setBlockStatusMessage('')
+
+    try {
+      const response = await createBlock(siteId, selectedPage.id, {
+        type: blockType,
+      })
+      const previousPage =
+        draft?.pages.find((p) => p.id === selectedPage.id) ?? null
+      const nextPage =
+        response.draft.pages.find((p) => p.id === selectedPage.id) ?? null
+      const createdBlock = findNewBlock(previousPage, nextPage)
+      if (!nextPage || !createdBlock) {
+        applyDraftUpdate(response.draft, selectedPage.id, createdBlock?.id)
+        setBlockStatusMessage('Block added to the page.')
+        return
+      }
+
+      const visibleBlocks = nextPage.blocks.filter(
+        (block) => !block.settings?.hidden,
+      )
+      const visibleOrder = visibleBlocks.map((block) => block.id)
+      const createdVisibleIndex = visibleOrder.findIndex(
+        (blockID) => blockID === createdBlock.id,
+      )
+
+      if (createdVisibleIndex === -1) {
+        applyDraftUpdate(response.draft, selectedPage.id, createdBlock.id)
+        setBlockStatusMessage('Block added to the page.')
+        return
+      }
+
+      const reorderedVisible = [...visibleOrder]
+      reorderedVisible.splice(createdVisibleIndex, 1)
+      reorderedVisible.splice(
+        Math.max(0, Math.min(targetIndex, reorderedVisible.length)),
+        0,
+        createdBlock.id,
+      )
+
+      const hiddenIDs = nextPage.blocks
+        .filter((block) => block.settings?.hidden)
+        .map((block) => block.id)
+
+      const reordered = await reorderBlocks(siteId, selectedPage.id, [
+        ...reorderedVisible,
+        ...hiddenIDs,
+      ])
+      applyDraftUpdate(reordered.draft, selectedPage.id, createdBlock.id)
+      setBlockStatusMessage('Block added to the page.')
+    } catch (error) {
+      setBlockErrorMessage(
+        error instanceof APIError ? error.message : 'Could not add block',
+      )
+    } finally {
+      setIsCreatingBlock(false)
+    }
+  }
+
+  async function handleSiteReprompt(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setIsRepromptingSite(true)
+    setRepromptErrorMessage('')
+    setRepromptStatusMessage('')
+
+    try {
+      const response = await repromptSite(siteId, { prompt: siteReprompt })
+      applyDraftUpdate(response.draft)
+      setSiteReprompt('')
+      setPageReprompt('')
+      setRepromptStatusMessage(
+        'Site regenerated. The previous draft is available through undo.',
+      )
+    } catch (error) {
+      setRepromptErrorMessage(
+        error instanceof APIError ? error.message : 'Could not re-prompt site',
+      )
+    } finally {
+      setIsRepromptingSite(false)
+    }
+  }
+
+  async function handlePageReprompt(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!selectedPage) {
+      return
+    }
+
+    setIsRepromptingPage(true)
+    setRepromptErrorMessage('')
+    setRepromptStatusMessage('')
+
+    try {
+      const response = await repromptPage(siteId, selectedPage.id, {
+        prompt: pageReprompt,
+      })
+      applyDraftUpdate(response.draft, selectedPage.id)
+      setPageReprompt('')
+      setRepromptStatusMessage(
+        `${selectedPage.title} was regenerated. The previous draft is available through undo.`,
+      )
+    } catch (error) {
+      setRepromptErrorMessage(
+        error instanceof APIError ? error.message : 'Could not re-prompt page',
+      )
+    } finally {
+      setIsRepromptingPage(false)
+    }
+  }
+
+  async function handleUndoReprompt() {
+    setIsUndoingReprompt(true)
+    setRepromptErrorMessage('')
+    setRepromptStatusMessage('')
+
+    try {
+      const response = await undoSiteReprompt(siteId)
+      applyDraftUpdate(response.draft, selectedPage?.id, selectedBlock?.id)
+      setRepromptStatusMessage('Previous draft revision restored.')
+    } catch (error) {
+      setRepromptErrorMessage(
+        error instanceof APIError ? error.message : 'Could not restore draft revision',
+      )
+    } finally {
+      setIsUndoingReprompt(false)
+    }
+  }
+
+  function handleSelectPage(pageId: string) {
+    const page = draft?.pages.find((p) => p.id === pageId) ?? null
+    if (!page || !draft) return
+    setSelectedPageId(pageId)
+    setSelectedBlockId(page.blocks[0]?.id ?? '')
+    syncSelectedPageFields(draft, page)
+    setBlockErrorMessage('')
+    setBlockStatusMessage('')
+    setPageErrorMessage('')
+    setPageStatusMessage('')
+    setRepromptErrorMessage('')
+  }
+
+  function handleSelectBlock(blockId: string) {
+    if (!draft || !selectedPage) return
+    setSelectedBlockId(blockId)
+    setBlockErrorMessage('')
+    setBlockStatusMessage('')
+  }
+
   async function handleDelete() {
     const confirmed = window.confirm(
       'Delete this site draft? This removes the stored draft and its pages.',
@@ -815,17 +992,10 @@ function SiteDetail() {
     )
   }
 
-  const blockCount = draft.pages.reduce(
-    (count, page) => count + page.blocks.length,
-    0,
-  )
   const currentVersion = versions.find((version) => version.isCurrent) ?? null
   const uploadedSiteAssets = siteAssets.filter(
     (asset) => asset.metadata.uploadStatus === 'uploaded',
   )
-  const selectedPageIndex = selectedPage
-    ? draft.pages.findIndex((page) => page.id === selectedPage.id)
-    : -1
   const selectedBlockIndex =
     selectedPage && selectedBlock
       ? selectedPage.blocks.findIndex((block) => block.id === selectedBlock.id)
@@ -842,358 +1012,153 @@ function SiteDetail() {
   )
 
   return (
-    <div className={layout.builderGrid}>
-      <section className={ribbonPanel}>
-        <div className="mb-[22px]">
-          <p className={text.eyebrow}>Site</p>
-          <h1 className={text.h1}>{draft.site.name}</h1>
-          <p className={text.p}>
-            Manage pages and approved blocks here, then keep using the validated
-            preview and publish flow.
-          </p>
-        </div>
-
-        <dl className={statGrid.list}>
-          <div className={statGrid.item}>
-            <dt className={text.eyebrow}>Status</dt>
-            <dd className={statGrid.value}>
-              {currentVersion ? 'published' : draft.site.status}
-            </dd>
-          </div>
-          <div className={statGrid.item}>
-            <dt className={text.eyebrow}>Pages</dt>
-            <dd className={statGrid.value}>{draft.pages.length}</dd>
-          </div>
-          <div className={statGrid.item}>
-            <dt className={text.eyebrow}>Blocks</dt>
-            <dd className={statGrid.value}>{blockCount}</dd>
-          </div>
-        </dl>
-
-        <div className={cn(actions.rowLarge, 'mt-[18px]')}>
-          <Button asChild variant="plain" className={actions.inlineLink}>
-            <Link to="/app/sites/$siteId/preview" params={{ siteId }}>
-              Open preview
-            </Link>
-          </Button>
-          {currentVersion ? (
-            <Button asChild variant="plain" className={actions.inlineLink}>
-              <Link
-                to="/public/$siteSlug"
-                params={{ siteSlug: draft.site.slug }}
-              >
-                Open live site
-              </Link>
-            </Button>
-          ) : null}
-        </div>
-
-        <form
-          className={cn(ribbonPanel, form.grid, 'mt-6')}
-          onSubmit={handleCreatePage}
-        >
-          <div className="mb-[22px]">
-            <div>
-              <p className={text.eyebrow}>Pages</p>
-              <h2 className={text.h2}>Add a page</h2>
-            </div>
-          </div>
-
-          <label htmlFor="new-page-title" className={text.label}>
-            Page title
-          </label>
-          <Input
-            id="new-page-title"
-            value={newPageTitle}
-            onChange={(event) => setNewPageTitle(event.target.value)}
-            placeholder="Contact"
-            required
-          />
-
-          <label htmlFor="new-page-slug" className={text.label}>
-            Slug
-          </label>
-          <Input
-            id="new-page-slug"
-            value={newPageSlug}
-            onChange={(event) => setNewPageSlug(event.target.value)}
-            placeholder="/contact"
-          />
-
-          <label className={form.toggle}>
-            <Checkbox
-              checked={newPageIncludeInNavigation}
-              onChange={(event) =>
-                setNewPageIncludeInNavigation(event.target.checked)
-              }
-            />
-            Include this page in site navigation
-          </label>
-
-          <Button type="submit" disabled={isCreatingPage}>
-            {isCreatingPage ? 'Adding page...' : 'Add page'}
-          </Button>
-        </form>
-
-        <div className="mt-[18px] grid gap-[18px]">
-          {draft.pages.map((page, index) => {
-            const isSelectedPage = page.id === selectedPage?.id
-            const isIncludedInNavigation = draft.navigation.primary.some(
-              (item) => item.pageId === page.id,
-            )
-
-            return (
-              <article
-                key={page.id}
-                className={cn(
-                  ribbon,
-                  'grid gap-4 rounded-[16px] border border-border bg-[var(--surface-2)] p-5',
-                  isSelectedPage &&
-                    'border-[var(--thread-teal)] bg-[color-mix(in_oklch,var(--surface-2)_78%,var(--thread-teal))]',
-                )}
-              >
-                <div className="flex items-center justify-between gap-[18px] max-sm:flex-col max-sm:items-start">
-                  <Button
-                    type="button"
-                    variant="plain"
-                    className="flex w-full items-center justify-between gap-[18px] p-0 text-left text-inherit max-sm:flex-col max-sm:items-start"
-                    onClick={() => {
-                      setSelectedPageId(page.id)
-                      setSelectedBlockId(page.blocks[0]?.id ?? '')
-                      syncSelectedPageFields(draft, page)
-                      setPageErrorMessage('')
-                      setPageStatusMessage('')
-                    }}
-                  >
-                    <div>
-                      <h3 className={cn(text.h3, 'mb-2')}>{page.title}</h3>
-                      <p className={text.p}>{page.slug}</p>
-                    </div>
-                    <strong className="text-[0.96rem] text-primary">
-                      {page.blocks.length} blocks
-                    </strong>
-                  </Button>
-
-                  <div className={actions.row}>
-                    <Button
-                      type="button"
-                      variant="plain"
-                      className={actions.inlineLink}
-                      disabled={index === 0 || isSavingPage}
-                      onClick={() => handleMovePage(page.id, -1)}
-                    >
-                      Earlier
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="plain"
-                      className={actions.inlineLink}
-                      disabled={
-                        index === draft.pages.length - 1 || isSavingPage
-                      }
-                      onClick={() => handleMovePage(page.id, 1)}
-                    >
-                      Later
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="text-sm text-[var(--paper-muted)]">
-                  <span>
-                    {isIncludedInNavigation
-                      ? 'In navigation'
-                      : 'Hidden from navigation'}
-                  </span>
-                </div>
-
-                <div className="grid gap-3">
-                  {page.blocks.map((block) => {
-                    const definition = blockDefinitions.get(
-                      `${block.type}@${block.version}`,
-                    )
-                    const isSelected =
-                      page.id === selectedPage?.id &&
-                      block.id === selectedBlock?.id
-
-                    return (
-                      <Button
-                        key={block.id}
-                        type="button"
-                        variant="plain"
-                        className={cn(
-                          'flex items-center justify-between gap-3.5 rounded-[14px] border border-border bg-[var(--surface-1)] px-4 py-3 text-left text-[var(--paper)] transition-[background,border-color,transform] hover:-translate-y-px hover:border-[var(--thread-teal)] hover:bg-[var(--surface-3)]',
-                          isSelected &&
-                            'border-[var(--thread-teal)] bg-[var(--surface-3)]',
-                        )}
-                        onClick={() => {
-                          setSelectedPageId(page.id)
-                          setSelectedBlockId(block.id)
-                          syncSelectedPageFields(draft, page)
-                          setBlockErrorMessage('')
-                          setBlockStatusMessage('')
-                        }}
-                      >
-                        <div>
-                          <span className="block font-bold">
-                            {definition?.displayName ?? block.type}
-                          </span>
-                          <small className="text-sm text-[var(--paper-muted)]">
-                            {block.type}
-                          </small>
-                        </div>
-                        {block.settings?.hidden ? (
-                          <em className="text-sm not-italic text-[var(--paper-muted)]">
-                            Hidden
-                          </em>
-                        ) : (
-                          <em className="text-sm not-italic text-[var(--paper-muted)]">
-                            Visible
-                          </em>
-                        )}
-                      </Button>
-                    )
-                  })}
-                </div>
-              </article>
-            )
-          })}
-        </div>
-      </section>
-
-      <div className={layout.builderSidebar}>
-        <section className={ribbonPanel}>
-          <div className="mb-[22px]">
-            <p className={text.eyebrow}>Page details</p>
-            <h2 className={text.h2}>
-              {selectedPage ? selectedPage.title : 'Choose a page'}
-            </h2>
-            <p className={text.p}>
-              Edit the current page title, slug, SEO, and navigation inclusion
-              before publishing the next snapshot.
-            </p>
-          </div>
-
-          {selectedPage ? (
-            <form className={form.grid} onSubmit={handleSavePage}>
-              <label htmlFor="page-title" className={text.label}>
-                Page title
-              </label>
-              <Input
-                id="page-title"
-                value={pageTitle}
-                onChange={(event) => setPageTitle(event.target.value)}
-                required
-              />
-
-              <label htmlFor="page-slug" className={text.label}>
-                Slug
-              </label>
-              <Input
-                id="page-slug"
-                value={pageSlug}
-                onChange={(event) => setPageSlug(event.target.value)}
-                required
-              />
-
-              <label htmlFor="page-seo-title" className={text.label}>
-                SEO title
-              </label>
-              <Input
-                id="page-seo-title"
-                value={pageSEOTitle}
-                onChange={(event) => setPageSEOTitle(event.target.value)}
-              />
-
-              <label htmlFor="page-seo-description" className={text.label}>
-                SEO description
-              </label>
-              <Textarea
-                id="page-seo-description"
-                rows={4}
-                value={pageSEODescription}
-                onChange={(event) => setPageSEODescription(event.target.value)}
-              />
-
-              <label className={form.toggle}>
-                <Checkbox
-                  checked={pageIncludeInNavigation}
-                  onChange={(event) =>
-                    setPageIncludeInNavigation(event.target.checked)
-                  }
-                />
-                Include this page in the primary navigation
-              </label>
-
-              {pageErrorMessage ? (
-                <p className={text.error}>{pageErrorMessage}</p>
-              ) : null}
-              {pageStatusMessage ? (
-                <p className={text.success}>{pageStatusMessage}</p>
-              ) : null}
-
-              <div className={actions.row}>
-                <Button type="submit" disabled={isSavingPage}>
-                  {isSavingPage ? 'Saving page...' : 'Save page'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={selectedPageIndex <= 0 || isSavingPage}
-                  onClick={() => handleMovePage(selectedPage.id, -1)}
-                >
-                  Move earlier
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={
-                    selectedPageIndex === draft.pages.length - 1 || isSavingPage
-                  }
-                  onClick={() => handleMovePage(selectedPage.id, 1)}
-                >
-                  Move later
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={isDeletingPage}
-                  onClick={handleDeletePage}
-                >
-                  {isDeletingPage ? 'Deleting page...' : 'Delete page'}
-                </Button>
-              </div>
-            </form>
-          ) : (
-            <div className={emptyState}>
-              <p className={text.p}>
-                Select a page from the outline to edit its details.
+    <PuckBuilder
+      siteId={siteId}
+      draft={draft}
+      blockRegistry={blockRegistry}
+      selectedPage={selectedPage}
+      selectedBlock={selectedBlock}
+      selectedDefinition={selectedDefinition}
+      selectedBlockIndex={selectedBlockIndex}
+      blockDefinitions={blockDefinitions}
+      uploadedSiteAssets={uploadedSiteAssets}
+      newBlockType={newBlockType}
+      isSavingBlock={isSavingBlock}
+      isMutatingBlocks={isMutatingBlocks}
+      isCreatingBlock={isCreatingBlock}
+      blockErrorMessage={blockErrorMessage}
+      blockStatusMessage={blockStatusMessage}
+      pageErrorMessage={pageErrorMessage}
+      pageStatusMessage={pageStatusMessage}
+      pageTitle={pageTitle}
+      pageSlug={pageSlug}
+      pageSEOTitle={pageSEOTitle}
+      pageSEODescription={pageSEODescription}
+      pageIncludeInNavigation={pageIncludeInNavigation}
+      isSavingPage={isSavingPage}
+      isDeletingPage={isDeletingPage}
+      pages={draft.pages}
+      onSelectPage={handleSelectPage}
+      onSelectBlock={handleSelectBlock}
+      onSaveBlock={handleSaveBlock}
+      onCreateBlock={handleCreateBlock}
+      onDuplicateBlock={handleDuplicateBlock}
+      onDeleteBlock={handleDeleteBlock}
+      onMoveBlock={handleMoveBlock}
+      onMovePage={handleMovePage}
+      onDeletePage={handleDeletePage}
+      onChangeNewBlockType={setNewBlockType}
+      onSavePage={handleSavePage}
+      onSetPageTitle={setPageTitle}
+      onSetPageSlug={setPageSlug}
+      onSetPageSEOTitle={setPageSEOTitle}
+      onSetPageSEODescription={setPageSEODescription}
+      onSetPageIncludeInNavigation={setPageIncludeInNavigation}
+      onReorderBlocks={handleReorderBlocks}
+      onDropPaletteBlock={handleDropPaletteBlock}
+      settingsContent={
+        <>
+          <section className={ribbonPanel}>
+            <div className="mb-[22px]">
+              <p className={text.eyebrow}>Prompt iteration</p>
+              <h2 className={text.h2}>Replace draft direction</h2>
+              <p className={cn(text.p, 'mt-2')}>
+                Re-prompts replace the targeted content scope. They do not try
+                to merge block-by-block edits. Use undo if the new result is
+                worse.
               </p>
             </div>
-          )}
-        </section>
 
-        <section className={ribbonPanel}>
-          <div className="mb-[22px]">
-            <p className={text.eyebrow}>Navigation</p>
-            <h2 className={text.h2}>Set the menu order</h2>
-            <p className={text.p}>
-              Keep the menu page-backed, but adjust its order independently from
-              the page outline.
-            </p>
-          </div>
+            <div className="grid gap-4">
+              <form className={form.grid} onSubmit={handleSiteReprompt}>
+                <label htmlFor="site-reprompt" className={text.label}>
+                  Whole site prompt
+                </label>
+                <Textarea
+                  id="site-reprompt"
+                  rows={4}
+                  value={siteReprompt}
+                  placeholder="Make the site warmer, tighten the copy, add pricing, and lean harder into workshops."
+                  onChange={(event) => setSiteReprompt(event.target.value)}
+                />
+                <p className={form.hint}>
+                  Replaces the generated content across the draft while keeping
+                  the site identity and current draft version history.
+                </p>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={isRepromptingSite || siteReprompt.trim() === ''}
+                >
+                  {isRepromptingSite ? 'Rebuilding site...' : 'Re-prompt site'}
+                </Button>
+              </form>
 
-          {navigationPages.length > 0 ? (
-            <div className="grid gap-3">
-              {navigationPages.map((page, index) => {
-                const isSelected = page.id === selectedPage?.id
+              <form className={form.grid} onSubmit={handlePageReprompt}>
+                <label htmlFor="page-reprompt" className={text.label}>
+                  {selectedPage
+                    ? `${selectedPage.title} page prompt`
+                    : 'Page prompt'}
+                </label>
+                <Textarea
+                  id="page-reprompt"
+                  rows={4}
+                  value={pageReprompt}
+                  placeholder="Turn this page into a tighter pricing overview with clearer package framing and fewer sections."
+                  onChange={(event) => setPageReprompt(event.target.value)}
+                />
+                <p className={form.hint}>
+                  Replaces the selected page content while keeping its route and
+                  position in the site.
+                </p>
+                <div className={actions.row}>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={
+                      !selectedPage ||
+                      isRepromptingPage ||
+                      pageReprompt.trim() === ''
+                    }
+                  >
+                    {isRepromptingPage
+                      ? 'Rebuilding page...'
+                      : 'Re-prompt page'}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={isUndoingReprompt}
+                    onClick={handleUndoReprompt}
+                  >
+                    {isUndoingReprompt ? 'Restoring...' : 'Undo last re-prompt'}
+                  </Button>
+                </div>
+              </form>
 
-                return (
+              {repromptErrorMessage ? (
+                <p className={text.error}>{repromptErrorMessage}</p>
+              ) : null}
+              {repromptStatusMessage ? (
+                <p className={text.success}>{repromptStatusMessage}</p>
+              ) : null}
+            </div>
+          </section>
+
+          <section className={ribbonPanel}>
+            <div className="mb-[22px]">
+              <p className={text.eyebrow}>Navigation</p>
+              <h2 className={text.h2}>Set the menu order</h2>
+            </div>
+
+            {navigationPages.length > 0 ? (
+              <div className="grid gap-3">
+                {navigationPages.map((page, index) => (
                   <article
                     key={page.id}
                     className={cn(
                       'grid gap-3 rounded-[14px] border border-border bg-[var(--surface-2)] p-4',
-                      isSelected &&
-                        'border-[var(--thread-teal)] bg-[color-mix(in_oklch,var(--surface-2)_80%,var(--thread-teal))]',
                     )}
                   >
                     <div className="flex items-center justify-between gap-3">
@@ -1230,669 +1195,615 @@ function SiteDetail() {
                       </div>
                     </div>
                   </article>
-                )
-              })}
+                ))}
 
-              {navigationErrorMessage ? (
-                <p className={text.error}>{navigationErrorMessage}</p>
-              ) : null}
-              {navigationStatusMessage ? (
-                <p className={text.success}>{navigationStatusMessage}</p>
-              ) : null}
+                {navigationErrorMessage ? (
+                  <p className={text.error}>{navigationErrorMessage}</p>
+                ) : null}
+                {navigationStatusMessage ? (
+                  <p className={text.success}>{navigationStatusMessage}</p>
+                ) : null}
 
-              <p className={form.hint}>
-                {hiddenNavigationPageCount > 0
-                  ? `${hiddenNavigationPageCount} page${hiddenNavigationPageCount === 1 ? '' : 's'} currently stay out of the primary navigation.`
-                  : 'Every page is currently included in the primary navigation.'}
-                {externalNavigationCount > 0
-                  ? ` ${externalNavigationCount} external link${externalNavigationCount === 1 ? '' : 's'} still stay appended after the page links.`
-                  : ''}
-              </p>
-            </div>
-          ) : (
-            <div className={emptyState}>
-              <p className={text.p}>
-                Include at least one page in the primary navigation to reorder
-                it.
-              </p>
-            </div>
-          )}
-        </section>
-
-        <section className={ribbonPanel}>
-          <div className="mb-[22px]">
-            <p className={text.eyebrow}>Theme</p>
-            <h2 className={text.h2}>Set the site direction</h2>
-            <p className={text.p}>
-              Keep the visual system inside the safe theme contract while tuning
-              the palette, type, spacing, and corner feel.
-            </p>
-          </div>
-
-          {themeSelection && themeOptions ? (
-            <form className={form.grid} onSubmit={handleSaveTheme}>
-              <div className="rounded-[16px] border border-border bg-[var(--surface-2)] p-4">
-                <div className="grid grid-cols-2 gap-3 max-lg:grid-cols-1">
-                  {Object.entries(draft.theme.tokens.colors).map(
-                    ([key, value]) => (
-                      <div
-                        key={key}
-                        className="flex items-center gap-3 rounded-[14px] border border-border bg-[var(--surface-1)] px-3 py-2.5"
-                      >
-                        <span
-                          className="size-[34px] shrink-0 rounded-full border border-border shadow-[inset_0_0_0_1px_oklch(7%_0.022_336_/_0.12)]"
-                          style={{ backgroundColor: value }}
-                        />
-                        <div>
-                          <strong className="block">
-                            {formatThemeLabel(key)}
-                          </strong>
-                          <small className="block text-[var(--paper-muted)]">
-                            {value}
-                          </small>
-                        </div>
-                      </div>
-                    ),
-                  )}
-                </div>
+                <p className={form.hint}>
+                  {hiddenNavigationPageCount > 0
+                    ? `${hiddenNavigationPageCount} page${hiddenNavigationPageCount === 1 ? '' : 's'} currently stay out of the primary navigation.`
+                    : 'Every page is currently included in the primary navigation.'}
+                  {externalNavigationCount > 0
+                    ? ` ${externalNavigationCount} external link${externalNavigationCount === 1 ? '' : 's'} still stay appended after the page links.`
+                    : ''}
+                </p>
               </div>
-
-              <label htmlFor="theme-palette" className={text.label}>
-                Palette
-              </label>
-              <Select
-                id="theme-palette"
-                value={themeSelection.palette}
-                onChange={(event) =>
-                  handleThemeSelectionChange('palette', event.target.value)
-                }
-              >
-                {themeOptions.palettes.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </Select>
-              <p className={form.hint}>
-                {describeThemeOption(
-                  themeOptions.palettes,
-                  themeSelection.palette,
-                )}
-              </p>
-
-              <label htmlFor="theme-font-preset" className={text.label}>
-                Font preset
-              </label>
-              <Select
-                id="theme-font-preset"
-                value={themeSelection.fontPreset}
-                onChange={(event) =>
-                  handleThemeSelectionChange('fontPreset', event.target.value)
-                }
-              >
-                {themeOptions.fontPresets.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </Select>
-              <p className={form.hint}>
-                {describeThemeOption(
-                  themeOptions.fontPresets,
-                  themeSelection.fontPreset,
-                )}
-              </p>
-
-              <label htmlFor="theme-section-spacing" className={text.label}>
-                Section spacing
-              </label>
-              <Select
-                id="theme-section-spacing"
-                value={themeSelection.sectionSpacing}
-                onChange={(event) =>
-                  handleThemeSelectionChange(
-                    'sectionSpacing',
-                    event.target.value,
-                  )
-                }
-              >
-                {themeOptions.sectionSpacings.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </Select>
-              <p className={form.hint}>
-                {describeThemeOption(
-                  themeOptions.sectionSpacings,
-                  themeSelection.sectionSpacing,
-                )}
-              </p>
-
-              <label htmlFor="theme-radius" className={text.label}>
-                Corner radius
-              </label>
-              <Select
-                id="theme-radius"
-                value={themeSelection.radius}
-                onChange={(event) =>
-                  handleThemeSelectionChange('radius', event.target.value)
-                }
-              >
-                {themeOptions.radii.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </Select>
-              <p className={form.hint}>
-                {describeThemeOption(themeOptions.radii, themeSelection.radius)}
-              </p>
-
-              <label htmlFor="theme-button-style" className={text.label}>
-                Button style
-              </label>
-              <Select
-                id="theme-button-style"
-                value={themeSelection.buttonStyle}
-                onChange={(event) =>
-                  handleThemeSelectionChange('buttonStyle', event.target.value)
-                }
-              >
-                {themeOptions.buttonStyles.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </Select>
-              <p className={form.hint}>
-                {describeThemeOption(
-                  themeOptions.buttonStyles,
-                  themeSelection.buttonStyle,
-                )}
-              </p>
-
-              <label htmlFor="theme-image-style" className={text.label}>
-                Image style
-              </label>
-              <Select
-                id="theme-image-style"
-                value={themeSelection.imageStyle}
-                onChange={(event) =>
-                  handleThemeSelectionChange('imageStyle', event.target.value)
-                }
-              >
-                {themeOptions.imageStyles.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </Select>
-              <p className={form.hint}>
-                {describeThemeOption(
-                  themeOptions.imageStyles,
-                  themeSelection.imageStyle,
-                )}
-              </p>
-
-              {themeErrorMessage ? (
-                <p className={text.error}>{themeErrorMessage}</p>
-              ) : null}
-              {themeStatusMessage ? (
-                <p className={text.success}>{themeStatusMessage}</p>
-              ) : null}
-
-              <Button type="submit" disabled={isSavingTheme}>
-                {isSavingTheme ? 'Saving theme...' : 'Save theme'}
-              </Button>
-            </form>
-          ) : (
-            <div className={emptyState}>
-              <p className={text.p}>Loading theme controls...</p>
-            </div>
-          )}
-        </section>
-
-        <section className={ribbonPanel}>
-          <div className="mb-[22px]">
-            <p className={text.eyebrow}>Assets</p>
-            <h2 className={text.h2}>Upload the site image library</h2>
-            <p className={text.p}>
-              Reuse uploaded images across hero, gallery, profile, and
-              supporting media blocks without typing raw asset ids.
-            </p>
-          </div>
-
-          <form className={form.grid} onSubmit={handleUploadAsset}>
-            <label htmlFor="asset-file" className={text.label}>
-              Image file
-            </label>
-            <Input
-              key={assetInputKey}
-              id="asset-file"
-              type="file"
-              accept="image/avif,image/gif,image/jpeg,image/png,image/webp"
-              onChange={(event) =>
-                setAssetFile(event.target.files?.[0] ?? null)
-              }
-            />
-
-            <label htmlFor="asset-alt-text" className={text.label}>
-              Default alt text
-            </label>
-            <Input
-              id="asset-alt-text"
-              value={assetAltText}
-              onChange={(event) => setAssetAltText(event.target.value)}
-              placeholder="Describe what the image shows"
-            />
-
-            {assetErrorMessage ? (
-              <p className={text.error}>{assetErrorMessage}</p>
-            ) : null}
-            {assetStatusMessage ? (
-              <p className={text.success}>{assetStatusMessage}</p>
-            ) : null}
-
-            <Button type="submit" disabled={isUploadingAsset || !assetFile}>
-              {isUploadingAsset ? 'Uploading asset...' : 'Upload asset'}
-            </Button>
-          </form>
-
-          <div className="mt-5 grid gap-3">
-            {siteAssets.length > 0 ? (
-              siteAssets.map((asset) => (
-                <article
-                  key={asset.id}
-                  className="grid gap-3 rounded-[14px] border border-border bg-[var(--surface-2)] p-4"
-                >
-                  <div className="grid gap-3 sm:grid-cols-[120px_minmax(0,1fr)] sm:items-start">
-                    {asset.metadata.uploadStatus === 'uploaded' ? (
-                      <img
-                        src={buildDraftAssetURL(asset.id)}
-                        alt={
-                          asset.altText ||
-                          asset.metadata.fileName ||
-                          'Uploaded site asset'
-                        }
-                        className="h-[108px] w-full rounded-[12px] border border-border bg-[var(--surface-1)] object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="grid h-[108px] w-full place-items-center rounded-[12px] border border-dashed border-border bg-[var(--surface-1)] text-sm text-[var(--paper-muted)]">
-                        Processing upload
-                      </div>
-                    )}
-                    <div className="grid gap-1">
-                      <strong className="text-[var(--paper)]">
-                        {asset.metadata.fileName || asset.id}
-                      </strong>
-                      <small className="text-[var(--paper-muted)]">
-                        {asset.metadata.contentType || 'Image'} ·{' '}
-                        {formatAssetFileSize(
-                          asset.metadata.sizeBytes ||
-                            asset.metadata.requestedSizeBytes,
-                        )}
-                      </small>
-                      <small className="text-[var(--paper-muted)]">
-                        {describeAssetDimensions(asset)} ·{' '}
-                        {asset.metadata.uploadStatus || 'pending'}
-                      </small>
-                      {asset.altText ? (
-                        <p className="m-0 text-sm text-[var(--paper-muted)]">
-                          Alt: {asset.altText}
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                </article>
-              ))
             ) : (
               <div className={emptyState}>
                 <p className={text.p}>
-                  No site assets yet. Upload the first image here, then pick it
-                  in any asset-enabled block field below.
+                  Include at least one page in the primary navigation to reorder
+                  it.
                 </p>
               </div>
             )}
-          </div>
-        </section>
-
-        <section className={ribbonPanel}>
-          <div className="mb-[22px]">
-            <p className={text.eyebrow}>Inquiries</p>
-            <h2 className={text.h2}>Review contact form submissions</h2>
-            <p className={text.p}>
-              MVP stores submissions in-app only. Update their status here as
-              you triage new messages.
-            </p>
-          </div>
-
-          {submissionErrorMessage ? (
-            <p className={text.error}>{submissionErrorMessage}</p>
-          ) : null}
-          {submissionStatusMessage ? (
-            <p className={text.success}>{submissionStatusMessage}</p>
-          ) : null}
-
-          <div className="mt-5 grid gap-3">
-            {formSubmissions.length > 0 ? (
-              formSubmissions.map((submission) => (
-                <article
-                  key={submission.id}
-                  className="grid gap-3 rounded-[14px] border border-border bg-[var(--surface-2)] p-4"
-                >
-                  <div className="flex items-start justify-between gap-3 max-sm:flex-col">
-                    <div>
-                      <strong className="block text-[var(--paper)]">
-                        {String(
-                          submission.payload['name'] ||
-                            submission.payload['email'] ||
-                            'New inquiry',
-                        )}
-                      </strong>
-                      <small className="text-[var(--paper-muted)]">
-                        {submission.pageTitle || 'Stored submission'} ·{' '}
-                        {formatTimestamp(submission.createdAt)}
-                      </small>
-                    </div>
-                    <Select
-                      value={submission.status}
-                      disabled={activeSubmissionId === submission.id}
-                      onChange={(event) =>
-                        handleUpdateSubmissionStatus(
-                          submission.id,
-                          event.target.value as FormSubmissionStatus,
-                        )
-                      }
-                    >
-                      <option value="new">New</option>
-                      <option value="reviewed">Reviewed</option>
-                      <option value="resolved">Resolved</option>
-                      <option value="spam">Spam</option>
-                    </Select>
-                  </div>
-
-                  <div className="grid gap-2">
-                    {Object.entries(submission.payload).map(([key, value]) => (
-                      <div key={key} className="grid gap-1">
-                        <strong className="text-sm uppercase tracking-[0.08em] text-[var(--paper-muted)]">
-                          {formatSubmissionKey(key)}
-                        </strong>
-                        <p className="m-0 whitespace-pre-wrap text-[var(--paper)]">
-                          {String(value)}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </article>
-              ))
-            ) : (
-              <div className={emptyState}>
-                <p className={text.p}>
-                  {hasContactForm
-                    ? 'No submissions yet. Published and preview contact forms will start listing messages here.'
-                    : 'Add a contact form block to start collecting inquiries.'}
-                </p>
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section className={ribbonPanel}>
-          <div className="mb-[22px]">
-            <p className={text.eyebrow}>Blocks</p>
-            <h2 className={text.h2}>
-              {selectedPage
-                ? `Add to ${selectedPage.title}`
-                : 'Choose a page first'}
-            </h2>
-          </div>
-
-          {selectedPage ? (
-            <form className={form.grid} onSubmit={handleCreateBlock}>
-              <label htmlFor="new-block-type" className={text.label}>
-                Approved block type
-              </label>
-              <Select
-                id="new-block-type"
-                value={newBlockType}
-                onChange={(event) => setNewBlockType(event.target.value)}
-              >
-                {blockRegistry.map((definition) => (
-                  <option
-                    key={`${definition.type}@${definition.version}`}
-                    value={definition.type}
-                  >
-                    {definition.displayName}
-                  </option>
-                ))}
-              </Select>
-
-              <Button type="submit" disabled={isCreatingBlock || !newBlockType}>
-                {isCreatingBlock ? 'Adding block...' : 'Add block'}
-              </Button>
-            </form>
-          ) : (
-            <div className={emptyState}>
-              <p className={text.p}>Select a page before adding new blocks.</p>
-            </div>
-          )}
-        </section>
-
-        {selectedBlock ? (
-          <section className={ribbon}>
-            <BlockEditor
-              key={selectedBlock.id}
-              block={selectedBlock}
-              definition={selectedDefinition}
-              isSaving={isSavingBlock}
-              errorMessage={blockErrorMessage}
-              statusMessage={blockStatusMessage}
-              assetLibrary={uploadedSiteAssets}
-              onSave={handleSaveBlock}
-            />
-
-            <div className={actions.panelFooter}>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={selectedBlockIndex <= 0 || isMutatingBlocks}
-                onClick={() => handleMoveBlock(-1)}
-              >
-                Move earlier
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={
-                  !selectedPage ||
-                  selectedBlockIndex === selectedPage.blocks.length - 1 ||
-                  isMutatingBlocks
-                }
-                onClick={() => handleMoveBlock(1)}
-              >
-                Move later
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={isMutatingBlocks}
-                onClick={handleDuplicateBlock}
-              >
-                Duplicate
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={isMutatingBlocks}
-                onClick={handleDeleteBlock}
-              >
-                Delete
-              </Button>
-            </div>
           </section>
-        ) : (
+
           <section className={ribbonPanel}>
-            <div className={emptyState}>
-              <p className={text.p}>
-                {selectedPage
-                  ? 'This page does not have any blocks yet.'
-                  : 'Select a page to work with its blocks.'}
+            <div className="mb-[22px]">
+              <p className={text.eyebrow}>Pages</p>
+              <h2 className={text.h2}>Add another page</h2>
+            </div>
+
+            <form className={form.grid} onSubmit={handleCreatePage}>
+              <label htmlFor="new-page-title" className={text.label}>
+                Page title
+              </label>
+              <Input
+                id="new-page-title"
+                value={newPageTitle}
+                onChange={(event) => setNewPageTitle(event.target.value)}
+                placeholder="Pricing"
+                required
+              />
+
+              <label htmlFor="new-page-slug" className={text.label}>
+                Page slug
+              </label>
+              <Input
+                id="new-page-slug"
+                value={newPageSlug}
+                onChange={(event) => setNewPageSlug(event.target.value)}
+                placeholder="/pricing"
+              />
+
+              <label className={form.toggle}>
+                <input
+                  type="checkbox"
+                  className="size-4 accent-[var(--thread-teal)]"
+                  checked={newPageIncludeInNavigation}
+                  onChange={(event) =>
+                    setNewPageIncludeInNavigation(event.target.checked)
+                  }
+                />
+                Include this page in primary navigation
+              </label>
+
+              <Button
+                type="submit"
+                size="sm"
+                disabled={isCreatingPage || draft.pages.length >= 10}
+              >
+                {isCreatingPage ? 'Adding page...' : 'Add page'}
+              </Button>
+
+              <p className={form.hint}>
+                {draft.pages.length >= 10
+                  ? 'This draft already has the 10-page MVP limit.'
+                  : `${draft.pages.length} of 10 pages currently in this draft.`}
               </p>
+            </form>
+          </section>
+
+          <section className={ribbonPanel}>
+            <div className="mb-[22px]">
+              <p className={text.eyebrow}>Theme</p>
+              <h2 className={text.h2}>Set the site direction</h2>
+            </div>
+
+            {themeSelection && themeOptions ? (
+              <form className={form.grid} onSubmit={handleSaveTheme}>
+                <div className="rounded-[16px] border border-border bg-[var(--surface-2)] p-4">
+                  <div className="grid grid-cols-2 gap-3 max-lg:grid-cols-1">
+                    {Object.entries(draft.theme.tokens.colors).map(
+                      ([key, value]) => (
+                        <div
+                          key={key}
+                          className="flex items-center gap-3 rounded-[14px] border border-border bg-[var(--surface-1)] px-3 py-2.5"
+                        >
+                          <span
+                            className="size-[34px] shrink-0 rounded-full border border-border shadow-[inset_0_0_0_1px_oklch(7%_0.022_336_/_0.12)]"
+                            style={{ backgroundColor: value }}
+                          />
+                          <div>
+                            <strong className="block">
+                              {formatThemeLabel(key)}
+                            </strong>
+                            <small className="block text-[var(--paper-muted)]">
+                              {value}
+                            </small>
+                          </div>
+                        </div>
+                      ),
+                    )}
+                  </div>
+                </div>
+
+                <label htmlFor="theme-palette" className={text.label}>
+                  Palette
+                </label>
+                <Select
+                  id="theme-palette"
+                  value={themeSelection.palette}
+                  onChange={(event) =>
+                    handleThemeSelectionChange('palette', event.target.value)
+                  }
+                >
+                  {themeOptions.palettes.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+                <p className={form.hint}>
+                  {describeThemeOption(
+                    themeOptions.palettes,
+                    themeSelection.palette,
+                  )}
+                </p>
+
+                <label htmlFor="theme-font-preset" className={text.label}>
+                  Font preset
+                </label>
+                <Select
+                  id="theme-font-preset"
+                  value={themeSelection.fontPreset}
+                  onChange={(event) =>
+                    handleThemeSelectionChange('fontPreset', event.target.value)
+                  }
+                >
+                  {themeOptions.fontPresets.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+                <p className={form.hint}>
+                  {describeThemeOption(
+                    themeOptions.fontPresets,
+                    themeSelection.fontPreset,
+                  )}
+                </p>
+
+                <label htmlFor="theme-section-spacing" className={text.label}>
+                  Section spacing
+                </label>
+                <Select
+                  id="theme-section-spacing"
+                  value={themeSelection.sectionSpacing}
+                  onChange={(event) =>
+                    handleThemeSelectionChange(
+                      'sectionSpacing',
+                      event.target.value,
+                    )
+                  }
+                >
+                  {themeOptions.sectionSpacings.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+                <p className={form.hint}>
+                  {describeThemeOption(
+                    themeOptions.sectionSpacings,
+                    themeSelection.sectionSpacing,
+                  )}
+                </p>
+
+                <label htmlFor="theme-radius" className={text.label}>
+                  Corner radius
+                </label>
+                <Select
+                  id="theme-radius"
+                  value={themeSelection.radius}
+                  onChange={(event) =>
+                    handleThemeSelectionChange('radius', event.target.value)
+                  }
+                >
+                  {themeOptions.radii.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+                <p className={form.hint}>
+                  {describeThemeOption(
+                    themeOptions.radii,
+                    themeSelection.radius,
+                  )}
+                </p>
+
+                <label htmlFor="theme-button-style" className={text.label}>
+                  Button style
+                </label>
+                <Select
+                  id="theme-button-style"
+                  value={themeSelection.buttonStyle}
+                  onChange={(event) =>
+                    handleThemeSelectionChange(
+                      'buttonStyle',
+                      event.target.value,
+                    )
+                  }
+                >
+                  {themeOptions.buttonStyles.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+                <p className={form.hint}>
+                  {describeThemeOption(
+                    themeOptions.buttonStyles,
+                    themeSelection.buttonStyle,
+                  )}
+                </p>
+
+                <label htmlFor="theme-image-style" className={text.label}>
+                  Image style
+                </label>
+                <Select
+                  id="theme-image-style"
+                  value={themeSelection.imageStyle}
+                  onChange={(event) =>
+                    handleThemeSelectionChange(
+                      'imageStyle',
+                      event.target.value,
+                    )
+                  }
+                >
+                  {themeOptions.imageStyles.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+                <p className={form.hint}>
+                  {describeThemeOption(
+                    themeOptions.imageStyles,
+                    themeSelection.imageStyle,
+                  )}
+                </p>
+
+                {themeErrorMessage ? (
+                  <p className={text.error}>{themeErrorMessage}</p>
+                ) : null}
+                {themeStatusMessage ? (
+                  <p className={text.success}>{themeStatusMessage}</p>
+                ) : null}
+
+                <Button type="submit" disabled={isSavingTheme}>
+                  {isSavingTheme ? 'Saving theme...' : 'Save theme'}
+                </Button>
+              </form>
+            ) : (
+              <div className={emptyState}>
+                <p className={text.p}>Loading theme controls...</p>
+              </div>
+            )}
+          </section>
+
+          <section className={ribbonPanel}>
+            <div className="mb-[22px]">
+              <p className={text.eyebrow}>Assets</p>
+              <h2 className={text.h2}>Upload the site image library</h2>
+            </div>
+
+            <form className={form.grid} onSubmit={handleUploadAsset}>
+              <label htmlFor="asset-file" className={text.label}>
+                Image file
+              </label>
+              <Input
+                key={assetInputKey}
+                id="asset-file"
+                type="file"
+                accept="image/avif,image/gif,image/jpeg,image/png,image/webp"
+                onChange={(event) =>
+                  setAssetFile(event.target.files?.[0] ?? null)
+                }
+              />
+
+              <label htmlFor="asset-alt-text" className={text.label}>
+                Default alt text
+              </label>
+              <Input
+                id="asset-alt-text"
+                value={assetAltText}
+                onChange={(event) => setAssetAltText(event.target.value)}
+                placeholder="Describe what the image shows"
+              />
+
+              {assetErrorMessage ? (
+                <p className={text.error}>{assetErrorMessage}</p>
+              ) : null}
+              {assetStatusMessage ? (
+                <p className={text.success}>{assetStatusMessage}</p>
+              ) : null}
+
+              <Button type="submit" disabled={isUploadingAsset || !assetFile}>
+                {isUploadingAsset ? 'Uploading asset...' : 'Upload asset'}
+              </Button>
+            </form>
+
+            <div className="mt-5 grid gap-3">
+              {siteAssets.length > 0 ? (
+                siteAssets.map((asset) => (
+                  <article
+                    key={asset.id}
+                    className="grid gap-3 rounded-[14px] border border-border bg-[var(--surface-2)] p-4"
+                  >
+                    <div className="grid gap-3 sm:grid-cols-[120px_minmax(0,1fr)] sm:items-start">
+                      {asset.metadata.uploadStatus === 'uploaded' ? (
+                        <img
+                          src={buildDraftAssetURL(asset.id)}
+                          alt={
+                            asset.altText ||
+                            asset.metadata.fileName ||
+                            'Uploaded site asset'
+                          }
+                          className="h-[108px] w-full rounded-[12px] border border-border bg-[var(--surface-1)] object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="grid h-[108px] w-full place-items-center rounded-[12px] border border-dashed border-border bg-[var(--surface-1)] text-sm text-[var(--paper-muted)]">
+                          Processing upload
+                        </div>
+                      )}
+                      <div className="grid gap-1">
+                        <strong className="text-[var(--paper)]">
+                          {asset.metadata.fileName || asset.id}
+                        </strong>
+                        <small className="text-[var(--paper-muted)]">
+                          {asset.metadata.contentType || 'Image'} ·{' '}
+                          {formatAssetFileSize(
+                            asset.metadata.sizeBytes ||
+                              asset.metadata.requestedSizeBytes,
+                          )}
+                        </small>
+                        <small className="text-[var(--paper-muted)]">
+                          {describeAssetDimensions(asset)} ·{' '}
+                          {asset.metadata.uploadStatus || 'pending'}
+                        </small>
+                        {asset.altText ? (
+                          <p className="m-0 text-sm text-[var(--paper-muted)]">
+                            Alt: {asset.altText}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <div className={emptyState}>
+                  <p className={text.p}>
+                    No site assets yet. Upload the first image here, then pick
+                    it in any asset-enabled block field below.
+                  </p>
+                </div>
+              )}
             </div>
           </section>
-        )}
 
-        <section className={ribbonPanel}>
-          <div className="mb-[22px]">
-            <p className={text.eyebrow}>Publish</p>
-            <h2 className={text.h2}>Release an immutable snapshot</h2>
-            <p className={text.p}>
-              Publish stores the current validated draft in `site_versions` and
-              serves the public route from that snapshot.
-            </p>
-          </div>
+          <section className={ribbonPanel}>
+            <div className="mb-[22px]">
+              <p className={text.eyebrow}>Inquiries</p>
+              <h2 className={text.h2}>Review contact form submissions</h2>
+            </div>
 
-          <label htmlFor="publish-note" className={text.label}>
-            Publish note
-          </label>
-          <Textarea
-            id="publish-note"
-            name="publishNote"
-            rows={3}
-            value={publishNote}
-            onChange={(event) => setPublishNote(event.target.value)}
-            placeholder="What changed in this release?"
-          />
-
-          {publishErrorMessage ? (
-            <p className={text.error}>{publishErrorMessage}</p>
-          ) : null}
-          {publishStatusMessage ? (
-            <p className={text.success}>{publishStatusMessage}</p>
-          ) : null}
-
-          <div className={actions.rowLarge}>
-            <Button
-              type="button"
-              disabled={isPublishing || activeRollbackVersionId !== ''}
-              onClick={handlePublish}
-            >
-              {isPublishing ? 'Publishing...' : 'Publish snapshot'}
-            </Button>
-            {currentVersion ? (
-              <Button asChild variant="plain" className={actions.inlineLink}>
-                <Link
-                  to="/public/$siteSlug"
-                  params={{ siteSlug: draft.site.slug }}
-                >
-                  View live site
-                </Link>
-              </Button>
+            {submissionErrorMessage ? (
+              <p className={text.error}>{submissionErrorMessage}</p>
             ) : null}
-          </div>
+            {submissionStatusMessage ? (
+              <p className={text.success}>{submissionStatusMessage}</p>
+            ) : null}
 
-          <div className="grid gap-3">
-            {versions.length === 0 ? (
-              <div className={emptyState}>
-                <p className={text.p}>No published versions yet.</p>
-              </div>
-            ) : (
-              versions.map((version) => (
-                <article
-                  key={version.id}
-                  className="grid gap-2 rounded-[14px] border border-border bg-[var(--surface-2)] p-4"
-                >
-                  <div>
-                    <strong>
-                      v{version.versionNumber}
-                      {version.isCurrent ? ' current' : ''}
-                    </strong>
-                    <p className="m-0 text-[var(--paper-muted)]">
-                      {formatTimestamp(version.createdAt)}
-                    </p>
-                  </div>
-                  {version.publishNote ? (
-                    <small className="m-0 text-[var(--paper-muted)]">
-                      {version.publishNote}
-                    </small>
-                  ) : null}
-                  {!version.isCurrent ? (
-                    <div className={actions.row}>
-                      <Button
-                        type="button"
-                        variant="plain"
-                        className={actions.inlineLink}
-                        disabled={
-                          isPublishing || activeRollbackVersionId !== ''
+            <div className="mt-5 grid gap-3">
+              {formSubmissions.length > 0 ? (
+                formSubmissions.map((submission) => (
+                  <article
+                    key={submission.id}
+                    className="grid gap-3 rounded-[14px] border border-border bg-[var(--surface-2)] p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3 max-sm:flex-col">
+                      <div>
+                        <strong className="block text-[var(--paper)]">
+                          {String(
+                            submission.payload['name'] ||
+                              submission.payload['email'] ||
+                              'New inquiry',
+                          )}
+                        </strong>
+                        <small className="text-[var(--paper-muted)]">
+                          {submission.pageTitle || 'Stored submission'} ·{' '}
+                          {formatTimestamp(submission.createdAt)}
+                        </small>
+                      </div>
+                      <Select
+                        value={submission.status}
+                        disabled={activeSubmissionId === submission.id}
+                        onChange={(event) =>
+                          handleUpdateSubmissionStatus(
+                            submission.id,
+                            event.target.value as FormSubmissionStatus,
+                          )
                         }
-                        onClick={() => handleRollback(version)}
                       >
-                        {activeRollbackVersionId === version.id
-                          ? 'Rolling back...'
-                          : 'Roll back live site'}
-                      </Button>
+                        <option value="new">New</option>
+                        <option value="reviewed">Reviewed</option>
+                        <option value="resolved">Resolved</option>
+                        <option value="spam">Spam</option>
+                      </Select>
                     </div>
-                  ) : null}
-                </article>
-              ))
-            )}
-          </div>
-        </section>
 
-        <section className={ribbonPanel}>
-          <div className="mb-[22px]">
-            <p className={text.eyebrow}>Site details</p>
-            <h2 className={text.h2}>Rename and reslug the draft</h2>
-          </div>
+                    <div className="grid gap-2">
+                      {Object.entries(submission.payload).map(
+                        ([key, value]) => (
+                          <div key={key} className="grid gap-1">
+                            <strong className="text-sm uppercase tracking-[0.08em] text-[var(--paper-muted)]">
+                              {formatSubmissionKey(key)}
+                            </strong>
+                            <p className="m-0 whitespace-pre-wrap text-[var(--paper)]">
+                              {String(value)}
+                            </p>
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <div className={emptyState}>
+                  <p className={text.p}>
+                    {hasContactForm
+                      ? 'No submissions yet. Published and preview contact forms will start listing messages here.'
+                      : 'Add a contact form block to start collecting inquiries.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          </section>
 
-          <form className={form.grid} onSubmit={handleSaveSite}>
-            <label htmlFor="site-name" className={text.label}>
-              Business name
+          <section className={ribbonPanel}>
+            <div className="mb-[22px]">
+              <p className={text.eyebrow}>Publish</p>
+              <h2 className={text.h2}>Release an immutable snapshot</h2>
+            </div>
+
+            <label htmlFor="publish-note" className={text.label}>
+              Publish note
             </label>
-            <Input
-              id="site-name"
-              name="name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              required
+            <Textarea
+              id="publish-note"
+              name="publishNote"
+              rows={3}
+              value={publishNote}
+              onChange={(event) => setPublishNote(event.target.value)}
+              placeholder="What changed in this release?"
             />
 
-            <label htmlFor="site-slug" className={text.label}>
-              Slug
-            </label>
-            <Input
-              id="site-slug"
-              name="slug"
-              value={slug}
-              onChange={(event) => setSlug(event.target.value)}
-              required
-            />
-
-            {siteErrorMessage ? (
-              <p className={text.error}>{siteErrorMessage}</p>
+            {publishErrorMessage ? (
+              <p className={text.error}>{publishErrorMessage}</p>
             ) : null}
-            {siteStatusMessage ? (
-              <p className={text.success}>{siteStatusMessage}</p>
+            {publishStatusMessage ? (
+              <p className={text.success}>{publishStatusMessage}</p>
             ) : null}
 
-            <Button type="submit" disabled={isSavingSite}>
-              {isSavingSite ? 'Saving...' : 'Save site'}
-            </Button>
+            <div className={actions.rowLarge}>
+              <Button
+                type="button"
+                disabled={isPublishing || activeRollbackVersionId !== ''}
+                onClick={handlePublish}
+              >
+                {isPublishing ? 'Publishing...' : 'Publish snapshot'}
+              </Button>
+              {currentVersion ? (
+                <Button asChild variant="plain" className={actions.inlineLink}>
+                  <Link
+                    to="/public/$siteSlug"
+                    params={{ siteSlug: draft.site.slug }}
+                  >
+                    View live site
+                  </Link>
+                </Button>
+              ) : null}
+            </div>
 
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isDeleting}
-              onClick={handleDelete}
-            >
-              {isDeleting ? 'Deleting...' : 'Delete draft'}
-            </Button>
-          </form>
-        </section>
-      </div>
-    </div>
+            <div className="grid gap-3">
+              {versions.length === 0 ? (
+                <div className={emptyState}>
+                  <p className={text.p}>No published versions yet.</p>
+                </div>
+              ) : (
+                versions.map((version) => (
+                  <article
+                    key={version.id}
+                    className="grid gap-2 rounded-[14px] border border-border bg-[var(--surface-2)] p-4"
+                  >
+                    <div>
+                      <strong>
+                        v{version.versionNumber}
+                        {version.isCurrent ? ' current' : ''}
+                      </strong>
+                      <p className="m-0 text-[var(--paper-muted)]">
+                        {formatTimestamp(version.createdAt)}
+                      </p>
+                    </div>
+                    {version.publishNote ? (
+                      <small className="m-0 text-[var(--paper-muted)]">
+                        {version.publishNote}
+                      </small>
+                    ) : null}
+                    {!version.isCurrent ? (
+                      <div className={actions.row}>
+                        <Button
+                          type="button"
+                          variant="plain"
+                          className={actions.inlineLink}
+                          disabled={
+                            isPublishing || activeRollbackVersionId !== ''
+                          }
+                          onClick={() => handleRollback(version)}
+                        >
+                          {activeRollbackVersionId === version.id
+                            ? 'Rolling back...'
+                            : 'Roll back live site'}
+                        </Button>
+                      </div>
+                    ) : null}
+                  </article>
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className={ribbonPanel}>
+            <div className="mb-[22px]">
+              <p className={text.eyebrow}>Site details</p>
+              <h2 className={text.h2}>Rename and reslug the draft</h2>
+            </div>
+
+            <form className={form.grid} onSubmit={handleSaveSite}>
+              <label htmlFor="site-name" className={text.label}>
+                Business name
+              </label>
+              <Input
+                id="site-name"
+                name="name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                required
+              />
+
+              <label htmlFor="site-slug" className={text.label}>
+                Slug
+              </label>
+              <Input
+                id="site-slug"
+                name="slug"
+                value={slug}
+                onChange={(event) => setSlug(event.target.value)}
+                required
+              />
+
+              {siteErrorMessage ? (
+                <p className={text.error}>{siteErrorMessage}</p>
+              ) : null}
+              {siteStatusMessage ? (
+                <p className={text.success}>{siteStatusMessage}</p>
+              ) : null}
+
+              <Button type="submit" disabled={isSavingSite}>
+                {isSavingSite ? 'Saving...' : 'Save site'}
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isDeleting}
+                onClick={handleDelete}
+              >
+                {isDeleting ? 'Deleting...' : 'Delete draft'}
+              </Button>
+            </form>
+          </section>
+        </>
+      }
+    />
   )
 }
 

@@ -1,0 +1,1072 @@
+import { type FormEvent, type ReactNode, useRef, useState } from 'react'
+import { Link } from '@tanstack/react-router'
+import { BlockEditor } from '@/components/BlockEditor'
+import { SiteDraftRenderer } from '@/components/SiteDraftRenderer'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  type AssetRecord,
+  type BlockDefinition,
+  type SiteDraft,
+} from '@/lib/api'
+import {
+  buildCanonicalBlockOrder,
+  draftToEditorCanvasPage,
+  reorderEditorCanvasBlocks,
+} from '@/lib/builder-adapter'
+import { buildSiteThemeStyle } from '@/lib/site-theme'
+import {
+  actions,
+  emptyState,
+  form,
+  preview,
+  ribbon,
+  text,
+} from '@/lib/styles'
+import { cn } from '@/lib/utils'
+
+type DraftPage = SiteDraft['pages'][number]
+type DraftBlock = SiteDraft['pages'][number]['blocks'][number]
+
+type PuckBuilderProps = {
+  siteId: string
+  draft: SiteDraft
+  blockRegistry: BlockDefinition[]
+  selectedPage: DraftPage | null
+  selectedBlock: DraftBlock | null
+  selectedDefinition: BlockDefinition | undefined
+  selectedBlockIndex: number
+  blockDefinitions: Map<string, BlockDefinition>
+  uploadedSiteAssets: AssetRecord[]
+  newBlockType: string
+  isSavingBlock: boolean
+  isMutatingBlocks: boolean
+  isCreatingBlock: boolean
+  blockErrorMessage: string
+  blockStatusMessage: string
+  pageErrorMessage: string
+  pageStatusMessage: string
+  pageTitle: string
+  pageSlug: string
+  pageSEOTitle: string
+  pageSEODescription: string
+  pageIncludeInNavigation: boolean
+  isSavingPage: boolean
+
+  onSelectPage: (pageId: string) => void
+  onSelectBlock: (blockId: string) => void
+  onSaveBlock: (
+    props: Record<string, unknown>,
+    hidden: boolean,
+  ) => Promise<void>
+  onCreateBlock: (event: FormEvent<HTMLFormElement>) => Promise<void>
+  onDuplicateBlock: () => Promise<void>
+  onDeleteBlock: () => Promise<void>
+  onMoveBlock: (direction: -1 | 1) => Promise<void>
+  onChangeNewBlockType: (type: string) => void
+  onSavePage: (event: FormEvent<HTMLFormElement>) => Promise<void>
+  onSetPageTitle: (title: string) => void
+  onSetPageSlug: (slug: string) => void
+  onSetPageSEOTitle: (title: string) => void
+  onSetPageSEODescription: (description: string) => void
+  onSetPageIncludeInNavigation: (include: boolean) => void
+  onReorderBlocks: (blockIds: string[]) => Promise<void>
+  onDropPaletteBlock: (blockType: string, targetIndex: number) => Promise<void>
+  onMovePage: (pageId: string, direction: -1 | 1) => Promise<void>
+  onDeletePage: () => Promise<void>
+  isDeletingPage: boolean
+  pages: DraftPage[]
+}
+
+export function PuckBuilder({
+  siteId,
+  draft,
+  blockRegistry,
+  selectedPage,
+  selectedBlock,
+  selectedDefinition,
+  selectedBlockIndex,
+  blockDefinitions,
+  uploadedSiteAssets,
+  newBlockType,
+  isSavingBlock,
+  isMutatingBlocks,
+  isCreatingBlock,
+  blockErrorMessage,
+  blockStatusMessage,
+  pageErrorMessage,
+  pageStatusMessage,
+  pageTitle,
+  pageSlug,
+  pageSEOTitle,
+  pageSEODescription,
+  pageIncludeInNavigation,
+  isSavingPage,
+  onSelectPage,
+  onSelectBlock,
+  onSaveBlock,
+  onCreateBlock,
+  onDuplicateBlock,
+  onDeleteBlock,
+  onMoveBlock,
+  onChangeNewBlockType,
+  onSavePage,
+  onSetPageTitle,
+  onSetPageSlug,
+  onSetPageSEOTitle,
+  onSetPageSEODescription,
+  onSetPageIncludeInNavigation,
+  onReorderBlocks,
+  onDropPaletteBlock,
+  onMovePage,
+  onDeletePage,
+  isDeletingPage,
+  pages: draftPages,
+  settingsContent,
+}: PuckBuilderProps & { settingsContent?: ReactNode }) {
+  const [dragState, setDragState] = useState<DragState>({ kind: 'idle' })
+  const dropIndicatorRef = useRef<DropIndicator | null>(null)
+  const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(null)
+  const canvasRef = useRef<HTMLDivElement>(null)
+  const dragTypeRef = useRef<'move' | 'copy'>('move')
+  const editorPage = draftToEditorCanvasPage(draft, selectedPage?.id ?? null)
+
+  function handlePaletteDragStart(
+    event: React.DragEvent,
+    blockType: string,
+  ) {
+    event.dataTransfer.setData('text/plain', `palette:${blockType}`)
+    event.dataTransfer.effectAllowed = 'copy'
+    dragTypeRef.current = 'copy'
+    setDragState({ kind: 'dragging-palette', blockType })
+  }
+
+  function handleBlockDragStart(
+    event: React.DragEvent,
+    blockId: string,
+  ) {
+    event.dataTransfer.setData('text/plain', `reorder:${blockId}`)
+    event.dataTransfer.effectAllowed = 'move'
+    dragTypeRef.current = 'move'
+    setDragState({ kind: 'dragging-block', blockId })
+  }
+
+  function handleDragOver(event: React.DragEvent) {
+    event.preventDefault()
+    if (!canvasRef.current || !editorPage) return
+
+    const rect = canvasRef.current.getBoundingClientRect()
+    const y = event.clientY - rect.top
+    const blocks = editorPage.visibleBlocks
+    let found: DropIndicator | null = null
+
+    for (let i = 0; i < blocks.length; i++) {
+      const el = document.getElementById(`canvas-block-${blocks[i].block.id}`)
+      if (!el) continue
+      const blockRect = el.getBoundingClientRect()
+      const blockMidY = blockRect.top - rect.top + blockRect.height / 2
+
+      if (y < blockMidY) {
+        found = {
+          index: i,
+          blockId: blocks[i].block.id,
+          position: 'before',
+        }
+        break
+      }
+    }
+
+    if (!found && blocks.length > 0) {
+      found = {
+        index: blocks.length,
+        blockId: blocks[blocks.length - 1].block.id,
+        position: 'after',
+      }
+    }
+
+    if (!found) {
+      found = { index: 0, blockId: null, position: 'start' }
+    }
+
+    dropIndicatorRef.current = found
+    setDropIndicator(found)
+    event.dataTransfer.dropEffect = dragTypeRef.current
+  }
+
+  function handleDragLeave(event: React.DragEvent) {
+    if (canvasRef.current && !canvasRef.current.contains(event.relatedTarget as Node)) {
+      dropIndicatorRef.current = null
+      setDropIndicator(null)
+    }
+  }
+
+  async function handleDrop(event: React.DragEvent) {
+    event.preventDefault()
+    const target = dropIndicatorRef.current
+    dropIndicatorRef.current = null
+    setDropIndicator(null)
+    const data = event.dataTransfer.getData('text/plain')
+
+    if (data.startsWith('reorder:')) {
+      const sourceBlockId = data.slice(8)
+      reorderBlock(sourceBlockId, target)
+    } else if (data.startsWith('palette:')) {
+      const paletteBlockType = data.slice(8)
+      if (paletteBlockType) {
+        await onDropPaletteBlock(paletteBlockType, target?.index ?? 0)
+      }
+    }
+
+    setDragState({ kind: 'idle' })
+  }
+
+  function reorderBlock(
+    sourceBlockId: string,
+    target: DropIndicator | null,
+  ) {
+    if (!editorPage || !target) return
+    const visibleBlockIDs = reorderEditorCanvasBlocks(
+      editorPage.visibleBlocks,
+      sourceBlockId,
+      target.index,
+    )
+    if (!visibleBlockIDs) {
+      return
+    }
+    onReorderBlocks(buildCanonicalBlockOrder(editorPage, visibleBlockIDs))
+  }
+
+  function handleDragEnd() {
+    dropIndicatorRef.current = null
+    setDragState({ kind: 'idle' })
+    setDropIndicator(null)
+  }
+
+  return (
+    <div className="grid grid-rows-[auto_minmax(0,1fr)]">
+      <BuilderToolbar
+        siteId={siteId}
+        draft={draft}
+        pages={draftPages}
+        selectedPageId={selectedPage?.id ?? null}
+        onSelectPage={onSelectPage}
+      />
+
+      <div className="grid gap-0 xl:grid-cols-[220px_minmax(0,1fr)_340px]">
+        <BlockPalette
+          blockRegistry={blockRegistry}
+          onDragStart={handlePaletteDragStart}
+        />
+
+        <section className="flex min-h-0 flex-col overflow-auto border-x border-border bg-[var(--surface-1)]">
+          <div className="p-4">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p className={text.eyebrow}>Canvas</p>
+                <h2 className={text.h2}>
+                  {selectedPage ? selectedPage.title : 'Select a page'}
+                </h2>
+              </div>
+              {selectedPage ? (
+                <div className="flex gap-2">
+                  <Button
+                    asChild
+                    variant="plain"
+                    className={actions.inlineLink}
+                  >
+                    <Link
+                      to="/app/sites/$siteId/preview"
+                      params={{ siteId }}
+                    >
+                      Full preview
+                    </Link>
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+
+            {selectedPage ? (
+              <div className="grid gap-4">
+                <div
+                  ref={canvasRef}
+                  className={cn(
+                    preview.shell,
+                    'relative min-h-[400px] overflow-hidden rounded-[28px] border border-border bg-[var(--surface-2)] p-3',
+                  )}
+                  style={buildSiteThemeStyle(draft.theme)}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onDragEnd={handleDragEnd}
+                >
+                  {!editorPage || editorPage.visibleBlocks.length === 0 ? (
+                    <div className={emptyState}>
+                      <p className={text.p}>
+                        This page has no visible blocks yet. Drag a block type
+                        from the palette to add one, or unhide a block from the
+                        hidden list below.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      {dropIndicator?.position === 'start' ? (
+                        <CanvasDropLine />
+                      ) : null}
+                      <SiteDraftRenderer
+                        site={draft}
+                        eyebrow="Live builder canvas"
+                        selectedPageId={selectedPage.id}
+                        renderBlock={({ block, page, blockIndex: _blockIndex, children }) => (
+                          <CanvasBlockFrame
+                            key={block.id}
+                            block={block}
+                            definition={blockDefinitions.get(
+                              `${block.type}@${block.version}`,
+                            )}
+                            isSelected={block.id === selectedBlock?.id}
+                            isDragging={
+                              dragState.kind === 'dragging-block' &&
+                              dragState.blockId === block.id
+                            }
+                            isOver={dropIndicator?.blockId === block.id}
+                            dropPosition={dropIndicator?.position ?? null}
+                            onSelect={() => {
+                              onSelectPage(page.id)
+                              onSelectBlock(block.id)
+                            }}
+                            onDragStart={(event) =>
+                              handleBlockDragStart(event, block.id)
+                            }
+                          >
+                            {children}
+                          </CanvasBlockFrame>
+                        )}
+                      />
+                    </>
+                  )}
+                </div>
+
+                {editorPage?.hiddenBlocks.length ? (
+                  <section className="rounded-[18px] border border-border bg-[var(--surface-2)] p-4">
+                    <div className="mb-3">
+                      <p className={text.eyebrow}>Hidden blocks</p>
+                      <p className={cn(text.p, 'mt-1 text-sm')}>
+                        These blocks stay out of the rendered page until you
+                        unhide them from the inspector.
+                      </p>
+                    </div>
+                    <div className="grid gap-2">
+                      {editorPage.hiddenBlocks.map(({ block }) => (
+                        <button
+                          key={block.id}
+                          type="button"
+                          className={cn(
+                            'flex items-center justify-between rounded-[14px] border px-3 py-3 text-left transition-[border-color,transform]',
+                            block.id === selectedBlock?.id
+                              ? 'border-[var(--thread-teal)] bg-[color-mix(in_oklch,var(--surface-1)_88%,var(--thread-teal))]'
+                              : 'border-border bg-[var(--surface-1)] hover:-translate-y-px hover:border-[var(--thread-coral)]',
+                          )}
+                          onClick={() => {
+                            onSelectPage(selectedPage.id)
+                            onSelectBlock(block.id)
+                          }}
+                        >
+                          <span>
+                            <strong className="block text-sm text-[var(--paper)]">
+                              {blockDefinitions.get(
+                                `${block.type}@${block.version}`,
+                              )?.displayName ?? block.type}
+                            </strong>
+                            <small className="text-[var(--paper-muted)]">
+                              Hidden from preview and publish
+                            </small>
+                          </span>
+                          <span className="rounded-full border border-border bg-[var(--surface-2)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--paper-muted)]">
+                            Hidden
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+              </div>
+            ) : (
+              <div className={emptyState}>
+                <p className={text.p}>
+                  Select a page from the toolbar above to start building.
+                </p>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <InspectorPanel
+          selectedPage={selectedPage}
+          selectedBlock={selectedBlock}
+          selectedDefinition={selectedDefinition}
+          selectedBlockIndex={selectedBlockIndex}
+          uploadedSiteAssets={uploadedSiteAssets}
+          isSavingBlock={isSavingBlock}
+          isMutatingBlocks={isMutatingBlocks}
+          isCreatingBlock={isCreatingBlock}
+          blockErrorMessage={blockErrorMessage}
+          blockStatusMessage={blockStatusMessage}
+          pageErrorMessage={pageErrorMessage}
+          pageStatusMessage={pageStatusMessage}
+          pageTitle={pageTitle}
+          pageSlug={pageSlug}
+          pageSEOTitle={pageSEOTitle}
+          pageSEODescription={pageSEODescription}
+          pageIncludeInNavigation={pageIncludeInNavigation}
+          isSavingPage={isSavingPage}
+          isDeletingPage={isDeletingPage}
+          blockRegistry={blockRegistry}
+          newBlockType={newBlockType}
+          pages={draftPages}
+          onSaveBlock={onSaveBlock}
+          onCreateBlock={onCreateBlock}
+          onDuplicateBlock={onDuplicateBlock}
+          onDeleteBlock={onDeleteBlock}
+          onMoveBlock={onMoveBlock}
+          onMovePage={onMovePage}
+          onDeletePage={onDeletePage}
+          onChangeNewBlockType={onChangeNewBlockType}
+          onSavePage={onSavePage}
+          onSetPageTitle={onSetPageTitle}
+          onSetPageSlug={onSetPageSlug}
+          onSetPageSEOTitle={onSetPageSEOTitle}
+          onSetPageSEODescription={onSetPageSEODescription}
+          onSetPageIncludeInNavigation={onSetPageIncludeInNavigation}
+          settingsContent={settingsContent}
+        />
+      </div>
+    </div>
+  )
+}
+
+function BuilderToolbar({
+  siteId,
+  draft,
+  pages,
+  selectedPageId,
+  onSelectPage,
+}: {
+  siteId: string
+  draft: SiteDraft
+  pages: DraftPage[]
+  selectedPageId: string | null
+  onSelectPage: (pageId: string) => void
+}) {
+  return (
+    <div
+      className={cn(
+        ribbon,
+        'flex items-center justify-between gap-4 border-b border-border bg-[var(--surface-1)] px-5 py-3',
+      )}
+    >
+      <div className="flex items-center gap-4">
+        <div className="text-sm">
+          <p className={text.eyebrow}>Builder</p>
+          <strong className="text-[var(--paper)]">{draft.site.name}</strong>
+        </div>
+        <div className="h-8 w-px bg-border" />
+        <label className="flex items-center gap-2">
+          <span className={cn(text.label, 'whitespace-nowrap')}>Page</span>
+          <Select
+            value={selectedPageId ?? ''}
+            onChange={(event) => onSelectPage(event.target.value)}
+            className="min-w-[160px]"
+          >
+            {pages.length === 0 ? (
+              <option value="">No pages</option>
+            ) : (
+              pages.map((page) => (
+                <option key={page.id} value={page.id}>
+                  {page.title}
+                </option>
+              ))
+            )}
+          </Select>
+        </label>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <Button asChild variant="plain" className={actions.inlineLink}>
+          <Link to="/app/sites/$siteId/preview" params={{ siteId }}>
+            Open full preview
+          </Link>
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function BlockPalette({
+  blockRegistry,
+  onDragStart,
+}: {
+  blockRegistry: BlockDefinition[]
+  onDragStart: (event: React.DragEvent, blockType: string) => void
+}) {
+  const categories = groupByCategory(blockRegistry)
+
+  return (
+    <aside className="flex flex-col overflow-auto bg-[var(--surface-2)]">
+      <div className="border-b border-border p-4">
+        <p className={text.eyebrow}>Blocks</p>
+        <h2 className={text.h2}>Block palette</h2>
+        <p className={cn(text.p, 'mt-1 text-sm')}>
+          Drag a block onto the canvas to add it
+        </p>
+      </div>
+
+      <div className="grid gap-4 overflow-auto p-4">
+        {Object.entries(categories).map(([category, blocks]) => (
+          <div key={category}>
+            <h3 className={cn(text.label, 'mb-2 uppercase tracking-[0.08em]')}>
+              {category}
+            </h3>
+            <div className="grid gap-2">
+              {blocks.map((definition) => (
+                <PaletteBlockCard
+                  key={`${definition.type}@${definition.version}`}
+                  definition={definition}
+                  onDragStart={onDragStart}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </aside>
+  )
+}
+
+function PaletteBlockCard({
+  definition,
+  onDragStart,
+}: {
+  definition: BlockDefinition
+  onDragStart: (event: React.DragEvent, blockType: string) => void
+}) {
+  const icon = blockTypeIcon[definition.type] ?? '⊞'
+
+  return (
+    <div
+      draggable
+      className="cursor-grab rounded-[12px] border border-border bg-[var(--surface-1)] p-3 transition-[border-color,transform] hover:-translate-y-0.5 hover:border-[var(--thread-teal)] active:cursor-grabbing"
+      onDragStart={(event) => onDragStart(event, definition.type)}
+    >
+      <div className="flex items-center gap-3">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-[10px] border border-border bg-[var(--surface-2)] text-lg">
+          {icon}
+        </span>
+        <div>
+          <strong className="block text-sm text-[var(--paper)]">
+            {definition.displayName}
+          </strong>
+          <small className="block text-xs text-[var(--paper-muted)]">
+            {definition.type}
+          </small>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const blockTypeIcon: Record<string, string> = {
+  hero: '★',
+  text_section: '¶',
+  image_text: '▣',
+  features_grid: '☷',
+  gallery: '◫',
+  testimonials: '❝',
+  pricing_packages: '$',
+  cta_band: '➜',
+  contact_form: '✉',
+  faq: '?',
+  team_profile_cards: '👥',
+  footer: '⌂',
+}
+
+function CanvasBlockFrame({
+  block,
+  definition,
+  isSelected,
+  isDragging,
+  isOver,
+  dropPosition,
+  onSelect,
+  onDragStart,
+  children,
+}: {
+  block: DraftBlock
+  definition?: BlockDefinition
+  isSelected: boolean
+  isDragging: boolean
+  isOver: boolean
+  dropPosition: DropIndicator['position'] | null
+  onSelect: () => void
+  onDragStart: (event: React.DragEvent) => void
+  children: ReactNode
+}) {
+  return (
+    <div
+      id={`canvas-block-${block.id}`}
+      className={cn(
+        'group relative transition-[opacity,transform]',
+        isDragging && 'opacity-40',
+      )}
+    >
+      {isOver && dropPosition === 'before' ? <CanvasDropLine /> : null}
+
+      <div
+        className={cn(
+          'relative rounded-[var(--site-radius-panel)]',
+          isSelected &&
+            'shadow-[0_0_0_3px_color-mix(in_oklch,var(--thread-teal)_38%,transparent)]',
+        )}
+      >
+        <div
+          aria-hidden="true"
+          className={cn(
+            'transition-[transform,filter]',
+            isSelected && 'scale-[0.997]',
+          )}
+        >
+          {children}
+        </div>
+
+        <button
+          type="button"
+          className={cn(
+            'absolute inset-0 rounded-[var(--site-radius-panel)] border-2 transition-[border-color,box-shadow]',
+            isSelected
+              ? 'border-[var(--thread-teal)]'
+              : 'border-transparent hover:border-[color-mix(in_oklch,var(--thread-coral)_55%,transparent)]',
+          )}
+          aria-label={`Edit ${definition?.displayName ?? block.type} block`}
+          onClick={onSelect}
+        />
+
+        <div className="pointer-events-none absolute left-3 right-3 top-3 flex items-start justify-between gap-3">
+          <div className="rounded-full border border-[color-mix(in_oklch,var(--site-border)_78%,transparent)] bg-[color-mix(in_oklch,var(--site-surface)_88%,transparent)] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--site-foreground)] shadow-[var(--shadow-tight)] backdrop-blur">
+            {definition?.displayName ?? block.type}
+          </div>
+          <div className="pointer-events-auto flex items-center gap-2">
+            {block.settings?.hidden ? (
+              <span className="rounded-full border border-[color-mix(in_oklch,var(--site-border)_78%,transparent)] bg-[color-mix(in_oklch,var(--site-surface)_88%,transparent)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--site-foreground)] shadow-[var(--shadow-tight)] backdrop-blur">
+                Hidden
+              </span>
+            ) : null}
+            <button
+              type="button"
+              draggable
+              className="rounded-full border border-[color-mix(in_oklch,var(--site-border)_78%,transparent)] bg-[color-mix(in_oklch,var(--site-surface)_88%,transparent)] px-3 py-2 text-[var(--site-foreground)] shadow-[var(--shadow-tight)] backdrop-blur transition-transform hover:-translate-y-px active:cursor-grabbing"
+              aria-label={`Drag ${definition?.displayName ?? block.type} block`}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+              }}
+              onDragStart={onDragStart}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <circle cx="4" cy="3" r="1.2" fill="currentColor" />
+                <circle cx="10" cy="3" r="1.2" fill="currentColor" />
+                <circle cx="4" cy="7" r="1.2" fill="currentColor" />
+                <circle cx="10" cy="7" r="1.2" fill="currentColor" />
+                <circle cx="4" cy="11" r="1.2" fill="currentColor" />
+                <circle cx="10" cy="11" r="1.2" fill="currentColor" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {isOver && dropPosition === 'after' ? <CanvasDropLine /> : null}
+    </div>
+  )
+}
+
+function CanvasDropLine() {
+  return (
+    <div className="flex h-8 items-center justify-center">
+      <div className="flex h-1 w-full items-center justify-center rounded-full bg-[var(--thread-teal)]">
+        <div className="size-2 rounded-full bg-[var(--thread-gold)]" />
+      </div>
+    </div>
+  )
+}
+
+function InspectorPanel({
+  selectedPage,
+  selectedBlock,
+  selectedDefinition,
+  selectedBlockIndex,
+  uploadedSiteAssets,
+  isSavingBlock,
+  isMutatingBlocks,
+  isCreatingBlock,
+  blockErrorMessage,
+  blockStatusMessage,
+  pageErrorMessage,
+  pageStatusMessage,
+  pageTitle,
+  pageSlug,
+  pageSEOTitle,
+  pageSEODescription,
+  pageIncludeInNavigation,
+  isSavingPage,
+  blockRegistry,
+  newBlockType,
+  onSaveBlock,
+  onCreateBlock,
+  onDuplicateBlock,
+  onDeleteBlock,
+  onMoveBlock,
+  onChangeNewBlockType,
+  onSavePage,
+  onSetPageTitle,
+  onSetPageSlug,
+  onSetPageSEOTitle,
+  onSetPageSEODescription,
+  onSetPageIncludeInNavigation,
+  settingsContent,
+  isDeletingPage,
+  pages: inspectorPages,
+  onMovePage,
+  onDeletePage,
+}: {
+  selectedPage: DraftPage | null
+  selectedBlock: DraftBlock | null
+  selectedDefinition: BlockDefinition | undefined
+  selectedBlockIndex: number
+  uploadedSiteAssets: AssetRecord[]
+  isSavingBlock: boolean
+  isMutatingBlocks: boolean
+  isCreatingBlock: boolean
+  blockErrorMessage: string
+  blockStatusMessage: string
+  pageErrorMessage: string
+  pageStatusMessage: string
+  pageTitle: string
+  pageSlug: string
+  pageSEOTitle: string
+  pageSEODescription: string
+  pageIncludeInNavigation: boolean
+  isSavingPage: boolean
+  isDeletingPage: boolean
+  blockRegistry: BlockDefinition[]
+  newBlockType: string
+  pages: DraftPage[]
+  onSaveBlock: (
+    props: Record<string, unknown>,
+    hidden: boolean,
+  ) => Promise<void>
+  onCreateBlock: (event: FormEvent<HTMLFormElement>) => Promise<void>
+  onDuplicateBlock: () => Promise<void>
+  onDeleteBlock: () => Promise<void>
+  onMoveBlock: (direction: -1 | 1) => Promise<void>
+  onMovePage: (pageId: string, direction: -1 | 1) => Promise<void>
+  onDeletePage: () => Promise<void>
+  onChangeNewBlockType: (type: string) => void
+  onSavePage: (event: FormEvent<HTMLFormElement>) => Promise<void>
+  onSetPageTitle: (title: string) => void
+  onSetPageSlug: (slug: string) => void
+  onSetPageSEOTitle: (title: string) => void
+  onSetPageSEODescription: (description: string) => void
+  onSetPageIncludeInNavigation: (include: boolean) => void
+  settingsContent?: ReactNode
+}) {
+  const [inspectorTab, setInspectorTab] = useState<'inspector' | 'settings'>('inspector')
+  const hasSelection = selectedBlock || selectedPage
+
+  if (!hasSelection) {
+    return (
+      <aside className="flex flex-col overflow-auto bg-[var(--surface-2)]">
+        <div className="border-b border-border p-4">
+          <p className={text.eyebrow}>Inspector</p>
+          <h2 className={text.h2}>Select an element</h2>
+          <p className={cn(text.p, 'mt-1 text-sm')}>
+            Click a block on the canvas to edit its properties, or select a page
+            to adjust its settings.
+          </p>
+        </div>
+      </aside>
+    )
+  }
+
+  return (
+    <aside className="flex flex-col overflow-auto bg-[var(--surface-2)]">
+      <div className="flex border-b border-border">
+        <button
+          type="button"
+          className={cn(
+            'flex-1 px-4 py-3 text-xs font-bold uppercase tracking-[0.08em] transition-colors',
+            inspectorTab === 'inspector'
+              ? 'border-b-2 border-[var(--thread-teal)] text-[var(--paper)]'
+              : 'text-[var(--paper-muted)] hover:text-[var(--paper)]',
+          )}
+          onClick={() => setInspectorTab('inspector')}
+        >
+          Inspector
+        </button>
+        {settingsContent ? (
+          <button
+            type="button"
+            className={cn(
+              'flex-1 px-4 py-3 text-xs font-bold uppercase tracking-[0.08em] transition-colors',
+              inspectorTab === 'settings'
+                ? 'border-b-2 border-[var(--thread-teal)] text-[var(--paper)]'
+                : 'text-[var(--paper-muted)] hover:text-[var(--paper)]',
+            )}
+            onClick={() => setInspectorTab('settings')}
+          >
+            Settings
+          </button>
+        ) : null}
+      </div>
+
+      {inspectorTab === 'inspector' ? (
+        <div className="grid gap-4 overflow-auto p-4">
+          {selectedBlock ? (
+            <>
+              <BlockEditor
+                key={selectedBlock.id}
+                block={selectedBlock}
+                definition={selectedDefinition}
+                isSaving={isSavingBlock}
+                errorMessage={blockErrorMessage}
+                statusMessage={blockStatusMessage}
+                assetLibrary={uploadedSiteAssets}
+                onSave={onSaveBlock}
+              />
+
+              <div className={actions.row}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={selectedBlockIndex <= 0 || isMutatingBlocks}
+                  onClick={() => onMoveBlock(-1)}
+                >
+                  Move up
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={
+                    !selectedPage ||
+                    selectedBlockIndex === selectedPage.blocks.length - 1 ||
+                    isMutatingBlocks
+                  }
+                  onClick={() => onMoveBlock(1)}
+                >
+                  Move down
+                </Button>
+              </div>
+
+              <div className={actions.row}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isMutatingBlocks}
+                  onClick={onDuplicateBlock}
+                >
+                  Duplicate
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isMutatingBlocks}
+                  onClick={onDeleteBlock}
+                >
+                  Delete
+                </Button>
+              </div>
+            </>
+          ) : null}
+
+          <div className="grid gap-3 rounded-[16px] border border-border bg-[var(--surface-1)] p-4">
+            <p className={text.eyebrow}>Add block</p>
+            <form className={form.grid} onSubmit={onCreateBlock}>
+              <label htmlFor="inspector-new-block-type" className={text.label}>
+                Block type
+              </label>
+              <Select
+                id="inspector-new-block-type"
+                value={newBlockType}
+                onChange={(event) => onChangeNewBlockType(event.target.value)}
+              >
+                {blockRegistry.map((definition) => (
+                  <option
+                    key={`${definition.type}@${definition.version}`}
+                    value={definition.type}
+                  >
+                    {definition.displayName}
+                  </option>
+                ))}
+              </Select>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={isCreatingBlock || !newBlockType}
+              >
+                {isCreatingBlock ? 'Adding...' : 'Add to page'}
+              </Button>
+            </form>
+          </div>
+
+          {selectedPage ? (
+            <div className="grid gap-3 rounded-[16px] border border-border bg-[var(--surface-1)] p-4">
+              <p className={text.eyebrow}>Page settings</p>
+              <form className={form.grid} onSubmit={onSavePage}>
+                <label htmlFor="inspector-page-title" className={text.label}>
+                  Title
+                </label>
+                <Input
+                  id="inspector-page-title"
+                  value={pageTitle}
+                  onChange={(event) => onSetPageTitle(event.target.value)}
+                  required
+                />
+
+                <label htmlFor="inspector-page-slug" className={text.label}>
+                  Slug
+                </label>
+                <Input
+                  id="inspector-page-slug"
+                  value={pageSlug}
+                  onChange={(event) => onSetPageSlug(event.target.value)}
+                  required
+                />
+
+                <label
+                  htmlFor="inspector-page-seo-title"
+                  className={text.label}
+                >
+                  SEO title
+                </label>
+                <Input
+                  id="inspector-page-seo-title"
+                  value={pageSEOTitle}
+                  onChange={(event) => onSetPageSEOTitle(event.target.value)}
+                />
+
+                <label
+                  htmlFor="inspector-page-seo-description"
+                  className={text.label}
+                >
+                  SEO description
+                </label>
+                <Textarea
+                  id="inspector-page-seo-description"
+                  rows={3}
+                  value={pageSEODescription}
+                  onChange={(event) =>
+                    onSetPageSEODescription(event.target.value)
+                  }
+                />
+
+                <label className={form.toggle}>
+                  <input
+                    type="checkbox"
+                    className="size-4 accent-[var(--thread-teal)]"
+                    checked={pageIncludeInNavigation}
+                    onChange={(event) =>
+                      onSetPageIncludeInNavigation(event.target.checked)
+                    }
+                  />
+                  Include in navigation
+                </label>
+
+                {pageErrorMessage ? (
+                  <p className={text.error}>{pageErrorMessage}</p>
+                ) : null}
+                {pageStatusMessage ? (
+                  <p className={text.success}>{pageStatusMessage}</p>
+                ) : null}
+
+                <Button type="submit" size="sm" disabled={isSavingPage}>
+                  {isSavingPage ? 'Saving...' : 'Save page'}
+                </Button>
+              </form>
+
+              <div className={actions.row}>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={
+                    inspectorPages.findIndex(
+                      (p) => p.id === selectedPage.id,
+                    ) <= 0 || isSavingPage
+                  }
+                  onClick={() => onMovePage(selectedPage.id, -1)}
+                >
+                  Move earlier
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={
+                    inspectorPages.findIndex(
+                      (p) => p.id === selectedPage.id,
+                    ) >= inspectorPages.length - 1 || isSavingPage
+                  }
+                  onClick={() => onMovePage(selectedPage.id, 1)}
+                >
+                  Move later
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={isDeletingPage}
+                  onClick={onDeletePage}
+                >
+                  {isDeletingPage ? 'Deleting...' : 'Delete page'}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="grid gap-4 overflow-auto p-4">
+          {settingsContent}
+        </div>
+      )}
+    </aside>
+  )
+}
+
+type DragState =
+  | { kind: 'idle' }
+  | { kind: 'dragging-palette'; blockType: string }
+  | { kind: 'dragging-block'; blockId: string }
+
+type DropIndicator = {
+  index: number
+  blockId: string | null
+  position: 'before' | 'after' | 'start' | 'end'
+}
+
+function groupByCategory(
+  registry: BlockDefinition[],
+): Record<string, BlockDefinition[]> {
+  const groups: Record<string, BlockDefinition[]> = {}
+  for (const def of registry) {
+    const category = def.category || 'Other'
+    if (!groups[category]) {
+      groups[category] = []
+    }
+    groups[category].push(def)
+  }
+  return groups
+}

@@ -1,4 +1,4 @@
-import type { FormEvent } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 import { useState } from 'react'
 import {
   APIError,
@@ -30,6 +30,16 @@ type RoutablePage = {
   slug: string
 }
 
+type RenderedBlock = SiteDraft['pages'][number]['blocks'][number]
+type RenderedPage = SiteDraft['pages'][number]
+
+export type SiteDraftRendererBlockSlot = {
+  block: RenderedBlock
+  page: RenderedPage
+  blockIndex: number
+  children: ReactNode
+}
+
 export function SiteDraftRenderer({
   site,
   eyebrow = 'Site render',
@@ -38,6 +48,7 @@ export function SiteDraftRenderer({
   linkMode = 'anchors',
   siteSlug,
   publishedBasePath,
+  renderBlock,
 }: {
   site: SiteDraft | PublishedSnapshot | RenderableSite
   eyebrow?: string
@@ -46,6 +57,7 @@ export function SiteDraftRenderer({
   linkMode?: 'anchors' | 'published'
   siteSlug?: string
   publishedBasePath?: string
+  renderBlock?: (slot: SiteDraftRendererBlockSlot) => React.ReactNode
 }) {
   const renderedPages = selectedPageId
     ? site.pages.filter((page) => page.id === selectedPageId)
@@ -108,153 +120,194 @@ export function SiteDraftRenderer({
           <div className={preview.pageStack}>
             {page.blocks
               .filter((block) => !block.settings?.hidden)
-              .map((block) => {
-                switch (block.type) {
-                  case 'hero':
-                    return (
-                      <HeroBlock
-                        key={block.id}
-                        props={block.props}
-                        resolveHref={(href) =>
-                          resolvePageHref(
-                            href,
-                            slugToPage,
-                            linkMode,
-                            siteSlug,
-                            publishedBasePath,
-                          )
-                        }
-                        linkMode={linkMode}
-                        siteSlug={siteSlug}
-                      />
-                    )
-                  case 'text_section':
-                    return (
-                      <TextSectionBlock key={block.id} props={block.props} />
-                    )
-                  case 'features_grid':
-                    return (
-                      <FeaturesGridBlock key={block.id} props={block.props} />
-                    )
-                  case 'cta_band':
-                    return (
-                      <CTABandBlock
-                        key={block.id}
-                        props={block.props}
-                        resolveHref={(href) =>
-                          resolvePageHref(
-                            href,
-                            slugToPage,
-                            linkMode,
-                            siteSlug,
-                            publishedBasePath,
-                          )
-                        }
-                      />
-                    )
-                  case 'contact_form':
-                    return (
-                      <ContactFormBlock
-                        key={block.id}
-                        siteId={site.site.id}
-                        pageId={page.id}
-                        blockId={block.id}
-                        props={block.props}
-                      />
-                    )
-                  case 'image_text':
-                    return (
-                      <ImageTextBlock
-                        key={block.id}
-                        props={block.props}
-                        linkMode={linkMode}
-                        siteSlug={siteSlug}
-                      />
-                    )
-                  case 'gallery':
-                    return (
-                      <GalleryBlock
-                        key={block.id}
-                        props={block.props}
-                        linkMode={linkMode}
-                        siteSlug={siteSlug}
-                      />
-                    )
-                  case 'testimonials':
-                    return (
-                      <TestimonialsBlock
-                        key={block.id}
-                        props={block.props}
-                        linkMode={linkMode}
-                        siteSlug={siteSlug}
-                      />
-                    )
-                  case 'pricing_packages':
-                    return (
-                      <PricingPackagesBlock
-                        key={block.id}
-                        props={block.props}
-                        resolveHref={(href) =>
-                          resolvePageHref(
-                            href,
-                            slugToPage,
-                            linkMode,
-                            siteSlug,
-                            publishedBasePath,
-                          )
-                        }
-                      />
-                    )
-                  case 'faq':
-                    return <FAQBlock key={block.id} props={block.props} />
-                  case 'team_profile_cards':
-                    return (
-                      <TeamProfileCardsBlock
-                        key={block.id}
-                        props={block.props}
-                        resolveHref={(href) =>
-                          resolvePageHref(
-                            href,
-                            slugToPage,
-                            linkMode,
-                            siteSlug,
-                            publishedBasePath,
-                          )
-                        }
-                        linkMode={linkMode}
-                        siteSlug={siteSlug}
-                      />
-                    )
-                  case 'footer':
-                    return (
-                      <FooterBlock
-                        key={block.id}
-                        props={block.props}
-                        resolveHref={(href) =>
-                          resolvePageHref(
-                            href,
-                            slugToPage,
-                            linkMode,
-                            siteSlug,
-                            publishedBasePath,
-                          )
-                        }
-                      />
-                    )
-                  default:
-                    return (
-                      <section key={block.id} className={preview.panel}>
-                        <p className={text.eyebrow}>Unsupported block</p>
-                        <strong>{block.type}</strong>
-                      </section>
-                    )
+              .map((block, blockIndex) => {
+                const renderedBlock = renderSiteBlock({
+                  block,
+                  page,
+                  blockIndex,
+                  siteID: site.site.id,
+                  slugToPage,
+                  linkMode,
+                  siteSlug,
+                  publishedBasePath,
+                })
+
+                if (!renderBlock) {
+                  return renderedBlock
                 }
+
+                return renderBlock({
+                  block,
+                  page,
+                  blockIndex,
+                  children: renderedBlock,
+                })
               })}
           </div>
         </article>
       ))}
     </div>
   )
+}
+
+function renderSiteBlock({
+  block,
+  page,
+  blockIndex,
+  siteID,
+  slugToPage,
+  linkMode,
+  siteSlug,
+  publishedBasePath,
+}: {
+  block: RenderedBlock
+  page: RenderedPage
+  blockIndex: number
+  siteID?: string
+  slugToPage: Map<string, RoutablePage>
+  linkMode: 'anchors' | 'published'
+  siteSlug?: string
+  publishedBasePath?: string
+}) {
+  switch (block.type) {
+    case 'hero':
+      return (
+        <HeroBlock
+          key={block.id}
+          props={block.props}
+          resolveHref={(href) =>
+            resolvePageHref(
+              href,
+              slugToPage,
+              linkMode,
+              siteSlug,
+              publishedBasePath,
+            )
+          }
+          linkMode={linkMode}
+          siteSlug={siteSlug}
+        />
+      )
+    case 'text_section':
+      return <TextSectionBlock key={block.id} props={block.props} />
+    case 'features_grid':
+      return <FeaturesGridBlock key={block.id} props={block.props} />
+    case 'cta_band':
+      return (
+        <CTABandBlock
+          key={block.id}
+          props={block.props}
+          resolveHref={(href) =>
+            resolvePageHref(
+              href,
+              slugToPage,
+              linkMode,
+              siteSlug,
+              publishedBasePath,
+            )
+          }
+        />
+      )
+    case 'contact_form':
+      return (
+        <ContactFormBlock
+          key={block.id}
+          siteId={siteID}
+          pageId={page.id}
+          blockId={block.id}
+          props={block.props}
+        />
+      )
+    case 'image_text':
+      return (
+        <ImageTextBlock
+          key={block.id}
+          props={block.props}
+          linkMode={linkMode}
+          siteSlug={siteSlug}
+        />
+      )
+    case 'gallery':
+      return (
+        <GalleryBlock
+          key={block.id}
+          props={block.props}
+          linkMode={linkMode}
+          siteSlug={siteSlug}
+        />
+      )
+    case 'testimonials':
+      return (
+        <TestimonialsBlock
+          key={block.id}
+          props={block.props}
+          linkMode={linkMode}
+          siteSlug={siteSlug}
+        />
+      )
+    case 'pricing_packages':
+      return (
+        <PricingPackagesBlock
+          key={block.id}
+          props={block.props}
+          resolveHref={(href) =>
+            resolvePageHref(
+              href,
+              slugToPage,
+              linkMode,
+              siteSlug,
+              publishedBasePath,
+            )
+          }
+        />
+      )
+    case 'faq':
+      return <FAQBlock key={block.id} props={block.props} />
+    case 'team_profile_cards':
+      return (
+        <TeamProfileCardsBlock
+          key={block.id}
+          props={block.props}
+          resolveHref={(href) =>
+            resolvePageHref(
+              href,
+              slugToPage,
+              linkMode,
+              siteSlug,
+              publishedBasePath,
+            )
+          }
+          linkMode={linkMode}
+          siteSlug={siteSlug}
+        />
+      )
+    case 'footer':
+      return (
+        <FooterBlock
+          key={block.id}
+          props={block.props}
+          resolveHref={(href) =>
+            resolvePageHref(
+              href,
+              slugToPage,
+              linkMode,
+              siteSlug,
+              publishedBasePath,
+            )
+          }
+        />
+      )
+    default:
+      return (
+        <section
+          key={`${block.id}-${blockIndex}`}
+          className={preview.panel}
+        >
+          <p className={text.eyebrow}>Unsupported block</p>
+          <strong>{block.type}</strong>
+        </section>
+      )
+  }
 }
 
 function HeroBlock({

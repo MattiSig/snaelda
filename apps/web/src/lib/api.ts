@@ -153,6 +153,11 @@ export type SiteDraftResponse = {
   blockRegistry: BlockDefinition[]
 }
 
+export type SiteRepromptResponse = {
+  jobId: string
+  draft: SiteDraft
+}
+
 export type PublishSiteResponse = {
   version: SiteVersion
   hostname: string
@@ -390,12 +395,45 @@ export async function generateSite(input: {
   prompt: string
   slug?: string
 }) {
-  return apiFetch<{ jobId: string; draft: SiteDraft }>('/api/sites/generate', {
+  return apiFetch<SiteRepromptResponse>('/api/sites/generate', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(input),
+  })
+}
+
+export async function repromptSite(siteId: string, input: { prompt: string }) {
+  return apiFetch<SiteRepromptResponse>(`/api/sites/${siteId}/reprompt`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  })
+}
+
+export async function repromptPage(
+  siteId: string,
+  pageId: string,
+  input: { prompt: string },
+) {
+  return apiFetch<SiteRepromptResponse>(
+    `/api/sites/${siteId}/pages/${pageId}/reprompt`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    },
+  )
+}
+
+export async function undoSiteReprompt(siteId: string) {
+  return apiFetch<{ draft: SiteDraft }>(`/api/sites/${siteId}/undo`, {
+    method: 'POST',
   })
 }
 

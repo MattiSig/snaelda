@@ -10,6 +10,7 @@ import (
 	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/authorization"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
+	"github.com/MattiSig/snaelda/internal/sites"
 )
 
 type Handler struct {
@@ -19,15 +20,23 @@ type Handler struct {
 
 type Generator interface {
 	Generate(ctx context.Context, workspaceID string, userID string, input GenerateInput) (GenerateResult, error)
+	RepromptSite(ctx context.Context, workspaceID string, userID string, siteID string, input RepromptInput) (GenerateResult, error)
+	RepromptPage(ctx context.Context, workspaceID string, userID string, siteID string, pageID string, input RepromptInput) (GenerateResult, error)
+	UndoLastDraftRevision(ctx context.Context, workspaceID string, siteID string) (siteconfig.SiteDraft, error)
 }
 
 type Authorizer interface {
 	RequireWorkspaceMember(ctx context.Context, workspaceID string, allowedRoles ...string) (authorization.Scope, error)
+	RequireSite(ctx context.Context, siteID string, allowedRoles ...string) (authorization.Scope, error)
 }
 
 type generateRequest struct {
 	Name   string `json:"name,omitempty"`
 	Slug   string `json:"slug,omitempty"`
+	Prompt string `json:"prompt"`
+}
+
+type repromptRequest struct {
 	Prompt string `json:"prompt"`
 }
 
@@ -40,6 +49,9 @@ func NewHandler(db DB) *Handler {
 
 func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.Handler) {
 	mux.Handle("POST /api/sites/generate", requireUser(http.HandlerFunc(h.generate)))
+	mux.Handle("POST /api/sites/{siteId}/reprompt", requireUser(http.HandlerFunc(h.repromptSite)))
+	mux.Handle("POST /api/sites/{siteId}/pages/{pageId}/reprompt", requireUser(http.HandlerFunc(h.repromptPage)))
+	mux.Handle("POST /api/sites/{siteId}/undo", requireUser(http.HandlerFunc(h.undoSite)))
 }
 
 func (h *Handler) generate(w http.ResponseWriter, r *http.Request) {
@@ -77,6 +89,96 @@ func (h *Handler) generate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, result)
 }
 
+func (h *Handler) repromptSite(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	if siteID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_site_id", "site id is required")
+		return
+	}
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
+		return
+	}
+
+	var payload repromptRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "request body must be valid JSON")
+		return
+	}
+
+	result, err := h.service.RepromptSite(r.Context(), scope.WorkspaceID, user.ID, siteID, RepromptInput{
+		Prompt: strings.TrimSpace(payload.Prompt),
+	})
+	if err != nil {
+		writeGenerationError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, result)
+}
+
+func (h *Handler) repromptPage(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	pageID := r.PathValue("pageId")
+	if siteID == "" || pageID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_page_resource", "site and page ids are required")
+		return
+	}
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
+		return
+	}
+
+	var payload repromptRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "request body must be valid JSON")
+		return
+	}
+
+	result, err := h.service.RepromptPage(r.Context(), scope.WorkspaceID, user.ID, siteID, pageID, RepromptInput{
+		Prompt: strings.TrimSpace(payload.Prompt),
+	})
+	if err != nil {
+		writeGenerationError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, result)
+}
+
+func (h *Handler) undoSite(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	if siteID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_site_id", "site id is required")
+		return
+	}
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+
+	draft, err := h.service.UndoLastDraftRevision(r.Context(), scope.WorkspaceID, siteID)
+	if err != nil {
+		writeGenerationError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"draft": draft})
+}
+
 func writeGenerationError(w http.ResponseWriter, err error) {
 	var validationErr siteconfig.ValidationError
 	switch {
@@ -94,6 +196,10 @@ func writeGenerationError(w http.ResponseWriter, err error) {
 			},
 			"issues": validationErr.Issues,
 		})
+	case errors.Is(err, sites.ErrNotFound), errors.Is(err, sites.ErrPageNotFound):
+		writeError(w, http.StatusNotFound, "draft_scope_not_found", "the requested draft scope was not found")
+	case errors.Is(err, ErrNoDraftRevision):
+		writeError(w, http.StatusNotFound, "draft_revision_not_found", "there is no draft revision to restore")
 	default:
 		writeError(w, http.StatusInternalServerError, "generate_failed", "could not generate site draft")
 	}

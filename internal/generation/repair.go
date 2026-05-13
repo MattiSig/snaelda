@@ -287,6 +287,9 @@ func repairBlockPlan(block generationBlockPlan, pageTitle string, pageGoal strin
 	case "team_profile_cards":
 		props := repairTeamProfileCardsProps(block.Props, pageTitle)
 		return generationBlockPlan{Type: "team_profile_cards", Purpose: cleanGeneratedText(block.Purpose, 280), Props: props}, true
+	case "contact_form":
+		props := repairContactFormProps(block.Props, pageTitle)
+		return generationBlockPlan{Type: "contact_form", Purpose: cleanGeneratedText(block.Purpose, 280), Props: props}, true
 	case "footer":
 		props := repairFooterProps(block.Props, pageTitle)
 		return generationBlockPlan{Type: "footer", Purpose: cleanGeneratedText(block.Purpose, 280), Props: props}, true
@@ -633,6 +636,68 @@ func repairFooterProps(props map[string]any, pageTitle string) map[string]any {
 	}
 }
 
+func repairContactFormProps(props map[string]any, pageTitle string) map[string]any {
+	fields := repairContactFormFields(props["fields"])
+	if len(fields) == 0 {
+		fields = []any{
+			map[string]any{"name": "name", "label": "Name", "type": "name", "required": true},
+			map[string]any{"name": "email", "label": "Email", "type": "email", "required": true},
+			map[string]any{"name": "message", "label": "Message", "type": "message", "required": true},
+		}
+	}
+
+	return map[string]any{
+		"heading":     firstNonEmpty(readGeneratedText(props, "heading", 120), pageTitle),
+		"intro":       readGeneratedText(props, "intro", 500),
+		"submitLabel": firstNonEmpty(readGeneratedText(props, "submitLabel", 40), "Send message"),
+		"fields":      fields,
+	}
+}
+
+func repairContactFormFields(value any) []any {
+	values, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+
+	fields := make([]any, 0, len(values))
+	seenNames := map[string]bool{}
+	for _, raw := range values {
+		field, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		name := readGeneratedText(field, "name", 40)
+		label := readGeneratedText(field, "label", 80)
+		fieldType := readEnum(field, "type", "", "name", "email", "phone", "message", "select")
+		if name == "" || label == "" || fieldType == "" || seenNames[name] {
+			continue
+		}
+
+		next := map[string]any{
+			"name":     name,
+			"label":    label,
+			"type":     fieldType,
+			"required": readBool(field, "required"),
+		}
+		if fieldType == "select" {
+			options := repairStringList(field["options"], 8)
+			if len(options) == 0 {
+				continue
+			}
+			next["options"] = options
+		}
+		fields = append(fields, next)
+		seenNames[name] = true
+		if len(fields) == 6 {
+			break
+		}
+	}
+
+	return fields
+}
+
 func repairCTABandProps(props map[string]any, pageTitle string, pageSlug string) map[string]any {
 	repaired := map[string]any{
 		"heading": firstNonEmpty(readGeneratedText(props, "heading", 120), pageTitle),
@@ -734,6 +799,38 @@ func repairLinkList(value any, limit int) []any {
 	return links
 }
 
+func repairStringList(value any, limit int) []any {
+	values, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	items := make([]any, 0, len(values))
+	for _, raw := range values {
+		text, ok := raw.(string)
+		if !ok {
+			continue
+		}
+		clean := cleanGeneratedText(text, 80)
+		if clean == "" {
+			continue
+		}
+		items = append(items, clean)
+		if len(items) == limit {
+			break
+		}
+	}
+	return items
+}
+
+func readBool(props map[string]any, key string) bool {
+	value, ok := props[key]
+	if !ok {
+		return false
+	}
+	parsed, ok := value.(bool)
+	return ok && parsed
+}
+
 func fallbackGeneratedCTAHref(pageSlug string) string {
 	if pageSlug == "/contact" {
 		return "mailto:hello@example.com"
@@ -795,7 +892,7 @@ func extractPageDescription(blocks []generationBlockPlan) string {
 			if text := readGeneratedText(block.Props, "intro", 180); text != "" {
 				return text
 			}
-		case "gallery", "testimonials", "pricing_packages", "faq", "team_profile_cards", "footer":
+		case "gallery", "testimonials", "pricing_packages", "faq", "team_profile_cards", "contact_form", "footer":
 			if text := readGeneratedText(block.Props, "intro", 180); text != "" {
 				return text
 			}

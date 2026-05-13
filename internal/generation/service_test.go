@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/MattiSig/snaelda/internal/siteconfig"
+	"github.com/MattiSig/snaelda/internal/sites"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -182,11 +183,125 @@ func TestGenerateUsesExtendedMVPBlocksWhenPromptCallsForThem(t *testing.T) {
 		"testimonials",
 		"team_profile_cards",
 		"faq",
+		"contact_form",
 		"footer",
 	} {
 		if !blockTypes[blockType] {
 			t.Fatalf("expected generated draft to include %s, got %#v", blockType, blockTypes)
 		}
+	}
+}
+
+func TestRepromptSiteReplacesDraftAndCapturesUndoRevision(t *testing.T) {
+	store := newFakeGenerationStore()
+	service := Service{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	initial, err := service.Generate(context.Background(), "workspace-1", "user-1", GenerateInput{
+		Name:   "North Light Studio",
+		Prompt: "A calm portfolio site for a photography studio that needs a gallery.",
+	})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	result, err := service.RepromptSite(context.Background(), "workspace-1", "user-1", initial.Draft.Site.ID, RepromptInput{
+		Prompt: "Make it warmer, add pricing, and include a proper contact form.",
+	})
+	if err != nil {
+		t.Fatalf("reprompt site: %v", err)
+	}
+
+	if result.Draft.Site.ID != initial.Draft.Site.ID {
+		t.Fatalf("expected site identity to stay stable, got %#v", result.Draft.Site)
+	}
+	if len(store.revisions) != 1 {
+		t.Fatalf("expected one captured draft revision, got %#v", store.revisions)
+	}
+	if store.revisions[0].Draft.Site.ID != initial.Draft.Site.ID {
+		t.Fatalf("expected captured draft revision to match initial draft, got %#v", store.revisions[0])
+	}
+	if store.prompts[result.Draft.Site.ID] != "Make it warmer, add pricing, and include a proper contact form." {
+		t.Fatalf("expected prompt metadata to update, got %#v", store.prompts)
+	}
+}
+
+func TestRepromptPageReplacesOnlySelectedPage(t *testing.T) {
+	store := newFakeGenerationStore()
+	service := Service{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	initial, err := service.Generate(context.Background(), "workspace-1", "user-1", GenerateInput{
+		Name:   "North Light Studio",
+		Prompt: "A calm portfolio site for a photography studio that needs a gallery.",
+	})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	targetPage := initial.Draft.Pages[1]
+	unchangedPage := initial.Draft.Pages[0]
+
+	result, err := service.RepromptPage(context.Background(), "workspace-1", "user-1", initial.Draft.Site.ID, targetPage.ID, RepromptInput{
+		Prompt: "Turn this page into a pricing overview with clearer packages.",
+	})
+	if err != nil {
+		t.Fatalf("reprompt page: %v", err)
+	}
+
+	if result.Draft.Pages[0].ID != unchangedPage.ID {
+		t.Fatalf("expected non-target pages to stay in place, got %#v", result.Draft.Pages)
+	}
+	updatedPage := result.Draft.Pages[1]
+	if updatedPage.ID != targetPage.ID || updatedPage.Slug != targetPage.Slug {
+		t.Fatalf("expected targeted page identity to stay stable, got %#v", updatedPage)
+	}
+	if len(store.revisions) != 1 || store.revisions[0].PageID != targetPage.ID {
+		t.Fatalf("expected page-scoped draft revision, got %#v", store.revisions)
+	}
+}
+
+func TestUndoLastDraftRevisionRestoresPreviousDraft(t *testing.T) {
+	store := newFakeGenerationStore()
+	service := Service{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	initial, err := service.Generate(context.Background(), "workspace-1", "user-1", GenerateInput{
+		Name:   "North Light Studio",
+		Prompt: "A calm portfolio site for a photography studio that needs a gallery.",
+	})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	_, err = service.RepromptSite(context.Background(), "workspace-1", "user-1", initial.Draft.Site.ID, RepromptInput{
+		Prompt: "Make it darker and add pricing.",
+	})
+	if err != nil {
+		t.Fatalf("reprompt site: %v", err)
+	}
+
+	restored, err := service.UndoLastDraftRevision(context.Background(), "workspace-1", initial.Draft.Site.ID)
+	if err != nil {
+		t.Fatalf("undo: %v", err)
+	}
+
+	if restored.Site.ID != initial.Draft.Site.ID || restored.Site.Slug != initial.Draft.Site.Slug {
+		t.Fatalf("expected restored draft identity to match initial draft, got %#v", restored.Site)
+	}
+	if len(store.revisions) != 0 {
+		t.Fatalf("expected revision stack to pop after undo, got %#v", store.revisions)
+	}
+	if store.prompts[initial.Draft.Site.ID] != "A calm portfolio site for a photography studio that needs a gallery." {
+		t.Fatalf("expected prompt metadata to restore, got %#v", store.prompts)
 	}
 }
 
@@ -350,6 +465,8 @@ type fakeGenerationStore struct {
 	slugs           map[string]bool
 	prompts         map[string]string
 	summary         map[string]map[string]any
+	summaryJSON     map[string][]byte
+	revisions       []draftRevisionRecord
 	saveDraftErrors []error
 	saveDraftCalls  int
 }
@@ -369,6 +486,7 @@ func newFakeGenerationStore() *fakeGenerationStore {
 		slugs:   map[string]bool{},
 		prompts: map[string]string{},
 		summary: map[string]map[string]any{},
+		summaryJSON: map[string][]byte{},
 	}
 }
 
@@ -389,6 +507,18 @@ func (s *fakeGenerationStore) SaveDraft(_ context.Context, _ string, draft sitec
 	return nil
 }
 
+func (s *fakeGenerationStore) LoadDraft(_ context.Context, siteID string) (siteconfig.SiteDraft, error) {
+	draft, ok := s.drafts[siteID]
+	if !ok {
+		return siteconfig.SiteDraft{}, sites.ErrNotFound
+	}
+	return draft, nil
+}
+
+func (s *fakeGenerationStore) Query(context.Context, string, ...any) (pgx.Rows, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (s *fakeGenerationStore) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
 	switch {
 	case strings.Contains(sql, "insert into generation_jobs"):
@@ -400,6 +530,30 @@ func (s *fakeGenerationStore) QueryRow(_ context.Context, sql string, args ...an
 		return fakeGenerationRow{values: []any{jobID}}
 	case strings.Contains(sql, "select exists("):
 		return fakeGenerationRow{values: []any{s.slugs[args[1].(string)]}}
+	case strings.Contains(sql, "select coalesce(generation_prompt, '')"):
+		siteID := args[0].(string)
+		if _, ok := s.drafts[siteID]; !ok {
+			return fakeGenerationRow{err: pgx.ErrNoRows}
+		}
+		return fakeGenerationRow{values: []any{s.prompts[siteID], s.summaryJSON[siteID]}}
+	case strings.Contains(sql, "from draft_revisions"):
+		if len(s.revisions) == 0 {
+			return fakeGenerationRow{err: pgx.ErrNoRows}
+		}
+		revision := s.revisions[len(s.revisions)-1]
+		draftJSON, err := json.Marshal(revision.Draft)
+		if err != nil {
+			return fakeGenerationRow{err: err}
+		}
+		return fakeGenerationRow{values: []any{
+			"revision-1",
+			revision.Scope,
+			revision.PageID,
+			revision.Prompt,
+			draftJSON,
+			revision.GenerationPrompt,
+			revision.GenerationSummaryJSON,
+		}}
 	default:
 		return fakeGenerationRow{err: pgx.ErrNoRows}
 	}
@@ -435,7 +589,28 @@ func (s *fakeGenerationStore) Exec(_ context.Context, sql string, args ...any) (
 			return pgconn.CommandTag{}, err
 		}
 		s.summary[siteID] = summary
+		s.summaryJSON[siteID] = append([]byte(nil), args[1].([]byte)...)
 		return pgconn.NewCommandTag("UPDATE 1"), nil
+	case strings.Contains(sql, "insert into draft_revisions"):
+		draftJSON := args[5].([]byte)
+		var draft siteconfig.SiteDraft
+		if err := json.Unmarshal(draftJSON, &draft); err != nil {
+			return pgconn.CommandTag{}, err
+		}
+		s.revisions = append(s.revisions, draftRevisionRecord{
+			Scope:                 args[2].(string),
+			PageID:                args[3].(string),
+			Prompt:                args[4].(string),
+			Draft:                 draft,
+			GenerationPrompt:      args[6].(string),
+			GenerationSummaryJSON: append([]byte(nil), args[7].([]byte)...),
+		})
+		return pgconn.NewCommandTag("INSERT 1"), nil
+	case strings.Contains(sql, "delete from draft_revisions"):
+		if len(s.revisions) > 0 {
+			s.revisions = s.revisions[:len(s.revisions)-1]
+		}
+		return pgconn.NewCommandTag("DELETE 1"), nil
 	default:
 		return pgconn.NewCommandTag("UPDATE 0"), nil
 	}
@@ -460,6 +635,8 @@ func (r fakeGenerationRow) Scan(dest ...any) error {
 			*target = value.(string)
 		case *bool:
 			*target = value.(bool)
+		case *[]byte:
+			*target = append([]byte(nil), value.([]byte)...)
 		default:
 			return errors.New("unsupported scan target")
 		}

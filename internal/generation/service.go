@@ -20,11 +20,13 @@ var (
 	ErrPromptRequired   = errors.New("generation prompt is required")
 	ErrSiteSlugInvalid  = errors.New("site slug is invalid")
 	ErrSiteSlugConflict = errors.New("site slug is already in use")
+	ErrNoDraftRevision  = errors.New("no draft revision available")
 )
 
 const maxGenerationValidationAttempts = 2
 
 type DB interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 	BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error)
@@ -34,9 +36,17 @@ type draftWriter interface {
 	SaveDraft(ctx context.Context, workspaceID string, draft siteconfig.SiteDraft) error
 }
 
+type draftReader interface {
+	LoadDraft(ctx context.Context, siteID string) (siteconfig.SiteDraft, error)
+}
+
 type GenerateInput struct {
 	Name   string
 	Slug   string
+	Prompt string
+}
+
+type RepromptInput struct {
 	Prompt string
 }
 
@@ -54,6 +64,7 @@ type generationPlanBuilder func(context.Context, generationInputContext, generat
 
 type Service struct {
 	db      DB
+	reader  draftReader
 	writer  draftWriter
 	planner generationPlanBuilder
 }
@@ -61,6 +72,7 @@ type Service struct {
 func NewService(db DB) *Service {
 	return &Service{
 		db:      db,
+		reader:  sites.NewPostgresReader(db),
 		writer:  sites.NewPostgresWriter(db),
 		planner: defaultGenerationPlanBuilder,
 	}
@@ -101,6 +113,167 @@ func (s *Service) Generate(ctx context.Context, workspaceID string, userID strin
 		JobID: jobID,
 		Draft: draft,
 	}, nil
+}
+
+func (s *Service) RepromptSite(ctx context.Context, workspaceID string, userID string, siteID string, input RepromptInput) (GenerateResult, error) {
+	prompt := strings.TrimSpace(input.Prompt)
+	if prompt == "" {
+		return GenerateResult{}, ErrPromptRequired
+	}
+
+	currentDraft, err := s.reader.LoadDraft(ctx, siteID)
+	if err != nil {
+		return GenerateResult{}, err
+	}
+
+	metadata, err := s.loadSiteMetadata(ctx, workspaceID, siteID)
+	if err != nil {
+		return GenerateResult{}, err
+	}
+	if err := s.captureDraftRevision(ctx, workspaceID, siteID, draftRevisionRecord{
+		Scope:                 "site",
+		Prompt:                prompt,
+		Draft:                 currentDraft,
+		GenerationPrompt:      metadata.Prompt,
+		GenerationSummaryJSON: metadata.SummaryJSON,
+		CreatedBy:             userID,
+	}); err != nil {
+		return GenerateResult{}, err
+	}
+
+	inputContext := generationInputContext{
+		SiteID:   siteID,
+		NameHint: currentDraft.Site.Name,
+		Prompt:   prompt,
+		Scope:    "site",
+	}
+	jobID, err := s.createGenerationJob(ctx, workspaceID, userID, inputContext)
+	if err != nil {
+		return GenerateResult{}, err
+	}
+
+	plan, nextDraft, validationRetryCount, err := s.generateDraftWithRetry(ctx, workspaceID, inputContext)
+	if err != nil {
+		_ = s.failGenerationJob(ctx, jobID, err)
+		return GenerateResult{}, err
+	}
+
+	nextDraft = applySiteIdentity(nextDraft, currentDraft)
+	if err := s.writer.SaveDraft(ctx, workspaceID, nextDraft); err != nil {
+		_ = s.failGenerationJob(ctx, jobID, err)
+		return GenerateResult{}, err
+	}
+
+	_ = s.saveSiteMetadata(ctx, workspaceID, siteID, prompt, plan, validationRetryCount)
+	_ = s.completeGenerationJob(ctx, jobID, siteID, plan)
+
+	savedDraft, err := s.reader.LoadDraft(ctx, siteID)
+	if err != nil {
+		return GenerateResult{}, err
+	}
+	return GenerateResult{
+		JobID: jobID,
+		Draft: savedDraft,
+	}, nil
+}
+
+func (s *Service) RepromptPage(ctx context.Context, workspaceID string, userID string, siteID string, pageID string, input RepromptInput) (GenerateResult, error) {
+	prompt := strings.TrimSpace(input.Prompt)
+	if prompt == "" {
+		return GenerateResult{}, ErrPromptRequired
+	}
+
+	currentDraft, err := s.reader.LoadDraft(ctx, siteID)
+	if err != nil {
+		return GenerateResult{}, err
+	}
+	pageIndex := findDraftPageIndex(currentDraft, pageID)
+	if pageIndex == -1 {
+		return GenerateResult{}, sites.ErrPageNotFound
+	}
+
+	metadata, err := s.loadSiteMetadata(ctx, workspaceID, siteID)
+	if err != nil {
+		return GenerateResult{}, err
+	}
+	if err := s.captureDraftRevision(ctx, workspaceID, siteID, draftRevisionRecord{
+		Scope:                 "page",
+		PageID:                pageID,
+		Prompt:                prompt,
+		Draft:                 currentDraft,
+		GenerationPrompt:      metadata.Prompt,
+		GenerationSummaryJSON: metadata.SummaryJSON,
+		CreatedBy:             userID,
+	}); err != nil {
+		return GenerateResult{}, err
+	}
+
+	page := currentDraft.Pages[pageIndex]
+	inputContext := generationInputContext{
+		SiteID:   siteID,
+		PageID:   pageID,
+		NameHint: currentDraft.Site.Name,
+		Prompt:   prompt,
+		Scope:    "page",
+	}
+	jobID, err := s.createGenerationJob(ctx, workspaceID, userID, inputContext)
+	if err != nil {
+		return GenerateResult{}, err
+	}
+
+	pagePlan, err := s.buildPageRepromptPlan(ctx, currentDraft, page, prompt)
+	if err != nil {
+		_ = s.failGenerationJob(ctx, jobID, err)
+		return GenerateResult{}, err
+	}
+
+	nextDraft := currentDraft
+	nextDraft.Pages = append([]siteconfig.PageDraft(nil), currentDraft.Pages...)
+	nextDraft.Pages[pageIndex] = replaceDraftPage(page, pagePlan)
+	nextDraft.Navigation = syncRepromptNavigation(currentDraft.Navigation, nextDraft.Pages)
+
+	if err := s.writer.SaveDraft(ctx, workspaceID, nextDraft); err != nil {
+		_ = s.failGenerationJob(ctx, jobID, err)
+		return GenerateResult{}, err
+	}
+
+	pageSummaryPlan := generationPlan{
+		SiteName:     currentDraft.Site.Name,
+		SiteGoal:     currentDraft.Site.SEO.Description,
+		ThemePreset:  metadata.themePreset(),
+		Theme:        currentDraft.Theme,
+		Pages:        []generationPagePlan{pagePlan},
+		AssetsNeeded: metadata.assetsNeeded(),
+		Assumptions:  metadata.assumptions(),
+	}
+	_ = s.completeGenerationJob(ctx, jobID, siteID, pageSummaryPlan)
+
+	savedDraft, err := s.reader.LoadDraft(ctx, siteID)
+	if err != nil {
+		return GenerateResult{}, err
+	}
+	return GenerateResult{
+		JobID: jobID,
+		Draft: savedDraft,
+	}, nil
+}
+
+func (s *Service) UndoLastDraftRevision(ctx context.Context, workspaceID string, siteID string) (siteconfig.SiteDraft, error) {
+	revision, err := s.loadLatestDraftRevision(ctx, workspaceID, siteID)
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+
+	if err := s.writer.SaveDraft(ctx, workspaceID, revision.Draft); err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	if err := s.restoreSiteMetadata(ctx, workspaceID, siteID, revision.GenerationPrompt, revision.GenerationSummaryJSON); err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	if err := s.deleteDraftRevision(ctx, revision.ID); err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	return s.reader.LoadDraft(ctx, siteID)
 }
 
 func defaultGenerationPlanBuilder(_ context.Context, input generationInputContext, _ generationPlanFeedback) (generationPlan, error) {
@@ -151,9 +324,12 @@ func (s *Service) buildPlan(ctx context.Context, input generationInputContext, f
 }
 
 type generationInputContext struct {
+	SiteID   string `json:"siteId,omitempty"`
+	PageID   string `json:"pageId,omitempty"`
 	NameHint string `json:"nameHint,omitempty"`
 	SlugHint string `json:"slugHint,omitempty"`
 	Prompt   string `json:"prompt"`
+	Scope    string `json:"scope,omitempty"`
 }
 
 type generationPlan struct {
@@ -178,6 +354,23 @@ type generationBlockPlan struct {
 	Type    string         `json:"type"`
 	Purpose string         `json:"purpose"`
 	Props   map[string]any `json:"props"`
+}
+
+type siteMetadata struct {
+	Prompt      string
+	SummaryJSON []byte
+	Summary     map[string]any
+}
+
+type draftRevisionRecord struct {
+	ID                    string
+	Scope                 string
+	PageID                string
+	Prompt                string
+	Draft                 siteconfig.SiteDraft
+	GenerationPrompt      string
+	GenerationSummaryJSON []byte
+	CreatedBy             string
 }
 
 type promptProfile struct {
@@ -297,6 +490,149 @@ func (s *Service) saveSiteMetadata(ctx context.Context, workspaceID string, site
 	return nil
 }
 
+func (s *Service) restoreSiteMetadata(ctx context.Context, workspaceID string, siteID string, prompt string, summaryJSON []byte) error {
+	if len(summaryJSON) == 0 {
+		summaryJSON = []byte(`{}`)
+	}
+
+	tag, err := s.db.Exec(ctx, `
+		update sites
+		set generation_prompt = $1,
+		    generation_summary = $2,
+		    updated_at = now()
+		where id = $3::uuid
+		  and workspace_id = $4::uuid
+	`, prompt, summaryJSON, siteID, workspaceID)
+	if err != nil {
+		return fmt.Errorf("restore generation summary: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return sites.ErrNotFound
+	}
+	return nil
+}
+
+func (s *Service) loadSiteMetadata(ctx context.Context, workspaceID string, siteID string) (siteMetadata, error) {
+	var prompt string
+	var summaryJSON []byte
+	if err := s.db.QueryRow(ctx, `
+		select coalesce(generation_prompt, ''),
+		       generation_summary
+		from sites
+		where id = $1::uuid
+		  and workspace_id = $2::uuid
+	`, siteID, workspaceID).Scan(&prompt, &summaryJSON); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return siteMetadata{}, sites.ErrNotFound
+		}
+		return siteMetadata{}, fmt.Errorf("load site metadata: %w", err)
+	}
+
+	summary := map[string]any{}
+	if len(summaryJSON) > 0 {
+		if err := json.Unmarshal(summaryJSON, &summary); err != nil {
+			return siteMetadata{}, fmt.Errorf("decode generation summary: %w", err)
+		}
+	}
+
+	return siteMetadata{
+		Prompt:      prompt,
+		SummaryJSON: summaryJSON,
+		Summary:     summary,
+	}, nil
+}
+
+func (s *Service) captureDraftRevision(ctx context.Context, workspaceID string, siteID string, revision draftRevisionRecord) error {
+	revisionJSON, err := json.Marshal(revision.Draft)
+	if err != nil {
+		return fmt.Errorf("encode draft revision: %w", err)
+	}
+
+	summaryJSON := revision.GenerationSummaryJSON
+	if len(summaryJSON) == 0 {
+		summaryJSON = []byte(`{}`)
+	}
+
+	if _, err := s.db.Exec(ctx, `
+		insert into draft_revisions (
+			site_id,
+			workspace_id,
+			scope,
+			page_id,
+			prompt,
+			draft,
+			generation_prompt,
+			generation_summary,
+			created_by
+		)
+		values (
+			$1::uuid,
+			$2::uuid,
+			$3,
+			nullif($4, '')::uuid,
+			$5,
+			$6,
+			$7,
+			$8,
+			nullif($9, '')::uuid
+		)
+	`, siteID, workspaceID, revision.Scope, revision.PageID, revision.Prompt, revisionJSON, revision.GenerationPrompt, summaryJSON, revision.CreatedBy); err != nil {
+		return fmt.Errorf("capture draft revision: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) loadLatestDraftRevision(ctx context.Context, workspaceID string, siteID string) (draftRevisionRecord, error) {
+	var revision draftRevisionRecord
+	var pageID string
+	var draftJSON []byte
+	var summaryJSON []byte
+	if err := s.db.QueryRow(ctx, `
+		select id::text,
+		       scope,
+		       coalesce(page_id::text, ''),
+		       coalesce(prompt, ''),
+		       draft,
+		       coalesce(generation_prompt, ''),
+		       generation_summary
+		from draft_revisions
+		where site_id = $1::uuid
+		  and workspace_id = $2::uuid
+		order by created_at desc, id desc
+		limit 1
+	`, siteID, workspaceID).Scan(
+		&revision.ID,
+		&revision.Scope,
+		&pageID,
+		&revision.Prompt,
+		&draftJSON,
+		&revision.GenerationPrompt,
+		&summaryJSON,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return draftRevisionRecord{}, ErrNoDraftRevision
+		}
+		return draftRevisionRecord{}, fmt.Errorf("load draft revision: %w", err)
+	}
+
+	if err := json.Unmarshal(draftJSON, &revision.Draft); err != nil {
+		return draftRevisionRecord{}, fmt.Errorf("decode draft revision: %w", err)
+	}
+	revision.PageID = pageID
+	revision.GenerationSummaryJSON = summaryJSON
+	return revision, nil
+}
+
+func (s *Service) deleteDraftRevision(ctx context.Context, revisionID string) error {
+	if _, err := s.db.Exec(ctx, `
+		delete from draft_revisions
+		where id = $1::uuid
+	`, revisionID); err != nil {
+		return fmt.Errorf("delete draft revision: %w", err)
+	}
+	return nil
+}
+
 func (s *Service) createSlug(ctx context.Context, workspaceID string, requested string, name string) (string, error) {
 	if value := strings.TrimSpace(requested); value != "" {
 		if !slugs.IsValid(value) {
@@ -319,6 +655,43 @@ func (s *Service) createSlug(ctx context.Context, workspaceID string, requested 
 		return "", fmt.Errorf("generate site slug: %w", err)
 	}
 	return value, nil
+}
+
+func (m siteMetadata) themePreset() string {
+	if preset, ok := m.Summary["themePreset"].(string); ok && preset != "" {
+		return preset
+	}
+	return siteconfig.ThemePaletteCalmNordic
+}
+
+func (m siteMetadata) assetsNeeded() []string {
+	items, ok := m.Summary["assetsNeeded"].([]any)
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		text, ok := item.(string)
+		if ok && text != "" {
+			result = append(result, text)
+		}
+	}
+	return result
+}
+
+func (m siteMetadata) assumptions() []string {
+	items, ok := m.Summary["assumptions"].([]any)
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		text, ok := item.(string)
+		if ok && text != "" {
+			result = append(result, text)
+		}
+	}
+	return result
 }
 
 func (s *Service) siteSlugExists(ctx context.Context, workspaceID string, slugValue string) (bool, error) {
@@ -438,6 +811,155 @@ func buildDraftFromPlan(plan generationPlan, slugValue string) (siteconfig.SiteD
 		return siteconfig.SiteDraft{}, err
 	}
 	return draft, nil
+}
+
+func applySiteIdentity(nextDraft siteconfig.SiteDraft, currentDraft siteconfig.SiteDraft) siteconfig.SiteDraft {
+	nextDraft.Site.ID = currentDraft.Site.ID
+	nextDraft.Site.Slug = currentDraft.Site.Slug
+	nextDraft.Site.Status = currentDraft.Site.Status
+	nextDraft.Site.DefaultLocale = currentDraft.Site.DefaultLocale
+	return nextDraft
+}
+
+func findDraftPageIndex(draft siteconfig.SiteDraft, pageID string) int {
+	for index, page := range draft.Pages {
+		if page.ID == pageID {
+			return index
+		}
+	}
+	return -1
+}
+
+func replaceDraftPage(currentPage siteconfig.PageDraft, plan generationPagePlan) siteconfig.PageDraft {
+	blocks := make([]siteconfig.BlockInstance, 0, len(plan.Blocks))
+	for _, blockPlan := range plan.Blocks {
+		blockID, err := ids.New()
+		if err != nil {
+			continue
+		}
+		blocks = append(blocks, siteconfig.BlockInstance{
+			ID:      blockID,
+			Type:    blockPlan.Type,
+			Version: siteconfig.BlockVersionV1,
+			Props:   blockPlan.Props,
+		})
+	}
+
+	updatedPage := currentPage
+	updatedPage.Title = firstNonEmpty(plan.Title, currentPage.Title)
+	updatedPage.SEO = plan.SEO
+	updatedPage.Slug = currentPage.Slug
+	updatedPage.Blocks = blocks
+	return updatedPage
+}
+
+func syncRepromptNavigation(
+	current siteconfig.NavigationConfig,
+	pages []siteconfig.PageDraft,
+) siteconfig.NavigationConfig {
+	pageByID := make(map[string]siteconfig.PageDraft, len(pages))
+	for _, page := range pages {
+		pageByID[page.ID] = page
+	}
+
+	nextPrimary := make([]siteconfig.NavigationItem, 0, len(current.Primary))
+	seenPages := map[string]bool{}
+	for _, item := range current.Primary {
+		if item.PageID == "" {
+			nextPrimary = append(nextPrimary, item)
+			continue
+		}
+		page, ok := pageByID[item.PageID]
+		if !ok {
+			continue
+		}
+		if !includePageInNavigation(page) {
+			continue
+		}
+		label := strings.TrimSpace(item.Label)
+		if label == "" || label == page.Title {
+			label = page.Title
+		}
+		nextPrimary = append(nextPrimary, siteconfig.NavigationItem{
+			Label:  label,
+			PageID: page.ID,
+			Href:   "",
+		})
+		seenPages[page.ID] = true
+	}
+
+	for _, page := range pages {
+		if seenPages[page.ID] || !includePageInNavigation(page) {
+			continue
+		}
+		nextPrimary = append(nextPrimary, siteconfig.NavigationItem{
+			Label:  page.Title,
+			PageID: page.ID,
+		})
+	}
+
+	return siteconfig.NavigationConfig{Primary: nextPrimary}
+}
+
+func includePageInNavigation(page siteconfig.PageDraft) bool {
+	include, ok := page.Settings["includeInNavigation"]
+	if !ok {
+		return true
+	}
+	value, ok := include.(bool)
+	if !ok {
+		return true
+	}
+	return value
+}
+
+func (s *Service) buildPageRepromptPlan(
+	ctx context.Context,
+	draft siteconfig.SiteDraft,
+	page siteconfig.PageDraft,
+	prompt string,
+) (generationPagePlan, error) {
+	plan, err := s.buildPlan(ctx, generationInputContext{
+		SiteID:   draft.Site.ID,
+		PageID:   page.ID,
+		NameHint: draft.Site.Name,
+		Prompt:   prompt,
+		Scope:    "page",
+	}, generationPlanFeedback{})
+	if err != nil {
+		return generationPagePlan{}, fmt.Errorf("build page reprompt plan: %w", err)
+	}
+
+	profile := profilePrompt(prompt)
+	primaryCTAHref := "/contact"
+	if profile.WantsWorkshops {
+		primaryCTAHref = "/workshops"
+	}
+
+	var pagePlan generationPagePlan
+	switch {
+	case page.Slug == "/":
+		pagePlan = homePagePlan(draft.Site.Name, prompt, profile, primaryCTAHref)
+	case strings.Contains(page.Slug, "contact"):
+		pagePlan = contactPagePlan(draft.Site.Name, profile)
+	case strings.Contains(page.Slug, "gallery"):
+		pagePlan = galleryPagePlan(draft.Site.Name, profile)
+	case strings.Contains(page.Slug, "about"):
+		pagePlan = aboutPagePlan(draft.Site.Name, profile)
+	case strings.Contains(page.Slug, "workshop"):
+		pagePlan = workshopsPagePlan(draft.Site.Name, profile)
+	default:
+		pagePlan = servicesPagePlan(draft.Site.Name, profile)
+	}
+
+	if len(plan.Pages) > 0 {
+		pagePlan = repairSecondaryPage(draft.Site.Name, draft.Site.SEO.Description, plan.Pages[0], map[string]bool{
+			page.Slug: true,
+		})
+	}
+	pagePlan.Title = firstNonEmpty(pagePlan.Title, page.Title)
+	pagePlan.Slug = page.Slug
+	return pagePlan, nil
 }
 
 func profilePrompt(prompt string) promptProfile {
@@ -650,6 +1172,7 @@ func homePagePlan(siteName string, prompt string, profile promptProfile, primary
 			},
 		},
 	})
+	blocks = append(blocks, footerBlockPlan(siteName, profile))
 
 	return generationPagePlan{
 		Title: "Home",
@@ -701,6 +1224,7 @@ func servicesPagePlan(siteName string, profile promptProfile) generationPagePlan
 			},
 		},
 	})
+	blocks = append(blocks, footerBlockPlan(siteName, profile))
 
 	return generationPagePlan{
 		Title: "Services",
@@ -762,6 +1286,7 @@ func workshopsPagePlan(siteName string, profile promptProfile) generationPagePla
 					},
 				},
 			},
+			footerBlockPlan(siteName, profile),
 		},
 	}
 }
@@ -803,6 +1328,7 @@ func aboutPagePlan(siteName string, profile promptProfile) generationPagePlan {
 			},
 		},
 	})
+	blocks = append(blocks, footerBlockPlan(siteName, profile))
 
 	return generationPagePlan{
 		Title: "About",
@@ -862,6 +1388,7 @@ func galleryPagePlan(siteName string, profile promptProfile) generationPagePlan 
 					},
 				},
 			},
+			footerBlockPlan(siteName, profile),
 		},
 	}
 }
@@ -898,11 +1425,26 @@ func contactPagePlan(siteName string, profile promptProfile) generationPagePlan 
 	}
 	blocks = append(blocks,
 		generationBlockPlan{
+			Type:    "contact_form",
+			Purpose: "Give ready visitors a real inquiry form with only the fields needed for a useful first reply.",
+			Props: map[string]any{
+				"heading":     "Send a quick inquiry",
+				"intro":       "Use the form for timing, availability, custom requests, or the first question that gets the project moving.",
+				"submitLabel": "Send inquiry",
+				"fields": toAnySlice([]map[string]any{
+					{"name": "name", "label": "Name", "type": "name", "required": true},
+					{"name": "email", "label": "Email", "type": "email", "required": true},
+					{"name": "phone", "label": "Phone", "type": "phone"},
+					{"name": "message", "label": "Message", "type": "message", "required": true},
+				}),
+			},
+		},
+		generationBlockPlan{
 			Type:    "cta_band",
 			Purpose: "Repeat the action so the page does not end ambiguously.",
 			Props: map[string]any{
 				"heading": "Prefer email first?",
-				"body":    "Until forms are live, this can point to email, a booking tool, or another direct contact path.",
+				"body":    "Keep a direct email path visible for people who would rather write from their own inbox.",
 				"cta": map[string]any{
 					"label": "Email hello@example.com",
 					"href":  "mailto:hello@example.com",
