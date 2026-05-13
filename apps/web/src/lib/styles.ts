@@ -35,11 +35,11 @@ export const layout = {
   workspaceGrid:
     'grid items-start gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)]',
   builderGrid:
-    'grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(340px,430px)]',
+    'grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,520px)]',
   builderSidebar: 'grid gap-5',
   appShell:
-    'mx-auto grid min-h-[calc(100vh-104px)] w-full max-w-[1440px] gap-5 p-5 lg:grid-cols-[244px_minmax(0,1fr)] max-lg:min-h-0 max-sm:px-3.5',
-  appContent: 'pb-5 pt-1 max-lg:pt-0',
+    'mx-auto grid min-h-[calc(100vh-72px)] w-full max-w-[1760px] gap-4 px-5 pb-5 pt-4 max-lg:min-h-0 max-sm:px-3.5',
+  appContent: 'pb-5',
   previewShell: 'grid gap-4',
 }
 

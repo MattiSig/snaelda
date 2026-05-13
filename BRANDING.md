@@ -151,7 +151,9 @@ Avoid:
 
 ### Color Direction
 
-Pull from the logo:
+Keep the logo as the emotional source, but use the Stitch design system as the current product palette baseline.
+
+Logo cues:
 
 - sky blue
 - soft teal
@@ -160,37 +162,51 @@ Pull from the logo:
 - violet
 - warm wood neutrals
 
-Use the bright colors as accents, not as constant full-screen noise.
+The current product theme in Stitch shifts those cues into a warmer, denser working palette:
+
+- deep plum-black foundations
+- antique paper light surfaces
+- saffron orange as the main action color
+- soft teal as the steady secondary accent
+- berry red for critical emphasis
+- pale mauve and ribbon tints for selected or elevated states
 
 Suggested brand behavior:
 
-- warm neutral base
-- one or two playful accents at a time
+- warm neutral or plum-biased base
+- one dominant action accent plus one supporting ribbon accent
 - colorful illustrations/details
-- restrained product surfaces
+- restrained product surfaces, even when marketing can be more playful
 
 ### Core Palette
 
-Recommended base palette pulled from the logo:
+Primary working palette, aligned with the Stitch project `Snaelda Prompt-to-Site Builder`:
 
-- `Cloud` `#F6F2EC`
-- `Paper` `#FFF9F4`
-- `Ink` `#2B2324`
+- `Plum Black` `#2D1B2D`
+- `Night Workshop` `#131411`
+- `Antique Paper` `#F9F7F2`
+- `Warm Pebble` `#E5E0D8`
+- `Thread Mauve` `#DABED6`
+- `Saffron Orange` `#F4A261`
+- `Soft Teal` `#2A9D8F`
+- `Berry Red` `#E76F51`
+
+Usage guidance:
+
+- `Plum Black` and `Night Workshop` should anchor dark-mode surfaces
+- `Antique Paper` and `Warm Pebble` should carry light-mode surfaces
+- `Thread Mauve` is the preferred selected-state, focus-glow, and surface-tint color
+- `Saffron Orange` is the main CTA and momentum color
+- `Soft Teal` should support success, secondary emphasis, and focus treatments
+- `Berry Red` is reserved for destructive actions, warnings, and rare punch accents
+
+Supporting ribbon colors from the logo can still appear in illustration, onboarding, and marketing details:
+
 - `Sky Ribbon` `#6CA9E8`
-- `Deep Blue Ribbon` `#356FBD`
-- `Soft Teal Ribbon` `#7BC7BB`
 - `Coral Ribbon` `#F07A98`
 - `Golden Ribbon` `#E5A13A`
 - `Violet Ribbon` `#7A4CB0`
 - `Wood` `#B78656`
-
-Usage guidance:
-
-- `Cloud` and `Paper` should carry most light-mode surfaces
-- `Ink` should be the main text color instead of pure black
-- use `Sky Ribbon`, `Soft Teal Ribbon`, and `Coral Ribbon` as the most common accents
-- use `Golden Ribbon` and `Violet Ribbon` more sparingly for emphasis
-- `Wood` is useful for warm neutrals, illustrations, dividers, and subtle depth
 
 ### Light Mode
 
@@ -205,11 +221,12 @@ Think:
 
 Recommended light-mode behavior:
 
-- background: `#F6F2EC` or `#FFF9F4`
-- surface cards: warm off-white
-- primary text: `#2B2324`
-- borders: faint warm gray, not cold gray
-- CTA accents: blue, coral, or teal depending on context
+- background: `#F9F7F2`
+- secondary surfaces: `#E5E0D8` or warm off-white variants
+- primary text: dark plum-brown, never pure black
+- borders: faint mauve-brown neutrals, not cool gray
+- CTA accents: `#F4A261` first, `#2A9D8F` second
+- selected and focused states: mauve-tinted, not blue-tinted
 
 ### Dark Mode
 
@@ -226,14 +243,13 @@ Think:
 
 Recommended dark palette:
 
-- `Night Ink` `#151215`
-- `Charcoal Plum` `#231C24`
-- `Storm Blue` `#20385F`
-- `Electric Sky` `#8FC6FF`
-- `Neon Coral` `#FF8CAD`
-- `Acid Teal` `#8EE2D1`
-- `Hot Violet` `#A874E8`
-- `Signal Gold` `#F3B547`
+- `Night Workshop` `#131411`
+- `Plum Black` `#2D1B2D`
+- `Charcoal Moss` `#1F201D`
+- `Thread Mauve` `#DABED6`
+- `Saffron Orange` `#F4A261`
+- `Soft Teal` `#2A9D8F`
+- `Berry Red` `#E76F51`
 
 Recommended dark-mode behavior:
 
@@ -241,6 +257,8 @@ Recommended dark-mode behavior:
 - accent colors can be more saturated than in light mode
 - cards should feel denser and punchier
 - highlights can be a little smug, but the UI should still be readable and calm
+- text should land in warm paper tones, not stark white
+- mauve should do more of the selection and elevation work than blue
 
 ### Color System Rules
 
@@ -250,6 +268,8 @@ Keep the system disciplined:
 - two main accent families active at once
 - one loud accent reserved for emphasis
 - theme tokens can shift tone, but the product brand should still feel recognizably Snaelda
+- avoid pure black, pure white, and default cool grays
+- product UI should usually lead with saffron plus teal, while mauve carries structure and focus
 
 ### Shape Language
 
@@ -282,10 +302,16 @@ Typography should feel friendly and readable first.
 
 Prefer:
 
-- a warm sans-serif for UI and body copy
-- possibly a slightly characterful display face for marketing headlines
+- `Be Vietnam Pro` for UI and body copy
+- `Literata` for display headlines, section headers, and other brand-forward moments
 
 The type should not feel too geometric or too luxury-editorial. Slight personality is good; novelty is not.
+
+Usage guidance:
+
+- use `Be Vietnam Pro` anywhere the product needs speed, clarity, and compact readability
+- use `Literata` selectively to give the brand a bookish, hand-touched voice
+- avoid pairing Stitch's warmer palette with cold neo-grotesk defaults
 
 ## Voice and Tone
 

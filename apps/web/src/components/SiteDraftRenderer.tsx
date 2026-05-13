@@ -48,6 +48,7 @@ export function SiteDraftRenderer({
   linkMode = 'anchors',
   siteSlug,
   publishedBasePath,
+  mode = 'default',
   renderBlock,
 }: {
   site: SiteDraft | PublishedSnapshot | RenderableSite
@@ -57,6 +58,7 @@ export function SiteDraftRenderer({
   linkMode?: 'anchors' | 'published'
   siteSlug?: string
   publishedBasePath?: string
+  mode?: 'default' | 'builder'
   renderBlock?: (slot: SiteDraftRendererBlockSlot) => React.ReactNode
 }) {
   const renderedPages = selectedPageId
@@ -67,10 +69,22 @@ export function SiteDraftRenderer({
   )
   const pageById = new Map(site.pages.map((page) => [page.id, page]))
   const slugToPage = new Map(site.pages.map((page) => [page.slug, page]))
+  const rootClassName =
+    mode === 'builder'
+      ? 'grid gap-0 border border-border bg-[var(--site-background)] text-[var(--site-foreground)] shadow-none [font-family:var(--site-font-body)]'
+      : preview.shell
+  const headerClassName =
+    mode === 'builder'
+      ? 'grid gap-4 border-b border-[var(--site-border)] bg-[color-mix(in_oklch,var(--site-surface)_96%,var(--site-background))] px-6 py-5 max-sm:p-4'
+      : cn(preview.frame, preview.header)
+  const pageClassName =
+    mode === 'builder'
+      ? 'bg-[var(--site-surface)] p-[calc(var(--site-section-spacing,96px)*0.24)]'
+      : preview.page
 
   return (
-    <div className={preview.shell} style={buildSiteThemeStyle(site.theme)}>
-      <header className={cn(preview.frame, preview.header)}>
+    <div className={rootClassName} style={buildSiteThemeStyle(site.theme)}>
+      <header className={headerClassName}>
         <div>
           <p className={text.eyebrow}>{eyebrow}</p>
           <h1 className="max-w-[10ch] font-serif text-[clamp(2.8rem,7vw,5.8rem)] font-bold leading-[0.96] text-[var(--site-foreground)]">
@@ -107,7 +121,7 @@ export function SiteDraftRenderer({
         <article
           key={page.id}
           id={pageAnchor(page.slug, page.id)}
-          className={preview.page}
+          className={pageClassName}
         >
           {showPageMeta ? (
             <div className={preview.pageMeta}>

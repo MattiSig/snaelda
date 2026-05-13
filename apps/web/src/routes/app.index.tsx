@@ -1,6 +1,6 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import type { FormEvent } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -20,12 +20,16 @@ export const Route = createFileRoute('/app/')({
 
 function SitesIndex() {
   const navigate = useNavigate()
+  const promptFromUrl = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('prompt') || ''
+    : ''
   const [sites, setSites] = useState<SiteSummary[]>([])
   const [name, setName] = useState('')
   const [prompt, setPrompt] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const hasAutoSubmitted = useRef(false)
 
   useEffect(() => {
     let isMounted = true
@@ -51,6 +55,31 @@ function SitesIndex() {
       isMounted = false
     }
   }, [])
+
+  useEffect(() => {
+    if (!promptFromUrl || hasAutoSubmitted.current || isLoading) {
+      return
+    }
+    hasAutoSubmitted.current = true
+    setPrompt(promptFromUrl)
+    setName('')
+    const timer = setTimeout(async () => {
+      setIsSubmitting(true)
+      try {
+        const response = await generateSite({ name: '', prompt: promptFromUrl })
+        await navigate({
+          to: '/app/sites/$siteId/preview',
+          params: { siteId: response.draft.site.id },
+        })
+      } catch (error) {
+        setErrorMessage(
+          error instanceof APIError ? error.message : 'Could not generate site',
+        )
+        setIsSubmitting(false)
+      }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [promptFromUrl, isLoading, navigate])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()

@@ -54,6 +54,7 @@ import {
   actions,
   emptyState,
   form,
+  panel,
   ribbonPanel,
   text,
 } from '@/lib/styles'
@@ -1010,309 +1011,495 @@ function SiteDetail() {
   const hasContactForm = draft.pages.some((page) =>
     page.blocks.some((block) => block.type === 'contact_form'),
   )
+  const workspacePanel = cn(panel, 'grid gap-5 p-5')
+  const workspaceCard = cn(panel, 'grid gap-4 p-5')
 
-  return (
-    <PuckBuilder
-      siteId={siteId}
-      draft={draft}
-      blockRegistry={blockRegistry}
-      selectedPage={selectedPage}
-      selectedBlock={selectedBlock}
-      selectedDefinition={selectedDefinition}
-      selectedBlockIndex={selectedBlockIndex}
-      blockDefinitions={blockDefinitions}
-      uploadedSiteAssets={uploadedSiteAssets}
-      newBlockType={newBlockType}
-      isSavingBlock={isSavingBlock}
-      isMutatingBlocks={isMutatingBlocks}
-      isCreatingBlock={isCreatingBlock}
-      blockErrorMessage={blockErrorMessage}
-      blockStatusMessage={blockStatusMessage}
-      pageErrorMessage={pageErrorMessage}
-      pageStatusMessage={pageStatusMessage}
-      pageTitle={pageTitle}
-      pageSlug={pageSlug}
-      pageSEOTitle={pageSEOTitle}
-      pageSEODescription={pageSEODescription}
-      pageIncludeInNavigation={pageIncludeInNavigation}
-      isSavingPage={isSavingPage}
-      isDeletingPage={isDeletingPage}
-      pages={draft.pages}
-      onSelectPage={handleSelectPage}
-      onSelectBlock={handleSelectBlock}
-      onSaveBlock={handleSaveBlock}
-      onCreateBlock={handleCreateBlock}
-      onDuplicateBlock={handleDuplicateBlock}
-      onDeleteBlock={handleDeleteBlock}
-      onMoveBlock={handleMoveBlock}
-      onMovePage={handleMovePage}
-      onDeletePage={handleDeletePage}
-      onChangeNewBlockType={setNewBlockType}
-      onSavePage={handleSavePage}
-      onSetPageTitle={setPageTitle}
-      onSetPageSlug={setPageSlug}
-      onSetPageSEOTitle={setPageSEOTitle}
-      onSetPageSEODescription={setPageSEODescription}
-      onSetPageIncludeInNavigation={setPageIncludeInNavigation}
-      onReorderBlocks={handleReorderBlocks}
-      onDropPaletteBlock={handleDropPaletteBlock}
-      settingsContent={
-        <>
-          <section className={ribbonPanel}>
-            <div className="mb-[22px]">
-              <p className={text.eyebrow}>Prompt iteration</p>
-              <h2 className={text.h2}>Replace draft direction</h2>
-              <p className={cn(text.p, 'mt-2')}>
-                Re-prompts replace the targeted content scope. They do not try
-                to merge block-by-block edits. Use undo if the new result is
-                worse.
-              </p>
-            </div>
+  const sitePanelContent = (
+    <div className="grid gap-4 2xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+      <section className={workspacePanel}>
+        <div>
+          <p className={text.eyebrow}>Prompt iteration</p>
+          <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
+            Replace draft direction
+          </h2>
+          <p className={cn(text.p, 'mt-2 text-sm')}>
+            Re-prompts replace the chosen scope. They do not merge block edits
+            back together, so use undo when the new draft misses the mark.
+          </p>
+        </div>
 
-            <div className="grid gap-4">
-              <form className={form.grid} onSubmit={handleSiteReprompt}>
-                <label htmlFor="site-reprompt" className={text.label}>
-                  Whole site prompt
-                </label>
-                <Textarea
-                  id="site-reprompt"
-                  rows={4}
-                  value={siteReprompt}
-                  placeholder="Make the site warmer, tighten the copy, add pricing, and lean harder into workshops."
-                  onChange={(event) => setSiteReprompt(event.target.value)}
-                />
-                <p className={form.hint}>
-                  Replaces the generated content across the draft while keeping
-                  the site identity and current draft version history.
-                </p>
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={isRepromptingSite || siteReprompt.trim() === ''}
-                >
-                  {isRepromptingSite ? 'Rebuilding site...' : 'Re-prompt site'}
-                </Button>
-              </form>
+        <div className="grid gap-4 xl:grid-cols-2">
+          <form className={form.grid} onSubmit={handleSiteReprompt}>
+            <label htmlFor="site-reprompt" className={text.label}>
+              Whole site prompt
+            </label>
+            <Textarea
+              id="site-reprompt"
+              rows={4}
+              value={siteReprompt}
+              placeholder="Make the site warmer, tighten the copy, add pricing, and lean harder into workshops."
+              onChange={(event) => setSiteReprompt(event.target.value)}
+            />
+            <p className={form.hint}>
+              Regenerates the broader site while keeping its identity and draft
+              history.
+            </p>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={isRepromptingSite || siteReprompt.trim() === ''}
+            >
+              {isRepromptingSite ? 'Rebuilding site...' : 'Rebuild whole site'}
+            </Button>
+          </form>
 
-              <form className={form.grid} onSubmit={handlePageReprompt}>
-                <label htmlFor="page-reprompt" className={text.label}>
-                  {selectedPage
-                    ? `${selectedPage.title} page prompt`
-                    : 'Page prompt'}
-                </label>
-                <Textarea
-                  id="page-reprompt"
-                  rows={4}
-                  value={pageReprompt}
-                  placeholder="Turn this page into a tighter pricing overview with clearer package framing and fewer sections."
-                  onChange={(event) => setPageReprompt(event.target.value)}
-                />
-                <p className={form.hint}>
-                  Replaces the selected page content while keeping its route and
-                  position in the site.
-                </p>
-                <div className={actions.row}>
-                  <Button
-                    type="submit"
-                    size="sm"
-                    disabled={
-                      !selectedPage ||
-                      isRepromptingPage ||
-                      pageReprompt.trim() === ''
-                    }
-                  >
-                    {isRepromptingPage
-                      ? 'Rebuilding page...'
-                      : 'Re-prompt page'}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={isUndoingReprompt}
-                    onClick={handleUndoReprompt}
-                  >
-                    {isUndoingReprompt ? 'Restoring...' : 'Undo last re-prompt'}
-                  </Button>
-                </div>
-              </form>
-
-              {repromptErrorMessage ? (
-                <p className={text.error}>{repromptErrorMessage}</p>
-              ) : null}
-              {repromptStatusMessage ? (
-                <p className={text.success}>{repromptStatusMessage}</p>
-              ) : null}
-            </div>
-          </section>
-
-          <section className={ribbonPanel}>
-            <div className="mb-[22px]">
-              <p className={text.eyebrow}>Navigation</p>
-              <h2 className={text.h2}>Set the menu order</h2>
-            </div>
-
-            {navigationPages.length > 0 ? (
-              <div className="grid gap-3">
-                {navigationPages.map((page, index) => (
-                  <article
-                    key={page.id}
-                    className={cn(
-                      'grid gap-3 rounded-[14px] border border-border bg-[var(--surface-2)] p-4',
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <strong className="block text-[var(--paper)]">
-                          {page.title}
-                        </strong>
-                        <small className="text-[var(--paper-muted)]">
-                          {page.slug}
-                        </small>
-                      </div>
-                      <div className={actions.row}>
-                        <Button
-                          type="button"
-                          variant="plain"
-                          className={actions.inlineLink}
-                          disabled={index === 0 || isSavingNavigation}
-                          onClick={() => handleMoveNavigation(page.id, -1)}
-                        >
-                          Earlier
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="plain"
-                          className={actions.inlineLink}
-                          disabled={
-                            index === navigationPages.length - 1 ||
-                            isSavingNavigation
-                          }
-                          onClick={() => handleMoveNavigation(page.id, 1)}
-                        >
-                          Later
-                        </Button>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-
-                {navigationErrorMessage ? (
-                  <p className={text.error}>{navigationErrorMessage}</p>
-                ) : null}
-                {navigationStatusMessage ? (
-                  <p className={text.success}>{navigationStatusMessage}</p>
-                ) : null}
-
-                <p className={form.hint}>
-                  {hiddenNavigationPageCount > 0
-                    ? `${hiddenNavigationPageCount} page${hiddenNavigationPageCount === 1 ? '' : 's'} currently stay out of the primary navigation.`
-                    : 'Every page is currently included in the primary navigation.'}
-                  {externalNavigationCount > 0
-                    ? ` ${externalNavigationCount} external link${externalNavigationCount === 1 ? '' : 's'} still stay appended after the page links.`
-                    : ''}
-                </p>
-              </div>
-            ) : (
-              <div className={emptyState}>
-                <p className={text.p}>
-                  Include at least one page in the primary navigation to reorder
-                  it.
-                </p>
-              </div>
-            )}
-          </section>
-
-          <section className={ribbonPanel}>
-            <div className="mb-[22px]">
-              <p className={text.eyebrow}>Pages</p>
-              <h2 className={text.h2}>Add another page</h2>
-            </div>
-
-            <form className={form.grid} onSubmit={handleCreatePage}>
-              <label htmlFor="new-page-title" className={text.label}>
-                Page title
-              </label>
-              <Input
-                id="new-page-title"
-                value={newPageTitle}
-                onChange={(event) => setNewPageTitle(event.target.value)}
-                placeholder="Pricing"
-                required
-              />
-
-              <label htmlFor="new-page-slug" className={text.label}>
-                Page slug
-              </label>
-              <Input
-                id="new-page-slug"
-                value={newPageSlug}
-                onChange={(event) => setNewPageSlug(event.target.value)}
-                placeholder="/pricing"
-              />
-
-              <label className={form.toggle}>
-                <input
-                  type="checkbox"
-                  className="size-4 accent-[var(--thread-teal)]"
-                  checked={newPageIncludeInNavigation}
-                  onChange={(event) =>
-                    setNewPageIncludeInNavigation(event.target.checked)
-                  }
-                />
-                Include this page in primary navigation
-              </label>
-
+          <form className={form.grid} onSubmit={handlePageReprompt}>
+            <label htmlFor="page-reprompt" className={text.label}>
+              {selectedPage ? `${selectedPage.title} page prompt` : 'Page prompt'}
+            </label>
+            <Textarea
+              id="page-reprompt"
+              rows={4}
+              value={pageReprompt}
+              placeholder="Turn this page into a tighter pricing overview with clearer package framing and fewer sections."
+              onChange={(event) => setPageReprompt(event.target.value)}
+            />
+            <p className={form.hint}>
+              Regenerates only the selected page while keeping its route and
+              place in the draft.
+            </p>
+            <div className={actions.row}>
               <Button
                 type="submit"
                 size="sm"
-                disabled={isCreatingPage || draft.pages.length >= 10}
+                disabled={
+                  !selectedPage ||
+                  isRepromptingPage ||
+                  pageReprompt.trim() === ''
+                }
               >
-                {isCreatingPage ? 'Adding page...' : 'Add page'}
+                {isRepromptingPage ? 'Rebuilding page...' : 'Rebuild page'}
               </Button>
-
-              <p className={form.hint}>
-                {draft.pages.length >= 10
-                  ? 'This draft already has the 10-page MVP limit.'
-                  : `${draft.pages.length} of 10 pages currently in this draft.`}
-              </p>
-            </form>
-          </section>
-
-          <section className={ribbonPanel}>
-            <div className="mb-[22px]">
-              <p className={text.eyebrow}>Theme</p>
-              <h2 className={text.h2}>Set the site direction</h2>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={isUndoingReprompt}
+                onClick={handleUndoReprompt}
+              >
+                {isUndoingReprompt ? 'Restoring...' : 'Undo last rebuild'}
+              </Button>
             </div>
+          </form>
+        </div>
 
-            {themeSelection && themeOptions ? (
-              <form className={form.grid} onSubmit={handleSaveTheme}>
-                <div className="rounded-[16px] border border-border bg-[var(--surface-2)] p-4">
-                  <div className="grid grid-cols-2 gap-3 max-lg:grid-cols-1">
-                    {Object.entries(draft.theme.tokens.colors).map(
-                      ([key, value]) => (
-                        <div
-                          key={key}
-                          className="flex items-center gap-3 rounded-[14px] border border-border bg-[var(--surface-1)] px-3 py-2.5"
-                        >
-                          <span
-                            className="size-[34px] shrink-0 rounded-full border border-border shadow-[inset_0_0_0_1px_oklch(7%_0.022_336_/_0.12)]"
-                            style={{ backgroundColor: value }}
-                          />
-                          <div>
-                            <strong className="block">
-                              {formatThemeLabel(key)}
-                            </strong>
-                            <small className="block text-[var(--paper-muted)]">
-                              {value}
-                            </small>
-                          </div>
-                        </div>
-                      ),
-                    )}
+        {repromptErrorMessage ? <p className={text.error}>{repromptErrorMessage}</p> : null}
+        {repromptStatusMessage ? (
+          <p className={text.success}>{repromptStatusMessage}</p>
+        ) : null}
+      </section>
+
+      <section className={workspacePanel}>
+        <div>
+          <p className={text.eyebrow}>Navigation</p>
+          <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
+            Set the main menu order
+          </h2>
+        </div>
+
+        {navigationPages.length > 0 ? (
+          <div className="grid gap-3">
+            {navigationPages.map((page, index) => (
+              <article
+                key={page.id}
+                className="flex items-center justify-between gap-3 rounded-[12px] border border-border bg-[var(--surface-2)] px-4 py-3"
+              >
+                <div>
+                  <strong className="block text-[var(--paper)]">
+                    {page.title}
+                  </strong>
+                  <small className="text-[var(--paper-muted)]">{page.slug}</small>
+                </div>
+                <div className={actions.row}>
+                  <Button
+                    type="button"
+                    variant="plain"
+                    className={actions.inlineLink}
+                    disabled={index === 0 || isSavingNavigation}
+                    onClick={() => handleMoveNavigation(page.id, -1)}
+                  >
+                    Earlier
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="plain"
+                    className={actions.inlineLink}
+                    disabled={
+                      index === navigationPages.length - 1 || isSavingNavigation
+                    }
+                    onClick={() => handleMoveNavigation(page.id, 1)}
+                  >
+                    Later
+                  </Button>
+                </div>
+              </article>
+            ))}
+
+            {navigationErrorMessage ? (
+              <p className={text.error}>{navigationErrorMessage}</p>
+            ) : null}
+            {navigationStatusMessage ? (
+              <p className={text.success}>{navigationStatusMessage}</p>
+            ) : null}
+
+            <p className={form.hint}>
+              {hiddenNavigationPageCount > 0
+                ? `${hiddenNavigationPageCount} page${hiddenNavigationPageCount === 1 ? '' : 's'} currently stay out of the main menu.`
+                : 'Every page is currently included in the main menu.'}
+              {externalNavigationCount > 0
+                ? ` ${externalNavigationCount} external link${externalNavigationCount === 1 ? '' : 's'} still sit after the page links.`
+                : ''}
+            </p>
+          </div>
+        ) : (
+          <div className={emptyState}>
+            <p className={text.p}>
+              Include at least one page in the main navigation to reorder it.
+            </p>
+          </div>
+        )}
+      </section>
+
+      <section className={workspaceCard}>
+        <div>
+          <p className={text.eyebrow}>Pages</p>
+          <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
+            Add another page
+          </h2>
+        </div>
+
+        <form className={form.grid} onSubmit={handleCreatePage}>
+          <label htmlFor="new-page-title" className={text.label}>
+            Page title
+          </label>
+          <Input
+            id="new-page-title"
+            value={newPageTitle}
+            onChange={(event) => setNewPageTitle(event.target.value)}
+            placeholder="Pricing"
+            required
+          />
+
+          <label htmlFor="new-page-slug" className={text.label}>
+            Page path
+          </label>
+          <Input
+            id="new-page-slug"
+            value={newPageSlug}
+            onChange={(event) => setNewPageSlug(event.target.value)}
+            placeholder="/pricing"
+          />
+
+          <label className={form.toggle}>
+            <input
+              type="checkbox"
+              className="size-4 accent-[var(--thread-teal)]"
+              checked={newPageIncludeInNavigation}
+              onChange={(event) =>
+                setNewPageIncludeInNavigation(event.target.checked)
+              }
+            />
+            Include this page in the main navigation
+          </label>
+
+          <Button
+            type="submit"
+            size="sm"
+            disabled={isCreatingPage || draft.pages.length >= 10}
+          >
+            {isCreatingPage ? 'Adding page...' : 'Add page'}
+          </Button>
+
+          <p className={form.hint}>
+            {draft.pages.length >= 10
+              ? 'This draft already has the 10-page MVP limit.'
+              : `${draft.pages.length} of 10 pages currently in this draft.`}
+          </p>
+        </form>
+      </section>
+
+      <section className={workspaceCard}>
+        <div>
+          <p className={text.eyebrow}>Assets</p>
+          <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
+            Upload the image library
+          </h2>
+        </div>
+
+        <form className={form.grid} onSubmit={handleUploadAsset}>
+          <label htmlFor="asset-file" className={text.label}>
+            Image file
+          </label>
+          <Input
+            key={assetInputKey}
+            id="asset-file"
+            type="file"
+            accept="image/avif,image/gif,image/jpeg,image/png,image/webp"
+            onChange={(event) => setAssetFile(event.target.files?.[0] ?? null)}
+          />
+
+          <label htmlFor="asset-alt-text" className={text.label}>
+            Default alt text
+          </label>
+          <Input
+            id="asset-alt-text"
+            value={assetAltText}
+            onChange={(event) => setAssetAltText(event.target.value)}
+            placeholder="Describe what the image shows"
+          />
+
+          {assetErrorMessage ? <p className={text.error}>{assetErrorMessage}</p> : null}
+          {assetStatusMessage ? (
+            <p className={text.success}>{assetStatusMessage}</p>
+          ) : null}
+
+          <Button type="submit" disabled={isUploadingAsset || !assetFile}>
+            {isUploadingAsset ? 'Uploading image...' : 'Upload image'}
+          </Button>
+        </form>
+
+        <div className="grid gap-3">
+          {siteAssets.length > 0 ? (
+            siteAssets.map((asset) => (
+              <article
+                key={asset.id}
+                className="grid gap-3 rounded-[12px] border border-border bg-[var(--surface-2)] p-4"
+              >
+                <div className="grid gap-3 sm:grid-cols-[120px_minmax(0,1fr)] sm:items-start">
+                  {asset.metadata.uploadStatus === 'uploaded' ? (
+                    <img
+                      src={buildDraftAssetURL(asset.id)}
+                      alt={
+                        asset.altText ||
+                        asset.metadata.fileName ||
+                        'Uploaded site asset'
+                      }
+                      className="h-[108px] w-full rounded-[10px] border border-border bg-[var(--surface-1)] object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="grid h-[108px] w-full place-items-center rounded-[10px] border border-dashed border-border bg-[var(--surface-1)] text-sm text-[var(--paper-muted)]">
+                      Processing upload
+                    </div>
+                  )}
+                  <div className="grid gap-1">
+                    <strong className="text-[var(--paper)]">
+                      {asset.metadata.fileName || asset.id}
+                    </strong>
+                    <small className="text-[var(--paper-muted)]">
+                      {asset.metadata.contentType || 'Image'} ·{' '}
+                      {formatAssetFileSize(
+                        asset.metadata.sizeBytes ||
+                          asset.metadata.requestedSizeBytes,
+                      )}
+                    </small>
+                    <small className="text-[var(--paper-muted)]">
+                      {describeAssetDimensions(asset)} ·{' '}
+                      {asset.metadata.uploadStatus || 'pending'}
+                    </small>
+                    {asset.altText ? (
+                      <p className="m-0 text-sm text-[var(--paper-muted)]">
+                        Alt: {asset.altText}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
+              </article>
+            ))
+          ) : (
+            <div className={emptyState}>
+              <p className={text.p}>
+                No site assets yet. Upload the first image here, then pick it
+                in any asset-enabled block field.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
 
+      <section className={workspaceCard}>
+        <div>
+          <p className={text.eyebrow}>Site details</p>
+          <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
+            Rename and reslug the draft
+          </h2>
+        </div>
+
+        <form className={form.grid} onSubmit={handleSaveSite}>
+          <label htmlFor="site-name" className={text.label}>
+            Business name
+          </label>
+          <Input
+            id="site-name"
+            name="name"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            required
+          />
+
+          <label htmlFor="site-slug" className={text.label}>
+            Site slug
+          </label>
+          <Input
+            id="site-slug"
+            name="slug"
+            value={slug}
+            onChange={(event) => setSlug(event.target.value)}
+            required
+          />
+
+          {siteErrorMessage ? <p className={text.error}>{siteErrorMessage}</p> : null}
+          {siteStatusMessage ? (
+            <p className={text.success}>{siteStatusMessage}</p>
+          ) : null}
+
+          <div className={actions.row}>
+            <Button type="submit" disabled={isSavingSite}>
+              {isSavingSite ? 'Saving details...' : 'Save site details'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isDeleting}
+              onClick={handleDelete}
+            >
+              {isDeleting ? 'Deleting draft...' : 'Delete draft'}
+            </Button>
+          </div>
+        </form>
+      </section>
+
+      <section className={cn(workspaceCard, '2xl:col-span-2')}>
+        <div>
+          <p className={text.eyebrow}>Inquiries</p>
+          <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
+            Review contact form submissions
+          </h2>
+        </div>
+
+        {submissionErrorMessage ? (
+          <p className={text.error}>{submissionErrorMessage}</p>
+        ) : null}
+        {submissionStatusMessage ? (
+          <p className={text.success}>{submissionStatusMessage}</p>
+        ) : null}
+
+        <div className="grid gap-3">
+          {formSubmissions.length > 0 ? (
+            formSubmissions.map((submission) => (
+              <article
+                key={submission.id}
+                className="grid gap-3 rounded-[12px] border border-border bg-[var(--surface-2)] p-4"
+              >
+                <div className="flex items-start justify-between gap-3 max-sm:flex-col">
+                  <div>
+                    <strong className="block text-[var(--paper)]">
+                      {String(
+                        submission.payload['name'] ||
+                          submission.payload['email'] ||
+                          'New inquiry',
+                      )}
+                    </strong>
+                    <small className="text-[var(--paper-muted)]">
+                      {submission.pageTitle || 'Stored submission'} ·{' '}
+                      {formatTimestamp(submission.createdAt)}
+                    </small>
+                  </div>
+                  <Select
+                    value={submission.status}
+                    disabled={activeSubmissionId === submission.id}
+                    onChange={(event) =>
+                      handleUpdateSubmissionStatus(
+                        submission.id,
+                        event.target.value as FormSubmissionStatus,
+                      )
+                    }
+                  >
+                    <option value="new">New</option>
+                    <option value="reviewed">Reviewed</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="spam">Spam</option>
+                  </Select>
+                </div>
+
+                <div className="grid gap-2">
+                  {Object.entries(submission.payload).map(([key, value]) => (
+                    <div key={key} className="grid gap-1">
+                      <strong className="text-sm uppercase tracking-[0.08em] text-[var(--paper-muted)]">
+                        {formatSubmissionKey(key)}
+                      </strong>
+                      <p className="m-0 whitespace-pre-wrap text-[var(--paper)]">
+                        {String(value)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            ))
+          ) : (
+            <div className={emptyState}>
+              <p className={text.p}>
+                {hasContactForm
+                  ? 'No submissions yet. Published and preview contact forms will start listing messages here.'
+                  : 'Add a contact form block to start collecting inquiries.'}
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  )
+
+  const themePanelContent = (
+    <div className="grid gap-4">
+      <section className={workspacePanel}>
+        <div>
+          <p className={text.eyebrow}>Theme</p>
+          <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
+            Set the site direction
+          </h2>
+          <p className={cn(text.p, 'mt-2 text-sm')}>
+            Theme choices change the public site styling, not the builder
+            chrome. Keep them visible and separate from general site admin.
+          </p>
+        </div>
+
+        {themeSelection && themeOptions ? (
+          <form className={form.grid} onSubmit={handleSaveTheme}>
+            <div className="rounded-[12px] border border-border bg-[var(--surface-2)] p-4">
+              <div className="grid grid-cols-2 gap-3 max-lg:grid-cols-1">
+                {Object.entries(draft.theme.tokens.colors).map(([key, value]) => (
+                  <div
+                    key={key}
+                    className="flex items-center gap-3 rounded-[10px] border border-border bg-[var(--surface-1)] px-3 py-2.5"
+                  >
+                    <span
+                      className="size-[34px] shrink-0 rounded-full border border-border shadow-[inset_0_0_0_1px_oklch(7%_0.022_336_/_0.12)]"
+                      style={{ backgroundColor: value }}
+                    />
+                    <div>
+                      <strong className="block">{formatThemeLabel(key)}</strong>
+                      <small className="block text-[var(--paper-muted)]">
+                        {value}
+                      </small>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-3">
+              <div className={form.field}>
                 <label htmlFor="theme-palette" className={text.label}>
                   Palette
                 </label>
@@ -1335,7 +1522,9 @@ function SiteDetail() {
                     themeSelection.palette,
                   )}
                 </p>
+              </div>
 
+              <div className={form.field}>
                 <label htmlFor="theme-font-preset" className={text.label}>
                   Font preset
                 </label>
@@ -1358,7 +1547,9 @@ function SiteDetail() {
                     themeSelection.fontPreset,
                   )}
                 </p>
+              </div>
 
+              <div className={form.field}>
                 <label htmlFor="theme-section-spacing" className={text.label}>
                   Section spacing
                 </label>
@@ -1384,7 +1575,9 @@ function SiteDetail() {
                     themeSelection.sectionSpacing,
                   )}
                 </p>
+              </div>
 
+              <div className={form.field}>
                 <label htmlFor="theme-radius" className={text.label}>
                   Corner radius
                 </label>
@@ -1407,7 +1600,9 @@ function SiteDetail() {
                     themeSelection.radius,
                   )}
                 </p>
+              </div>
 
+              <div className={form.field}>
                 <label htmlFor="theme-button-style" className={text.label}>
                   Button style
                 </label>
@@ -1433,7 +1628,9 @@ function SiteDetail() {
                     themeSelection.buttonStyle,
                   )}
                 </p>
+              </div>
 
+              <div className={form.field}>
                 <label htmlFor="theme-image-style" className={text.label}>
                   Image style
                 </label>
@@ -1441,10 +1638,7 @@ function SiteDetail() {
                   id="theme-image-style"
                   value={themeSelection.imageStyle}
                   onChange={(event) =>
-                    handleThemeSelectionChange(
-                      'imageStyle',
-                      event.target.value,
-                    )
+                    handleThemeSelectionChange('imageStyle', event.target.value)
                   }
                 >
                   {themeOptions.imageStyles.map((option) => (
@@ -1459,350 +1653,215 @@ function SiteDetail() {
                     themeSelection.imageStyle,
                   )}
                 </p>
-
-                {themeErrorMessage ? (
-                  <p className={text.error}>{themeErrorMessage}</p>
-                ) : null}
-                {themeStatusMessage ? (
-                  <p className={text.success}>{themeStatusMessage}</p>
-                ) : null}
-
-                <Button type="submit" disabled={isSavingTheme}>
-                  {isSavingTheme ? 'Saving theme...' : 'Save theme'}
-                </Button>
-              </form>
-            ) : (
-              <div className={emptyState}>
-                <p className={text.p}>Loading theme controls...</p>
               </div>
-            )}
-          </section>
-
-          <section className={ribbonPanel}>
-            <div className="mb-[22px]">
-              <p className={text.eyebrow}>Assets</p>
-              <h2 className={text.h2}>Upload the site image library</h2>
             </div>
 
-            <form className={form.grid} onSubmit={handleUploadAsset}>
-              <label htmlFor="asset-file" className={text.label}>
-                Image file
-              </label>
-              <Input
-                key={assetInputKey}
-                id="asset-file"
-                type="file"
-                accept="image/avif,image/gif,image/jpeg,image/png,image/webp"
-                onChange={(event) =>
-                  setAssetFile(event.target.files?.[0] ?? null)
-                }
-              />
-
-              <label htmlFor="asset-alt-text" className={text.label}>
-                Default alt text
-              </label>
-              <Input
-                id="asset-alt-text"
-                value={assetAltText}
-                onChange={(event) => setAssetAltText(event.target.value)}
-                placeholder="Describe what the image shows"
-              />
-
-              {assetErrorMessage ? (
-                <p className={text.error}>{assetErrorMessage}</p>
-              ) : null}
-              {assetStatusMessage ? (
-                <p className={text.success}>{assetStatusMessage}</p>
-              ) : null}
-
-              <Button type="submit" disabled={isUploadingAsset || !assetFile}>
-                {isUploadingAsset ? 'Uploading asset...' : 'Upload asset'}
-              </Button>
-            </form>
-
-            <div className="mt-5 grid gap-3">
-              {siteAssets.length > 0 ? (
-                siteAssets.map((asset) => (
-                  <article
-                    key={asset.id}
-                    className="grid gap-3 rounded-[14px] border border-border bg-[var(--surface-2)] p-4"
-                  >
-                    <div className="grid gap-3 sm:grid-cols-[120px_minmax(0,1fr)] sm:items-start">
-                      {asset.metadata.uploadStatus === 'uploaded' ? (
-                        <img
-                          src={buildDraftAssetURL(asset.id)}
-                          alt={
-                            asset.altText ||
-                            asset.metadata.fileName ||
-                            'Uploaded site asset'
-                          }
-                          className="h-[108px] w-full rounded-[12px] border border-border bg-[var(--surface-1)] object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="grid h-[108px] w-full place-items-center rounded-[12px] border border-dashed border-border bg-[var(--surface-1)] text-sm text-[var(--paper-muted)]">
-                          Processing upload
-                        </div>
-                      )}
-                      <div className="grid gap-1">
-                        <strong className="text-[var(--paper)]">
-                          {asset.metadata.fileName || asset.id}
-                        </strong>
-                        <small className="text-[var(--paper-muted)]">
-                          {asset.metadata.contentType || 'Image'} ·{' '}
-                          {formatAssetFileSize(
-                            asset.metadata.sizeBytes ||
-                              asset.metadata.requestedSizeBytes,
-                          )}
-                        </small>
-                        <small className="text-[var(--paper-muted)]">
-                          {describeAssetDimensions(asset)} ·{' '}
-                          {asset.metadata.uploadStatus || 'pending'}
-                        </small>
-                        {asset.altText ? (
-                          <p className="m-0 text-sm text-[var(--paper-muted)]">
-                            Alt: {asset.altText}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-                  </article>
-                ))
-              ) : (
-                <div className={emptyState}>
-                  <p className={text.p}>
-                    No site assets yet. Upload the first image here, then pick
-                    it in any asset-enabled block field below.
-                  </p>
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section className={ribbonPanel}>
-            <div className="mb-[22px]">
-              <p className={text.eyebrow}>Inquiries</p>
-              <h2 className={text.h2}>Review contact form submissions</h2>
-            </div>
-
-            {submissionErrorMessage ? (
-              <p className={text.error}>{submissionErrorMessage}</p>
-            ) : null}
-            {submissionStatusMessage ? (
-              <p className={text.success}>{submissionStatusMessage}</p>
+            {themeErrorMessage ? <p className={text.error}>{themeErrorMessage}</p> : null}
+            {themeStatusMessage ? (
+              <p className={text.success}>{themeStatusMessage}</p>
             ) : null}
 
-            <div className="mt-5 grid gap-3">
-              {formSubmissions.length > 0 ? (
-                formSubmissions.map((submission) => (
-                  <article
-                    key={submission.id}
-                    className="grid gap-3 rounded-[14px] border border-border bg-[var(--surface-2)] p-4"
-                  >
-                    <div className="flex items-start justify-between gap-3 max-sm:flex-col">
-                      <div>
-                        <strong className="block text-[var(--paper)]">
-                          {String(
-                            submission.payload['name'] ||
-                              submission.payload['email'] ||
-                              'New inquiry',
-                          )}
-                        </strong>
-                        <small className="text-[var(--paper-muted)]">
-                          {submission.pageTitle || 'Stored submission'} ·{' '}
-                          {formatTimestamp(submission.createdAt)}
-                        </small>
-                      </div>
-                      <Select
-                        value={submission.status}
-                        disabled={activeSubmissionId === submission.id}
-                        onChange={(event) =>
-                          handleUpdateSubmissionStatus(
-                            submission.id,
-                            event.target.value as FormSubmissionStatus,
-                          )
-                        }
-                      >
-                        <option value="new">New</option>
-                        <option value="reviewed">Reviewed</option>
-                        <option value="resolved">Resolved</option>
-                        <option value="spam">Spam</option>
-                      </Select>
-                    </div>
+            <Button type="submit" disabled={isSavingTheme}>
+              {isSavingTheme ? 'Saving theme...' : 'Save theme'}
+            </Button>
+          </form>
+        ) : (
+          <div className={emptyState}>
+            <p className={text.p}>Loading theme controls...</p>
+          </div>
+        )}
+      </section>
+    </div>
+  )
 
-                    <div className="grid gap-2">
-                      {Object.entries(submission.payload).map(
-                        ([key, value]) => (
-                          <div key={key} className="grid gap-1">
-                            <strong className="text-sm uppercase tracking-[0.08em] text-[var(--paper-muted)]">
-                              {formatSubmissionKey(key)}
-                            </strong>
-                            <p className="m-0 whitespace-pre-wrap text-[var(--paper)]">
-                              {String(value)}
-                            </p>
-                          </div>
-                        ),
-                      )}
-                    </div>
-                  </article>
-                ))
-              ) : (
-                <div className={emptyState}>
-                  <p className={text.p}>
-                    {hasContactForm
-                      ? 'No submissions yet. Published and preview contact forms will start listing messages here.'
-                      : 'Add a contact form block to start collecting inquiries.'}
-                  </p>
-                </div>
-              )}
+  const publishPanelContent = (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+      <section className={workspacePanel}>
+        <div>
+          <p className={text.eyebrow}>Draft to live</p>
+          <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
+            Publish the current draft
+          </h2>
+          <p className={cn(text.p, 'mt-2 text-sm')}>
+            Publishing sends the current draft live and creates a rollback point.
+            Keep the note concise so future rollbacks make sense.
+          </p>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="rounded-[12px] border border-border bg-[var(--surface-2)] p-4">
+            <p className={text.label}>Draft pages</p>
+            <p className="mt-2 text-2xl font-black text-[var(--paper)]">
+              {draft.pages.length}
+            </p>
+          </div>
+          <div className="rounded-[12px] border border-border bg-[var(--surface-2)] p-4">
+            <p className={text.label}>Current live version</p>
+            <p className="mt-2 text-2xl font-black text-[var(--paper)]">
+              {currentVersion ? `v${currentVersion.versionNumber}` : 'None yet'}
+            </p>
+          </div>
+          <div className="rounded-[12px] border border-border bg-[var(--surface-2)] p-4">
+            <p className={text.label}>Release history</p>
+            <p className="mt-2 text-2xl font-black text-[var(--paper)]">
+              {versions.length}
+            </p>
+          </div>
+        </div>
+
+        <div className={form.field}>
+          <label htmlFor="publish-note" className={text.label}>
+            Release note
+          </label>
+          <Textarea
+            id="publish-note"
+            name="publishNote"
+            rows={4}
+            value={publishNote}
+            onChange={(event) => setPublishNote(event.target.value)}
+            placeholder="Tightened the hero, updated pricing, and refreshed the gallery."
+          />
+          <p className={form.hint}>
+            Optional, but useful when you need to compare or roll back versions.
+          </p>
+        </div>
+
+        {publishErrorMessage ? <p className={text.error}>{publishErrorMessage}</p> : null}
+        {publishStatusMessage ? (
+          <p className={text.success}>{publishStatusMessage}</p>
+        ) : null}
+
+        <div className={actions.rowLarge}>
+          <Button
+            type="button"
+            disabled={isPublishing || activeRollbackVersionId !== ''}
+            onClick={handlePublish}
+          >
+            {isPublishing ? 'Publishing live...' : 'Publish live update'}
+          </Button>
+          {currentVersion ? (
+            <Button asChild variant="plain" className={actions.inlineLink}>
+              <Link to="/public/$siteSlug" params={{ siteSlug: draft.site.slug }}>
+                View live site
+              </Link>
+            </Button>
+          ) : null}
+        </div>
+      </section>
+
+      <section className={workspacePanel}>
+        <div>
+          <p className={text.eyebrow}>Release history</p>
+          <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
+            Inspect and roll back versions
+          </h2>
+        </div>
+
+        <div className="grid gap-3">
+          {versions.length === 0 ? (
+            <div className={emptyState}>
+              <p className={text.p}>No published versions yet.</p>
             </div>
-          </section>
-
-          <section className={ribbonPanel}>
-            <div className="mb-[22px]">
-              <p className={text.eyebrow}>Publish</p>
-              <h2 className={text.h2}>Release an immutable snapshot</h2>
-            </div>
-
-            <label htmlFor="publish-note" className={text.label}>
-              Publish note
-            </label>
-            <Textarea
-              id="publish-note"
-              name="publishNote"
-              rows={3}
-              value={publishNote}
-              onChange={(event) => setPublishNote(event.target.value)}
-              placeholder="What changed in this release?"
-            />
-
-            {publishErrorMessage ? (
-              <p className={text.error}>{publishErrorMessage}</p>
-            ) : null}
-            {publishStatusMessage ? (
-              <p className={text.success}>{publishStatusMessage}</p>
-            ) : null}
-
-            <div className={actions.rowLarge}>
-              <Button
-                type="button"
-                disabled={isPublishing || activeRollbackVersionId !== ''}
-                onClick={handlePublish}
+          ) : (
+            versions.map((version) => (
+              <article
+                key={version.id}
+                className={cn(
+                  'grid gap-3 rounded-[12px] border p-4',
+                  version.isCurrent
+                    ? 'border-[var(--thread-gold)] bg-[color-mix(in_oklch,var(--surface-2)_86%,var(--thread-gold))]'
+                    : 'border-border bg-[var(--surface-2)]',
+                )}
               >
-                {isPublishing ? 'Publishing...' : 'Publish snapshot'}
-              </Button>
-              {currentVersion ? (
-                <Button asChild variant="plain" className={actions.inlineLink}>
-                  <Link
-                    to="/public/$siteSlug"
-                    params={{ siteSlug: draft.site.slug }}
-                  >
-                    View live site
-                  </Link>
-                </Button>
-              ) : null}
-            </div>
-
-            <div className="grid gap-3">
-              {versions.length === 0 ? (
-                <div className={emptyState}>
-                  <p className={text.p}>No published versions yet.</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <strong className="block text-[var(--paper)]">
+                      Version {version.versionNumber}
+                      {version.isCurrent ? ' · live now' : ''}
+                    </strong>
+                    <small className="text-[var(--paper-muted)]">
+                      {formatTimestamp(version.createdAt)}
+                    </small>
+                  </div>
+                  {!version.isCurrent ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isPublishing || activeRollbackVersionId !== ''}
+                      onClick={() => handleRollback(version)}
+                    >
+                      {activeRollbackVersionId === version.id
+                        ? 'Rolling back...'
+                        : 'Make live again'}
+                    </Button>
+                  ) : null}
                 </div>
-              ) : (
-                versions.map((version) => (
-                  <article
-                    key={version.id}
-                    className="grid gap-2 rounded-[14px] border border-border bg-[var(--surface-2)] p-4"
-                  >
-                    <div>
-                      <strong>
-                        v{version.versionNumber}
-                        {version.isCurrent ? ' current' : ''}
-                      </strong>
-                      <p className="m-0 text-[var(--paper-muted)]">
-                        {formatTimestamp(version.createdAt)}
-                      </p>
-                    </div>
-                    {version.publishNote ? (
-                      <small className="m-0 text-[var(--paper-muted)]">
-                        {version.publishNote}
-                      </small>
-                    ) : null}
-                    {!version.isCurrent ? (
-                      <div className={actions.row}>
-                        <Button
-                          type="button"
-                          variant="plain"
-                          className={actions.inlineLink}
-                          disabled={
-                            isPublishing || activeRollbackVersionId !== ''
-                          }
-                          onClick={() => handleRollback(version)}
-                        >
-                          {activeRollbackVersionId === version.id
-                            ? 'Rolling back...'
-                            : 'Roll back live site'}
-                        </Button>
-                      </div>
-                    ) : null}
-                  </article>
-                ))
-              )}
-            </div>
-          </section>
+                {version.publishNote ? (
+                  <p className="m-0 text-sm text-[var(--paper-muted)]">
+                    {version.publishNote}
+                  </p>
+                ) : (
+                  <p className="m-0 text-sm text-[var(--paper-muted)]">
+                    No release note was saved for this version.
+                  </p>
+                )}
+              </article>
+            ))
+          )}
+        </div>
+      </section>
+    </div>
+  )
 
-          <section className={ribbonPanel}>
-            <div className="mb-[22px]">
-              <p className={text.eyebrow}>Site details</p>
-              <h2 className={text.h2}>Rename and reslug the draft</h2>
-            </div>
-
-            <form className={form.grid} onSubmit={handleSaveSite}>
-              <label htmlFor="site-name" className={text.label}>
-                Business name
-              </label>
-              <Input
-                id="site-name"
-                name="name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                required
-              />
-
-              <label htmlFor="site-slug" className={text.label}>
-                Slug
-              </label>
-              <Input
-                id="site-slug"
-                name="slug"
-                value={slug}
-                onChange={(event) => setSlug(event.target.value)}
-                required
-              />
-
-              {siteErrorMessage ? (
-                <p className={text.error}>{siteErrorMessage}</p>
-              ) : null}
-              {siteStatusMessage ? (
-                <p className={text.success}>{siteStatusMessage}</p>
-              ) : null}
-
-              <Button type="submit" disabled={isSavingSite}>
-                {isSavingSite ? 'Saving...' : 'Save site'}
-              </Button>
-
-              <Button
-                type="button"
-                variant="outline"
-                disabled={isDeleting}
-                onClick={handleDelete}
-              >
-                {isDeleting ? 'Deleting...' : 'Delete draft'}
-              </Button>
-            </form>
-          </section>
-        </>
-      }
+  return (
+    <PuckBuilder
+      draft={draft}
+      blockRegistry={blockRegistry}
+      selectedPage={selectedPage}
+      selectedBlock={selectedBlock}
+      selectedDefinition={selectedDefinition}
+      selectedBlockIndex={selectedBlockIndex}
+      blockDefinitions={blockDefinitions}
+      uploadedSiteAssets={uploadedSiteAssets}
+      newBlockType={newBlockType}
+      isSavingBlock={isSavingBlock}
+      isMutatingBlocks={isMutatingBlocks}
+      isCreatingBlock={isCreatingBlock}
+      blockErrorMessage={blockErrorMessage}
+      blockStatusMessage={blockStatusMessage}
+      pageErrorMessage={pageErrorMessage}
+      pageStatusMessage={pageStatusMessage}
+      pageTitle={pageTitle}
+      pageSlug={pageSlug}
+      pageSEOTitle={pageSEOTitle}
+      pageSEODescription={pageSEODescription}
+      pageIncludeInNavigation={pageIncludeInNavigation}
+      isSavingPage={isSavingPage}
+      isDeletingPage={isDeletingPage}
+      isPublishing={isPublishing}
+      pages={draft.pages}
+      onSelectPage={handleSelectPage}
+      onSelectBlock={handleSelectBlock}
+      onSaveBlock={handleSaveBlock}
+      onCreateBlock={handleCreateBlock}
+      onDuplicateBlock={handleDuplicateBlock}
+      onDeleteBlock={handleDeleteBlock}
+      onMoveBlock={handleMoveBlock}
+      onMovePage={handleMovePage}
+      onDeletePage={handleDeletePage}
+      onChangeNewBlockType={setNewBlockType}
+      onSavePage={handleSavePage}
+      onSetPageTitle={setPageTitle}
+      onSetPageSlug={setPageSlug}
+      onSetPageSEOTitle={setPageSEOTitle}
+      onSetPageSEODescription={setPageSEODescription}
+      onSetPageIncludeInNavigation={setPageIncludeInNavigation}
+      onReorderBlocks={handleReorderBlocks}
+      onDropPaletteBlock={handleDropPaletteBlock}
+      sitePanelContent={sitePanelContent}
+      themePanelContent={themePanelContent}
+      publishPanelContent={publishPanelContent}
     />
   )
 }

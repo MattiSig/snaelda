@@ -1,5 +1,4 @@
 import { type FormEvent, type ReactNode, useRef, useState } from 'react'
-import { Link } from '@tanstack/react-router'
 import { BlockEditor } from '@/components/BlockEditor'
 import { SiteDraftRenderer } from '@/components/SiteDraftRenderer'
 import { Button } from '@/components/ui/button'
@@ -21,8 +20,7 @@ import {
   actions,
   emptyState,
   form,
-  preview,
-  ribbon,
+  panel,
   text,
 } from '@/lib/styles'
 import { cn } from '@/lib/utils'
@@ -30,8 +28,21 @@ import { cn } from '@/lib/utils'
 type DraftPage = SiteDraft['pages'][number]
 type DraftBlock = SiteDraft['pages'][number]['blocks'][number]
 
+function buildBuilderPreviewStyle(theme: SiteDraft['theme']) {
+  const base = buildSiteThemeStyle(theme)
+  const surface = theme.tokens.colors?.surface ?? '#241a24'
+
+  return {
+    ...base,
+    '--site-surface-muted': surface,
+    '--site-radius-panel': '8px',
+    '--site-radius-inner': '6px',
+    '--site-button-shadow': 'none',
+    '--site-image-shadow': 'none',
+  } as React.CSSProperties
+}
+
 type PuckBuilderProps = {
-  siteId: string
   draft: SiteDraft
   blockRegistry: BlockDefinition[]
   selectedPage: DraftPage | null
@@ -54,6 +65,7 @@ type PuckBuilderProps = {
   pageSEODescription: string
   pageIncludeInNavigation: boolean
   isSavingPage: boolean
+  isPublishing: boolean
 
   onSelectPage: (pageId: string) => void
   onSelectBlock: (blockId: string) => void
@@ -78,10 +90,12 @@ type PuckBuilderProps = {
   onDeletePage: () => Promise<void>
   isDeletingPage: boolean
   pages: DraftPage[]
+  sitePanelContent?: ReactNode
+  themePanelContent?: ReactNode
+  publishPanelContent?: ReactNode
 }
 
 export function PuckBuilder({
-  siteId,
   draft,
   blockRegistry,
   selectedPage,
@@ -123,10 +137,18 @@ export function PuckBuilder({
   onMovePage,
   onDeletePage,
   isDeletingPage,
+  isPublishing,
   pages: draftPages,
-  settingsContent,
-}: PuckBuilderProps & { settingsContent?: ReactNode }) {
+  sitePanelContent,
+  themePanelContent,
+  publishPanelContent,
+}: PuckBuilderProps) {
   const [dragState, setDragState] = useState<DragState>({ kind: 'idle' })
+  const [workspacePanel, setWorkspacePanel] = useState<
+    'page' | 'site' | 'theme' | 'publish' | null
+  >(
+    null,
+  )
   const dropIndicatorRef = useRef<DropIndicator | null>(null)
   const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -245,16 +267,96 @@ export function PuckBuilder({
   }
 
   return (
-    <div className="grid grid-rows-[auto_minmax(0,1fr)]">
+    <div className="grid grid-rows-[auto_auto_minmax(0,1fr)]">
       <BuilderToolbar
-        siteId={siteId}
         draft={draft}
         pages={draftPages}
         selectedPageId={selectedPage?.id ?? null}
+        isPublishing={isPublishing}
+        activeWorkspacePanel={workspacePanel}
+        onOpenPageSetup={() =>
+          setWorkspacePanel((current) => (current === 'page' ? null : 'page'))
+        }
+        onOpenSiteSettings={() =>
+          setWorkspacePanel((current) => (current === 'site' ? null : 'site'))
+        }
+        onOpenTheme={() =>
+          setWorkspacePanel((current) => (current === 'theme' ? null : 'theme'))
+        }
+        onOpenPublish={() =>
+          setWorkspacePanel((current) =>
+            current === 'publish' ? null : 'publish',
+          )
+        }
         onSelectPage={onSelectPage}
       />
 
-      <div className="grid gap-0 xl:grid-cols-[220px_minmax(0,1fr)_340px]">
+      {workspacePanel ? (
+        <WorkspacePanel
+          tone={workspacePanel === 'publish' ? 'accent' : 'default'}
+          eyebrow={
+            workspacePanel === 'page'
+              ? 'Page setup'
+              : workspacePanel === 'site'
+                ? 'Site settings'
+                : workspacePanel === 'theme'
+                  ? 'Theme'
+                : 'Publish'
+          }
+          title={
+            workspacePanel === 'page'
+              ? selectedPage
+                ? `Shape ${selectedPage.title}`
+                : 'Select a page first'
+              : workspacePanel === 'site'
+                ? 'Manage the broader site'
+                : workspacePanel === 'theme'
+                  ? 'Tune the visual system'
+                : 'Review the live release'
+          }
+          description={
+            workspacePanel === 'page'
+              ? selectedPage
+                ? 'Keep page-level metadata and route choices close, without burying them in the inspector.'
+                : 'Choose a page from the builder bar, then adjust its route, SEO, and navigation behavior here.'
+              : workspacePanel === 'site'
+                ? 'These controls affect the broader draft, theme, assets, and site operations. They should not compete with block editing.'
+                : workspacePanel === 'theme'
+                  ? 'Adjust palette, typography, spacing, and component styling in a dedicated workspace that is easy to find.'
+                : 'Review what goes live, leave a release note, and keep rollback history visible in one place.'
+          }
+          onClose={() => setWorkspacePanel(null)}
+        >
+          {workspacePanel === 'page' ? (
+            <PageSetupPanel
+              selectedPage={selectedPage}
+              pageErrorMessage={pageErrorMessage}
+              pageStatusMessage={pageStatusMessage}
+              pageTitle={pageTitle}
+              pageSlug={pageSlug}
+              pageSEOTitle={pageSEOTitle}
+              pageSEODescription={pageSEODescription}
+              pageIncludeInNavigation={pageIncludeInNavigation}
+              isSavingPage={isSavingPage}
+              isDeletingPage={isDeletingPage}
+              pages={draftPages}
+              onSavePage={onSavePage}
+              onSetPageTitle={onSetPageTitle}
+              onSetPageSlug={onSetPageSlug}
+              onSetPageSEOTitle={onSetPageSEOTitle}
+              onSetPageSEODescription={onSetPageSEODescription}
+              onSetPageIncludeInNavigation={onSetPageIncludeInNavigation}
+              onMovePage={onMovePage}
+              onDeletePage={onDeletePage}
+            />
+          ) : null}
+          {workspacePanel === 'site' ? sitePanelContent : null}
+          {workspacePanel === 'theme' ? themePanelContent : null}
+          {workspacePanel === 'publish' ? publishPanelContent : null}
+        </WorkspacePanel>
+      ) : null}
+
+      <div className="grid gap-0 xl:grid-cols-[200px_minmax(0,1fr)_minmax(400px,520px)] 2xl:grid-cols-[220px_minmax(0,1fr)_minmax(440px,580px)]">
         <BlockPalette
           blockRegistry={blockRegistry}
           onDragStart={handlePaletteDragStart}
@@ -262,40 +364,25 @@ export function PuckBuilder({
 
         <section className="flex min-h-0 flex-col overflow-auto border-x border-border bg-[var(--surface-1)]">
           <div className="p-4">
-            <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="mb-4 flex items-end justify-between gap-3">
               <div>
                 <p className={text.eyebrow}>Canvas</p>
                 <h2 className={text.h2}>
                   {selectedPage ? selectedPage.title : 'Select a page'}
                 </h2>
+                <p className={cn(text.p, 'mt-1 text-sm')}>
+                  This viewport should read like the live page, with the editor
+                  framing kept quiet.
+                </p>
               </div>
-              {selectedPage ? (
-                <div className="flex gap-2">
-                  <Button
-                    asChild
-                    variant="plain"
-                    className={actions.inlineLink}
-                  >
-                    <Link
-                      to="/app/sites/$siteId/preview"
-                      params={{ siteId }}
-                    >
-                      Full preview
-                    </Link>
-                  </Button>
-                </div>
-              ) : null}
             </div>
 
             {selectedPage ? (
               <div className="grid gap-4">
                 <div
                   ref={canvasRef}
-                  className={cn(
-                    preview.shell,
-                    'relative min-h-[400px] overflow-hidden rounded-[28px] border border-border bg-[var(--surface-2)] p-3',
-                  )}
-                  style={buildSiteThemeStyle(draft.theme)}
+                  className="relative min-h-[400px] overflow-auto bg-[var(--surface-1)]"
+                  style={buildBuilderPreviewStyle(draft.theme)}
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
@@ -318,6 +405,7 @@ export function PuckBuilder({
                         site={draft}
                         eyebrow="Live builder canvas"
                         selectedPageId={selectedPage.id}
+                        mode="builder"
                         renderBlock={({ block, page, blockIndex: _blockIndex, children }) => (
                           <CanvasBlockFrame
                             key={block.id}
@@ -349,7 +437,7 @@ export function PuckBuilder({
                 </div>
 
                 {editorPage?.hiddenBlocks.length ? (
-                  <section className="rounded-[18px] border border-border bg-[var(--surface-2)] p-4">
+                  <section className="border-t border-border pt-4">
                     <div className="mb-3">
                       <p className={text.eyebrow}>Hidden blocks</p>
                       <p className={cn(text.p, 'mt-1 text-sm')}>
@@ -363,9 +451,9 @@ export function PuckBuilder({
                           key={block.id}
                           type="button"
                           className={cn(
-                            'flex items-center justify-between rounded-[14px] border px-3 py-3 text-left transition-[border-color,transform]',
+                            'flex items-center justify-between rounded-[10px] border px-3 py-3 text-left transition-[border-color,transform]',
                             block.id === selectedBlock?.id
-                              ? 'border-[var(--thread-teal)] bg-[color-mix(in_oklch,var(--surface-1)_88%,var(--thread-teal))]'
+                              ? 'border-[var(--thread-teal)] bg-[color-mix(in_oklch,var(--surface-1)_96%,var(--thread-teal))]'
                               : 'border-border bg-[var(--surface-1)] hover:-translate-y-px hover:border-[var(--thread-coral)]',
                           )}
                           onClick={() => {
@@ -383,7 +471,7 @@ export function PuckBuilder({
                               Hidden from preview and publish
                             </small>
                           </span>
-                          <span className="rounded-full border border-border bg-[var(--surface-2)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--paper-muted)]">
+                          <span className="rounded-[999px] border border-border bg-[var(--surface-2)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--paper-muted)]">
                             Hidden
                           </span>
                         </button>
@@ -415,31 +503,14 @@ export function PuckBuilder({
           blockStatusMessage={blockStatusMessage}
           pageErrorMessage={pageErrorMessage}
           pageStatusMessage={pageStatusMessage}
-          pageTitle={pageTitle}
-          pageSlug={pageSlug}
-          pageSEOTitle={pageSEOTitle}
-          pageSEODescription={pageSEODescription}
-          pageIncludeInNavigation={pageIncludeInNavigation}
-          isSavingPage={isSavingPage}
-          isDeletingPage={isDeletingPage}
           blockRegistry={blockRegistry}
           newBlockType={newBlockType}
-          pages={draftPages}
           onSaveBlock={onSaveBlock}
           onCreateBlock={onCreateBlock}
           onDuplicateBlock={onDuplicateBlock}
           onDeleteBlock={onDeleteBlock}
           onMoveBlock={onMoveBlock}
-          onMovePage={onMovePage}
-          onDeletePage={onDeletePage}
           onChangeNewBlockType={onChangeNewBlockType}
-          onSavePage={onSavePage}
-          onSetPageTitle={onSetPageTitle}
-          onSetPageSlug={onSetPageSlug}
-          onSetPageSEOTitle={onSetPageSEOTitle}
-          onSetPageSEODescription={onSetPageSEODescription}
-          onSetPageIncludeInNavigation={onSetPageIncludeInNavigation}
-          settingsContent={settingsContent}
         />
       </div>
     </div>
@@ -447,37 +518,42 @@ export function PuckBuilder({
 }
 
 function BuilderToolbar({
-  siteId,
   draft,
   pages,
   selectedPageId,
+  isPublishing,
+  activeWorkspacePanel,
+  onOpenPageSetup,
+  onOpenSiteSettings,
+  onOpenTheme,
+  onOpenPublish,
   onSelectPage,
 }: {
-  siteId: string
   draft: SiteDraft
   pages: DraftPage[]
   selectedPageId: string | null
+  isPublishing: boolean
+  activeWorkspacePanel: 'page' | 'site' | 'theme' | 'publish' | null
+  onOpenPageSetup: () => void
+  onOpenSiteSettings: () => void
+  onOpenTheme: () => void
+  onOpenPublish: () => void
   onSelectPage: (pageId: string) => void
 }) {
   return (
-    <div
-      className={cn(
-        ribbon,
-        'flex items-center justify-between gap-4 border-b border-border bg-[var(--surface-1)] px-5 py-3',
-      )}
-    >
-      <div className="flex items-center gap-4">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-[var(--surface-1)] px-5 py-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
         <div className="text-sm">
-          <p className={text.eyebrow}>Builder</p>
+          <p className={text.eyebrow}>Editing</p>
           <strong className="text-[var(--paper)]">{draft.site.name}</strong>
         </div>
-        <div className="h-8 w-px bg-border" />
-        <label className="flex items-center gap-2">
+        <div className="hidden h-7 w-px bg-border sm:block" />
+        <label className="flex min-w-0 items-center gap-2">
           <span className={cn(text.label, 'whitespace-nowrap')}>Page</span>
           <Select
             value={selectedPageId ?? ''}
             onChange={(event) => onSelectPage(event.target.value)}
-            className="min-w-[160px]"
+            className="min-w-[180px]"
           >
             {pages.length === 0 ? (
               <option value="">No pages</option>
@@ -492,12 +568,292 @@ function BuilderToolbar({
         </label>
       </div>
 
-      <div className="flex items-center gap-3">
-        <Button asChild variant="plain" className={actions.inlineLink}>
-          <Link to="/app/sites/$siteId/preview" params={{ siteId }}>
-            Open full preview
-          </Link>
-        </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          className={cn(
+            'rounded-full border px-4 py-2.5 text-sm font-bold transition-[background,border-color,color,transform] hover:-translate-y-px',
+            activeWorkspacePanel === 'page'
+              ? 'border-[var(--thread-teal)] bg-[color-mix(in_oklch,var(--thread-teal)_22%,var(--surface-2))] text-[var(--paper)] shadow-[var(--shadow-tight)]'
+              : 'border-[color-mix(in_oklch,var(--thread-teal)_30%,var(--border))] bg-[var(--surface-2)] text-[color-mix(in_oklch,var(--paper)_88%,var(--background))] hover:border-[var(--thread-teal)] hover:bg-[color-mix(in_oklch,var(--thread-teal)_12%,var(--surface-2))]',
+          )}
+          onClick={onOpenPageSetup}
+        >
+          Page setup
+        </button>
+        <button
+          type="button"
+          className={cn(
+            'rounded-full border px-4 py-2.5 text-sm font-bold transition-[background,border-color,color,transform] hover:-translate-y-px',
+            activeWorkspacePanel === 'site'
+              ? 'border-[var(--thread-coral)] bg-[color-mix(in_oklch,var(--thread-coral)_22%,var(--surface-2))] text-[var(--paper)] shadow-[var(--shadow-tight)]'
+              : 'border-[color-mix(in_oklch,var(--thread-coral)_30%,var(--border))] bg-[var(--surface-2)] text-[color-mix(in_oklch,var(--paper)_88%,var(--background))] hover:border-[var(--thread-coral)] hover:bg-[color-mix(in_oklch,var(--thread-coral)_12%,var(--surface-2))]',
+          )}
+          onClick={onOpenSiteSettings}
+        >
+          Site settings
+        </button>
+        <button
+          type="button"
+          className={cn(
+            'rounded-full border px-4 py-2.5 text-sm font-bold transition-[background,border-color,color,transform] hover:-translate-y-px',
+            activeWorkspacePanel === 'theme'
+              ? 'border-[var(--thread-gold)] bg-[color-mix(in_oklch,var(--thread-gold)_24%,var(--surface-2))] text-[var(--paper)] shadow-[var(--shadow-tight)]'
+              : 'border-[color-mix(in_oklch,var(--thread-gold)_34%,var(--border))] bg-[var(--surface-2)] text-[color-mix(in_oklch,var(--paper)_92%,var(--background))] hover:border-[var(--thread-gold)] hover:bg-[color-mix(in_oklch,var(--thread-gold)_12%,var(--surface-2))]',
+          )}
+          onClick={onOpenTheme}
+        >
+          Theme
+        </button>
+        <button
+          type="button"
+          className={cn(
+            'rounded-full border px-4 py-2.5 text-sm font-bold transition-[background,border-color,color,transform] hover:-translate-y-px',
+            activeWorkspacePanel === 'publish'
+              ? 'border-[color-mix(in_oklch,var(--thread-gold)_64%,var(--border))] bg-[color-mix(in_oklch,var(--thread-gold)_24%,var(--surface-2))] text-[var(--paper)] shadow-[var(--shadow-tight)]'
+              : 'border-[color-mix(in_oklch,var(--thread-gold)_48%,var(--border))] bg-[color-mix(in_oklch,var(--thread-gold)_12%,var(--surface-2))] text-[color-mix(in_oklch,var(--paper)_92%,var(--background))] hover:border-[var(--thread-gold)]',
+          )}
+          onClick={onOpenPublish}
+        >
+          {isPublishing ? 'Publishing...' : 'Publish'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function WorkspacePanel({
+  tone,
+  eyebrow,
+  title,
+  description,
+  onClose,
+  children,
+}: {
+  tone: 'default' | 'accent'
+  eyebrow: string
+  title: string
+  description: string
+  onClose: () => void
+  children: ReactNode
+}) {
+  return (
+    <section
+      className={cn(
+        'border-b border-border px-5 py-4 max-sm:px-3.5',
+        tone === 'accent'
+          ? 'bg-[color-mix(in_oklch,var(--surface-2)_84%,var(--thread-gold))]'
+          : 'bg-[var(--surface-2)]',
+      )}
+    >
+      <div className="mx-auto grid max-w-[1760px] gap-4">
+        <div className="flex items-start justify-between gap-4 max-md:flex-col">
+          <div className="grid gap-1">
+            <p className={text.eyebrow}>{eyebrow}</p>
+            <h2 className="text-[1.55rem] font-black leading-[0.96] text-[var(--paper)]">
+              {title}
+            </h2>
+            <p className={cn(text.p, 'max-w-[74ch] text-sm')}>{description}</p>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+        {children}
+      </div>
+    </section>
+  )
+}
+
+function PageSetupPanel({
+  selectedPage,
+  pageErrorMessage,
+  pageStatusMessage,
+  pageTitle,
+  pageSlug,
+  pageSEOTitle,
+  pageSEODescription,
+  pageIncludeInNavigation,
+  isSavingPage,
+  isDeletingPage,
+  pages,
+  onSavePage,
+  onSetPageTitle,
+  onSetPageSlug,
+  onSetPageSEOTitle,
+  onSetPageSEODescription,
+  onSetPageIncludeInNavigation,
+  onMovePage,
+  onDeletePage,
+}: {
+  selectedPage: DraftPage | null
+  pageErrorMessage: string
+  pageStatusMessage: string
+  pageTitle: string
+  pageSlug: string
+  pageSEOTitle: string
+  pageSEODescription: string
+  pageIncludeInNavigation: boolean
+  isSavingPage: boolean
+  isDeletingPage: boolean
+  pages: DraftPage[]
+  onSavePage: (event: FormEvent<HTMLFormElement>) => Promise<void>
+  onSetPageTitle: (title: string) => void
+  onSetPageSlug: (slug: string) => void
+  onSetPageSEOTitle: (title: string) => void
+  onSetPageSEODescription: (description: string) => void
+  onSetPageIncludeInNavigation: (include: boolean) => void
+  onMovePage: (pageId: string, direction: -1 | 1) => Promise<void>
+  onDeletePage: () => Promise<void>
+}) {
+  if (!selectedPage) {
+    return (
+      <div className={emptyState}>
+        <p className={text.p}>
+          Select a page from the builder bar to adjust its title, route, search
+          metadata, and navigation behavior.
+        </p>
+      </div>
+    )
+  }
+
+  const pageIndex = pages.findIndex((page) => page.id === selectedPage.id)
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+      <form className={cn(panel, 'grid gap-4 p-5')} onSubmit={onSavePage}>
+        <div className="grid gap-1">
+          <p className={text.eyebrow}>Page details</p>
+          <p className={cn(text.p, 'text-sm')}>
+            These choices shape the page URL, search snippet, and whether this
+            page belongs in the main menu.
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className={form.field}>
+            <label htmlFor="page-setup-title" className={text.label}>
+              Page title
+            </label>
+            <Input
+              id="page-setup-title"
+              value={pageTitle}
+              onChange={(event) => onSetPageTitle(event.target.value)}
+              required
+            />
+          </div>
+          <div className={form.field}>
+            <label htmlFor="page-setup-slug" className={text.label}>
+              Page path
+            </label>
+            <Input
+              id="page-setup-slug"
+              value={pageSlug}
+              onChange={(event) => onSetPageSlug(event.target.value)}
+              required
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className={form.field}>
+            <label htmlFor="page-setup-seo-title" className={text.label}>
+              Search title
+            </label>
+            <Input
+              id="page-setup-seo-title"
+              value={pageSEOTitle}
+              onChange={(event) => onSetPageSEOTitle(event.target.value)}
+              placeholder="Leave blank to reuse the page title"
+            />
+          </div>
+          <div className={form.field}>
+            <label htmlFor="page-setup-seo-description" className={text.label}>
+              Search description
+            </label>
+            <Textarea
+              id="page-setup-seo-description"
+              rows={4}
+              value={pageSEODescription}
+              onChange={(event) => onSetPageSEODescription(event.target.value)}
+              placeholder="Summarize what someone should expect before they click."
+            />
+          </div>
+        </div>
+
+        <label className={form.toggle}>
+          <input
+            type="checkbox"
+            className="size-4 accent-[var(--thread-teal)]"
+            checked={pageIncludeInNavigation}
+            onChange={(event) =>
+              onSetPageIncludeInNavigation(event.target.checked)
+            }
+          />
+          Show this page in the main navigation
+        </label>
+
+        {pageErrorMessage ? <p className={text.error}>{pageErrorMessage}</p> : null}
+        {pageStatusMessage ? (
+          <p className={text.success}>{pageStatusMessage}</p>
+        ) : null}
+
+        <div className={actions.rowLarge}>
+          <Button type="submit" disabled={isSavingPage}>
+            {isSavingPage ? 'Saving page...' : 'Save page changes'}
+          </Button>
+        </div>
+      </form>
+
+      <div className="grid gap-4">
+        <section className={cn(panel, 'grid gap-4 p-5')}>
+          <div className="grid gap-1">
+            <p className={text.eyebrow}>Position</p>
+            <p className={cn(text.p, 'text-sm')}>
+              Reorder this page in the draft. Menu order stays in the broader
+              site controls.
+            </p>
+          </div>
+          <div className={actions.row}>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={pageIndex <= 0 || isSavingPage}
+              onClick={() => onMovePage(selectedPage.id, -1)}
+            >
+              Move earlier
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={pageIndex >= pages.length - 1 || isSavingPage}
+              onClick={() => onMovePage(selectedPage.id, 1)}
+            >
+              Move later
+            </Button>
+          </div>
+        </section>
+
+        <section className={cn(panel, 'grid gap-4 p-5')}>
+          <div className="grid gap-1">
+            <p className={text.eyebrow}>Danger zone</p>
+            <p className={cn(text.p, 'text-sm')}>
+              Delete this page from the draft when it no longer belongs in the
+              site structure.
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={isDeletingPage}
+            onClick={onDeletePage}
+          >
+            {isDeletingPage ? 'Deleting page...' : 'Delete page'}
+          </Button>
+        </section>
       </div>
     </div>
   )
@@ -513,7 +869,7 @@ function BlockPalette({
   const categories = groupByCategory(blockRegistry)
 
   return (
-    <aside className="flex flex-col overflow-auto bg-[var(--surface-2)]">
+    <aside className="flex flex-col overflow-auto border-r border-border bg-[var(--surface-1)]">
       <div className="border-b border-border p-4">
         <p className={text.eyebrow}>Blocks</p>
         <h2 className={text.h2}>Block palette</h2>
@@ -556,11 +912,11 @@ function PaletteBlockCard({
   return (
     <div
       draggable
-      className="cursor-grab rounded-[12px] border border-border bg-[var(--surface-1)] p-3 transition-[border-color,transform] hover:-translate-y-0.5 hover:border-[var(--thread-teal)] active:cursor-grabbing"
+      className="cursor-grab rounded-[10px] border border-border bg-[var(--surface-2)] p-3 transition-[border-color,transform] hover:-translate-y-0.5 hover:border-[var(--thread-teal)] active:cursor-grabbing"
       onDragStart={(event) => onDragStart(event, definition.type)}
     >
       <div className="flex items-center gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-[10px] border border-border bg-[var(--surface-2)] text-lg">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-[8px] border border-border bg-[var(--surface-1)] text-lg">
           {icon}
         </span>
         <div>
@@ -713,12 +1069,6 @@ function InspectorPanel({
   blockStatusMessage,
   pageErrorMessage,
   pageStatusMessage,
-  pageTitle,
-  pageSlug,
-  pageSEOTitle,
-  pageSEODescription,
-  pageIncludeInNavigation,
-  isSavingPage,
   blockRegistry,
   newBlockType,
   onSaveBlock,
@@ -727,17 +1077,6 @@ function InspectorPanel({
   onDeleteBlock,
   onMoveBlock,
   onChangeNewBlockType,
-  onSavePage,
-  onSetPageTitle,
-  onSetPageSlug,
-  onSetPageSEOTitle,
-  onSetPageSEODescription,
-  onSetPageIncludeInNavigation,
-  settingsContent,
-  isDeletingPage,
-  pages: inspectorPages,
-  onMovePage,
-  onDeletePage,
 }: {
   selectedPage: DraftPage | null
   selectedBlock: DraftBlock | null
@@ -751,16 +1090,8 @@ function InspectorPanel({
   blockStatusMessage: string
   pageErrorMessage: string
   pageStatusMessage: string
-  pageTitle: string
-  pageSlug: string
-  pageSEOTitle: string
-  pageSEODescription: string
-  pageIncludeInNavigation: boolean
-  isSavingPage: boolean
-  isDeletingPage: boolean
   blockRegistry: BlockDefinition[]
   newBlockType: string
-  pages: DraftPage[]
   onSaveBlock: (
     props: Record<string, unknown>,
     hidden: boolean,
@@ -769,18 +1100,8 @@ function InspectorPanel({
   onDuplicateBlock: () => Promise<void>
   onDeleteBlock: () => Promise<void>
   onMoveBlock: (direction: -1 | 1) => Promise<void>
-  onMovePage: (pageId: string, direction: -1 | 1) => Promise<void>
-  onDeletePage: () => Promise<void>
   onChangeNewBlockType: (type: string) => void
-  onSavePage: (event: FormEvent<HTMLFormElement>) => Promise<void>
-  onSetPageTitle: (title: string) => void
-  onSetPageSlug: (slug: string) => void
-  onSetPageSEOTitle: (title: string) => void
-  onSetPageSEODescription: (description: string) => void
-  onSetPageIncludeInNavigation: (include: boolean) => void
-  settingsContent?: ReactNode
 }) {
-  const [inspectorTab, setInspectorTab] = useState<'inspector' | 'settings'>('inspector')
   const hasSelection = selectedBlock || selectedPage
 
   if (!hasSelection) {
@@ -799,249 +1120,124 @@ function InspectorPanel({
   }
 
   return (
-    <aside className="flex flex-col overflow-auto bg-[var(--surface-2)]">
-      <div className="flex border-b border-border">
-        <button
-          type="button"
-          className={cn(
-            'flex-1 px-4 py-3 text-xs font-bold uppercase tracking-[0.08em] transition-colors',
-            inspectorTab === 'inspector'
-              ? 'border-b-2 border-[var(--thread-teal)] text-[var(--paper)]'
-              : 'text-[var(--paper-muted)] hover:text-[var(--paper)]',
-          )}
-          onClick={() => setInspectorTab('inspector')}
-        >
-          Inspector
-        </button>
-        {settingsContent ? (
-          <button
-            type="button"
-            className={cn(
-              'flex-1 px-4 py-3 text-xs font-bold uppercase tracking-[0.08em] transition-colors',
-              inspectorTab === 'settings'
-                ? 'border-b-2 border-[var(--thread-teal)] text-[var(--paper)]'
-                : 'text-[var(--paper-muted)] hover:text-[var(--paper)]',
-            )}
-            onClick={() => setInspectorTab('settings')}
-          >
-            Settings
-          </button>
-        ) : null}
+    <aside className="flex flex-col overflow-auto bg-[var(--surface-1)]">
+      <div className="border-b border-border p-4">
+        <p className={text.eyebrow}>Inspector</p>
+        <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
+          {selectedBlock
+            ? selectedDefinition?.displayName ?? 'Block'
+            : selectedPage?.title ?? 'Page'}
+        </h2>
+        <p className={cn(text.p, 'mt-1 text-sm')}>
+          {selectedBlock
+            ? 'Adjust the selected block here. Broader page and publish decisions now live in the builder workspace.'
+            : 'Pick a block on the canvas to edit its content and visibility. Page-wide decisions live in Page setup.'}
+        </p>
       </div>
+      <div className="grid gap-4 overflow-auto p-4">
+        {selectedBlock ? (
+          <>
+            <BlockEditor
+              key={selectedBlock.id}
+              block={selectedBlock}
+              definition={selectedDefinition}
+              isSaving={isSavingBlock}
+              errorMessage={blockErrorMessage}
+              statusMessage={blockStatusMessage}
+              assetLibrary={uploadedSiteAssets}
+              onSave={onSaveBlock}
+            />
 
-      {inspectorTab === 'inspector' ? (
-        <div className="grid gap-4 overflow-auto p-4">
-          {selectedBlock ? (
-            <>
-              <BlockEditor
-                key={selectedBlock.id}
-                block={selectedBlock}
-                definition={selectedDefinition}
-                isSaving={isSavingBlock}
-                errorMessage={blockErrorMessage}
-                statusMessage={blockStatusMessage}
-                assetLibrary={uploadedSiteAssets}
-                onSave={onSaveBlock}
-              />
-
-              <div className={actions.row}>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={selectedBlockIndex <= 0 || isMutatingBlocks}
-                  onClick={() => onMoveBlock(-1)}
-                >
-                  Move up
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={
-                    !selectedPage ||
-                    selectedBlockIndex === selectedPage.blocks.length - 1 ||
-                    isMutatingBlocks
-                  }
-                  onClick={() => onMoveBlock(1)}
-                >
-                  Move down
-                </Button>
-              </div>
-
-              <div className={actions.row}>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={isMutatingBlocks}
-                  onClick={onDuplicateBlock}
-                >
-                  Duplicate
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={isMutatingBlocks}
-                  onClick={onDeleteBlock}
-                >
-                  Delete
-                </Button>
-              </div>
-            </>
-          ) : null}
-
-          <div className="grid gap-3 rounded-[16px] border border-border bg-[var(--surface-1)] p-4">
-            <p className={text.eyebrow}>Add block</p>
-            <form className={form.grid} onSubmit={onCreateBlock}>
-              <label htmlFor="inspector-new-block-type" className={text.label}>
-                Block type
-              </label>
-              <Select
-                id="inspector-new-block-type"
-                value={newBlockType}
-                onChange={(event) => onChangeNewBlockType(event.target.value)}
-              >
-                {blockRegistry.map((definition) => (
-                  <option
-                    key={`${definition.type}@${definition.version}`}
-                    value={definition.type}
-                  >
-                    {definition.displayName}
-                  </option>
-                ))}
-              </Select>
+            <div className={actions.row}>
               <Button
-                type="submit"
+                type="button"
+                variant="outline"
                 size="sm"
-                disabled={isCreatingBlock || !newBlockType}
+                disabled={selectedBlockIndex <= 0 || isMutatingBlocks}
+                onClick={() => onMoveBlock(-1)}
               >
-                {isCreatingBlock ? 'Adding...' : 'Add to page'}
+                Move up
               </Button>
-            </form>
-          </div>
-
-          {selectedPage ? (
-            <div className="grid gap-3 rounded-[16px] border border-border bg-[var(--surface-1)] p-4">
-              <p className={text.eyebrow}>Page settings</p>
-              <form className={form.grid} onSubmit={onSavePage}>
-                <label htmlFor="inspector-page-title" className={text.label}>
-                  Title
-                </label>
-                <Input
-                  id="inspector-page-title"
-                  value={pageTitle}
-                  onChange={(event) => onSetPageTitle(event.target.value)}
-                  required
-                />
-
-                <label htmlFor="inspector-page-slug" className={text.label}>
-                  Slug
-                </label>
-                <Input
-                  id="inspector-page-slug"
-                  value={pageSlug}
-                  onChange={(event) => onSetPageSlug(event.target.value)}
-                  required
-                />
-
-                <label
-                  htmlFor="inspector-page-seo-title"
-                  className={text.label}
-                >
-                  SEO title
-                </label>
-                <Input
-                  id="inspector-page-seo-title"
-                  value={pageSEOTitle}
-                  onChange={(event) => onSetPageSEOTitle(event.target.value)}
-                />
-
-                <label
-                  htmlFor="inspector-page-seo-description"
-                  className={text.label}
-                >
-                  SEO description
-                </label>
-                <Textarea
-                  id="inspector-page-seo-description"
-                  rows={3}
-                  value={pageSEODescription}
-                  onChange={(event) =>
-                    onSetPageSEODescription(event.target.value)
-                  }
-                />
-
-                <label className={form.toggle}>
-                  <input
-                    type="checkbox"
-                    className="size-4 accent-[var(--thread-teal)]"
-                    checked={pageIncludeInNavigation}
-                    onChange={(event) =>
-                      onSetPageIncludeInNavigation(event.target.checked)
-                    }
-                  />
-                  Include in navigation
-                </label>
-
-                {pageErrorMessage ? (
-                  <p className={text.error}>{pageErrorMessage}</p>
-                ) : null}
-                {pageStatusMessage ? (
-                  <p className={text.success}>{pageStatusMessage}</p>
-                ) : null}
-
-                <Button type="submit" size="sm" disabled={isSavingPage}>
-                  {isSavingPage ? 'Saving...' : 'Save page'}
-                </Button>
-              </form>
-
-              <div className={actions.row}>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={
-                    inspectorPages.findIndex(
-                      (p) => p.id === selectedPage.id,
-                    ) <= 0 || isSavingPage
-                  }
-                  onClick={() => onMovePage(selectedPage.id, -1)}
-                >
-                  Move earlier
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={
-                    inspectorPages.findIndex(
-                      (p) => p.id === selectedPage.id,
-                    ) >= inspectorPages.length - 1 || isSavingPage
-                  }
-                  onClick={() => onMovePage(selectedPage.id, 1)}
-                >
-                  Move later
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={isDeletingPage}
-                  onClick={onDeletePage}
-                >
-                  {isDeletingPage ? 'Deleting...' : 'Delete page'}
-                </Button>
-              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={
+                  !selectedPage ||
+                  selectedBlockIndex === selectedPage.blocks.length - 1 ||
+                  isMutatingBlocks
+                }
+                onClick={() => onMoveBlock(1)}
+              >
+                Move down
+              </Button>
             </div>
+
+            <div className={actions.row}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isMutatingBlocks}
+                onClick={onDuplicateBlock}
+              >
+                Duplicate
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isMutatingBlocks}
+                onClick={onDeleteBlock}
+              >
+                Delete
+              </Button>
+            </div>
+          </>
+        ) : (
+          <div className={emptyState}>
+            <p className={text.p}>
+              Select a block in the canvas to edit its content. Use Page setup
+              for route and SEO work, and Site or Publish for broader actions.
+            </p>
+          </div>
+        )}
+
+        <div className="grid gap-3 border-t border-border pt-4">
+          <p className={text.eyebrow}>Add block</p>
+          <form className={form.grid} onSubmit={onCreateBlock}>
+            <label htmlFor="inspector-new-block-type" className={text.label}>
+              Block type
+            </label>
+            <Select
+              id="inspector-new-block-type"
+              value={newBlockType}
+              onChange={(event) => onChangeNewBlockType(event.target.value)}
+            >
+              {blockRegistry.map((definition) => (
+                <option
+                  key={`${definition.type}@${definition.version}`}
+                  value={definition.type}
+                >
+                  {definition.displayName}
+                </option>
+              ))}
+            </Select>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={isCreatingBlock || !newBlockType || !selectedPage}
+            >
+              {isCreatingBlock ? 'Adding block...' : 'Add block to page'}
+            </Button>
+          </form>
+
+          {pageErrorMessage ? <p className={text.error}>{pageErrorMessage}</p> : null}
+          {pageStatusMessage ? (
+            <p className={text.success}>{pageStatusMessage}</p>
           ) : null}
         </div>
-      ) : (
-        <div className="grid gap-4 overflow-auto p-4">
-          {settingsContent}
-        </div>
-      )}
+      </div>
     </aside>
   )
 }

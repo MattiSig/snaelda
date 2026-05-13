@@ -15,6 +15,9 @@ export default defineConfig({
     },
     tsconfigPaths: true,
   },
+  optimizeDeps: {
+    exclude: ['@tanstack/start-server-core', '@tanstack/react-start-server'],
+  },
   plugins: [
     tailwindcss(),
     tanstackStart({

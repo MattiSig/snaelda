@@ -5,6 +5,7 @@ import {
   Scripts,
   createRootRoute,
   useMatches,
+  useRouterState,
 } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { useEffect } from 'react'
@@ -29,6 +30,16 @@ export const Route = createRootRoute({
     links: [
       { rel: 'stylesheet', href: appCss },
       { rel: 'icon', href: '/logo.png', type: 'image/png' },
+      { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
+      {
+        rel: 'preconnect',
+        href: 'https://fonts.gstatic.com',
+        crossOrigin: 'anonymous',
+      },
+      {
+        rel: 'stylesheet',
+        href: 'https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;700&family=Literata:opsz,wght@7..72,400..700&display=swap',
+      },
     ],
   }),
   errorComponent: DefaultCatchBoundary,
@@ -38,11 +49,18 @@ export const Route = createRootRoute({
 
 function RootDocument({ children }: { children: ReactNode }) {
   const matches = useMatches()
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
+  const forceDark =
+    pathname === '/' || pathname === '/login' || pathname.startsWith('/app')
+
   useEffect(() => {
     const storedMode = window.localStorage.getItem('snaelda-color-mode')
     const nextMode = storedMode === 'light' ? 'light' : 'dark'
-    document.documentElement.classList.toggle('dark', nextMode === 'dark')
-  }, [])
+    document.documentElement.classList.toggle(
+      'dark',
+      forceDark || nextMode === 'dark',
+    )
+  }, [forceDark])
 
   const hostedPublic = matches
     .map((match) => {
@@ -52,8 +70,16 @@ function RootDocument({ children }: { children: ReactNode }) {
       return loaderData?.hostedPublic ?? null
     })
     .find((value) => value?.isHostedPublic) ?? null
+  const showChrome =
+    !hostedPublic?.isHostedPublic &&
+    pathname !== '/' &&
+    !pathname.startsWith('/app')
 
   function toggleColorMode() {
+    if (forceDark) {
+      return
+    }
+
     const nextMode = document.documentElement.classList.contains('dark')
       ? 'light'
       : 'dark'
@@ -67,7 +93,7 @@ function RootDocument({ children }: { children: ReactNode }) {
         <HeadContent />
       </head>
       <body>
-        {hostedPublic?.isHostedPublic ? null : (
+        {showChrome ? (
           <header className={topbar.shell}>
             <Link to="/" className={topbar.brand} activeOptions={{ exact: true }}>
               <img
@@ -104,18 +130,20 @@ function RootDocument({ children }: { children: ReactNode }) {
                   Public
                 </Link>
               </nav>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="max-sm:min-h-11"
-                onClick={toggleColorMode}
-              >
-                Toggle color mode
-              </Button>
+              {forceDark ? null : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="max-sm:min-h-11"
+                  onClick={toggleColorMode}
+                >
+                  Toggle color mode
+                </Button>
+              )}
             </div>
           </header>
-        )}
+        ) : null}
         {children}
         <Scripts />
       </body>

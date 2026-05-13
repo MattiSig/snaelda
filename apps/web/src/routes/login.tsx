@@ -21,6 +21,9 @@ export const Route = createFileRoute('/login')({
 
 function Login() {
   const search = Route.useSearch()
+  const promptFromUrl = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('prompt') || ''
+    : ''
   const [email, setEmail] = useState('demo@snaelda.local')
   const [name, setName] = useState('Demo User')
   const [errorMessage, setErrorMessage] = useState('')
@@ -33,7 +36,10 @@ function Login() {
 
     try {
       await login(email, name)
-      window.location.href = search.redirect
+      const redirectTarget = promptFromUrl
+        ? `${search.redirect}?prompt=${encodeURIComponent(promptFromUrl)}`
+        : search.redirect
+      window.location.href = redirectTarget
     } catch (error) {
       if (error instanceof APIError) {
         setErrorMessage(error.message)
