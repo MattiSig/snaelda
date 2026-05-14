@@ -29,6 +29,7 @@ type fakePublisher struct {
 	publishedSlug   string
 	publishedHost   string
 	publishedPath   string
+	artifactPath    string
 	versionSiteID   string
 	err             error
 }
@@ -62,6 +63,32 @@ func (f *fakePublisher) LoadPublishedSiteByHostname(_ context.Context, hostname 
 	f.publishedHost = hostname
 	f.publishedPath = pagePath
 	return f.publishedResult, f.err
+}
+
+func (f *fakePublisher) LoadPublishedArtifactBySlug(_ context.Context, siteSlug string, artifactPath string) (PublishedArtifactResult, error) {
+	f.publishedSlug = siteSlug
+	f.artifactPath = artifactPath
+	return PublishedArtifactResult{
+		SiteSlug: siteSlug,
+		File: ArtifactFile{
+			Path:        artifactPath,
+			ContentType: "text/plain; charset=utf-8",
+			Body:        "artifact body",
+		},
+	}, f.err
+}
+
+func (f *fakePublisher) LoadPublishedArtifactByHostname(_ context.Context, hostname string, artifactPath string) (PublishedArtifactResult, error) {
+	f.publishedHost = hostname
+	f.artifactPath = artifactPath
+	return PublishedArtifactResult{
+		Hostname: hostname,
+		File: ArtifactFile{
+			Path:        artifactPath,
+			ContentType: "text/plain; charset=utf-8",
+			Body:        "artifact body",
+		},
+	}, f.err
 }
 
 type fakePublishAuthorizer struct{}
@@ -222,8 +249,13 @@ func TestGetPublishedSiteReturnsSnapshotWithoutAuth(t *testing.T) {
 				IsCurrent:     true,
 			},
 			PagePath: "/contact",
-			Page:     validSnapshotWithContact().Pages[1],
-			Snapshot: validSnapshotWithContact(),
+			Page: PublishedPageArtifact{
+				PagePath:     "/contact",
+				Title:        "Contact | Nordic Studio",
+				Description:  "Send a note to plan your next launch.",
+				CanonicalURL: "http://nordic-studio.localhost:3000/contact",
+				HTML:         "<div>Contact</div>",
+			},
 		},
 	}
 	handler := Handler{
@@ -261,8 +293,13 @@ func TestGetPublishedSiteByHostnameReturnsSnapshotWithoutAuth(t *testing.T) {
 				IsCurrent:     true,
 			},
 			PagePath: "/contact",
-			Page:     validSnapshotWithContact().Pages[1],
-			Snapshot: validSnapshotWithContact(),
+			Page: PublishedPageArtifact{
+				PagePath:     "/contact",
+				Title:        "Contact | Nordic Studio",
+				Description:  "Send a note to plan your next launch.",
+				CanonicalURL: "http://nordic-studio.localhost:3000/contact",
+				HTML:         "<div>Contact</div>",
+			},
 		},
 	}
 	handler := Handler{
@@ -294,6 +331,29 @@ func TestGetPublishedSiteByHostnameReturnsSnapshotWithoutAuth(t *testing.T) {
 	}
 	if payload.PublicURL != "http://nordic-studio.localhost:3000/contact" {
 		t.Fatalf("expected hosted public url, got %q", payload.PublicURL)
+	}
+}
+
+func TestGetPublishedArtifactByHostnameReturnsStoredArtifact(t *testing.T) {
+	publisher := &fakePublisher{}
+	handler := Handler{service: publisher}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/public/artifact?hostname=nordic-studio.localhost&path=robots.txt", nil)
+	res := httptest.NewRecorder()
+
+	handler.getPublishedArtifact(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	if publisher.publishedHost != "nordic-studio.localhost" {
+		t.Fatalf("expected hostname to reach loader, got %q", publisher.publishedHost)
+	}
+	if publisher.artifactPath != "robots.txt" {
+		t.Fatalf("expected artifact path to reach loader, got %q", publisher.artifactPath)
+	}
+	if body := strings.TrimSpace(res.Body.String()); body != "artifact body" {
+		t.Fatalf("expected artifact body, got %q", body)
 	}
 }
 

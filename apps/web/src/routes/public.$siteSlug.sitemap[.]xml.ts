@@ -1,30 +1,30 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { getPublishedSite } from '@/lib/api'
-import {
-  buildPublishedSitemapXML,
-  buildTextErrorResponse,
-} from '@/lib/published-site'
+import { createFileRoute } from "@tanstack/react-router";
+import { getPublishedArtifact } from "@/lib/api";
+import { buildTextErrorResponse } from "@/lib/published-site";
 
-export const Route = createFileRoute('/public/$siteSlug/sitemap.xml')({
+export const Route = createFileRoute("/public/$siteSlug/sitemap.xml")({
   server: {
     handlers: {
       GET: async ({ params }) => {
         try {
-          const site = await getPublishedSite(params.siteSlug, '/')
-          return new Response(buildPublishedSitemapXML(site), {
+          const body = await getPublishedArtifact({
+            siteSlug: params.siteSlug,
+            path: "sitemap.xml",
+          });
+          return new Response(body, {
             headers: {
-              'Content-Type': 'application/xml; charset=utf-8',
-              'Cache-Control': 'no-store',
+              "Content-Type": "application/xml; charset=utf-8",
+              "Cache-Control": "no-store",
             },
-          })
+          });
         } catch (error) {
           return buildTextErrorResponse(
             error,
-            'Could not build sitemap.xml',
-            'text/plain; charset=utf-8',
-          )
+            "Could not build sitemap.xml",
+            "text/plain; charset=utf-8",
+          );
         }
       },
     },
   },
-})
+});

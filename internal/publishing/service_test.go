@@ -168,10 +168,9 @@ type fakePublishingStore struct {
 	publishedSiteSlug   string
 	publishedHostname   string
 	publishedVersion    VersionSummary
-	publishedSnapshot   siteconfig.PublishedSnapshot
 	slugLookupCount     int
 	hostnameLookupCount int
-	snapshotLookupCount int
+	artifactFiles       map[string]ArtifactFile
 }
 
 func newFakePublishingStore() *fakePublishingStore {
@@ -209,7 +208,6 @@ func newFakePublishingStore() *fakePublishingStore {
 			PublishNote:   "Refined hero copy",
 			IsCurrent:     true,
 		},
-		publishedSnapshot: validPublishedSnapshotWithContact(),
 	}
 }
 
@@ -225,10 +223,6 @@ func (s *fakePublishingStore) QueryRow(_ context.Context, sql string, arguments 
 		if lookup != s.publishedSiteSlug {
 			return fakePublishingRow{err: pgx.ErrNoRows}
 		}
-		snapshotJSON, err := json.Marshal(s.publishedSnapshot)
-		if err != nil {
-			return fakePublishingRow{err: err}
-		}
 		return fakePublishingRow{values: []any{
 			s.publishedSiteSlug,
 			s.publishedHostname,
@@ -237,7 +231,6 @@ func (s *fakePublishingStore) QueryRow(_ context.Context, sql string, arguments 
 			s.publishedVersion.VersionNumber,
 			s.publishedVersion.CreatedAt,
 			s.publishedVersion.PublishNote,
-			snapshotJSON,
 		}}
 	case strings.Contains(sql, "from site_domains d") && strings.Contains(sql, "join site_versions sv on sv.id = s.published_version_id"):
 		s.hostnameLookupCount++
@@ -245,10 +238,6 @@ func (s *fakePublishingStore) QueryRow(_ context.Context, sql string, arguments 
 		if lookup != s.publishedHostname {
 			return fakePublishingRow{err: pgx.ErrNoRows}
 		}
-		snapshotJSON, err := json.Marshal(s.publishedSnapshot)
-		if err != nil {
-			return fakePublishingRow{err: err}
-		}
 		return fakePublishingRow{values: []any{
 			s.publishedSiteSlug,
 			s.publishedHostname,
@@ -257,15 +246,7 @@ func (s *fakePublishingStore) QueryRow(_ context.Context, sql string, arguments 
 			s.publishedVersion.VersionNumber,
 			s.publishedVersion.CreatedAt,
 			s.publishedVersion.PublishNote,
-			snapshotJSON,
 		}}
-	case strings.Contains(sql, "select snapshot") && strings.Contains(sql, "from site_versions"):
-		s.snapshotLookupCount++
-		snapshotJSON, err := json.Marshal(s.publishedSnapshot)
-		if err != nil {
-			return fakePublishingRow{err: err}
-		}
-		return fakePublishingRow{values: []any{snapshotJSON}}
 	default:
 		return fakePublishingRow{err: errors.New("query row is not implemented in fakePublishingStore")}
 	}
@@ -277,6 +258,24 @@ func (s *fakePublishingStore) Exec(context.Context, string, ...any) (pgconn.Comm
 
 func (s *fakePublishingStore) BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error) {
 	return s.tx, nil
+}
+
+func (s *fakePublishingStore) Save(context.Context, string, string, ArtifactBundle) error {
+	return errors.New("save is not implemented in fakePublishingStore")
+}
+
+func (s *fakePublishingStore) Load(_ context.Context, siteID string, versionID string, path string) (ArtifactFile, error) {
+	if siteID != s.publishedVersion.SiteID || versionID != s.publishedVersion.ID {
+		return ArtifactFile{}, ErrArtifactNotFound
+	}
+	if len(s.artifactFiles) == 0 {
+		s.artifactFiles = buildFakePublishedArtifacts(s.publishedSiteSlug, s.publishedHostname, s.publishedVersion)
+	}
+	file, ok := s.artifactFiles[path]
+	if !ok {
+		return ArtifactFile{}, ErrArtifactNotFound
+	}
+	return file, nil
 }
 
 type recordedAuditEvent struct {
@@ -407,7 +406,7 @@ func (r fakePublishingRow) Scan(dest ...any) error {
 
 func TestLoadPublishedSiteBySlugResolvesRequestedPage(t *testing.T) {
 	store := newFakePublishingStore()
-	service := Service{db: store}
+	service := Service{db: store, store: store}
 
 	result, err := service.LoadPublishedSiteBySlug(context.Background(), "nordic-studio", "/contact")
 	if err != nil {
@@ -417,14 +416,14 @@ func TestLoadPublishedSiteBySlugResolvesRequestedPage(t *testing.T) {
 	if result.PagePath != "/contact" {
 		t.Fatalf("expected page path, got %q", result.PagePath)
 	}
-	if result.Page.ID != "page_contact" {
+	if result.Page.Title != "Contact | Nordic Studio" {
 		t.Fatalf("expected contact page, got %#v", result.Page)
 	}
 }
 
 func TestLoadPublishedSiteBySlugRejectsUnknownPagePath(t *testing.T) {
 	store := newFakePublishingStore()
-	service := Service{db: store}
+	service := Service{db: store, store: store}
 
 	_, err := service.LoadPublishedSiteBySlug(context.Background(), "nordic-studio", "/missing")
 	if !errors.Is(err, ErrPageNotFound) {
@@ -434,7 +433,7 @@ func TestLoadPublishedSiteBySlugRejectsUnknownPagePath(t *testing.T) {
 
 func TestLoadPublishedSiteByHostnameResolvesRequestedPage(t *testing.T) {
 	store := newFakePublishingStore()
-	service := Service{db: store}
+	service := Service{db: store, store: store}
 
 	result, err := service.LoadPublishedSiteByHostname(context.Background(), "nordic-studio.localhost:3000", "/contact")
 	if err != nil {
@@ -444,7 +443,7 @@ func TestLoadPublishedSiteByHostnameResolvesRequestedPage(t *testing.T) {
 	if result.Hostname != "nordic-studio.localhost" {
 		t.Fatalf("expected normalized hostname, got %q", result.Hostname)
 	}
-	if result.Page.ID != "page_contact" {
+	if result.Page.Title != "Contact | Nordic Studio" {
 		t.Fatalf("expected contact page, got %#v", result.Page)
 	}
 }
@@ -454,6 +453,7 @@ func TestLoadPublishedSiteByHostnameWarmsCachesAndAvoidsSecondLookup(t *testing.
 	cache := newMemoryPublishedSiteCache()
 	service := Service{
 		db:    store,
+		store: store,
 		cache: cache,
 	}
 
@@ -466,7 +466,7 @@ func TestLoadPublishedSiteByHostnameWarmsCachesAndAvoidsSecondLookup(t *testing.
 		t.Fatalf("second hosted lookup: %v", err)
 	}
 
-	if first.Page.ID != second.Page.ID {
+	if first.Page.HTML != second.Page.HTML || first.Page.Title != second.Page.Title {
 		t.Fatalf("expected cached hosted lookup to return same page, got first=%#v second=%#v", first.Page, second.Page)
 	}
 	if store.hostnameLookupCount != 1 {
@@ -474,9 +474,6 @@ func TestLoadPublishedSiteByHostnameWarmsCachesAndAvoidsSecondLookup(t *testing.
 	}
 	if _, ok := cache.LoadDomain("nordic-studio.localhost"); !ok {
 		t.Fatal("expected domain lookup cache entry")
-	}
-	if _, ok := cache.LoadSnapshot(first.Version.SiteID, first.Version.ID); !ok {
-		t.Fatal("expected published snapshot cache entry")
 	}
 	if _, ok := cache.LoadPage(first.Version.SiteID, first.Version.ID, "/contact"); !ok {
 		t.Fatal("expected page cache entry")
@@ -491,10 +488,16 @@ func TestRollbackInvalidatesPublishedSiteCache(t *testing.T) {
 		Hostname: store.publishedHostname,
 		Version:  store.publishedVersion,
 	})
-	cache.StoreSnapshot(store.publishedVersion.SiteID, store.publishedVersion.ID, store.publishedSnapshot)
-	cache.StorePage(store.publishedVersion.SiteID, store.publishedVersion.ID, "/contact", store.publishedSnapshot.Pages[1])
+	cache.StorePage(store.publishedVersion.SiteID, store.publishedVersion.ID, "/contact", PublishedPageArtifact{
+		PagePath:     "/contact",
+		Title:        "Contact | Nordic Studio",
+		Description:  "Send a note to plan your next launch.",
+		CanonicalURL: "http://nordic-studio.localhost:3000/contact",
+		HTML:         "<div>contact</div>",
+	})
 	service := Service{
 		db:     store,
+		store:  store,
 		reader: fakePublishingReader{},
 		cache:  cache,
 	}
@@ -512,11 +515,67 @@ func TestRollbackInvalidatesPublishedSiteCache(t *testing.T) {
 	if _, ok := cache.LoadDomain(store.publishedHostname); ok {
 		t.Fatal("expected rollback to invalidate domain cache")
 	}
-	if _, ok := cache.LoadSnapshot(store.publishedVersion.SiteID, store.publishedVersion.ID); ok {
-		t.Fatal("expected rollback to invalidate snapshot cache")
-	}
 	if _, ok := cache.LoadPage(store.publishedVersion.SiteID, store.publishedVersion.ID, "/contact"); ok {
 		t.Fatal("expected rollback to invalidate page cache")
+	}
+}
+
+func buildFakePublishedArtifacts(siteSlug string, hostname string, version VersionSummary) map[string]ArtifactFile {
+	manifest := ArtifactManifest{
+		SchemaVersion: "published_artifacts.v1",
+		SiteSlug:      siteSlug,
+		Hostname:      hostname,
+		Version:       version,
+		Pages: []ArtifactManifestPage{
+			{
+				PagePath:     "/",
+				FilePath:     "pages/index.html",
+				Title:        "Nordic Studio",
+				Description:  "Calm design systems for focused teams.",
+				CanonicalURL: "http://nordic-studio.localhost:3000/",
+			},
+			{
+				PagePath:     "/contact",
+				FilePath:     "pages/contact/index.html",
+				Title:        "Contact | Nordic Studio",
+				Description:  "Send a note to plan your next launch.",
+				CanonicalURL: "http://nordic-studio.localhost:3000/contact",
+			},
+		},
+	}
+	manifestJSON, _ := json.Marshal(manifest)
+
+	return map[string]ArtifactFile{
+		"manifest.json": {
+			Path:        "manifest.json",
+			ContentType: "application/json; charset=utf-8",
+			Body:        string(manifestJSON),
+		},
+		"pages/index.html": {
+			Path:        "pages/index.html",
+			ContentType: "text/html; charset=utf-8",
+			Body:        "<div><h1>Home</h1></div>",
+		},
+		"pages/contact/index.html": {
+			Path:        "pages/contact/index.html",
+			ContentType: "text/html; charset=utf-8",
+			Body:        "<div><h1>Contact</h1></div>",
+		},
+		"robots.txt": {
+			Path:        "robots.txt",
+			ContentType: "text/plain; charset=utf-8",
+			Body:        "User-agent: *\nAllow: /\n",
+		},
+		"sitemap.xml": {
+			Path:        "sitemap.xml",
+			ContentType: "application/xml; charset=utf-8",
+			Body:        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+		},
+		"assets/theme.css": {
+			Path:        "assets/theme.css",
+			ContentType: "text/css; charset=utf-8",
+			Body:        ":root {}\n",
+		},
 	}
 }
 

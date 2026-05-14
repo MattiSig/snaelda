@@ -2,7 +2,10 @@ package publishing
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,6 +58,37 @@ func (s *localArtifactStore) Save(_ context.Context, siteID string, versionID st
 		return fmt.Errorf("publish artifact version: %w", err)
 	}
 	return nil
+}
+
+func (s *localArtifactStore) Load(_ context.Context, siteID string, versionID string, path string) (ArtifactFile, error) {
+	if strings.TrimSpace(siteID) == "" {
+		return ArtifactFile{}, fmt.Errorf("load artifacts: site id is required")
+	}
+	if strings.TrimSpace(versionID) == "" {
+		return ArtifactFile{}, fmt.Errorf("load artifacts: version id is required")
+	}
+	if strings.TrimSpace(s.rootDir) == "" {
+		return ArtifactFile{}, fmt.Errorf("load artifacts: root directory is required")
+	}
+
+	targetPath, err := safeArtifactPath(filepath.Join(s.rootDir, siteID, versionID), path)
+	if err != nil {
+		return ArtifactFile{}, err
+	}
+
+	body, err := os.ReadFile(targetPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return ArtifactFile{}, ErrArtifactNotFound
+	}
+	if err != nil {
+		return ArtifactFile{}, fmt.Errorf("load artifact %s: %w", path, err)
+	}
+
+	return ArtifactFile{
+		Path:        filepath.Clean(strings.TrimSpace(path)),
+		ContentType: http.DetectContentType(body),
+		Body:        string(body),
+	}, nil
 }
 
 func safeArtifactPath(root string, relativePath string) (string, error) {

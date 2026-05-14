@@ -3,17 +3,13 @@ package publishing
 import (
 	"strings"
 	"sync"
-
-	"github.com/MattiSig/snaelda/internal/siteconfig"
 )
 
 type publishedSiteCache interface {
 	LoadDomain(hostname string) (publishedSiteLookup, bool)
 	StoreDomain(hostname string, lookup publishedSiteLookup)
-	LoadSnapshot(siteID string, versionID string) (siteconfig.PublishedSnapshot, bool)
-	StoreSnapshot(siteID string, versionID string, snapshot siteconfig.PublishedSnapshot)
-	LoadPage(siteID string, versionID string, pagePath string) (siteconfig.PageDraft, bool)
-	StorePage(siteID string, versionID string, pagePath string, page siteconfig.PageDraft)
+	LoadPage(siteID string, versionID string, pagePath string) (PublishedPageArtifact, bool)
+	StorePage(siteID string, versionID string, pagePath string, page PublishedPageArtifact)
 	InvalidateSite(siteID string)
 }
 
@@ -21,16 +17,14 @@ type memoryPublishedSiteCache struct {
 	mu            sync.RWMutex
 	domainLookups map[string]publishedSiteLookup
 	domainSiteIDs map[string]string
-	snapshots     map[string]siteconfig.PublishedSnapshot
-	pages         map[string]siteconfig.PageDraft
+	pages         map[string]PublishedPageArtifact
 }
 
 func newMemoryPublishedSiteCache() *memoryPublishedSiteCache {
 	return &memoryPublishedSiteCache{
 		domainLookups: map[string]publishedSiteLookup{},
 		domainSiteIDs: map[string]string{},
-		snapshots:     map[string]siteconfig.PublishedSnapshot{},
-		pages:         map[string]siteconfig.PageDraft{},
+		pages:         map[string]PublishedPageArtifact{},
 	}
 }
 
@@ -63,35 +57,9 @@ func (c *memoryPublishedSiteCache) StoreDomain(hostname string, lookup published
 	c.domainSiteIDs[normalized] = lookup.Version.SiteID
 }
 
-func (c *memoryPublishedSiteCache) LoadSnapshot(siteID string, versionID string) (siteconfig.PublishedSnapshot, bool) {
+func (c *memoryPublishedSiteCache) LoadPage(siteID string, versionID string, pagePath string) (PublishedPageArtifact, bool) {
 	if c == nil {
-		return siteconfig.PublishedSnapshot{}, false
-	}
-
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	snapshot, ok := c.snapshots[snapshotCacheKey(siteID, versionID)]
-	return snapshot, ok
-}
-
-func (c *memoryPublishedSiteCache) StoreSnapshot(siteID string, versionID string, snapshot siteconfig.PublishedSnapshot) {
-	if c == nil {
-		return
-	}
-	if siteID == "" || versionID == "" {
-		return
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.snapshots[snapshotCacheKey(siteID, versionID)] = snapshot
-}
-
-func (c *memoryPublishedSiteCache) LoadPage(siteID string, versionID string, pagePath string) (siteconfig.PageDraft, bool) {
-	if c == nil {
-		return siteconfig.PageDraft{}, false
+		return PublishedPageArtifact{}, false
 	}
 
 	c.mu.RLock()
@@ -101,7 +69,7 @@ func (c *memoryPublishedSiteCache) LoadPage(siteID string, versionID string, pag
 	return page, ok
 }
 
-func (c *memoryPublishedSiteCache) StorePage(siteID string, versionID string, pagePath string, page siteconfig.PageDraft) {
+func (c *memoryPublishedSiteCache) StorePage(siteID string, versionID string, pagePath string, page PublishedPageArtifact) {
 	if c == nil {
 		return
 	}
@@ -132,20 +100,11 @@ func (c *memoryPublishedSiteCache) InvalidateSite(siteID string) {
 	}
 
 	prefix := siteID + ":"
-	for key := range c.snapshots {
-		if strings.HasPrefix(key, prefix) {
-			delete(c.snapshots, key)
-		}
-	}
 	for key := range c.pages {
 		if strings.HasPrefix(key, prefix) {
 			delete(c.pages, key)
 		}
 	}
-}
-
-func snapshotCacheKey(siteID string, versionID string) string {
-	return siteID + ":" + versionID
 }
 
 func pageCacheKey(siteID string, versionID string, pagePath string) string {

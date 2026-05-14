@@ -3,6 +3,7 @@ package publishing
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -21,6 +22,22 @@ type ArtifactBundle struct {
 	Files         []ArtifactFile `json:"files"`
 }
 
+type ArtifactManifest struct {
+	SchemaVersion string                 `json:"schemaVersion"`
+	SiteSlug      string                 `json:"siteSlug"`
+	Hostname      string                 `json:"hostname,omitempty"`
+	Version       VersionSummary         `json:"version"`
+	Pages         []ArtifactManifestPage `json:"pages"`
+}
+
+type ArtifactManifestPage struct {
+	PagePath     string `json:"pagePath"`
+	FilePath     string `json:"filePath"`
+	Title        string `json:"title"`
+	Description  string `json:"description"`
+	CanonicalURL string `json:"canonicalUrl"`
+}
+
 type ArtifactRenderInput struct {
 	AppBaseURL string                       `json:"appBaseURL"`
 	SiteSlug   string                       `json:"siteSlug"`
@@ -35,7 +52,10 @@ type ArtifactRenderer interface {
 
 type ArtifactStore interface {
 	Save(ctx context.Context, siteID string, versionID string, bundle ArtifactBundle) error
+	Load(ctx context.Context, siteID string, versionID string, path string) (ArtifactFile, error)
 }
+
+var ErrArtifactNotFound = errors.New("published artifact not found")
 
 type commandArtifactRenderer struct {
 	appBaseURL string

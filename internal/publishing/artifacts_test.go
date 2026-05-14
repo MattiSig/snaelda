@@ -77,14 +77,7 @@ func TestPublishRendersAndStoresArtifactsBeforeCommit(t *testing.T) {
 		},
 	}
 	renderer := &fakeArtifactRenderer{
-		bundle: ArtifactBundle{
-			SchemaVersion: "published_artifacts.v1",
-			Files: []ArtifactFile{{
-				Path:        "pages/index.html",
-				ContentType: "text/html; charset=utf-8",
-				Body:        "<div>published</div>",
-			}},
-		},
+		bundle: validArtifactBundleForDraft(),
 	}
 	store := &fakeArtifactStore{}
 	service := Service{
@@ -138,7 +131,7 @@ func TestPublishDoesNotMarkSiteLiveWhenArtifactStorageFails(t *testing.T) {
 	service := Service{
 		db:       db,
 		reader:   fakeDraftReader{draft: buildArtifactDraft()},
-		renderer: &fakeArtifactRenderer{bundle: ArtifactBundle{SchemaVersion: "published_artifacts.v1"}},
+		renderer: &fakeArtifactRenderer{bundle: validArtifactBundleForDraft()},
 		store:    &fakeArtifactStore{err: errors.New("disk full")},
 	}
 
@@ -180,12 +173,17 @@ func TestPublishInvalidatesPublishedSiteCacheAfterCommit(t *testing.T) {
 			VersionNumber: 2,
 		},
 	})
-	cache.StoreSnapshot("00000000-0000-4000-8000-000000000201", "00000000-0000-4000-8000-000000000699", validPublishedSnapshotWithContact())
-	cache.StorePage("00000000-0000-4000-8000-000000000201", "00000000-0000-4000-8000-000000000699", "/contact", validPublishedSnapshotWithContact().Pages[1])
+	cache.StorePage("00000000-0000-4000-8000-000000000201", "00000000-0000-4000-8000-000000000699", "/contact", PublishedPageArtifact{
+		PagePath:     "/contact",
+		Title:        "Contact | Nordic Studio",
+		Description:  "Send a note with your launch timeline.",
+		CanonicalURL: "http://nordic-studio.localhost:3000/contact",
+		HTML:         "<div>published</div>",
+	})
 	service := Service{
 		db:       db,
 		reader:   fakeDraftReader{draft: buildArtifactDraft()},
-		renderer: &fakeArtifactRenderer{bundle: ArtifactBundle{SchemaVersion: "published_artifacts.v1"}},
+		renderer: &fakeArtifactRenderer{bundle: validArtifactBundleForDraft()},
 		store:    &fakeArtifactStore{},
 		cache:    cache,
 	}
@@ -203,11 +201,111 @@ func TestPublishInvalidatesPublishedSiteCacheAfterCommit(t *testing.T) {
 	if _, ok := cache.LoadDomain("nordic-studio.localhost"); ok {
 		t.Fatal("expected publish to invalidate domain cache")
 	}
-	if _, ok := cache.LoadSnapshot("00000000-0000-4000-8000-000000000201", "00000000-0000-4000-8000-000000000699"); ok {
-		t.Fatal("expected publish to invalidate snapshot cache")
-	}
 	if _, ok := cache.LoadPage("00000000-0000-4000-8000-000000000201", "00000000-0000-4000-8000-000000000699", "/contact"); ok {
 		t.Fatal("expected publish to invalidate page cache")
+	}
+}
+
+func TestPublishRejectsIncompleteArtifactBundle(t *testing.T) {
+	db := &fakeArtifactPublishDB{
+		tx: &fakeArtifactPublishTx{
+			siteID:      "00000000-0000-4000-8000-000000000201",
+			workspaceID: "00000000-0000-4000-8000-000000000101",
+			siteSlug:    "nordic-studio",
+			versionID:   "00000000-0000-4000-8000-000000000701",
+			createdAt:   time.Date(2026, 5, 11, 9, 30, 0, 0, time.UTC),
+			nextVersion: 3,
+		},
+	}
+	service := Service{
+		db:       db,
+		reader:   fakeDraftReader{draft: buildArtifactDraft()},
+		renderer: &fakeArtifactRenderer{bundle: ArtifactBundle{SchemaVersion: "published_artifacts.v1"}},
+		store:    &fakeArtifactStore{},
+	}
+
+	_, err := service.Publish(
+		context.Background(),
+		"00000000-0000-4000-8000-000000000201",
+		"00000000-0000-4000-8000-000000000001",
+		PublishInput{PublishNote: "Launch day"},
+	)
+	if err == nil {
+		t.Fatal("expected publish validation error")
+	}
+	var validationErr siteconfig.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected validation error, got %v", err)
+	}
+	if db.tx.liveVersionID != "" {
+		t.Fatalf("expected live version pointer to stay empty, got %q", db.tx.liveVersionID)
+	}
+}
+
+func validArtifactBundleForDraft() ArtifactBundle {
+	version := VersionSummary{
+		ID:            "00000000-0000-4000-8000-000000000701",
+		SiteID:        "00000000-0000-4000-8000-000000000201",
+		VersionNumber: 3,
+	}
+	manifest := ArtifactManifest{
+		SchemaVersion: "published_artifacts.v1",
+		SiteSlug:      "nordic-studio",
+		Hostname:      "nordic-studio.localhost",
+		Version:       version,
+		Pages: []ArtifactManifestPage{
+			{
+				PagePath:     "/",
+				FilePath:     "pages/index.html",
+				Title:        "Nordic Studio",
+				Description:  "Discover Nordic Studio.",
+				CanonicalURL: "http://nordic-studio.localhost/",
+			},
+			{
+				PagePath:     "/contact",
+				FilePath:     "pages/contact/index.html",
+				Title:        "Contact | Nordic Studio",
+				Description:  "Send a note with your launch timeline.",
+				CanonicalURL: "http://nordic-studio.localhost/contact",
+			},
+		},
+	}
+	manifestJSON, _ := json.Marshal(manifest)
+
+	return ArtifactBundle{
+		SchemaVersion: "published_artifacts.v1",
+		Files: []ArtifactFile{
+			{
+				Path:        "pages/index.html",
+				ContentType: "text/html; charset=utf-8",
+				Body:        "<div>home</div>",
+			},
+			{
+				Path:        "pages/contact/index.html",
+				ContentType: "text/html; charset=utf-8",
+				Body:        "<div>contact</div>",
+			},
+			{
+				Path:        "manifest.json",
+				ContentType: "application/json; charset=utf-8",
+				Body:        string(manifestJSON),
+			},
+			{
+				Path:        "robots.txt",
+				ContentType: "text/plain; charset=utf-8",
+				Body:        "User-agent: *\nAllow: /\n",
+			},
+			{
+				Path:        "sitemap.xml",
+				ContentType: "application/xml; charset=utf-8",
+				Body:        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+			},
+			{
+				Path:        "assets/theme.css",
+				ContentType: "text/css; charset=utf-8",
+				Body:        ":root {}\n",
+			},
+		},
 	}
 }
 
@@ -251,6 +349,10 @@ func (s *fakeArtifactStore) Save(_ context.Context, siteID string, versionID str
 	s.savedVersionID = versionID
 	s.savedBundle = bundle
 	return s.err
+}
+
+func (s *fakeArtifactStore) Load(context.Context, string, string, string) (ArtifactFile, error) {
+	return ArtifactFile{}, errors.New("load is not implemented in fakeArtifactStore")
 }
 
 type fakeArtifactPublishDB struct {

@@ -269,8 +269,13 @@ export type PublishedSiteResponse = {
   publicUrl: string;
   version: SiteVersion;
   pagePath: string;
-  page: SiteDraft["pages"][number];
-  snapshot: PublishedSnapshot;
+  page: {
+    pagePath: string;
+    title: string;
+    description: string;
+    canonicalUrl: string;
+    html: string;
+  };
 };
 
 export type PreviewTokenResponse = {
@@ -836,6 +841,37 @@ export async function getPublishedSiteByHostname(
   return publicAPIRequest<PublishedSiteResponse>(
     `/api/public/render?${search.toString()}`,
   );
+}
+
+export async function getPublishedArtifact(input: {
+  siteSlug?: string;
+  hostname?: string;
+  path: string;
+}) {
+  const search = new URLSearchParams({ path: input.path });
+  if (input.hostname) {
+    search.set("hostname", input.hostname);
+  }
+  if (input.siteSlug) {
+    search.set("siteSlug", input.siteSlug);
+  }
+
+  const response = await fetch(
+    new URL(`/api/public/artifact?${search.toString()}`, getAPIBaseURL()),
+    {
+      credentials: "include",
+      headers: {
+        Accept: "text/plain, application/xml, text/css, application/json",
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new APIError(response.status, payload);
+  }
+
+  return response.text();
 }
 
 export async function submitPublicForm(

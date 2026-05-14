@@ -27,6 +27,8 @@ type Publisher interface {
 	ListVersions(ctx context.Context, siteID string) ([]VersionSummary, error)
 	LoadPublishedSiteBySlug(ctx context.Context, siteSlug string, pagePath string) (PublishedSiteResult, error)
 	LoadPublishedSiteByHostname(ctx context.Context, hostname string, pagePath string) (PublishedSiteResult, error)
+	LoadPublishedArtifactBySlug(ctx context.Context, siteSlug string, artifactPath string) (PublishedArtifactResult, error)
+	LoadPublishedArtifactByHostname(ctx context.Context, hostname string, artifactPath string) (PublishedArtifactResult, error)
 }
 
 type Authorizer interface {
@@ -54,6 +56,7 @@ func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.
 	mux.Handle("POST /api/sites/{siteId}/rollback/{versionId}", requireUser(http.HandlerFunc(h.rollback)))
 	mux.HandleFunc("GET /api/public/sites/{siteSlug}", h.getPublishedSite)
 	mux.HandleFunc("GET /api/public/render", h.getPublishedSiteByHostname)
+	mux.HandleFunc("GET /api/public/artifact", h.getPublishedArtifact)
 }
 
 func (h *Handler) publish(w http.ResponseWriter, r *http.Request) {
@@ -173,7 +176,6 @@ func (h *Handler) getPublishedSite(w http.ResponseWriter, r *http.Request) {
 		"version":   result.Version,
 		"pagePath":  result.PagePath,
 		"page":      result.Page,
-		"snapshot":  result.Snapshot,
 	})
 }
 
@@ -198,8 +200,42 @@ func (h *Handler) getPublishedSiteByHostname(w http.ResponseWriter, r *http.Requ
 		"version":   result.Version,
 		"pagePath":  result.PagePath,
 		"page":      result.Page,
-		"snapshot":  result.Snapshot,
 	})
+}
+
+func (h *Handler) getPublishedArtifact(w http.ResponseWriter, r *http.Request) {
+	artifactPath := strings.TrimSpace(r.URL.Query().Get("path"))
+	if artifactPath == "" {
+		writeError(w, http.StatusBadRequest, "invalid_artifact_path", "artifact path is required")
+		return
+	}
+
+	siteSlug := strings.TrimSpace(r.URL.Query().Get("siteSlug"))
+	hostname := publicHostnameFromRequest(r)
+
+	var (
+		result PublishedArtifactResult
+		err    error
+	)
+
+	switch {
+	case hostname != "":
+		result, err = h.service.LoadPublishedArtifactByHostname(r.Context(), hostname, artifactPath)
+	case siteSlug != "":
+		result, err = h.service.LoadPublishedArtifactBySlug(r.Context(), siteSlug, artifactPath)
+	default:
+		writeError(w, http.StatusBadRequest, "invalid_artifact_lookup", "site slug or hostname is required")
+		return
+	}
+	if err != nil {
+		writePublishError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", result.File.ContentType)
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, result.File.Body)
 }
 
 func (h *Handler) publicURLFromSlug(siteSlug string) string {

@@ -1,313 +1,97 @@
 # Implementation Plan
 
-This plan is sequenced for the shortest path to a working prototype first. The prototype should prove the core loop: create a structured site draft from a prompt, edit it, preview it, publish it, and serve it from a stable public URL. Everything else should be added only after that loop works end to end.
+This file now tracks confirmed remaining work only. Items are sorted by implementation priority, and stale backlog entries that are already present in the codebase have been removed from the open list.
 
-## Prototype Success Criteria
+## Recently Confirmed Complete
 
-- [x] A signed-in user can create or use a default workspace.
-- [x] The backend is a Go modular monolith exposing the product API and owning Postgres persistence.
-  Verified on May 11, 2026 by inspecting `internal/api/server.go` plus the Postgres-backed `auth`, `sites`, `themes`, `generation`, `publishing`, and authorization modules mounted behind the Go HTTP API; the React app consumes those APIs and does not own persistence.
-- [x] The frontend is a React application built with TanStack Start, Tailwind CSS, and shadcn/ui unless a later decision deliberately changes that stack.
-- [x] Frontend surfaces support brand-aligned light and dark modes based on `BRANDING.md`, with dark mode required and using the sharper, slightly meaner palette described there.
-  Verified on May 10, 2026 by running the builder locally at `http://localhost:3000`, confirming the new shared Tailwind + shadcn shell rendered in Playwright, toggling the app chrome between the dark default and the new warm light mode, and then signing in plus creating and previewing `Color Mode Verification Studio` without current-page console errors.
-- [x] A user can enter a prompt and get a valid structured site draft.
-  Verified on May 6, 2026 by logging in locally, generating `Loom & Light Studio` from a photography prompt in Playwright, confirming the created draft contained four validated pages in the builder, and loading the generated content on `/app/sites/:siteId/preview`.
-- [x] The generated draft uses only known block types, known block versions, valid block props, valid theme tokens, and no arbitrary code.
-- [x] The draft can be previewed through the maintained React renderer.
-- [x] The user can edit basic block fields and save validated changes.
-- [x] The user can publish the draft into an immutable snapshot.
-- [x] The published site is reachable at a platform subdomain or local equivalent.
-- [x] Published output is served from the published snapshot or generated artifacts, not from mutable draft tables.
+- [x] Asset upload and image-library UI exist in the builder, including uploaded-asset selection in block editors.
+- [x] Contact-form submission storage and the chosen MVP moderation flow exist; email forwarding remains optional follow-up work, not unfinished core behavior.
+- [x] The 10-page limit is already enforced in validation, generation repair, the database, and publish preflight.
+- [x] Main builder loading, empty, and error states exist for login, site list, site detail, preview, publish history, assets, and submissions.
+- [x] Page-level SEO editing plus publish-time `sitemap.xml`, `robots.txt`, canonical metadata, and basic social metadata exist.
+- [x] Refresh-token rotation is server-side and hashed; publish/rollback cache invalidation already exists.
+- [x] Added [specs/16-runtime-lifecycles-and-analytics.md](./specs/16-runtime-lifecycles-and-analytics.md) to define public visibility rules, domain/runtime semantics, and MVP analytics scope that were previously only implied.
+- [x] Public page reads now resolve from stored published artifacts plus `manifest.json` metadata instead of rebuilding from `site_versions.snapshot`, and public `/public/{slug}` routes no longer carry internal publish framing.
+- [x] Publish now validates artifact completeness before promoting a version live, including page HTML, crawl files, theme CSS, and artifact manifest metadata.
 
-## Phase 0: Technical Foundation
+## Priority Backlog
 
-- [x] Choose the frontend framework and styling baseline: TanStack Start for the React app, Tailwind CSS for utility styling, and shadcn/ui for reusable app components.
-- [x] Scaffold a Go backend as a modular monolith with clear internal packages for `auth`, `workspaces`, `sites`, `pages`, `blocks`, `themes`, `generation`, `publishing`, `domains`, `assets`, and `forms`.
-- [x] Scaffold a React frontend app with separate route areas for marketing/auth entry, authenticated builder, draft preview, and public rendering experiments.
-- [x] Decide whether the React app lives in the same repo as the Go backend as a monorepo, or as a separate app package with shared generated API types.
-- [x] Configure the TanStack Start app with Tailwind CSS, shadcn/ui, the `@/*` import alias, shared `cn` utility, and a small starting set of UI primitives.
-- [x] Set up Postgres connection, migrations, seed tooling, and local development environment for the Go backend.
-- [x] Set up local S3-compatible object storage with SeaweedFS for image uploads and published artifact development.
-- [x] Add Go API routing, middleware, config loading, request logging, validation error responses, and health checks.
-- [x] Add frontend data fetching conventions for calling the Go API.
-- [x] Add JWT-based authentication across the Go API and React frontend.
-- [x] Implement Go JWT middleware that validates token signature, expiry, issuer, audience, subject, and required claims.
-- [x] Use server-set secure HTTP-only cookies for browser auth tokens; do not store auth tokens in browser local storage.
-- [x] Keep token issuance, refresh, logout, and revocation server-side in the Go backend.
-- [x] Define access token lifetime, refresh token lifetime, refresh rotation, logout, and token revocation behavior.
-  Auth behavior: access tokens default to 15 minutes via `AUTH_ACCESS_TOKEN_TTL`; refresh tokens default to 30 days via `AUTH_REFRESH_TOKEN_TTL`; refresh uses opaque HTTP-only cookie tokens stored only as hashes, rotates the refresh token on every refresh, extends the session expiry, and logout revokes the server-side session before clearing cookies.
-- [x] Add React route guards and API client behavior for unauthenticated, expired-token, and forbidden responses.
-- [x] Create automatic default workspace creation for each user.
-- [x] Add shared authorization helpers that verify workspace membership and resource ownership.
-- [x] Add a shared ID, slug, timestamp, and audit utility layer.
-- [x] Establish runtime validation with schema tooling for site drafts, published snapshots, block props, theme tokens, navigation, URLs, and form definitions.
-  Runtime validation now lives in `internal/siteconfig` with canonical draft/snapshot types, a Go-owned prototype block registry, theme/navigation/URL/form validators, and regression tests for unsafe URLs, unknown blocks, page constraints, theme tokens, and publish snapshot requirements. Asset ownership checks are now also enforced during draft persistence so block `assetId` references must resolve inside the same workspace and site before saves succeed.
-- [x] Add backend test setup for schema validation, registry validation, publish validation, persistence, and API authorization.
-  Backend coverage now spans `internal/siteconfig` schema + registry validation, `internal/publishing` snapshot/publish behavior, `internal/sites` draft persistence/assembly, and handler/authorization tests across site, generation, theme, and publish routes. Verified on May 10, 2026 with `make test` after adding registry definition/props edge-case coverage for unknown versions, unsafe links, unsupported block props, duplicate definitions, and published contract regressions.
-- [x] Add frontend test setup for core builder flows and renderer smoke tests.
-  Frontend coverage now runs through Vitest + Testing Library in `apps/web`, with passing tests for nested block-editor saves and hidden-state handling, shared renderer anchor/published-link resolution, and published snapshot loading/error states. Verified on May 10, 2026 with `npm run web:test`, `npm run web:lint`, and `npm run web:build`.
-- [x] Reserve a `billing` backend module boundary for Stripe-backed workspace subscriptions, but keep payment implementation out of the first prototype loop.
-  The Go API now mounts an authenticated placeholder `billing` module alongside the existing modular boundaries so Stripe-backed subscription work can land later without reshaping the server package layout.
+- [ ] Replace local-only hosted URL assumptions with real deployment-grade public domain handling.
+  Confirmed gap: hosted URLs still assume local-development behavior like `{slug}.localhost` and `/public/{slug}` helpers rather than a true `{site-slug}.{public-base-domain}` contract.
 
-## Phase 1: Data Model And Draft Persistence
+- [ ] Implement a real `domains` module for hosted-domain management and cache invalidation on domain changes.
+  Confirmed gap: `internal/domains` is still placeholder-only even though `site_domains` exists and specs depend on hostname-driven resolution.
 
-- [x] Create `users`, `workspaces`, and `workspace_members`.
-- [x] Create `sites` with `workspace_id`, `name`, `slug`, `status`, `default_locale`, `published_version_id`, `generation_prompt`, `generation_summary`, and `settings`.
-- [x] Create `site_domains` with hostname, type, status, and verification fields, even if custom domain verification is deferred.
-- [x] Create `themes` with site ownership, version, and constrained token JSON.
-- [x] Create `pages` with site ownership, title, slug, sort order, status, SEO JSON, and settings JSON.
-- [x] Enforce the maximum of 10 active pages per site at the application layer first, and add DB-level protection if practical.
-  The canonical `siteconfig` validator rejects drafts with more than 10 pages before persistence starts, and migration `000003_page_limit.sql` adds a Postgres constraint trigger that rejects more than 10 non-archived page rows per site.
-- [x] Create `block_instances` with `page_id`, duplicated `site_id`, type, version, sort order, props JSON, settings JSON, and `is_hidden`.
-- [x] Create `site_versions` with immutable snapshot JSON, version number, creator, created timestamp, and publish note.
-- [x] Create `generation_jobs` for prompt tracking, status, output plan, errors, and input context.
-- [x] Create `assets`, `form_submissions`, `page_view_daily`, and `audit_events` tables, but keep most UI around them for later phases.
-- [x] Implement draft assembly from normalized rows into a canonical `SiteDraft`.
-- [x] Implement draft persistence from canonical input into normalized rows.
-  Draft persistence now lives in `internal/sites` as `PostgresWriter.SaveDraft`: it validates canonical `siteconfig.SiteDraft` input, normalizes site/theme/page/block rows, upserts site/theme/pages, replaces block instances transactionally, and preserves block visibility through `block_instances.is_hidden`. Public create/generate APIs still need to call this writer in later phases.
-- [x] Implement read APIs for listing sites and loading one complete draft.
+- [ ] Make public pages feel like customer sites rather than internal publish previews, and surface the actual live URL in publish/rollback UX.
+  Confirmed gap: the builder publish flow still does not prominently use the returned hostname/public URL.
 
-## Phase 2: Code-Owned Block Registry
+- [ ] Replace the deterministic generation template builder with a provider-backed structured AI generation pipeline.
+  Confirmed gap: generation still uses a heuristic template planner rather than a model-backed structured-output flow with explicit prompt-to-plan semantics.
 
-- [x] Define the shared `BlockDefinition` contract with type, version, display name, category, prop schema, default props, editor schema, renderer mapping, and migration hook.
-  The Go-owned `siteconfig` registry now carries type, version, display name, category, default props, and recursive editor field metadata for the prototype blocks, while React consumes that contract for block editing and rendering. Renderer mapping remains owned by the React renderer switch until a more formal generated contract is added.
-- [x] Decide the registry ownership boundary: Go owns validation schemas and persistence rules; React owns renderer components and editor field components; both must be generated from or checked against the same contract.
-  Decision 0003 formalizes the boundary: `internal/siteconfig` remains the canonical source for block type/version metadata, default props, and validation, while React consumes that API-shaped contract for renderer/editor support instead of redefining schemas locally.
-- [x] Implement the registry in code rather than the database.
-- [x] Add registry lookup by `type` and `version`.
-- [x] Add validation for block existence, version existence, props shape, links, asset references, and hidden/settings fields.
-- [x] Add the first prototype blocks: `hero`, `text_section`, `image_text`, `features_grid`, and `cta_band`.
-- [x] Implement React renderer components for those prototype blocks.
-  React now renders the prototype `hero`, `text_section`, `image_text`, `features_grid`, and `cta_band` blocks in a shared `SiteDraftRenderer` used by the authenticated preview route.
-- [x] Implement React editor field metadata for those prototype blocks.
-- [x] Build React renderer and editor surfaces with Tailwind utilities so preview, builder, and publish output stay visually consistent.
-  The shared builder shell, block editor, preview renderer, public snapshot page, and route-level empty/error states now use source-owned Tailwind utility composition from `apps/web/src/lib/styles.ts` plus shadcn-wrapped controls so the authenticated builder and render surfaces stay aligned.
-- [x] Add contract tests or generated fixtures proving Go validation accepts exactly what the React renderer/editor expects.
-  Shared fixture `internal/siteconfig/testdata/block_registry_contract.json` is generated from the Go registry contract, asserted in Go against the live definitions, and imported by new React tests to prove every Go-defined prototype block renders in `SiteDraftRenderer` and opens in `BlockEditor` without falling back to unsupported UI. Verified on May 10, 2026 with `make test`, `npm run web:test`, `npm run web:lint`, and `npm run web:build`.
-- [x] Add registry tests that reject unknown blocks, unknown versions, invalid props, unsafe links, and unsupported settings.
-  `internal/siteconfig` now includes registry-focused tests covering invalid block definitions, duplicate registrations, unknown versions, unsafe CTA URLs, unsupported block props, and invalid anchor settings alongside the existing draft/publish validation suite.
-- [ ] Defer remaining MVP blocks until the prototype loop works.
+- [ ] Make generation-job persistence and generation metadata writes mandatory rather than best-effort.
+  Confirmed gap: generation can currently return success even when job-finalization or metadata persistence fails.
 
-## Phase 3: Theme, Navigation, And Snapshot Contracts
+- [ ] Add theme regeneration as a first-class API and builder action.
+  Confirmed gap: `POST /api/sites/:siteId/theme/regenerate` is specified but not implemented.
 
-- [x] Define `theme.v1` token schema for colors, typography, layout, and shape.
-- [x] Define brand baseline tokens from `BRANDING.md`, including `logo.png`-inspired yarn/spindle colors and required light/dark mode token sets.
-- [x] Add a small set of safe theme presets such as minimal luxury, playful startup, and calm nordic.
-- [x] Implement theme token validation and fallback generation.
-- [x] Implement CSS variable output from theme tokens in React rendering.
-- [x] Define canonical `SiteDraft`, `PageDraft`, `BlockInstance`, `ThemeConfig`, `NavigationConfig`, and `SeoConfig` types.
-  Canonical Go-owned config types now live in `internal/siteconfig/types.go` and are used directly by draft assembly, persistence, generation, theming, and publish validation.
-- [x] Define published `site-config.v1` snapshot schema.
-  Published snapshots now use the explicit `siteconfig.PublishedSnapshot` contract with `SchemaVersion` set to `site-config.v1` and enforced by `ValidatePublishedSnapshot`.
-- [x] Generate or manually maintain frontend TypeScript types from the Go/API schema until automated type generation is added.
-  The frontend currently maintains the shared draft, snapshot, version, theme, and block contract types manually in `apps/web/src/lib/api.ts`.
-- [x] Implement navigation storage as explicit data derived from pages by default.
-- [x] Ensure internal navigation prefers stable `pageId` references and renderer resolution to slugs.
-  Verified on May 11, 2026 by persisting explicit `site.settings.navigation` data from canonical drafts, syncing page-backed navigation items by `pageId` across page create/update/delete/reorder flows, querying Postgres after saving the seeded `Nordic Studio` draft, and then renaming `Contact` to `Reach us`, reloading the builder, publishing, and following the hosted navigation from `http://nordic-studio.localhost:3000/` to `/contact` in Playwright with no console errors.
-- [x] Validate external navigation URLs.
-- [x] Add publish preflight validation for homepage `/`, at least one page, max 10 pages, unique slugs, valid blocks, valid navigation, valid theme tokens, and SEO fallbacks.
-  `siteconfig.ValidateDraft` and `siteconfig.ValidatePublishedSnapshot` now enforce page/homepage/slug/navigation/theme/block rules, while `buildPublishedSnapshot` fills required SEO fallbacks before publish validation runs.
+- [ ] Decide and implement the MVP starter-image policy.
+  Priority decision: either keep uploaded assets plus placeholders/gradients as the only MVP path, or add backend-owned starter-image search with attribution metadata and plan it as core instead of an unowned optional.
 
-## Phase 4: React Builder And Manual Prototype Creation
+- [ ] Make navigation explicitly editable canonical data instead of a mostly page-derived structure.
+  Confirmed gap: ordering and inclusion exist, but internal labels/external items are not treated as full first-class editable navigation records.
 
-- [x] Implement Go site create, update, delete, and list APIs.
-  `internal/sites` now exposes authenticated `POST /api/sites`, `GET /api/sites`, `GET /api/sites/:siteId`, `PATCH /api/sites/:siteId`, and `DELETE /api/sites/:siteId` handlers, backed by deterministic draft creation, slug conflict checks, and tests for handler + mutation flows.
-- [x] Implement Go page create, update, delete, and reorder APIs.
-- [x] Implement Go block create, update, delete, duplicate, hide/show, and reorder APIs.
-  `internal/sites` now exposes authenticated page create/update/delete/reorder routes plus block create/update/delete/duplicate/reorder routes, all backed by canonical draft validation and regression tests across handler + mutator flows.
-- [x] Implement Go theme read and update APIs.
-- [x] Implement a simple authenticated builder shell with site list and site detail.
-  The `/app` workspace route now lists saved sites, creates drafts, and links into a functional site detail screen with metadata, page outline, rename/reslug, and delete actions.
-- [x] Use shadcn/ui primitives for builder controls, forms, dialogs, menus, tabs, loading states, and empty/error states before creating bespoke app components.
-  The current builder pass standardizes on source-owned shadcn-style `Button`, `Input`, `Textarea`, `Select`, and `Checkbox` primitives for site, page, block, theme, auth, and prompt-entry flows, with shared loading, empty, and error surfaces layered on top.
-- [x] Build the React prompt entry page, even if it initially creates a deterministic default site before AI is wired in.
-  The builder home now accepts a site name plus brief, calls `POST /api/sites/generate` when a brief is provided, and still falls back to the deterministic starter draft through `POST /api/sites` when the brief is left empty.
-- [x] Add a page list and block list.
-- [x] Add a simple field editor generated from the block editor schema.
-- [x] Add a React preview route that renders the current draft through the same block renderer used by publish.
-  `/app/sites/:siteId/preview` now fetches the stored draft and renders it through the shared React block renderer.
-- [x] Add a frontend API client layer for typed calls to the Go backend.
-  Typed draft/auth/theme/publish client helpers now live in `apps/web/src/lib/api.ts`, including shared auth-refresh and API error handling.
-- [x] Add loading, empty, and error states for the site list, builder, save actions, preview, and publish action.
-  Route-level loading, save-state, empty-state, and error-state handling now covers login, site list, builder detail, draft preview, published snapshot loading, and publish history interactions.
-- [x] Save every block edit through backend validation rather than trusting client state.
-- [x] Keep the editor state adapter thin and do not store raw editor/Puck state as canonical data.
-  The current builder continues to edit canonical draft/page/block/theme data directly through typed Go API calls and does not persist any raw Puck-style client state as the source of truth.
-- [x] Confirm the prototype works without AI generation by creating a site from deterministic defaults.
-  Verified on May 6, 2026 by logging in locally, creating a draft for `Moss & Thread Atelier`, editing its site metadata, and loading the authenticated preview route in Playwright.
-- [x] Confirm the block editing loop works end to end for the prototype builder.
-  Verified on May 6, 2026 by logging in locally, creating `Ribbon & Reed Workshop`, editing the hero headline and CTA label in the block editor, saving through the Go API, and confirming the updated content rendered on `/app/sites/:siteId/preview` in Playwright.
-- [x] Confirm page management and advanced block operations work end to end for the prototype builder.
-  Verified on May 7, 2026 by logging in locally, creating `Planner Spindle Test`, adding a `Contact` page, editing its slug/SEO/navigation state, reordering pages, adding a `text_section` block, duplicating/reordering/deleting that block, and then deleting the page in Playwright while the corresponding Go API page/block routes returned successful responses with no browser console errors.
-- [x] Confirm theme editing works end to end for preview and published rendering.
-  Verified on May 7, 2026 by logging in locally, creating `Theme Verification Studio`, switching the builder theme to `Playful Ribbon` + `Studio Sans` + `Airy` + `Pillowy` in Playwright, confirming the saved theme swatches and success state in the builder, then checking computed styles on both `/app/sites/:siteId/preview` and `/public/theme-verification-studio` to confirm the updated palette, font stack, and radius-driven layout rendered without browser console errors.
+- [ ] Restrict public form submission to the active published version only.
+  Confirmed gap: the public forms service can currently fall back to draft content when a published block is not found.
 
-## Phase 5: Prompt-To-Draft Generation
+- [ ] Restrict public asset delivery to assets referenced by the active published version or a valid preview token.
+  Confirmed gap: public asset access is broader than the published-site contract and is keyed by site slug rather than the full hosted-public resolution flow.
 
-- [x] Implement `POST /api/sites/generate` in the Go backend.
-- [x] Create a `generation_jobs` row for every prompt.
-- [x] Define structured model output for `siteName`, `siteSlug`, `siteGoal`, `theme`, `pages`, `navigation`, `assetsNeeded`, and `assumptions`.
-- [x] Use the canonical draft schema as the generation output target.
-- [x] Limit generation to the prototype block set until the core loop is stable.
-- [x] Enforce generation guardrails: max 10 pages, known blocks only, supported versions only, safe URLs only, valid theme tokens only, no scripts, no unsupported embed code, no unsanitized HTML.
-- [x] Add deterministic repair for safe issues such as missing optional defaults, excessive page count, duplicate slugs, and missing SEO fallbacks.
-  Generation now passes every plan through a Go-side repair step before persistence: it sanitizes plain-text fields, drops unsupported blocks and unsafe CTA URLs, falls back to a valid theme preset, caps page count at 10, repairs duplicate or invalid slugs, restores homepage and SEO defaults, and inserts safe fallback blocks when a page would otherwise become invalid. Verified on May 10, 2026 with `go test ./internal/generation ./internal/siteconfig` and `make test`.
-- [x] Add model repair or retry only after backend validation fails.
-  Verified on May 11, 2026 by adding a validation-feedback retry loop in `internal/generation` that reruns plan construction only after draft persistence returns backend validation issues, records retry counts in generation summary metadata, preserves validation issues on failed jobs, and passes new retry/exhaustion coverage in `go test ./internal/generation` plus `make test`.
-- [x] Persist valid generated output as normalized draft rows.
-- [x] Store generation prompt, assumptions, provenance metadata, validation outcome, and summary.
-- [x] Return the created site draft and send the user to the builder preview.
-  Verified on May 6, 2026 by generating a photography-site draft through the authenticated builder in Playwright, confirming a completed `generation_jobs` record plus stored site metadata in the Go-backed flow, and loading the generated draft preview without current-page console errors.
+- [ ] Add durable spam handling for public forms.
+  Confirmed gap: public form rate limiting is process-local and `spam_score` is unused; basic scoring/filtering is still missing.
 
-## Phase 6: Publish, Public Serving, And Rollback
+- [ ] Add audit events for site create, generation, re-prompt, asset upload, and destructive edits.
+  Confirmed gap: publish and rollback are audited, but the broader authoring lifecycle is not yet fully covered.
 
-- [x] Implement snapshot assembly from the current canonical draft in Go.
-- [x] Validate the full snapshot before publish.
-- [x] Create a new immutable `site_versions` row with an incremented version number.
-- [x] Decide the first artifact generation path: React SSR/render command invoked by Go, React public route rendering from snapshot, or Go serving prebuilt React-generated artifacts.
-  Updated on May 11, 2026: publish-time artifact generation now runs through a Go-invoked React render command in `apps/web`, producing immutable per-page HTML fragments plus crawl assets and `theme.css` into a local artifact adapter under `PUBLISHED_ARTIFACTS_DIR`. Public requests still resolve immutable published snapshots in the TanStack Start layer until the later cache/artifact-serving step lands.
-- [x] Generate page HTML artifacts from the snapshot using the maintained React block renderer.
-- [x] Generate `sitemap.xml`, `robots.txt`, canonical metadata, and basic social metadata.
-  Verified on May 11, 2026 by publishing the seeded `Nordic Studio` site locally, loading both `http://localhost:3000/public/nordic-studio/contact` and `http://nordic-studio.localhost:3000/contact` in Playwright, confirming SSR-driven title/description/canonical/Open Graph metadata on the published page, and then loading both hosted and path-based `sitemap.xml` plus hosted `robots.txt` routes with no browser console errors.
-- [x] Store artifacts in object storage or a local artifact adapter for the first prototype.
-  Verified on May 11, 2026 by running `make test`, `npm run web:test`, `npm run web:lint`, `npm run web:build`, and a direct `npm --workspace @snaelda/web run render:artifacts` invocation, confirming the publish service now renders snapshot-backed page HTML via the shared React block renderer, writes versioned files through the new local filesystem adapter, and only updates `sites.published_version_id` after artifact storage succeeds.
-- [x] Update `sites.published_version_id` only after snapshot and artifact creation succeeds.
-- [x] Create or update the default subdomain record `{site-slug}.platform.com` or local equivalent.
-- [x] Implement public hostname and path resolution through `site_domains` in the Go backend or public-serving layer.
-  Local-equivalent published path resolution was first verified on May 7, 2026: after publishing `Public Path Verification Studio` in Playwright, both `/public/public-path-verification-studio` and `/public/public-path-verification-studio/contact` loaded the expected snapshot-backed pages and the in-site navigation moved between them without browser console errors.
-  Hostname-based lookup through `site_domains` was verified on May 10, 2026 by publishing the seeded `Nordic Studio` site, loading `http://nordic-studio.localhost:3000/` and `http://nordic-studio.localhost:3000/contact` in Playwright, confirming the hosted route resolved from the assigned domain, checking that the public shell rendered without the builder chrome, and confirming there were no current-page console errors while in-site navigation stayed on root-relative hosted paths.
-- [x] Serve public pages from published artifacts or published snapshots, never from draft rows.
-- [x] Add cache keys for domain lookup, published snapshots, and page artifacts.
-  Verified on May 11, 2026 by adding an in-memory published-site cache in `internal/publishing` keyed separately for hostname lookup, `site_id:version_id` snapshots, and `site_id:version_id:path` page resolution, with tests proving cache warmup and repeat hosted requests in `go test ./internal/publishing` and `make test`.
-- [x] Invalidate public cache on publish and rollback.
-  Verified on May 11, 2026 by wiring site-scoped cache invalidation into successful publish and rollback commits in `internal/publishing`, then covering both flows with cache-eviction tests in `go test ./internal/publishing` and `make test`.
-- [x] Implement version list and rollback by setting `sites.published_version_id` to an existing version.
-- [x] Write audit events for publish and rollback.
-  Verified on May 7, 2026 by logging in locally, creating `Rollback Verification Loom`, publishing version 1 from the builder in Playwright, editing and publishing version 2, rolling the live site back to version 1 from the new publish history UI, confirming the builder marked `v1` current again, and reloading `/public/rollback-verification-loom` to confirm it served the original published snapshot while the draft still retained the newer editable headline.
+- [ ] Add non-blocking published-page view counting, aggregate writes into `page_view_daily`, and expose the first analytics APIs.
+  Confirmed gap: the schema is present, but counting and analytics read endpoints are not implemented.
 
-## Phase 7: Builder Fleshing After The Prototype Works
+- [ ] Add the first builder analytics views for total views, views by page, and daily trend windows.
+  Scope is now defined in [specs/16-runtime-lifecycles-and-analytics.md](./specs/16-runtime-lifecycles-and-analytics.md).
 
-- [x] Add the remaining non-form MVP blocks: `gallery`, `testimonials`, `pricing_packages`, `faq`, `team_profile_cards`, and `footer`.
-  Verified on May 11, 2026 by extending the Go-owned block registry, validation, generation repair, and React preview/publish renderer; running `go test ./...`, `npm run web:test`, `npm run web:lint`, and `npm run web:build`; then logging into the seeded local builder in Playwright, adding a `gallery` block to `Nordic Studio`, opening draft preview, confirming the new section rendered, and checking that the page had no console errors.
-- [x] Extend prompt generation and repair so the implemented non-form MVP blocks can appear in generated drafts when prompts ask for gallery-heavy layouts, pricing, testimonials, FAQs, team bios, and footer structure.
-  Verified on May 14, 2026 by generating `Playwright Generation Proof` locally through the builder, confirming the resulting draft exposed the stored site prompt plus generation summary metadata in the new site-settings brief panel, and checking that the generated canvas included testimonial, pricing, CTA, and footer blocks without current-page console errors.
-- [x] Add the `contact_form` block once the public submissions flow is ready to store or forward real inquiries.
-  Verified on May 12, 2026 by extending the Go-owned block registry plus React renderer/editor contract with `contact_form`, then creating `Contact Form Verification Studio` in Playwright, adding the block in the builder, and successfully submitting the rendered preview form through the new public forms API.
-- [ ] Add optional early blocks only if user testing shows demand: logo cloud, map/location, stats/KPIs, article teaser, or allowlisted embeds.
-- [x] Add richer page management: rename, slug edit, SEO edit, include/exclude from navigation, navigation reorder, and deletion safeguards.
-  Verified on May 11, 2026 by adding explicit primary-navigation reordering to the Go draft API plus builder UI, then logging in locally in Playwright, creating `Builder Navigation Theme Verification`, adding a `Contact` page, moving that page ahead of `Home` in the new navigation panel, and confirming the draft preview rendered the navigation in `Contact` then `Home` order without console errors while page order remained separate.
-- [x] Add theme controls for palette, font preset, button style, radius, section spacing, and image style.
-  Verified on May 11, 2026 by extending the safe theme contract with button and image style selections, saving `Ink Solid` + `Paper Cut` from the builder in Playwright, and confirming the preview route exposed the expected theme CSS variables (`--site-button-background: #f3ead8`, `--site-image-border: #ff8a9d`) with no console errors.
-- [x] Add Puck or another compact CMS-style editing layer as an MVP requirement for faster visual authoring inside the React builder.
-  Verified on May 14, 2026 by upgrading the renderer-backed builder canvas to use explicit rendered drop zones, reopening `Playwright Generation Proof` in Playwright, confirming the canvas no longer showed the old `Live builder canvas` eyebrow, and reordering the footer block to the top of the live-rendered page with the persisted `Blocks reordered.` confirmation and no browser console errors.
-- [x] Build adapters from canonical draft data to editor state and back.
-- [x] Add site-level re-prompt.
-- [x] Add page-level re-prompt.
-- [x] Capture an undoable draft revision before destructive site-level or page-level re-prompt replacement.
-- [x] Make re-prompt behavior explicit in the UI as a replacement action, not a vague merge.
-  Verified on May 13, 2026 by replacing the summary-card canvas with a renderer-backed editor canvas that wraps the maintained `SiteDraftRenderer`, adding canonical builder adapters plus hidden-block handling, wiring draft revision capture and restore through the Go generation service plus `draft_revisions`, extending generation/repair so contact forms and footers survive prompt output, and then validating the live builder in Playwright on `http://localhost:3000` by opening `Loom & Light Studio`, reordering rendered blocks through drag/drop, running a page re-prompt that added pricing content, and undoing that replacement with no current-page console errors.
-- [ ] Defer block-level prompting until site-level and page-level prompting are stable.
+- [ ] Reconcile the implemented API surface with the spec and remove placeholder module drift.
+  Confirmed gap: `workspaces`, `pages`, `blocks`, and `billing` are still mounted as placeholder modules even though some page/block behavior is implemented through `sites`; either the API/resource boundaries need to be implemented as separate modules or the specs need to be narrowed to the consolidated shape.
 
-## Phase 8: Assets And Starter Images
+- [ ] Add a real `workspaces` module or explicitly reduce workspace scope in the product/API spec.
+  Confirmed gap: users get a default workspace, but there is no non-placeholder workspace API surface.
 
-- [x] Use SeaweedFS S3 API as the default local object storage target.
-- [x] Keep the storage interface S3-compatible so production can use AWS S3, Cloudflare R2, MinIO, or another compatible backend without changing asset code.
-- [x] Implement signed upload URL creation.
-- [x] Implement upload completion and asset metadata persistence.
-- [x] Add asset picker support in block editors.
-  Verified on May 12, 2026 by wiring the site-detail builder to the existing upload flow, adding a site asset library plus asset-picker controls for asset-enabled block fields, and then using Playwright to upload `logo.png`, select it in the hero block for `Asset Picker Verification`, save the block, and confirm the selected image preview rendered from the authenticated asset-content route.
-- [x] Store asset ownership, storage key, public or signed URL behavior, alt text, dimensions, file type, file size, and upload metadata.
-  Verified on May 12, 2026 by extending completed asset metadata with stored image dimensions from the browser upload flow while preserving workspace/site ownership, storage keys, signed-download behavior, alt text, content type, byte size, upload status, ETag, and upload timestamps in the Go-backed `assets` service and tests.
-- [x] Validate that referenced assets belong to the same workspace or site before saving block props.
-  Verified on May 12, 2026 by replacing the placeholder `assets` module with authenticated Go handlers for `POST /api/assets/upload-url`, `POST /api/assets/complete`, `GET /api/sites/:siteId/assets`, `PATCH /api/assets/:assetId`, and `DELETE /api/assets/:assetId`; backing them with an S3-compatible storage adapter configured for local SeaweedFS; adding draft-persistence checks that reject cross-site or cross-workspace `assetId` references; and then running `make test`, `npm run web:test`, `npm run web:lint`, `npm run web:build`, plus a live `curl` flow against a local API on `:18080` that logged in, created an upload URL, uploaded a PNG through SeaweedFS, completed the asset, updated alt text, listed the site assets, and deleted the uploaded asset successfully.
-- [x] Resolve `assetId` references to optimized URLs during preview and publish.
-  Verified on May 12, 2026 by adding stable authenticated and public asset-content routes in the Go API, updating the shared React renderer to resolve block `assetId` references through those routes for draft preview, publish-time artifact rendering, and live public pages, and then confirming in Playwright that `Asset Picker Verification` rendered the uploaded hero image on both `/app/sites/:siteId/preview` and `/public/asset-picker-verification`.
-- [ ] Add safe placeholders, gradients, or stock defaults for missing imagery.
-- [ ] Optionally add backend-owned Unsplash search through a constrained `search_unsplash_images(query, orientation, count)` tool.
-- [ ] Store source and attribution metadata for starter images.
-- [ ] Keep AI image generation out of the MVP unless it becomes a hard product requirement.
+- [ ] Decide whether `pages` and `blocks` should remain consolidated under `sites` or become first-class modules, then align the code and specs.
+  Confirmed gap: route shapes differ materially from the current API spec.
 
-## Phase 9: Forms, Submissions, And Notifications
+- [ ] Harden rich-text and embed safety on every remaining content surface.
+  Confirmed gap: link validation exists, but the remaining sanitization/allowlist posture still needs explicit implementation verification for all editable text and future embed fields.
 
-- [x] Implement the `contact_form` block with allowlisted MVP fields: name, email, optional phone, message, and optional select.
-- [x] Validate public form payloads against the stored block definition.
-- [x] Rate-limit public form submissions.
-- [x] Store submissions in `form_submissions`.
-- [ ] Add spam scoring or basic spam filtering.
-- [x] Add submission list and status update APIs.
-- [x] Decide whether MVP sends email notifications, stores submissions only, or does both.
-  MVP decision on May 12, 2026: store submissions in-app only for now. The builder now lists stored inquiries and lets owners/editors update status without sending email yet.
-- [ ] Add email forwarding if selected for MVP.
-- [x] Ensure public form responses do not leak site internals.
-  Verified on May 12, 2026 with `make test`, `npm run web:test`, `npm run web:lint`, `npm run web:build`, and a live Playwright flow that created `Contact Form Verification Studio`, added a `contact_form` block, submitted `Ada Lovelace` from draft preview, reloaded the builder to confirm the stored inquiry appeared under the new submissions panel, and changed its status to `reviewed` with no browser console errors.
+- [ ] Add production-style end-to-end coverage for create, generate, edit, preview, publish, public render, rollback, assets, preview-token sharing, and contact submissions.
+  Confirmed gap: there are strong unit/integration tests and manual Playwright verification notes, but not a consolidated automated end-to-end suite covering the main product loop.
 
-## Phase 10: Security, Caching, And Observability
+- [ ] Add regression coverage for invalid generation output, invalid publish artifacts, draft-only public form access, draft-only public asset access, broken navigation, missing homepage, duplicate slugs, and page-limit edges.
 
-- [ ] Verify JWT auth middleware protects every authenticated API route.
-- [ ] Keep authorization separate from authentication: a valid JWT proves identity, while workspace membership checks prove access.
-- [ ] Store refresh tokens or session identifiers securely if refresh-token rotation is implemented.
-- [x] Add CSRF protection because browser auth uses cookies.
-  Verified on May 14, 2026 by adding a double-submit CSRF cookie/header flow for private mutating API requests, rotating the CSRF token on login and refresh, enforcing origin checks for private writes, and then confirming with `go test ./internal/api ./internal/auth`, a live Playwright login/logout flow on `http://localhost:3001`, and direct `curl` checks that `POST /api/auth/logout` returns `403` without `X-CSRF-Token` and `200` with the matching token.
-- [ ] Ensure every authenticated write route verifies authentication, workspace membership, and resource ownership.
-- [ ] Sanitize rich text input.
-- [ ] Validate all URLs and reject unsafe protocols.
-- [ ] Restrict embeds to allowlisted providers if embeds are added.
-- [x] Add preview tokens that are random, site-scoped, expiring, and revocable.
-  Verified on May 14, 2026 by adding hashed `site_preview_tokens` persistence plus authenticated issue/revoke APIs and a public token-backed draft preview route, then running `make test`, `npm run web:lint`, `npm run web:build`, and a live Playwright flow on `http://localhost:3001` that created a share link from `Planner Spindle Test`, opened the unauthenticated `/preview/:token` page successfully, and confirmed a revoked token returned the expected invalid-or-expired state.
-- [x] Add request logging for generation, publish, form submission, and public rendering failures.
-  Verified on May 14, 2026 by upgrading the API request logger to record response status and emit failure-category logs for generation, publishing, public form submissions, and public rendering routes, and covering the behavior with `go test ./internal/api`.
-- [ ] Add public artifact cache invalidation on publish, rollback, and domain changes.
-- [x] Avoid public caching for authenticated editor responses.
-  Verified on May 14, 2026 by adding `Cache-Control: no-store, private` plus `Pragma: no-cache` and `Expires: 0` on non-public `/api` responses, then confirming the middleware in `go test ./internal/api` and with a live `curl` login flow against the local API.
-- [ ] Add non-blocking server-side page view counting.
-- [ ] Store aggregated daily page views in `page_view_daily`.
-- [ ] Add basic bot filtering or rate limiting where practical.
-- [ ] Add audit events for site create, generation, re-prompt, publish, rollback, asset upload, and destructive edits.
+- [ ] Run a production-like smoke test against a real model-backed generation flow and a real hosted subdomain shape.
+  This should happen only after the artifact-serving and hosted-domain work above is complete.
 
-## Phase 11: Deployment And Hosting
+- [ ] Finalize production deployment topology and configuration.
+  Remaining work includes the public base domain contract, wildcard subdomains, object storage for published artifacts, environment configuration, and the choice of public-site runtime.
 
-- [ ] Deploy one React builder app for authenticated editing.
-- [ ] Deploy one Go backend API service.
-- [ ] Deploy one lightweight public site service, either Go serving artifacts or React rendering published snapshots.
-- [ ] Provision one Postgres database.
-- [ ] Provision object storage buckets for uploads and published artifacts, using SeaweedFS S3 locally and an S3-compatible production provider later.
-- [ ] Configure `app.platform.com` or the chosen builder domain.
-- [ ] Configure wildcard hosted subdomains for `{site-slug}.platform.com`.
-- [ ] Ensure public serving can resolve hostname, find `site_domains`, load `published_version_id`, load the artifact for the path, and return the response.
-- [ ] Add environment configuration for model API keys, object storage, app URL, public site base domain, email provider if needed, and Stripe billing keys when billing is enabled.
-- [ ] Keep Redis, workers, custom domains, and advanced CDN behavior optional until the simpler deployment is proven.
+- [ ] Implement Stripe billing once the product loop above is stable.
+  Remaining work includes billing tables, config, Checkout, Customer Portal, webhooks, local entitlements, builder billing UI, blocked-action states, and enforcement before generation/publish/custom domains/assets.
 
-## Phase 12: MVP Completion
+## Lower-Priority Product Follow-Ups
 
-- [x] Ship the Puck/CMS-style visual editing layer in the MVP builder while keeping canonical site data in the maintained draft schema.
-  Verified on May 13, 2026 by running `npm run web:test`, `npm run web:lint`, `npm run web:build`, and `make test`, then opening the live builder in Playwright at `http://localhost:3000/app/sites/:siteId`, confirming the renderer-backed canvas showed the page with production preview styling, and reordering visible blocks through drag and drop without current-page console errors.
-- [x] Expand generation to every required MVP block, including `contact_form` once the submissions path exists.
-  Verified on May 13, 2026 by generating `Phase Seven Prompt Proof` from a prompt that explicitly asked for pricing, testimonials, team bios, a gallery, FAQ, and contact flow, then confirming in Playwright that the generated draft surfaced `team_profile_cards`, `testimonials`, `pricing_packages`, `footer`, and a contact page with `faq`, `contact_form`, `cta_band`, and `footer` blocks.
-- [ ] Support up to 10 pages per site in generation, editing, validation, and publishing.
-- [ ] Add asset upload and image library UI.
-- [ ] Add basic SEO editing and publish-generated SEO artifacts.
-- [ ] Add contact form submissions and the chosen notification behavior.
-- [x] Add version list and user-visible rollback.
-- [ ] Add lightweight analytics views for total views, page views, and daily views.
-- [ ] Add enough empty, loading, and error states to make the builder usable.
-- [ ] Add end-to-end tests for create, generate, edit, preview, publish, public render, submit form, and rollback.
-- [ ] Add regression tests for invalid generation output, invalid block props, broken navigation, missing homepage, duplicate slugs, and exceeding 10 pages.
-- [ ] Run a production-like smoke test using a real prompt and a real published subdomain.
-
-## Phase 13: Stripe Billing
-
-- [ ] Decide the first billing posture: free beta, paid subscriptions, metered usage, or manual invoicing.
-- [ ] Define Stripe products, prices, and local plan entitlements for site count, published sites, custom domains, generation allowance, asset storage, and future seats.
-- [ ] Create a `billing` backend module using Stripe for workspace subscriptions and payment collection.
-- [ ] Add `billing_customers`, `billing_subscriptions`, `billing_entitlements`, and `billing_events` persistence.
-- [ ] Create Checkout session APIs for starting or changing a workspace subscription.
-- [ ] Create Customer Portal session APIs for payment method, invoice, and cancellation management.
-- [ ] Implement Stripe webhook signature verification and idempotent event processing.
-- [ ] Map Stripe customer, subscription, product, price, and invoice/payment states to local workspace billing state.
-- [ ] Enforce billing entitlements server-side before generation, publishing, custom domain setup, asset upload, and future team expansion.
-- [ ] Add builder billing settings UI for current plan, usage, checkout, and customer portal access.
-- [ ] Add blocked-action states for entitlement limits and unpaid or canceled subscriptions.
-- [ ] Add Stripe test-mode or Stripe CLI smoke tests plus unit tests for webhook processing and entitlement enforcement.
+- [ ] Add optional early blocks only if user testing shows real demand: logo cloud, map/location, stats/KPIs, article teaser, or allowlisted embeds.
+- [ ] Add safe placeholders or gradients for missing imagery if uploaded/starter assets are not present.
+- [ ] Add site-level SEO editing and richer metadata workflows if page-level SEO plus publish-generated metadata stop being enough.
+- [ ] Add basic asset-management controls for edit/delete in the builder now that upload/list/pick already exist.
+- [ ] Preserve hidden-block positions when users hide/show and reorder blocks.
+- [ ] Consider block-level prompting only after site-level and page-level prompting are stable in real usage.
 
 ## Explicit Deferrals
 
@@ -321,5 +105,4 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [ ] Do not build multi-language sites.
 - [ ] Do not build advanced teams, roles, or client collaboration until the single-workspace MVP works.
 - [ ] Do not build per-customer frontend deployments.
-- [ ] Do not build custom domain verification before hosted subdomains work reliably.
 - [ ] Do not add raw analytics event storage unless aggregated daily counts are insufficient.

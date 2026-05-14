@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -57,12 +58,26 @@ type RollbackResult struct {
 }
 
 type PublishedSiteResult struct {
-	SiteSlug string                       `json:"siteSlug"`
-	Hostname string                       `json:"hostname,omitempty"`
-	Version  VersionSummary               `json:"version"`
-	PagePath string                       `json:"pagePath"`
-	Page     siteconfig.PageDraft         `json:"page"`
-	Snapshot siteconfig.PublishedSnapshot `json:"snapshot"`
+	SiteSlug string                `json:"siteSlug"`
+	Hostname string                `json:"hostname,omitempty"`
+	Version  VersionSummary        `json:"version"`
+	PagePath string                `json:"pagePath"`
+	Page     PublishedPageArtifact `json:"page"`
+}
+
+type PublishedPageArtifact struct {
+	PagePath     string `json:"pagePath"`
+	Title        string `json:"title"`
+	Description  string `json:"description"`
+	CanonicalURL string `json:"canonicalUrl"`
+	HTML         string `json:"html"`
+}
+
+type PublishedArtifactResult struct {
+	SiteSlug string         `json:"siteSlug"`
+	Hostname string         `json:"hostname,omitempty"`
+	Version  VersionSummary `json:"version"`
+	File     ArtifactFile   `json:"file"`
 }
 
 type ServiceConfig struct {
@@ -180,6 +195,9 @@ func (s *Service) Publish(ctx context.Context, siteID string, userID string, inp
 		Snapshot: snapshot,
 	})
 	if err != nil {
+		return PublishResult{}, err
+	}
+	if err := validateArtifactBundle(artifacts, snapshot, metadata.SiteSlug, hostname, version); err != nil {
 		return PublishResult{}, err
 	}
 	if err := s.store.Save(ctx, siteID, version.ID, artifacts); err != nil {
@@ -351,7 +369,7 @@ func (s *Service) ListVersions(ctx context.Context, siteID string) ([]VersionSum
 }
 
 func (s *Service) LoadPublishedSiteBySlug(ctx context.Context, siteSlug string, pagePath string) (PublishedSiteResult, error) {
-	lookup, snapshot, err := s.loadPublishedSiteLookup(ctx, `
+	lookup, err := s.loadPublishedSiteLookup(ctx, `
 		select s.slug,
 		       coalesce((
 		         select hostname
@@ -365,8 +383,7 @@ func (s *Service) LoadPublishedSiteBySlug(ctx context.Context, siteSlug string, 
 		       sv.site_id::text,
 		       sv.version_number,
 		       sv.created_at,
-		       coalesce(sv.publish_note, ''),
-		       sv.snapshot
+		       coalesce(sv.publish_note, '')
 		from sites s
 		join site_versions sv on sv.id = s.published_version_id
 		where s.slug = $1
@@ -376,25 +393,24 @@ func (s *Service) LoadPublishedSiteBySlug(ctx context.Context, siteSlug string, 
 	if err != nil {
 		return PublishedSiteResult{}, err
 	}
-	s.storePublishedLookupCaches(lookup, snapshot)
-	return s.resolvePublishedSiteResult(ctx, lookup, &snapshot, pagePath)
+	s.storePublishedLookupCaches(lookup)
+	return s.resolvePublishedSiteResult(ctx, lookup, pagePath)
 }
 
 func (s *Service) LoadPublishedSiteByHostname(ctx context.Context, hostname string, pagePath string) (PublishedSiteResult, error) {
 	normalizedHostname := normalizeHostname(hostname)
 	if lookup, ok := s.loadCachedDomainLookup(normalizedHostname); ok {
-		return s.resolvePublishedSiteResult(ctx, lookup, nil, pagePath)
+		return s.resolvePublishedSiteResult(ctx, lookup, pagePath)
 	}
 
-	lookup, snapshot, err := s.loadPublishedSiteLookup(ctx, `
+	lookup, err := s.loadPublishedSiteLookup(ctx, `
 		select s.slug,
 		       d.hostname,
 		       sv.id::text,
 		       sv.site_id::text,
 		       sv.version_number,
 		       sv.created_at,
-		       coalesce(sv.publish_note, ''),
-		       sv.snapshot
+		       coalesce(sv.publish_note, '')
 		from site_domains d
 		join sites s on s.id = d.site_id
 		join site_versions sv on sv.id = s.published_version_id
@@ -406,13 +422,70 @@ func (s *Service) LoadPublishedSiteByHostname(ctx context.Context, hostname stri
 	if err != nil {
 		return PublishedSiteResult{}, err
 	}
-	s.storePublishedLookupCaches(lookup, snapshot)
-	return s.resolvePublishedSiteResult(ctx, lookup, &snapshot, pagePath)
+	s.storePublishedLookupCaches(lookup)
+	return s.resolvePublishedSiteResult(ctx, lookup, pagePath)
 }
 
-func (s *Service) loadPublishedSiteLookup(ctx context.Context, query string, lookup string) (publishedSiteLookup, siteconfig.PublishedSnapshot, error) {
+func (s *Service) LoadPublishedArtifactBySlug(ctx context.Context, siteSlug string, artifactPath string) (PublishedArtifactResult, error) {
+	lookup, err := s.loadPublishedSiteLookup(ctx, `
+		select s.slug,
+		       coalesce((
+		         select hostname
+		         from site_domains
+		         where site_id = s.id
+		           and type = 'subdomain'
+		         order by created_at asc
+		         limit 1
+		       ), ''),
+		       sv.id::text,
+		       sv.site_id::text,
+		       sv.version_number,
+		       sv.created_at,
+		       coalesce(sv.publish_note, '')
+		from sites s
+		join site_versions sv on sv.id = s.published_version_id
+		where s.slug = $1
+		order by s.updated_at desc
+		limit 1
+	`, strings.TrimSpace(siteSlug))
+	if err != nil {
+		return PublishedArtifactResult{}, err
+	}
+	s.storePublishedLookupCaches(lookup)
+	return s.loadPublishedArtifact(ctx, lookup, artifactPath)
+}
+
+func (s *Service) LoadPublishedArtifactByHostname(ctx context.Context, hostname string, artifactPath string) (PublishedArtifactResult, error) {
+	normalizedHostname := normalizeHostname(hostname)
+	if lookup, ok := s.loadCachedDomainLookup(normalizedHostname); ok {
+		return s.loadPublishedArtifact(ctx, lookup, artifactPath)
+	}
+
+	lookup, err := s.loadPublishedSiteLookup(ctx, `
+		select s.slug,
+		       d.hostname,
+		       sv.id::text,
+		       sv.site_id::text,
+		       sv.version_number,
+		       sv.created_at,
+		       coalesce(sv.publish_note, '')
+		from site_domains d
+		join sites s on s.id = d.site_id
+		join site_versions sv on sv.id = s.published_version_id
+		where lower(d.hostname) = lower($1)
+		  and d.status = 'active'
+		order by d.updated_at desc, d.created_at desc
+		limit 1
+	`, normalizedHostname)
+	if err != nil {
+		return PublishedArtifactResult{}, err
+	}
+	s.storePublishedLookupCaches(lookup)
+	return s.loadPublishedArtifact(ctx, lookup, artifactPath)
+}
+
+func (s *Service) loadPublishedSiteLookup(ctx context.Context, query string, lookup string) (publishedSiteLookup, error) {
 	var result publishedSiteLookup
-	var snapshotJSON []byte
 	err := s.db.QueryRow(ctx, query, lookup).Scan(
 		&result.SiteSlug,
 		&result.Hostname,
@@ -421,34 +494,23 @@ func (s *Service) loadPublishedSiteLookup(ctx context.Context, query string, loo
 		&result.Version.VersionNumber,
 		&result.Version.CreatedAt,
 		&result.Version.PublishNote,
-		&snapshotJSON,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return publishedSiteLookup{}, siteconfig.PublishedSnapshot{}, ErrNotFound
+		return publishedSiteLookup{}, ErrNotFound
 	}
 	if err != nil {
-		return publishedSiteLookup{}, siteconfig.PublishedSnapshot{}, fmt.Errorf("load published site: %w", err)
+		return publishedSiteLookup{}, fmt.Errorf("load published site: %w", err)
 	}
 
 	result.Version.IsCurrent = true
-	snapshot, err := decodePublishedSnapshot(snapshotJSON)
-	if err != nil {
-		return publishedSiteLookup{}, siteconfig.PublishedSnapshot{}, err
-	}
-	return result, snapshot, nil
+	return result, nil
 }
 
-func (s *Service) resolvePublishedSiteResult(ctx context.Context, lookup publishedSiteLookup, initialSnapshot *siteconfig.PublishedSnapshot, pagePath string) (PublishedSiteResult, error) {
-	snapshot, err := s.loadPublishedSnapshot(ctx, lookup, initialSnapshot)
-	if err != nil {
-		return PublishedSiteResult{}, err
-	}
-
+func (s *Service) resolvePublishedSiteResult(ctx context.Context, lookup publishedSiteLookup, pagePath string) (PublishedSiteResult, error) {
 	result := PublishedSiteResult{
 		SiteSlug: lookup.SiteSlug,
 		Hostname: lookup.Hostname,
 		Version:  lookup.Version,
-		Snapshot: snapshot,
 	}
 
 	normalizedPath := normalizePublishedPagePath(pagePath)
@@ -458,7 +520,7 @@ func (s *Service) resolvePublishedSiteResult(ctx context.Context, lookup publish
 		return result, nil
 	}
 
-	page, err := resolvePublishedPage(snapshot, normalizedPath)
+	page, err := s.loadPublishedArtifactPage(ctx, lookup, normalizedPath)
 	if err != nil {
 		return PublishedSiteResult{}, err
 	}
@@ -468,46 +530,6 @@ func (s *Service) resolvePublishedSiteResult(ctx context.Context, lookup publish
 	return result, nil
 }
 
-func (s *Service) loadPublishedSnapshot(ctx context.Context, lookup publishedSiteLookup, initialSnapshot *siteconfig.PublishedSnapshot) (siteconfig.PublishedSnapshot, error) {
-	if snapshot, ok := s.loadCachedSnapshot(lookup.Version.SiteID, lookup.Version.ID); ok {
-		return snapshot, nil
-	}
-	if initialSnapshot != nil {
-		s.storeCachedSnapshot(lookup.Version.SiteID, lookup.Version.ID, *initialSnapshot)
-		return *initialSnapshot, nil
-	}
-
-	var snapshotJSON []byte
-	if err := s.db.QueryRow(ctx, `
-		select snapshot
-		from site_versions
-		where site_id = $1::uuid
-		  and id = $2::uuid
-	`, lookup.Version.SiteID, lookup.Version.ID).Scan(&snapshotJSON); errors.Is(err, pgx.ErrNoRows) {
-		return siteconfig.PublishedSnapshot{}, ErrNotFound
-	} else if err != nil {
-		return siteconfig.PublishedSnapshot{}, fmt.Errorf("load published snapshot: %w", err)
-	}
-
-	snapshot, err := decodePublishedSnapshot(snapshotJSON)
-	if err != nil {
-		return siteconfig.PublishedSnapshot{}, err
-	}
-	s.storeCachedSnapshot(lookup.Version.SiteID, lookup.Version.ID, snapshot)
-	return snapshot, nil
-}
-
-func decodePublishedSnapshot(snapshotJSON []byte) (siteconfig.PublishedSnapshot, error) {
-	var snapshot siteconfig.PublishedSnapshot
-	if err := json.Unmarshal(snapshotJSON, &snapshot); err != nil {
-		return siteconfig.PublishedSnapshot{}, fmt.Errorf("decode published snapshot: %w", err)
-	}
-	if err := siteconfig.ValidatePublishedSnapshot(snapshot); err != nil {
-		return siteconfig.PublishedSnapshot{}, fmt.Errorf("published snapshot is invalid: %w", err)
-	}
-	return snapshot, nil
-}
-
 func (s *Service) loadCachedDomainLookup(hostname string) (publishedSiteLookup, bool) {
 	if s.cache == nil {
 		return publishedSiteLookup{}, false
@@ -515,25 +537,17 @@ func (s *Service) loadCachedDomainLookup(hostname string) (publishedSiteLookup, 
 	return s.cache.LoadDomain(hostname)
 }
 
-func (s *Service) loadCachedSnapshot(siteID string, versionID string) (siteconfig.PublishedSnapshot, bool) {
+func (s *Service) loadCachedPage(siteID string, versionID string, pagePath string) (PublishedPageArtifact, bool) {
 	if s.cache == nil {
-		return siteconfig.PublishedSnapshot{}, false
-	}
-	return s.cache.LoadSnapshot(siteID, versionID)
-}
-
-func (s *Service) loadCachedPage(siteID string, versionID string, pagePath string) (siteconfig.PageDraft, bool) {
-	if s.cache == nil {
-		return siteconfig.PageDraft{}, false
+		return PublishedPageArtifact{}, false
 	}
 	return s.cache.LoadPage(siteID, versionID, pagePath)
 }
 
-func (s *Service) storePublishedLookupCaches(lookup publishedSiteLookup, snapshot siteconfig.PublishedSnapshot) {
+func (s *Service) storePublishedLookupCaches(lookup publishedSiteLookup) {
 	if lookup.Hostname != "" {
 		s.storeCachedDomainLookup(lookup.Hostname, lookup)
 	}
-	s.storeCachedSnapshot(lookup.Version.SiteID, lookup.Version.ID, snapshot)
 }
 
 func (s *Service) storeCachedDomainLookup(hostname string, lookup publishedSiteLookup) {
@@ -543,14 +557,7 @@ func (s *Service) storeCachedDomainLookup(hostname string, lookup publishedSiteL
 	s.cache.StoreDomain(hostname, lookup)
 }
 
-func (s *Service) storeCachedSnapshot(siteID string, versionID string, snapshot siteconfig.PublishedSnapshot) {
-	if s.cache == nil {
-		return
-	}
-	s.cache.StoreSnapshot(siteID, versionID, snapshot)
-}
-
-func (s *Service) storeCachedPage(siteID string, versionID string, pagePath string, page siteconfig.PageDraft) {
+func (s *Service) storeCachedPage(siteID string, versionID string, pagePath string, page PublishedPageArtifact) {
 	if s.cache == nil {
 		return
 	}
@@ -562,6 +569,186 @@ func (s *Service) invalidatePublishedSiteCache(siteID string) {
 		return
 	}
 	s.cache.InvalidateSite(siteID)
+}
+
+func validateArtifactBundle(bundle ArtifactBundle, snapshot siteconfig.PublishedSnapshot, siteSlug string, hostname string, version VersionSummary) error {
+	if strings.TrimSpace(bundle.SchemaVersion) != "published_artifacts.v1" {
+		return siteconfig.ValidationError{Issues: []siteconfig.Issue{{
+			Path:    "publish.artifacts.schemaVersion",
+			Code:    "invalid_artifact_bundle",
+			Message: "publish artifact bundle must use schema version published_artifacts.v1",
+		}}}
+	}
+
+	filesByPath := make(map[string]ArtifactFile, len(bundle.Files))
+	for _, file := range bundle.Files {
+		cleanPath := filepath.ToSlash(strings.TrimSpace(file.Path))
+		if cleanPath == "" {
+			return siteconfig.ValidationError{Issues: []siteconfig.Issue{{
+				Path:    "publish.artifacts.files",
+				Code:    "missing_artifact_path",
+				Message: "publish artifact bundle includes a file with no path",
+			}}}
+		}
+		filesByPath[cleanPath] = file
+	}
+
+	requiredPaths := []string{"manifest.json", "robots.txt", "sitemap.xml", "assets/theme.css"}
+	issues := []siteconfig.Issue{}
+	for _, requiredPath := range requiredPaths {
+		if _, ok := filesByPath[requiredPath]; !ok {
+			issues = append(issues, siteconfig.Issue{
+				Path:    "publish.artifacts." + requiredPath,
+				Code:    "missing_artifact",
+				Message: "required publish artifact is missing",
+			})
+		}
+	}
+
+	manifestFile, ok := filesByPath["manifest.json"]
+	if !ok {
+		return siteconfig.ValidationError{Issues: issues}
+	}
+
+	manifest, err := decodeArtifactManifest([]byte(manifestFile.Body))
+	if err != nil {
+		return siteconfig.ValidationError{Issues: append(issues, siteconfig.Issue{
+			Path:    "publish.artifacts.manifest",
+			Code:    "invalid_artifact_manifest",
+			Message: err.Error(),
+		})}
+	}
+
+	if manifest.SiteSlug != siteSlug {
+		issues = append(issues, siteconfig.Issue{
+			Path:    "publish.artifacts.manifest.siteSlug",
+			Code:    "invalid_artifact_manifest",
+			Message: "publish artifact manifest site slug does not match the published site",
+		})
+	}
+	if normalizeHostname(manifest.Hostname) != normalizeHostname(hostname) {
+		issues = append(issues, siteconfig.Issue{
+			Path:    "publish.artifacts.manifest.hostname",
+			Code:    "invalid_artifact_manifest",
+			Message: "publish artifact manifest hostname does not match the published hostname",
+		})
+	}
+	if manifest.Version.ID != version.ID || manifest.Version.VersionNumber != version.VersionNumber {
+		issues = append(issues, siteconfig.Issue{
+			Path:    "publish.artifacts.manifest.version",
+			Code:    "invalid_artifact_manifest",
+			Message: "publish artifact manifest version does not match the published version",
+		})
+	}
+
+	manifestPages := make(map[string]ArtifactManifestPage, len(manifest.Pages))
+	for _, page := range manifest.Pages {
+		manifestPages[normalizePublishedPagePath(page.PagePath)] = page
+		if _, ok := filesByPath[filepath.ToSlash(page.FilePath)]; !ok {
+			issues = append(issues, siteconfig.Issue{
+				Path:    "publish.artifacts." + page.FilePath,
+				Code:    "missing_artifact",
+				Message: "manifest references a page artifact that was not rendered",
+			})
+		}
+	}
+
+	for _, page := range snapshot.Pages {
+		pagePath := normalizePublishedPagePath(page.Slug)
+		manifestPage, ok := manifestPages[pagePath]
+		if !ok {
+			issues = append(issues, siteconfig.Issue{
+				Path:    "publish.artifacts.pages." + pagePath,
+				Code:    "missing_artifact",
+				Message: "publish artifact manifest is missing a rendered page",
+			})
+			continue
+		}
+		if strings.TrimSpace(manifestPage.Title) == "" || strings.TrimSpace(manifestPage.Description) == "" || strings.TrimSpace(manifestPage.CanonicalURL) == "" {
+			issues = append(issues, siteconfig.Issue{
+				Path:    "publish.artifacts.pages." + pagePath,
+				Code:    "invalid_artifact_manifest",
+				Message: "publish artifact manifest page metadata is incomplete",
+			})
+		}
+	}
+
+	if len(issues) > 0 {
+		return siteconfig.ValidationError{Issues: issues}
+	}
+	return nil
+}
+
+func decodeArtifactManifest(body []byte) (ArtifactManifest, error) {
+	var manifest ArtifactManifest
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		return ArtifactManifest{}, fmt.Errorf("decode publish artifact manifest: %w", err)
+	}
+	if strings.TrimSpace(manifest.SchemaVersion) != "published_artifacts.v1" {
+		return ArtifactManifest{}, fmt.Errorf("publish artifact manifest must use schema version published_artifacts.v1")
+	}
+	return manifest, nil
+}
+
+func (s *Service) loadPublishedArtifactPage(ctx context.Context, lookup publishedSiteLookup, pagePath string) (PublishedPageArtifact, error) {
+	manifestFile, err := s.store.Load(ctx, lookup.Version.SiteID, lookup.Version.ID, "manifest.json")
+	if errors.Is(err, ErrArtifactNotFound) {
+		return PublishedPageArtifact{}, ErrNotFound
+	}
+	if err != nil {
+		return PublishedPageArtifact{}, fmt.Errorf("load published artifact manifest: %w", err)
+	}
+
+	manifest, err := decodeArtifactManifest([]byte(manifestFile.Body))
+	if err != nil {
+		return PublishedPageArtifact{}, fmt.Errorf("load published artifact manifest: %w", err)
+	}
+
+	var manifestPage ArtifactManifestPage
+	found := false
+	for _, candidate := range manifest.Pages {
+		if normalizePublishedPagePath(candidate.PagePath) == pagePath {
+			manifestPage = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		return PublishedPageArtifact{}, ErrPageNotFound
+	}
+
+	pageFile, err := s.store.Load(ctx, lookup.Version.SiteID, lookup.Version.ID, manifestPage.FilePath)
+	if errors.Is(err, ErrArtifactNotFound) {
+		return PublishedPageArtifact{}, ErrPageNotFound
+	}
+	if err != nil {
+		return PublishedPageArtifact{}, fmt.Errorf("load published page artifact: %w", err)
+	}
+
+	return PublishedPageArtifact{
+		PagePath:     pagePath,
+		Title:        manifestPage.Title,
+		Description:  manifestPage.Description,
+		CanonicalURL: manifestPage.CanonicalURL,
+		HTML:         pageFile.Body,
+	}, nil
+}
+
+func (s *Service) loadPublishedArtifact(ctx context.Context, lookup publishedSiteLookup, artifactPath string) (PublishedArtifactResult, error) {
+	file, err := s.store.Load(ctx, lookup.Version.SiteID, lookup.Version.ID, artifactPath)
+	if errors.Is(err, ErrArtifactNotFound) {
+		return PublishedArtifactResult{}, ErrNotFound
+	}
+	if err != nil {
+		return PublishedArtifactResult{}, fmt.Errorf("load published artifact: %w", err)
+	}
+
+	return PublishedArtifactResult{
+		SiteSlug: lookup.SiteSlug,
+		Hostname: lookup.Hostname,
+		Version:  lookup.Version,
+		File:     file,
+	}, nil
 }
 
 func normalizeHostname(raw string) string {
@@ -594,15 +781,6 @@ func normalizePublishedPagePath(raw string) string {
 		return "/"
 	}
 	return value
-}
-
-func resolvePublishedPage(snapshot siteconfig.PublishedSnapshot, pagePath string) (siteconfig.PageDraft, error) {
-	for _, page := range snapshot.Pages {
-		if page.Slug == pagePath {
-			return page, nil
-		}
-	}
-	return siteconfig.PageDraft{}, ErrPageNotFound
 }
 
 func loadSiteMetadata(ctx context.Context, rower interface {
