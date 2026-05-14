@@ -16,6 +16,7 @@ import (
 const (
 	AccessTokenCookieName  = "snaelda_access_token"
 	RefreshTokenCookieName = "snaelda_refresh_token"
+	CSRFCookieName         = "snaelda_csrf_token"
 )
 
 var (
@@ -227,6 +228,14 @@ func CookieFromRequest(r *http.Request) (string, error) {
 
 func RefreshCookieFromRequest(r *http.Request) (string, error) {
 	cookie, err := r.Cookie(RefreshTokenCookieName)
+	if err != nil {
+		return "", err
+	}
+	return cookie.Value, nil
+}
+
+func CSRFCookieFromRequest(r *http.Request) (string, error) {
+	cookie, err := r.Cookie(CSRFCookieName)
 	if err != nil {
 		return "", err
 	}

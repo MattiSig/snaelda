@@ -246,15 +246,18 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [ ] Verify JWT auth middleware protects every authenticated API route.
 - [ ] Keep authorization separate from authentication: a valid JWT proves identity, while workspace membership checks prove access.
 - [ ] Store refresh tokens or session identifiers securely if refresh-token rotation is implemented.
-- [ ] Add CSRF protection because browser auth uses cookies.
+- [x] Add CSRF protection because browser auth uses cookies.
+  Verified on May 14, 2026 by adding a double-submit CSRF cookie/header flow for private mutating API requests, rotating the CSRF token on login and refresh, enforcing origin checks for private writes, and then confirming with `go test ./internal/api ./internal/auth`, a live Playwright login/logout flow on `http://localhost:3001`, and direct `curl` checks that `POST /api/auth/logout` returns `403` without `X-CSRF-Token` and `200` with the matching token.
 - [ ] Ensure every authenticated write route verifies authentication, workspace membership, and resource ownership.
 - [ ] Sanitize rich text input.
 - [ ] Validate all URLs and reject unsafe protocols.
 - [ ] Restrict embeds to allowlisted providers if embeds are added.
 - [ ] Add preview tokens that are random, site-scoped, expiring, and revocable.
-- [ ] Add request logging for generation, publish, form submission, and public rendering failures.
+- [x] Add request logging for generation, publish, form submission, and public rendering failures.
+  Verified on May 14, 2026 by upgrading the API request logger to record response status and emit failure-category logs for generation, publishing, public form submissions, and public rendering routes, and covering the behavior with `go test ./internal/api`.
 - [ ] Add public artifact cache invalidation on publish, rollback, and domain changes.
-- [ ] Avoid public caching for authenticated editor responses.
+- [x] Avoid public caching for authenticated editor responses.
+  Verified on May 14, 2026 by adding `Cache-Control: no-store, private` plus `Pragma: no-cache` and `Expires: 0` on non-public `/api` responses, then confirming the middleware in `go test ./internal/api` and with a live `curl` login flow against the local API.
 - [ ] Add non-blocking server-side page view counting.
 - [ ] Store aggregated daily page views in `page_view_daily`.
 - [ ] Add basic bot filtering or rate limiting where practical.

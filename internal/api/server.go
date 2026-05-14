@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/MattiSig/snaelda/internal/assets"
@@ -134,7 +135,7 @@ func (s *Server) Handler() http.Handler {
 	}
 	mountAuthenticatedPlaceholderModule(mux, s.auth, billing.Module{})
 
-	return s.recover(s.logRequests(s.cors(mux)))
+	return s.recover(s.logRequests(s.noCache(s.csrf(s.cors(mux)))))
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
@@ -168,12 +169,29 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 func (s *Server) logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		next.ServeHTTP(w, r)
-		s.logger.Info("http request",
+		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(recorder, r)
+
+		durationMs := time.Since(start).Milliseconds()
+		attrs := []any{
 			"method", r.Method,
 			"path", r.URL.Path,
-			"duration_ms", time.Since(start).Milliseconds(),
-		)
+			"status", recorder.status,
+			"duration_ms", durationMs,
+		}
+
+		failureCategory := requestFailureCategory(r)
+		if failureCategory != "" && recorder.status >= http.StatusBadRequest {
+			attrs = append(attrs, "category", failureCategory)
+			if recorder.status >= http.StatusInternalServerError {
+				s.logger.Error("request failed", attrs...)
+				return
+			}
+			s.logger.Warn("request failed", attrs...)
+			return
+		}
+
+		s.logger.Info("http request", attrs...)
 	})
 }
 
@@ -200,7 +218,7 @@ func (s *Server) cors(next http.Handler) http.Handler {
 		case origin != "" && origin == s.config.AppBaseURL:
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, X-CSRF-Token")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 			w.Header().Add("Vary", "Origin")
 		}
@@ -210,6 +228,45 @@ func (s *Server) cors(next http.Handler) http.Handler {
 			return
 		}
 
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) csrf(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !requiresCSRFMitigation(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if origin := strings.TrimSpace(r.Header.Get("Origin")); origin != "" && origin != s.config.AppBaseURL {
+			writeError(w, http.StatusForbidden, "invalid_origin", "request origin is not allowed")
+			return
+		}
+
+		cookieToken, err := auth.CSRFCookieFromRequest(r)
+		if err != nil || strings.TrimSpace(cookieToken) == "" {
+			writeError(w, http.StatusForbidden, "csrf_invalid", "csrf token is required")
+			return
+		}
+
+		headerToken := strings.TrimSpace(r.Header.Get("X-CSRF-Token"))
+		if headerToken == "" || headerToken != cookieToken {
+			writeError(w, http.StatusForbidden, "csrf_invalid", "csrf token is invalid")
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) noCache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isPrivateAPIRoute(r) {
+			w.Header().Set("Cache-Control", "no-store, private")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -226,6 +283,53 @@ func isPublicRoute(r *http.Request) bool {
 		return r.Method == http.MethodPost || r.Method == http.MethodOptions
 	}
 	return false
+}
+
+func isPrivateAPIRoute(r *http.Request) bool {
+	return strings.HasPrefix(r.URL.Path, "/api/") && !isPublicRoute(r)
+}
+
+func requiresCSRFMitigation(r *http.Request) bool {
+	if !isPrivateAPIRoute(r) {
+		return false
+	}
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return false
+	}
+	return r.URL.Path != "/api/auth/login"
+}
+
+func requestFailureCategory(r *http.Request) string {
+	switch {
+	case r.URL.Path == "/api/sites/generate" || strings.Contains(r.URL.Path, "/reprompt") || strings.Contains(r.URL.Path, "/undo"):
+		return "generation"
+	case strings.Contains(r.URL.Path, "/publish") || strings.Contains(r.URL.Path, "/rollback"):
+		return "publishing"
+	case strings.HasPrefix(r.URL.Path, "/api/public/forms/"):
+		return "form_submission"
+	case r.URL.Path == "/api/public/render" || strings.HasPrefix(r.URL.Path, "/api/public/sites/"):
+		return "public_render"
+	default:
+		return ""
+	}
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func (r *statusRecorder) Write(body []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	return r.ResponseWriter.Write(body)
 }
 
 func firstNonEmpty(value string, fallback string) string {

@@ -291,10 +291,12 @@ export async function apiFetch<T>(
   init: RequestInit = {},
   retryOnUnauthorized = true,
 ): Promise<T> {
+  const method = (init.method ?? 'GET').toUpperCase()
   const response = await fetch(new URL(path, getAPIBaseURL()), {
     credentials: 'include',
     headers: {
       Accept: 'application/json',
+      ...buildCSRFHeaders(method),
       ...init.headers,
     },
     ...init,
@@ -320,6 +322,37 @@ export async function apiFetch<T>(
   }
 
   return response.json() as Promise<T>
+}
+
+function buildCSRFHeaders(method: string): HeadersInit {
+  if (
+    method === 'GET' ||
+    method === 'HEAD' ||
+    method === 'OPTIONS' ||
+    typeof document === 'undefined'
+  ) {
+    return {}
+  }
+
+  const token = readCookie('snaelda_csrf_token')
+  if (!token) {
+    return {}
+  }
+
+  return {
+    'X-CSRF-Token': token,
+  }
+}
+
+function readCookie(name: string) {
+  const prefix = `${name}=`
+  for (const cookie of document.cookie.split(';')) {
+    const trimmed = cookie.trim()
+    if (trimmed.startsWith(prefix)) {
+      return decodeURIComponent(trimmed.slice(prefix.length))
+    }
+  }
+  return ''
 }
 
 async function publicAPIRequest<T>(

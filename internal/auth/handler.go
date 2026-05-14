@@ -124,6 +124,11 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, http.StatusInternalServerError, "login_failed", "could not sign in")
 		return
 	}
+	csrfToken, err := newCSRFCookieToken()
+	if err != nil {
+		writeAuthError(w, http.StatusInternalServerError, "login_failed", "could not sign in")
+		return
+	}
 	sessionID, err := h.createSession(r.Context(), user.ID, refreshToken, h.refreshTokenTTL, r.UserAgent())
 	if err != nil {
 		writeAuthError(w, http.StatusInternalServerError, "login_failed", "could not sign in")
@@ -138,6 +143,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 
 	http.SetCookie(w, h.accessCookie(token, int(h.tokens.TTL().Seconds())))
 	http.SetCookie(w, h.refreshCookie(refreshToken, int(h.refreshTokenTTL.Seconds())))
+	http.SetCookie(w, h.csrfCookie(csrfToken, int(h.refreshTokenTTL.Seconds())))
 	writeAuthJSON(w, http.StatusOK, authResponse{
 		User:      user,
 		ExpiresAt: claims.ExpiresAt,
@@ -171,6 +177,11 @@ func (h *Handler) refresh(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
 		return
 	}
+	csrfToken, err := newCSRFCookieToken()
+	if err != nil {
+		writeAuthError(w, http.StatusInternalServerError, "refresh_failed", "could not refresh session")
+		return
+	}
 
 	token, claims, err := h.tokens.IssueForSession(user, sessionID)
 	if err != nil {
@@ -180,6 +191,7 @@ func (h *Handler) refresh(w http.ResponseWriter, r *http.Request) {
 
 	http.SetCookie(w, h.accessCookie(token, int(h.tokens.TTL().Seconds())))
 	http.SetCookie(w, h.refreshCookie(nextRefreshToken, int(h.refreshTokenTTL.Seconds())))
+	http.SetCookie(w, h.csrfCookie(csrfToken, int(h.refreshTokenTTL.Seconds())))
 	writeAuthJSON(w, http.StatusOK, authResponse{
 		User:      user,
 		ExpiresAt: claims.ExpiresAt,
@@ -201,6 +213,7 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 
 	http.SetCookie(w, h.accessCookie("", -1))
 	http.SetCookie(w, h.refreshCookie("", -1))
+	http.SetCookie(w, h.csrfCookie("", -1))
 	writeAuthJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -421,12 +434,28 @@ func (h *Handler) refreshCookie(value string, maxAge int) *http.Cookie {
 	}
 }
 
+func (h *Handler) csrfCookie(value string, maxAge int) *http.Cookie {
+	return &http.Cookie{
+		Name:     CSRFCookieName,
+		Value:    value,
+		Path:     "/",
+		MaxAge:   maxAge,
+		HttpOnly: false,
+		Secure:   h.cookieSecure,
+		SameSite: http.SameSiteLaxMode,
+	}
+}
+
 func newRefreshToken() (string, error) {
 	var token [32]byte
 	if _, err := rand.Read(token[:]); err != nil {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(token[:]), nil
+}
+
+func newCSRFCookieToken() (string, error) {
+	return newRefreshToken()
 }
 
 func refreshTokenHash(token string) string {

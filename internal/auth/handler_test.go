@@ -111,8 +111,8 @@ func TestLoginSetsHTTPOnlyCookieAndReturnsUser(t *testing.T) {
 	}
 
 	cookies := res.Result().Cookies()
-	if len(cookies) != 2 {
-		t.Fatalf("expected two cookies, got %d", len(cookies))
+	if len(cookies) != 3 {
+		t.Fatalf("expected three cookies, got %d", len(cookies))
 	}
 	cookie := cookieNamed(t, cookies, AccessTokenCookieName)
 	if cookie.Name != AccessTokenCookieName {
@@ -130,6 +130,16 @@ func TestLoginSetsHTTPOnlyCookieAndReturnsUser(t *testing.T) {
 	}
 	if !refreshCookie.Secure {
 		t.Fatal("expected secure refresh cookie")
+	}
+	csrfCookie := cookieNamed(t, cookies, CSRFCookieName)
+	if csrfCookie.HttpOnly {
+		t.Fatal("expected csrf cookie to be readable by the frontend")
+	}
+	if !csrfCookie.Secure {
+		t.Fatal("expected secure csrf cookie")
+	}
+	if csrfCookie.Value == "" {
+		t.Fatal("expected csrf cookie value")
 	}
 
 	var payload authResponse
@@ -172,6 +182,10 @@ func TestRefreshRotatesRefreshCookieAndReturnsUser(t *testing.T) {
 	if nextRefreshCookie.Value == refreshCookie.Value {
 		t.Fatal("expected refresh token rotation")
 	}
+	nextCSRFCookie := cookieNamed(t, refreshRes.Result().Cookies(), CSRFCookieName)
+	if nextCSRFCookie.Value == "" || nextCSRFCookie.Value == cookieNamed(t, loginRes.Result().Cookies(), CSRFCookieName).Value {
+		t.Fatal("expected csrf token rotation")
+	}
 
 	replayReq := httptest.NewRequest(http.MethodPost, "/api/auth/refresh", nil)
 	replayReq.AddCookie(refreshCookie)
@@ -202,12 +216,16 @@ func TestLogoutRevokesActiveSession(t *testing.T) {
 	logoutReq := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
 	logoutReq.AddCookie(accessCookie)
 	logoutReq.AddCookie(refreshCookie)
+	logoutReq.AddCookie(cookieNamed(t, loginRes.Result().Cookies(), CSRFCookieName))
 	logoutRes := httptest.NewRecorder()
 
 	handler.logout(logoutRes, logoutReq)
 
 	if logoutRes.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, logoutRes.Code)
+	}
+	if cookieNamed(t, logoutRes.Result().Cookies(), CSRFCookieName).MaxAge != -1 {
+		t.Fatal("expected logout to clear csrf cookie")
 	}
 
 	protected := handler.RequireUser(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

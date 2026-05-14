@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -277,6 +278,134 @@ func TestPrivateRoutesKeepBuilderOriginPolicy(t *testing.T) {
 	}
 }
 
+func TestPrivateRoutesAllowCSRFCorsHeaderForBuilderOrigin(t *testing.T) {
+	server := NewServer(ServerConfig{
+		Config: config.Config{
+			AppEnv:     "test",
+			HTTPAddr:   "127.0.0.1:0",
+			AppBaseURL: "http://localhost:3000",
+		},
+		Logger: slog.New(slog.DiscardHandler),
+	})
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/auth/logout", nil)
+	req.Header.Set("Origin", "http://localhost:3000")
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+
+	if got := res.Header().Get("Access-Control-Allow-Headers"); !strings.Contains(got, "X-CSRF-Token") {
+		t.Fatalf("expected csrf header in private CORS allowlist, got %q", got)
+	}
+}
+
+func TestPrivateReadRoutesDisableCaching(t *testing.T) {
+	server := NewServer(ServerConfig{
+		Config: config.Config{
+			AppEnv:     "test",
+			HTTPAddr:   "127.0.0.1:0",
+			AppBaseURL: "http://localhost:3000",
+		},
+		Logger: slog.New(slog.DiscardHandler),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	req.AddCookie(validAuthCookie(t))
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+
+	if got := res.Header().Get("Cache-Control"); got != "no-store, private" {
+		t.Fatalf("expected no-store cache policy, got %q", got)
+	}
+}
+
+func TestPrivateWriteRoutesRequireCSRFCookieAndHeader(t *testing.T) {
+	server := NewServer(ServerConfig{
+		Config: config.Config{
+			AppEnv:     "test",
+			HTTPAddr:   "127.0.0.1:0",
+			AppBaseURL: "http://localhost:3000",
+		},
+		Logger: slog.New(slog.DiscardHandler),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	req.AddCookie(validAuthCookie(t))
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, res.Code)
+	}
+}
+
+func TestPrivateWriteRoutesAcceptMatchingCSRFCookieAndHeader(t *testing.T) {
+	server := NewServer(ServerConfig{
+		Config: config.Config{
+			AppEnv:     "test",
+			HTTPAddr:   "127.0.0.1:0",
+			AppBaseURL: "http://localhost:3000",
+		},
+		Logger: slog.New(slog.DiscardHandler),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	req.AddCookie(validAuthCookie(t))
+	req.AddCookie(validCSRFCookie())
+	req.Header.Set("X-CSRF-Token", "csrf-token")
+	req.Header.Set("Origin", "http://localhost:3000")
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+}
+
+func TestPublicFormWriteRoutesDoNotRequireCSRF(t *testing.T) {
+	server := NewServer(ServerConfig{
+		Config: config.Config{
+			AppEnv:     "test",
+			HTTPAddr:   "127.0.0.1:0",
+			AppBaseURL: "http://localhost:3000",
+		},
+		Logger: slog.New(slog.DiscardHandler),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/public/forms/site-1/block-1/submit", strings.NewReader(`{}`))
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+
+	if res.Code == http.StatusForbidden {
+		t.Fatalf("expected public form route to bypass csrf, got %d", res.Code)
+	}
+}
+
+func TestFailureLoggingIncludesRequestCategory(t *testing.T) {
+	var logOutput bytes.Buffer
+	server := NewServer(ServerConfig{
+		Config: config.Config{
+			AppEnv:     "test",
+			HTTPAddr:   "127.0.0.1:0",
+			AppBaseURL: "http://localhost:3000",
+		},
+		Logger: slog.New(slog.NewTextHandler(&logOutput, nil)),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/public/render?hostname=missing.localhost", nil)
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+
+	if !strings.Contains(logOutput.String(), "category=public_render") {
+		t.Fatalf("expected failure log category, got %q", logOutput.String())
+	}
+}
+
 func validAuthCookie(t *testing.T) *http.Cookie {
 	t.Helper()
 
@@ -304,5 +433,12 @@ func validAuthCookie(t *testing.T) *http.Cookie {
 	return &http.Cookie{
 		Name:  auth.AccessTokenCookieName,
 		Value: token,
+	}
+}
+
+func validCSRFCookie() *http.Cookie {
+	return &http.Cookie{
+		Name:  auth.CSRFCookieName,
+		Value: "csrf-token",
 	}
 }
