@@ -148,8 +148,17 @@ export type BlockDefinition = {
   editorSchema?: BlockEditorField[]
 }
 
+export type GenerationMetadata = {
+  prompt: string
+  themePreset?: string
+  assetsNeeded?: string[]
+  assumptions?: string[]
+  validationRetryCount?: number
+}
+
 export type SiteDraftResponse = {
   draft: SiteDraft
+  generation: GenerationMetadata
   blockRegistry: BlockDefinition[]
 }
 

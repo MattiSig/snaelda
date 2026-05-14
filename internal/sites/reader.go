@@ -25,6 +25,7 @@ type DB interface {
 type Reader interface {
 	ListSites(ctx context.Context, workspaceID string) ([]Summary, error)
 	LoadDraft(ctx context.Context, siteID string) (siteconfig.SiteDraft, error)
+	LoadGenerationMetadata(ctx context.Context, siteID string) (GenerationMetadata, error)
 }
 
 type Summary struct {
@@ -36,6 +37,14 @@ type Summary struct {
 	DefaultLocale      string `json:"defaultLocale"`
 	PublishedVersionID string `json:"publishedVersionId,omitempty"`
 	PageCount          int    `json:"pageCount"`
+}
+
+type GenerationMetadata struct {
+	Prompt               string   `json:"prompt"`
+	ThemePreset          string   `json:"themePreset,omitempty"`
+	AssetsNeeded         []string `json:"assetsNeeded,omitempty"`
+	Assumptions          []string `json:"assumptions,omitempty"`
+	ValidationRetryCount int      `json:"validationRetryCount,omitempty"`
 }
 
 type PostgresReader struct {
@@ -146,6 +155,38 @@ func (r *PostgresReader) LoadDraft(ctx context.Context, siteID string) (siteconf
 		return siteconfig.SiteDraft{}, fmt.Errorf("assembled draft is invalid: %w", err)
 	}
 	return draft, nil
+}
+
+func (r *PostgresReader) LoadGenerationMetadata(ctx context.Context, siteID string) (GenerationMetadata, error) {
+	var prompt string
+	var summaryJSON []byte
+	err := r.db.QueryRow(ctx, `
+		select coalesce(generation_prompt, ''),
+		       coalesce(generation_summary, '{}'::jsonb)
+		from sites
+		where id = $1
+	`, siteID).Scan(&prompt, &summaryJSON)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return GenerationMetadata{}, ErrNotFound
+	}
+	if err != nil {
+		return GenerationMetadata{}, fmt.Errorf("load generation metadata: %w", err)
+	}
+
+	summary := map[string]any{}
+	if len(summaryJSON) > 0 {
+		if err := decodeJSON(summaryJSON, &summary); err != nil {
+			return GenerationMetadata{}, fmt.Errorf("decode generation metadata: %w", err)
+		}
+	}
+
+	return GenerationMetadata{
+		Prompt:               prompt,
+		ThemePreset:          asStringValue(summary["themePreset"]),
+		AssetsNeeded:         asStringSlice(summary["assetsNeeded"]),
+		Assumptions:          asStringSlice(summary["assumptions"]),
+		ValidationRetryCount: asIntValue(summary["validationRetryCount"]),
+	}, nil
 }
 
 func (r *PostgresReader) loadNormalizedDraft(ctx context.Context, siteID string) (NormalizedDraftRows, error) {
@@ -338,6 +379,38 @@ func AssembleDraft(rows NormalizedDraftRows) siteconfig.SiteDraft {
 		Theme:      siteconfig.ThemeConfig{Version: rows.Theme.Version, Tokens: rows.Theme.Tokens},
 		Navigation: navigation,
 		Pages:      draftPages,
+	}
+}
+
+func asStringValue(value any) string {
+	text, _ := value.(string)
+	return text
+}
+
+func asStringSlice(value any) []string {
+	items, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		text, ok := item.(string)
+		if ok && text != "" {
+			result = append(result, text)
+		}
+	}
+	return result
+}
+
+func asIntValue(value any) int {
+	switch typed := value.(type) {
+	case float64:
+		return int(typed)
+	case int:
+		return typed
+	default:
+		return 0
 	}
 }
 

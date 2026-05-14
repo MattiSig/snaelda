@@ -224,6 +224,10 @@ func (r fakeDraftReader) LoadDraft(context.Context, string) (siteconfig.SiteDraf
 	return r.draft, r.err
 }
 
+func (r fakeDraftReader) LoadGenerationMetadata(context.Context, string) (sites.GenerationMetadata, error) {
+	return sites.GenerationMetadata{}, errors.New("not implemented")
+}
+
 type fakeArtifactRenderer struct {
 	input  ArtifactRenderInput
 	bundle ArtifactBundle

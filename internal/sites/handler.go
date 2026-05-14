@@ -139,8 +139,14 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "load_site_failed", "could not load site draft")
 		return
 	}
+	generation, err := h.reader.LoadGenerationMetadata(r.Context(), siteID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "load_site_failed", "could not load site draft")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"draft":         draft,
+		"generation":    generation,
 		"blockRegistry": siteconfig.DefaultBlockRegistry().Definitions(),
 	})
 }

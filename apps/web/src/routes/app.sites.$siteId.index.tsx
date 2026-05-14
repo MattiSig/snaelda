@@ -39,6 +39,7 @@ import {
   type BlockDefinition,
   type FormSubmissionRecord,
   type FormSubmissionStatus,
+  type GenerationMetadata,
   type SiteDraft,
   type SiteVersion,
   type ThemeEditorCatalog,
@@ -54,7 +55,6 @@ import {
   actions,
   emptyState,
   form,
-  panel,
   ribbonPanel,
   text,
 } from '@/lib/styles'
@@ -63,13 +63,25 @@ import { cn } from '@/lib/utils'
 type DraftPage = SiteDraft['pages'][number]
 
 export const Route = createFileRoute('/app/sites/$siteId/')({
+  validateSearch: (search: Record<string, unknown>) => ({
+    panel:
+      search.panel === 'page' ||
+      search.panel === 'site' ||
+      search.panel === 'theme' ||
+      search.panel === 'publish'
+        ? search.panel
+        : undefined,
+  }),
   component: SiteDetail,
 })
 
 function SiteDetail() {
   const { siteId } = Route.useParams()
+  const search = Route.useSearch()
   const navigate = useNavigate()
   const [draft, setDraft] = useState<SiteDraft | null>(null)
+  const [generationMetadata, setGenerationMetadata] =
+    useState<GenerationMetadata | null>(null)
   const [blockRegistry, setBlockRegistry] = useState<BlockDefinition[]>([])
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
@@ -166,6 +178,7 @@ function SiteDetail() {
     nextDraft: SiteDraft,
     preferredPageID?: string,
     preferredBlockID?: string,
+    nextGenerationMetadata?: GenerationMetadata | null,
   ) {
     const nextPage =
       nextDraft.pages.find((page) => page.id === preferredPageID) ??
@@ -177,6 +190,9 @@ function SiteDetail() {
       null
 
     setDraft(nextDraft)
+    if (nextGenerationMetadata !== undefined) {
+      setGenerationMetadata(nextGenerationMetadata)
+    }
     setSelectedPageId(nextPage?.id ?? '')
     setSelectedBlockId(nextBlock?.id ?? '')
     syncSelectedPageFields(nextDraft, nextPage)
@@ -206,6 +222,7 @@ function SiteDetail() {
             return
           }
           setBlockRegistry(draftResponse.blockRegistry)
+          setGenerationMetadata(draftResponse.generation)
           setNewBlockType(
             (current) => current || draftResponse.blockRegistry[0]?.type || '',
           )
@@ -257,6 +274,21 @@ function SiteDetail() {
   const selectedDefinition = selectedBlock
     ? blockDefinitions.get(`${selectedBlock.type}@${selectedBlock.version}`)
     : undefined
+
+  async function refreshDraftState(
+    preferredPageID?: string,
+    preferredBlockID?: string,
+  ) {
+    const response = await getSiteDraft(siteId)
+    setBlockRegistry(response.blockRegistry)
+    applyDraftUpdate(
+      response.draft,
+      preferredPageID,
+      preferredBlockID,
+      response.generation,
+    )
+    return response
+  }
 
   async function handleSaveSite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -821,8 +853,8 @@ function SiteDetail() {
     setRepromptStatusMessage('')
 
     try {
-      const response = await repromptSite(siteId, { prompt: siteReprompt })
-      applyDraftUpdate(response.draft)
+      await repromptSite(siteId, { prompt: siteReprompt })
+      await refreshDraftState()
       setSiteReprompt('')
       setPageReprompt('')
       setRepromptStatusMessage(
@@ -871,8 +903,8 @@ function SiteDetail() {
     setRepromptStatusMessage('')
 
     try {
-      const response = await undoSiteReprompt(siteId)
-      applyDraftUpdate(response.draft, selectedPage?.id, selectedBlock?.id)
+      await undoSiteReprompt(siteId)
+      await refreshDraftState(selectedPage?.id, selectedBlock?.id)
       setRepromptStatusMessage('Previous draft revision restored.')
     } catch (error) {
       setRepromptErrorMessage(
@@ -1011,12 +1043,110 @@ function SiteDetail() {
   const hasContactForm = draft.pages.some((page) =>
     page.blocks.some((block) => block.type === 'contact_form'),
   )
-  const workspacePanel = cn(panel, 'grid gap-5 p-5')
-  const workspaceCard = cn(panel, 'grid gap-4 p-5')
+  const workspaceSection = 'grid gap-4 border-t border-border pt-5 first:border-t-0 first:pt-0'
+  const workspaceWideSection = cn(workspaceSection, '2xl:col-span-2')
+  const workspaceRow =
+    'flex items-center justify-between gap-3 rounded-[10px] border border-border bg-[color-mix(in_oklch,var(--surface-1)_42%,transparent)] px-4 py-3'
+  const workspaceInset =
+    'rounded-[10px] border border-border bg-[color-mix(in_oklch,var(--surface-1)_42%,transparent)] p-4'
 
   const sitePanelContent = (
     <div className="grid gap-4 2xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-      <section className={workspacePanel}>
+      <section className={workspaceSection}>
+        <div>
+          <p className={text.eyebrow}>Generation brief</p>
+          <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
+            Review the current prompt baseline
+          </h2>
+          <p className={cn(text.p, 'mt-2 text-sm')}>
+            This is the stored brief and summary behind the current draft
+            direction. Use it as the reference point before replacing the site.
+          </p>
+        </div>
+
+        {generationMetadata ? (
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+            <div className={form.field}>
+              <label htmlFor="stored-generation-prompt" className={text.label}>
+                Stored site prompt
+              </label>
+              <Textarea
+                id="stored-generation-prompt"
+                rows={6}
+                value={generationMetadata.prompt}
+                readOnly
+              />
+              <div className={actions.row}>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={!generationMetadata.prompt}
+                  onClick={() => setSiteReprompt(generationMetadata.prompt)}
+                >
+                  Load into rebuild prompt
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid gap-4">
+              <div className={workspaceInset}>
+                <p className={text.label}>Theme preset</p>
+                <p className="mt-2 text-lg font-black text-[var(--paper)]">
+                  {generationMetadata.themePreset || 'Not captured'}
+                </p>
+                {typeof generationMetadata.validationRetryCount === 'number' ? (
+                  <p className="mt-2 text-sm text-[var(--paper-muted)]">
+                    Validation retries: {generationMetadata.validationRetryCount}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className={workspaceInset}>
+                <p className={text.label}>Assets the prompt expected</p>
+                {generationMetadata.assetsNeeded?.length ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {generationMetadata.assetsNeeded.map((item) => (
+                      <span key={item} className="rounded-full border border-border bg-[var(--surface-1)] px-3 py-1.5 text-sm text-[var(--paper)]">
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-[var(--paper-muted)]">
+                    No starter assets were recorded for this draft.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className={emptyState}>
+            <p className={text.p}>
+              No generation metadata was stored for this draft yet.
+            </p>
+          </div>
+        )}
+
+        <div className={workspaceInset}>
+          <p className={text.label}>Generation assumptions</p>
+          {generationMetadata?.assumptions?.length ? (
+            <ul className="mt-3 grid gap-2 text-sm text-[var(--paper-muted)]">
+              {generationMetadata.assumptions.map((item) => (
+                <li key={item} className="list-disc pl-1 ml-5">
+                  {item}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm text-[var(--paper-muted)]">
+              No assumptions were captured for this draft.
+            </p>
+          )}
+        </div>
+      </section>
+
+      <section className={workspaceSection}>
         <div>
           <p className={text.eyebrow}>Prompt iteration</p>
           <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
@@ -1099,7 +1229,7 @@ function SiteDetail() {
         ) : null}
       </section>
 
-      <section className={workspacePanel}>
+      <section className={workspaceSection}>
         <div>
           <p className={text.eyebrow}>Navigation</p>
           <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
@@ -1112,7 +1242,7 @@ function SiteDetail() {
             {navigationPages.map((page, index) => (
               <article
                 key={page.id}
-                className="flex items-center justify-between gap-3 rounded-[12px] border border-border bg-[var(--surface-2)] px-4 py-3"
+                className={workspaceRow}
               >
                 <div>
                   <strong className="block text-[var(--paper)]">
@@ -1170,7 +1300,7 @@ function SiteDetail() {
         )}
       </section>
 
-      <section className={workspaceCard}>
+      <section className={workspaceSection}>
         <div>
           <p className={text.eyebrow}>Pages</p>
           <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
@@ -1228,7 +1358,7 @@ function SiteDetail() {
         </form>
       </section>
 
-      <section className={workspaceCard}>
+      <section className={workspaceSection}>
         <div>
           <p className={text.eyebrow}>Assets</p>
           <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
@@ -1273,7 +1403,7 @@ function SiteDetail() {
             siteAssets.map((asset) => (
               <article
                 key={asset.id}
-                className="grid gap-3 rounded-[12px] border border-border bg-[var(--surface-2)] p-4"
+                className={cn(workspaceInset, 'grid gap-3')}
               >
                 <div className="grid gap-3 sm:grid-cols-[120px_minmax(0,1fr)] sm:items-start">
                   {asset.metadata.uploadStatus === 'uploaded' ? (
@@ -1327,7 +1457,7 @@ function SiteDetail() {
         </div>
       </section>
 
-      <section className={workspaceCard}>
+      <section className={workspaceSection}>
         <div>
           <p className={text.eyebrow}>Site details</p>
           <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
@@ -1379,7 +1509,7 @@ function SiteDetail() {
         </form>
       </section>
 
-      <section className={cn(workspaceCard, '2xl:col-span-2')}>
+      <section className={workspaceWideSection}>
         <div>
           <p className={text.eyebrow}>Inquiries</p>
           <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
@@ -1394,15 +1524,15 @@ function SiteDetail() {
           <p className={text.success}>{submissionStatusMessage}</p>
         ) : null}
 
-        <div className="grid gap-3">
-          {formSubmissions.length > 0 ? (
-            formSubmissions.map((submission) => (
-              <article
-                key={submission.id}
-                className="grid gap-3 rounded-[12px] border border-border bg-[var(--surface-2)] p-4"
-              >
-                <div className="flex items-start justify-between gap-3 max-sm:flex-col">
-                  <div>
+          <div className="grid gap-3">
+            {formSubmissions.length > 0 ? (
+              formSubmissions.map((submission) => (
+                <article
+                  key={submission.id}
+                  className={cn(workspaceInset, 'grid gap-3')}
+                >
+                  <div className="flex items-start justify-between gap-3 max-sm:flex-col">
+                    <div>
                     <strong className="block text-[var(--paper)]">
                       {String(
                         submission.payload['name'] ||
@@ -1462,7 +1592,7 @@ function SiteDetail() {
 
   const themePanelContent = (
     <div className="grid gap-4">
-      <section className={workspacePanel}>
+      <section className={workspaceSection}>
         <div>
           <p className={text.eyebrow}>Theme</p>
           <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
@@ -1476,15 +1606,15 @@ function SiteDetail() {
 
         {themeSelection && themeOptions ? (
           <form className={form.grid} onSubmit={handleSaveTheme}>
-            <div className="rounded-[12px] border border-border bg-[var(--surface-2)] p-4">
+            <div className={workspaceInset}>
               <div className="grid grid-cols-2 gap-3 max-lg:grid-cols-1">
                 {Object.entries(draft.theme.tokens.colors).map(([key, value]) => (
                   <div
                     key={key}
-                    className="flex items-center gap-3 rounded-[10px] border border-border bg-[var(--surface-1)] px-3 py-2.5"
+                    className="flex items-center gap-3 rounded-[8px] border border-border bg-[color-mix(in_oklch,var(--surface-1)_58%,transparent)] px-3 py-2.5"
                   >
                     <span
-                      className="size-[34px] shrink-0 rounded-full border border-border shadow-[inset_0_0_0_1px_oklch(7%_0.022_336_/_0.12)]"
+                      className="size-[34px] shrink-0 rounded-[999px] border border-border shadow-[inset_0_0_0_1px_oklch(7%_0.022_336_/_0.12)]"
                       style={{ backgroundColor: value }}
                     />
                     <div>
@@ -1676,7 +1806,7 @@ function SiteDetail() {
 
   const publishPanelContent = (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-      <section className={workspacePanel}>
+      <section className={workspaceSection}>
         <div>
           <p className={text.eyebrow}>Draft to live</p>
           <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
@@ -1689,7 +1819,7 @@ function SiteDetail() {
         </div>
 
         <div className="grid gap-3 md:grid-cols-3">
-          <div className="rounded-[12px] border border-border bg-[var(--surface-2)] p-4">
+          <div className={workspaceInset}>
             <p className={text.label}>Draft pages</p>
             <p className="mt-2 text-2xl font-black text-[var(--paper)]">
               {draft.pages.length}
@@ -1749,7 +1879,7 @@ function SiteDetail() {
         </div>
       </section>
 
-      <section className={workspacePanel}>
+      <section className={workspaceSection}>
         <div>
           <p className={text.eyebrow}>Release history</p>
           <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
@@ -1862,6 +1992,10 @@ function SiteDetail() {
       sitePanelContent={sitePanelContent}
       themePanelContent={themePanelContent}
       publishPanelContent={publishPanelContent}
+      initialWorkspacePanel={
+        (search.panel as 'page' | 'site' | 'theme' | 'publish' | undefined) ??
+        null
+      }
     />
   )
 }

@@ -1,4 +1,4 @@
-import { type FormEvent, type ReactNode, useRef, useState } from 'react'
+import { Fragment, type FormEvent, type ReactNode, useRef, useState } from 'react'
 import { BlockEditor } from '@/components/BlockEditor'
 import { SiteDraftRenderer } from '@/components/SiteDraftRenderer'
 import { Button } from '@/components/ui/button'
@@ -20,7 +20,6 @@ import {
   actions,
   emptyState,
   form,
-  panel,
   text,
 } from '@/lib/styles'
 import { cn } from '@/lib/utils'
@@ -93,6 +92,7 @@ type PuckBuilderProps = {
   sitePanelContent?: ReactNode
   themePanelContent?: ReactNode
   publishPanelContent?: ReactNode
+  initialWorkspacePanel?: 'page' | 'site' | 'theme' | 'publish' | null
 }
 
 export function PuckBuilder({
@@ -142,13 +142,12 @@ export function PuckBuilder({
   sitePanelContent,
   themePanelContent,
   publishPanelContent,
+  initialWorkspacePanel = null,
 }: PuckBuilderProps) {
   const [dragState, setDragState] = useState<DragState>({ kind: 'idle' })
   const [workspacePanel, setWorkspacePanel] = useState<
     'page' | 'site' | 'theme' | 'publish' | null
-  >(
-    null,
-  )
+  >(initialWorkspacePanel)
   const dropIndicatorRef = useRef<DropIndicator | null>(null)
   const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -179,41 +178,24 @@ export function PuckBuilder({
     event.preventDefault()
     if (!canvasRef.current || !editorPage) return
 
-    const rect = canvasRef.current.getBoundingClientRect()
-    const y = event.clientY - rect.top
-    const blocks = editorPage.visibleBlocks
-    let found: DropIndicator | null = null
+    const target = event.target as HTMLElement | null
+    const dropZone = target?.closest<HTMLElement>('[data-drop-index]')
+    const dropIndexValue = dropZone?.dataset.dropIndex
+    const nextIndicator =
+      typeof dropIndexValue === 'string'
+        ? {
+            index: Number.parseInt(dropIndexValue, 10),
+          }
+        : editorPage.visibleBlocks.length === 0
+          ? { index: 0 }
+          : null
 
-    for (let i = 0; i < blocks.length; i++) {
-      const el = document.getElementById(`canvas-block-${blocks[i].block.id}`)
-      if (!el) continue
-      const blockRect = el.getBoundingClientRect()
-      const blockMidY = blockRect.top - rect.top + blockRect.height / 2
-
-      if (y < blockMidY) {
-        found = {
-          index: i,
-          blockId: blocks[i].block.id,
-          position: 'before',
-        }
-        break
-      }
+    if (!nextIndicator || Number.isNaN(nextIndicator.index)) {
+      return
     }
 
-    if (!found && blocks.length > 0) {
-      found = {
-        index: blocks.length,
-        blockId: blocks[blocks.length - 1].block.id,
-        position: 'after',
-      }
-    }
-
-    if (!found) {
-      found = { index: 0, blockId: null, position: 'start' }
-    }
-
-    dropIndicatorRef.current = found
-    setDropIndicator(found)
+    dropIndicatorRef.current = nextIndicator
+    setDropIndicator(nextIndicator)
     event.dataTransfer.dropEffect = dragTypeRef.current
   }
 
@@ -381,7 +363,7 @@ export function PuckBuilder({
               <div className="grid gap-4">
                 <div
                   ref={canvasRef}
-                  className="relative min-h-[400px] overflow-auto bg-[var(--surface-1)]"
+                  className="relative min-h-[400px] overflow-auto bg-[var(--surface-1)] p-4 max-sm:p-3"
                   style={buildBuilderPreviewStyle(draft.theme)}
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
@@ -389,24 +371,37 @@ export function PuckBuilder({
                   onDragEnd={handleDragEnd}
                 >
                   {!editorPage || editorPage.visibleBlocks.length === 0 ? (
-                    <div className={emptyState}>
-                      <p className={text.p}>
-                        This page has no visible blocks yet. Drag a block type
-                        from the palette to add one, or unhide a block from the
-                        hidden list below.
-                      </p>
+                    <div
+                      data-drop-index={0}
+                      className={cn(
+                        emptyState,
+                        'grid min-h-[320px] place-items-center text-center',
+                        dropIndicator?.index === 0 &&
+                          'border-[var(--thread-teal)] bg-[color-mix(in_oklch,var(--surface-1)_74%,var(--thread-teal))]',
+                      )}
+                    >
+                      <div className="grid gap-3">
+                        <p className={text.p}>
+                          This page has no visible blocks yet. Drag a block type
+                          here to start the page, or unhide a block from the
+                          inspector.
+                        </p>
+                        <CanvasDropZone active={dropIndicator?.index === 0} />
+                      </div>
                     </div>
                   ) : (
-                    <>
-                      {dropIndicator?.position === 'start' ? (
-                        <CanvasDropLine />
-                      ) : null}
-                      <SiteDraftRenderer
-                        site={draft}
-                        eyebrow="Live builder canvas"
-                        selectedPageId={selectedPage.id}
-                        mode="builder"
-                        renderBlock={({ block, page, blockIndex: _blockIndex, children }) => (
+                    <SiteDraftRenderer
+                      site={draft}
+                      eyebrow=""
+                      showPageMeta={false}
+                      selectedPageId={selectedPage.id}
+                      mode="builder"
+                      renderBlock={({ block, page, blockIndex, children }) => (
+                        <Fragment key={block.id}>
+                          <CanvasDropZone
+                            index={blockIndex}
+                            active={dropIndicator?.index === blockIndex}
+                          />
                           <CanvasBlockFrame
                             key={block.id}
                             block={block}
@@ -418,8 +413,6 @@ export function PuckBuilder({
                               dragState.kind === 'dragging-block' &&
                               dragState.blockId === block.id
                             }
-                            isOver={dropIndicator?.blockId === block.id}
-                            dropPosition={dropIndicator?.position ?? null}
                             onSelect={() => {
                               onSelectPage(page.id)
                               onSelectBlock(block.id)
@@ -430,9 +423,18 @@ export function PuckBuilder({
                           >
                             {children}
                           </CanvasBlockFrame>
-                        )}
-                      />
-                    </>
+                          {blockIndex === editorPage.visibleBlocks.length - 1 ? (
+                            <CanvasDropZone
+                              index={editorPage.visibleBlocks.length}
+                              active={
+                                dropIndicator?.index ===
+                                editorPage.visibleBlocks.length
+                              }
+                            />
+                          ) : null}
+                        </Fragment>
+                      )}
+                    />
                   )}
                 </div>
 
@@ -721,7 +723,10 @@ function PageSetupPanel({
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-      <form className={cn(panel, 'grid gap-4 p-5')} onSubmit={onSavePage}>
+      <form
+        className="grid gap-4 border-t border-border pt-5 first:border-t-0 first:pt-0"
+        onSubmit={onSavePage}
+      >
         <div className="grid gap-1">
           <p className={text.eyebrow}>Page details</p>
           <p className={cn(text.p, 'text-sm')}>
@@ -805,8 +810,8 @@ function PageSetupPanel({
         </div>
       </form>
 
-      <div className="grid gap-4">
-        <section className={cn(panel, 'grid gap-4 p-5')}>
+      <div className="grid gap-5 border-l border-border pl-5 max-xl:border-l-0 max-xl:pl-0">
+        <section className="grid gap-4 border-t border-border pt-5 first:border-t-0 first:pt-0">
           <div className="grid gap-1">
             <p className={text.eyebrow}>Position</p>
             <p className={cn(text.p, 'text-sm')}>
@@ -836,7 +841,7 @@ function PageSetupPanel({
           </div>
         </section>
 
-        <section className={cn(panel, 'grid gap-4 p-5')}>
+        <section className="grid gap-4 border-t border-border pt-5">
           <div className="grid gap-1">
             <p className={text.eyebrow}>Danger zone</p>
             <p className={cn(text.p, 'text-sm')}>
@@ -952,8 +957,6 @@ function CanvasBlockFrame({
   definition,
   isSelected,
   isDragging,
-  isOver,
-  dropPosition,
   onSelect,
   onDragStart,
   children,
@@ -962,8 +965,6 @@ function CanvasBlockFrame({
   definition?: BlockDefinition
   isSelected: boolean
   isDragging: boolean
-  isOver: boolean
-  dropPosition: DropIndicator['position'] | null
   onSelect: () => void
   onDragStart: (event: React.DragEvent) => void
   children: ReactNode
@@ -976,8 +977,6 @@ function CanvasBlockFrame({
         isDragging && 'opacity-40',
       )}
     >
-      {isOver && dropPosition === 'before' ? <CanvasDropLine /> : null}
-
       <div
         className={cn(
           'relative rounded-[var(--site-radius-panel)]',
@@ -1040,17 +1039,35 @@ function CanvasBlockFrame({
           </div>
         </div>
       </div>
-
-      {isOver && dropPosition === 'after' ? <CanvasDropLine /> : null}
     </div>
   )
 }
 
-function CanvasDropLine() {
+function CanvasDropZone({
+  index,
+  active,
+}: {
+  index?: number
+  active: boolean
+}) {
   return (
-    <div className="flex h-8 items-center justify-center">
-      <div className="flex h-1 w-full items-center justify-center rounded-full bg-[var(--thread-teal)]">
-        <div className="size-2 rounded-full bg-[var(--thread-gold)]" />
+    <div
+      data-drop-index={index}
+      aria-hidden="true"
+      className="flex h-5 items-center justify-center"
+    >
+      <div
+        className={cn(
+          'flex h-1 w-full items-center justify-center rounded-full bg-transparent transition-[background-color,transform]',
+          active && 'bg-[var(--thread-teal)]',
+        )}
+      >
+        <div
+          className={cn(
+            'size-2 rounded-full bg-transparent transition-colors',
+            active && 'bg-[var(--thread-gold)]',
+          )}
+        />
       </div>
     </div>
   )
@@ -1249,8 +1266,6 @@ type DragState =
 
 type DropIndicator = {
   index: number
-  blockId: string | null
-  position: 'before' | 'after' | 'start' | 'end'
 }
 
 function groupByCategory(

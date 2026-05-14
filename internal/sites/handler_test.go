@@ -16,6 +16,7 @@ import (
 type fakeReader struct {
 	summaries []Summary
 	draft     siteconfig.SiteDraft
+	metadata  GenerationMetadata
 }
 
 func (r fakeReader) ListSites(context.Context, string) ([]Summary, error) {
@@ -24,6 +25,10 @@ func (r fakeReader) ListSites(context.Context, string) ([]Summary, error) {
 
 func (r fakeReader) LoadDraft(context.Context, string) (siteconfig.SiteDraft, error) {
 	return r.draft, nil
+}
+
+func (r fakeReader) LoadGenerationMetadata(context.Context, string) (GenerationMetadata, error) {
+	return r.metadata, nil
 }
 
 type fakeMutator struct {
@@ -206,6 +211,13 @@ func TestGetSiteReturnsCanonicalDraft(t *testing.T) {
 	handler := Handler{
 		reader: fakeReader{
 			draft: validHandlerDraft(),
+			metadata: GenerationMetadata{
+				Prompt:      "A compact site for a local studio.",
+				ThemePreset: "calm-nordic",
+				AssetsNeeded: []string{
+					"hero-image",
+				},
+			},
 		},
 		mutator:    &fakeMutator{},
 		authorizer: fakeAuthorizer{},
@@ -226,6 +238,7 @@ func TestGetSiteReturnsCanonicalDraft(t *testing.T) {
 	}
 	var payload struct {
 		Draft         siteconfig.SiteDraft         `json:"draft"`
+		Generation    GenerationMetadata           `json:"generation"`
 		BlockRegistry []siteconfig.BlockDefinition `json:"blockRegistry"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
@@ -236,6 +249,9 @@ func TestGetSiteReturnsCanonicalDraft(t *testing.T) {
 	}
 	if len(payload.BlockRegistry) == 0 {
 		t.Fatal("expected block registry in payload")
+	}
+	if payload.Generation.Prompt == "" || payload.Generation.ThemePreset == "" {
+		t.Fatalf("expected generation metadata in payload, got %#v", payload.Generation)
 	}
 }
 

@@ -190,6 +190,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Add the remaining non-form MVP blocks: `gallery`, `testimonials`, `pricing_packages`, `faq`, `team_profile_cards`, and `footer`.
   Verified on May 11, 2026 by extending the Go-owned block registry, validation, generation repair, and React preview/publish renderer; running `go test ./...`, `npm run web:test`, `npm run web:lint`, and `npm run web:build`; then logging into the seeded local builder in Playwright, adding a `gallery` block to `Nordic Studio`, opening draft preview, confirming the new section rendered, and checking that the page had no console errors.
 - [x] Extend prompt generation and repair so the implemented non-form MVP blocks can appear in generated drafts when prompts ask for gallery-heavy layouts, pricing, testimonials, FAQs, team bios, and footer structure.
+  Verified on May 14, 2026 by generating `Playwright Generation Proof` locally through the builder, confirming the resulting draft exposed the stored site prompt plus generation summary metadata in the new site-settings brief panel, and checking that the generated canvas included testimonial, pricing, CTA, and footer blocks without current-page console errors.
 - [x] Add the `contact_form` block once the public submissions flow is ready to store or forward real inquiries.
   Verified on May 12, 2026 by extending the Go-owned block registry plus React renderer/editor contract with `contact_form`, then creating `Contact Form Verification Studio` in Playwright, adding the block in the builder, and successfully submitting the rendered preview form through the new public forms API.
 - [ ] Add optional early blocks only if user testing shows demand: logo cloud, map/location, stats/KPIs, article teaser, or allowlisted embeds.
@@ -198,6 +199,7 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [x] Add theme controls for palette, font preset, button style, radius, section spacing, and image style.
   Verified on May 11, 2026 by extending the safe theme contract with button and image style selections, saving `Ink Solid` + `Paper Cut` from the builder in Playwright, and confirming the preview route exposed the expected theme CSS variables (`--site-button-background: #f3ead8`, `--site-image-border: #ff8a9d`) with no console errors.
 - [x] Add Puck or another compact CMS-style editing layer as an MVP requirement for faster visual authoring inside the React builder.
+  Verified on May 14, 2026 by upgrading the renderer-backed builder canvas to use explicit rendered drop zones, reopening `Playwright Generation Proof` in Playwright, confirming the canvas no longer showed the old `Live builder canvas` eyebrow, and reordering the footer block to the top of the live-rendered page with the persisted `Blocks reordered.` confirmation and no browser console errors.
 - [x] Build adapters from canonical draft data to editor state and back.
 - [x] Add site-level re-prompt.
 - [x] Add page-level re-prompt.

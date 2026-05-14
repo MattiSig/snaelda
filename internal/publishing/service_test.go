@@ -159,6 +159,10 @@ func (fakePublishingReader) LoadDraft(context.Context, string) (siteconfig.SiteD
 	return siteconfig.SiteDraft{}, errors.New("not implemented")
 }
 
+func (fakePublishingReader) LoadGenerationMetadata(context.Context, string) (sites.GenerationMetadata, error) {
+	return sites.GenerationMetadata{}, errors.New("not implemented")
+}
+
 type fakePublishingStore struct {
 	tx                  *fakePublishingTx
 	publishedSiteSlug   string

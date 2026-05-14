@@ -523,6 +523,10 @@ func (s *fakeMutationStore) LoadDraft(_ context.Context, siteID string) (sitecon
 	return draft, nil
 }
 
+func (s *fakeMutationStore) LoadGenerationMetadata(context.Context, string) (GenerationMetadata, error) {
+	return GenerationMetadata{}, nil
+}
+
 func (s *fakeMutationStore) SaveDraft(_ context.Context, _ string, draft siteconfig.SiteDraft) error {
 	if err := siteconfig.ValidateDraft(draft); err != nil {
 		return err
