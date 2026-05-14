@@ -44,6 +44,9 @@ func TestLoadUsesLocalStorageDefaults(t *testing.T) {
 	if cfg.AuthRefreshTokenTTL != 30*24*time.Hour {
 		t.Fatalf("expected default auth refresh token ttl, got %s", cfg.AuthRefreshTokenTTL)
 	}
+	if cfg.PreviewTokenTTL != 7*24*time.Hour {
+		t.Fatalf("expected default preview token ttl, got %s", cfg.PreviewTokenTTL)
+	}
 	if cfg.AuthCookieSecure {
 		t.Fatal("expected insecure auth cookie in test")
 	}
@@ -61,6 +64,7 @@ func TestLoadAllowsStorageOverrides(t *testing.T) {
 	t.Setenv("S3_SECRET_ACCESS_KEY", "custom-secret")
 	t.Setenv("S3_FORCE_PATH_STYLE", "false")
 	t.Setenv("PUBLISHED_ARTIFACTS_DIR", "/tmp/snaelda-artifacts")
+	t.Setenv("PREVIEW_TOKEN_TTL", "96h")
 
 	cfg, err := Load()
 	if err != nil {
@@ -87,6 +91,9 @@ func TestLoadAllowsStorageOverrides(t *testing.T) {
 	}
 	if cfg.PublishedArtifactsDir != "/tmp/snaelda-artifacts" {
 		t.Fatalf("expected overridden published artifacts dir, got %q", cfg.PublishedArtifactsDir)
+	}
+	if cfg.PreviewTokenTTL != 96*time.Hour {
+		t.Fatalf("expected overridden preview token ttl, got %s", cfg.PreviewTokenTTL)
 	}
 }
 
@@ -120,6 +127,16 @@ func TestLoadRejectsInvalidRefreshAuthDuration(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsInvalidPreviewTokenDuration(t *testing.T) {
+	t.Setenv("APP_ENV", "test")
+	unsetStorageEnv(t)
+	t.Setenv("PREVIEW_TOKEN_TTL", "briefly")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid preview token duration error")
+	}
+}
+
 func TestLoadRequiresProductionAuthSecret(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	t.Setenv("DATABASE_URL", "postgres://example")
@@ -140,4 +157,5 @@ func unsetStorageEnv(t *testing.T) {
 	t.Setenv("S3_SECRET_ACCESS_KEY", "")
 	t.Setenv("S3_FORCE_PATH_STYLE", "")
 	t.Setenv("PUBLISHED_ARTIFACTS_DIR", "")
+	t.Setenv("PREVIEW_TOKEN_TTL", "")
 }

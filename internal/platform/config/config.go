@@ -18,6 +18,7 @@ type Config struct {
 	AuthAccessTokenTTL    time.Duration
 	AuthRefreshTokenTTL   time.Duration
 	AuthCookieSecure      bool
+	PreviewTokenTTL       time.Duration
 	PublishedArtifactsDir string
 	S3Endpoint            string
 	S3Bucket              string
@@ -41,6 +42,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	previewTokenTTL, err := getEnvDuration("PREVIEW_TOKEN_TTL", 7*24*time.Hour)
+	if err != nil {
+		return Config{}, err
+	}
 	cookieSecure, err := getEnvBool("AUTH_COOKIE_SECURE", appEnv != "development" && appEnv != "test")
 	if err != nil {
 		return Config{}, err
@@ -57,6 +62,7 @@ func Load() (Config, error) {
 		AuthAccessTokenTTL:    accessTokenTTL,
 		AuthRefreshTokenTTL:   refreshTokenTTL,
 		AuthCookieSecure:      cookieSecure,
+		PreviewTokenTTL:       previewTokenTTL,
 		PublishedArtifactsDir: getEnv("PUBLISHED_ARTIFACTS_DIR", "var/published-artifacts"),
 		S3Endpoint:            getEnv("S3_ENDPOINT", "http://localhost:8333"),
 		S3Bucket:              getEnv("S3_BUCKET", "snaelda-local"),
@@ -92,6 +98,9 @@ func Load() (Config, error) {
 	}
 	if cfg.AuthRefreshTokenTTL <= 0 {
 		return Config{}, fmt.Errorf("AUTH_REFRESH_TOKEN_TTL must be positive")
+	}
+	if cfg.PreviewTokenTTL <= 0 {
+		return Config{}, fmt.Errorf("PREVIEW_TOKEN_TTL must be positive")
 	}
 
 	return cfg, nil

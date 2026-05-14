@@ -3,10 +3,12 @@ package sites
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/authorization"
@@ -59,6 +61,15 @@ type fakeMutator struct {
 	updatePageID             string
 	updateBlockID            string
 	err                      error
+}
+
+type fakePreviewTokens struct {
+	issuedSiteID  string
+	issuedUserID  string
+	issued        PreviewToken
+	revokedSiteID string
+	draft         siteconfig.SiteDraft
+	err           error
 }
 
 func (m *fakeMutator) CreateSite(_ context.Context, _ string, input CreateSiteInput) (siteconfig.SiteDraft, error) {
@@ -154,6 +165,21 @@ func (m *fakeMutator) DeleteSite(_ context.Context, workspaceID string, siteID s
 	m.deleteWorkspaceID = workspaceID
 	m.deleteSiteID = siteID
 	return m.err
+}
+
+func (p *fakePreviewTokens) Issue(_ context.Context, siteID string, userID string) (PreviewToken, error) {
+	p.issuedSiteID = siteID
+	p.issuedUserID = userID
+	return p.issued, p.err
+}
+
+func (p *fakePreviewTokens) Revoke(_ context.Context, siteID string) error {
+	p.revokedSiteID = siteID
+	return p.err
+}
+
+func (p *fakePreviewTokens) LoadDraft(_ context.Context, _ string) (siteconfig.SiteDraft, error) {
+	return p.draft, p.err
 }
 
 type fakeAuthorizer struct{}
@@ -306,6 +332,133 @@ func TestUpdateSiteReturnsUpdatedDraft(t *testing.T) {
 	}
 	if mutator.updateInput.Name == nil || *mutator.updateInput.Name != "Renamed Studio" {
 		t.Fatalf("expected updated name to reach mutator, got %#v", mutator.updateInput.Name)
+	}
+}
+
+func TestIssuePreviewTokenReturnsCreatedToken(t *testing.T) {
+	previews := &fakePreviewTokens{
+		issued: PreviewToken{
+			Token:     "preview-token",
+			ExpiresAt: time.Date(2026, time.May, 20, 12, 0, 0, 0, time.UTC),
+		},
+	}
+	handler := Handler{
+		authorizer: fakeAuthorizer{},
+		previews:   previews,
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/site_demo/preview-token", nil)
+	req.SetPathValue("siteId", "site_demo")
+	req = req.WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	res := httptest.NewRecorder()
+
+	handler.issuePreviewToken(res, req)
+
+	if res.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d", http.StatusCreated, res.Code)
+	}
+	if previews.issuedSiteID != "site_demo" || previews.issuedUserID != "user-1" {
+		t.Fatalf("expected preview token issue inputs to be captured, got %q %q", previews.issuedSiteID, previews.issuedUserID)
+	}
+	var payload previewTokenResponse
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Token != "preview-token" {
+		t.Fatalf("expected preview token, got %q", payload.Token)
+	}
+}
+
+func TestRevokePreviewTokenReturnsNoContent(t *testing.T) {
+	previews := &fakePreviewTokens{}
+	handler := Handler{
+		authorizer: fakeAuthorizer{},
+		previews:   previews,
+	}
+	req := httptest.NewRequest(http.MethodDelete, "/api/sites/site_demo/preview-token", nil)
+	req.SetPathValue("siteId", "site_demo")
+	req = req.WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	res := httptest.NewRecorder()
+
+	handler.revokePreviewToken(res, req)
+
+	if res.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, res.Code)
+	}
+	if previews.revokedSiteID != "site_demo" {
+		t.Fatalf("expected revoked site id, got %q", previews.revokedSiteID)
+	}
+}
+
+func TestGetPreviewByTokenReturnsDraft(t *testing.T) {
+	handler := Handler{
+		previews: &fakePreviewTokens{
+			draft: validHandlerDraft(),
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/public/preview/token-demo", nil)
+	req.SetPathValue("token", "token-demo")
+	res := httptest.NewRecorder()
+
+	handler.getPreviewByToken(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	var payload struct {
+		Draft siteconfig.SiteDraft `json:"draft"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Draft.Site.ID != validHandlerDraft().Site.ID {
+		t.Fatalf("expected returned draft, got %#v", payload.Draft.Site)
+	}
+}
+
+func TestGetPreviewByTokenReturnsNotFoundForExpiredToken(t *testing.T) {
+	handler := Handler{
+		previews: &fakePreviewTokens{
+			err: ErrPreviewTokenNotFound,
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/public/preview/token-demo", nil)
+	req.SetPathValue("token", "token-demo")
+	res := httptest.NewRecorder()
+
+	handler.getPreviewByToken(res, req)
+
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, res.Code)
+	}
+}
+
+func TestWriteSiteErrorMapsPreviewTokenInvalid(t *testing.T) {
+	res := httptest.NewRecorder()
+
+	writeSiteError(res, ErrPreviewTokenInvalid)
+
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, res.Code)
+	}
+}
+
+func TestWriteSiteErrorFallsBackForUnexpectedPreviewError(t *testing.T) {
+	res := httptest.NewRecorder()
+
+	writeSiteError(res, errors.New("preview backend failed"))
+
+	if res.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, res.Code)
 	}
 }
 

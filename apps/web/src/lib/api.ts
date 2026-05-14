@@ -2,288 +2,297 @@ export type APIErrorPayload = {
   error?:
     | string
     | {
-        code?: string
-        message?: string
-      }
-  code?: string
-  message?: string
-}
+        code?: string;
+        message?: string;
+      };
+  code?: string;
+  message?: string;
+};
 
 export class APIError extends Error {
-  readonly status: number
-  readonly payload: APIErrorPayload | null
+  readonly status: number;
+  readonly payload: APIErrorPayload | null;
 
   constructor(status: number, payload: APIErrorPayload | null) {
     const nestedMessage =
-      typeof payload?.error === 'object' ? payload.error.message : undefined
+      typeof payload?.error === "object" ? payload.error.message : undefined;
     super(
       payload?.message ??
         nestedMessage ??
         `API request failed with status ${status}`,
-    )
-    this.name = 'APIError'
-    this.status = status
-    this.payload = payload
+    );
+    this.name = "APIError";
+    this.status = status;
+    this.payload = payload;
   }
 }
 
 export type AuthUser = {
-  id: string
-  email: string
-  name: string
-  workspaceId: string
-  workspaceRole: string
-}
+  id: string;
+  email: string;
+  name: string;
+  workspaceId: string;
+  workspaceRole: string;
+};
 
 export type AuthSession = {
-  user: AuthUser
-  expiresAt?: number
-  tokenType?: string
-}
+  user: AuthUser;
+  expiresAt?: number;
+  tokenType?: string;
+};
 
 export type SiteSummary = {
-  id: string
-  workspaceId: string
-  name: string
-  slug: string
-  status: string
-  defaultLocale: string
-  publishedVersionId?: string
-  pageCount: number
-}
+  id: string;
+  workspaceId: string;
+  name: string;
+  slug: string;
+  status: string;
+  defaultLocale: string;
+  publishedVersionId?: string;
+  pageCount: number;
+};
 
 export type SiteDraft = {
   site: {
-    id: string
-    name: string
-    slug: string
-    status: string
-    defaultLocale?: string
+    id: string;
+    name: string;
+    slug: string;
+    status: string;
+    defaultLocale?: string;
     seo?: {
-      title?: string
-      description?: string
-    }
-  }
+      title?: string;
+      description?: string;
+    };
+  };
   theme: {
-    version: string
+    version: string;
     tokens: {
-      colors: Record<string, string>
-      typography: Record<string, string>
-      layout: Record<string, string>
-      shape: Record<string, string>
-    }
-  }
+      colors: Record<string, string>;
+      typography: Record<string, string>;
+      layout: Record<string, string>;
+      shape: Record<string, string>;
+    };
+  };
   navigation: {
     primary: Array<{
-      label: string
-      pageId?: string
-      href?: string
-    }>
-  }
+      label: string;
+      pageId?: string;
+      href?: string;
+    }>;
+  };
   pages: Array<{
-    id: string
-    title: string
-    slug: string
+    id: string;
+    title: string;
+    slug: string;
     seo?: {
-      title?: string
-      description?: string
-    }
-    settings?: Record<string, unknown>
+      title?: string;
+      description?: string;
+    };
+    settings?: Record<string, unknown>;
     blocks: Array<{
-      id: string
-      type: string
-      version: string
-      props: Record<string, unknown>
+      id: string;
+      type: string;
+      version: string;
+      props: Record<string, unknown>;
       settings?: {
-        hidden?: boolean
-        anchorId?: string
-      }
-    }>
-  }>
-}
+        hidden?: boolean;
+        anchorId?: string;
+      };
+    }>;
+  }>;
+};
 
 export type PublishedSnapshot = {
-  schemaVersion: string
+  schemaVersion: string;
   site: {
-    id: string
-    name: string
-    defaultLocale: string
+    id: string;
+    name: string;
+    defaultLocale: string;
     seo?: {
-      title?: string
-      description?: string
-    }
-  }
-  theme: SiteDraft['theme']
-  navigation: SiteDraft['navigation']
-  pages: SiteDraft['pages']
-}
+      title?: string;
+      description?: string;
+    };
+  };
+  theme: SiteDraft["theme"];
+  navigation: SiteDraft["navigation"];
+  pages: SiteDraft["pages"];
+};
 
 export type SiteVersion = {
-  id: string
-  siteId: string
-  versionNumber: number
-  createdAt: string
-  publishNote?: string
-  isCurrent: boolean
-}
+  id: string;
+  siteId: string;
+  versionNumber: number;
+  createdAt: string;
+  publishNote?: string;
+  isCurrent: boolean;
+};
 
 export type BlockEditorField = {
-  name: string
-  label: string
-  control: string
-  valueType?: string
-  description?: string
-  placeholder?: string
-  options?: string[]
-  fields?: BlockEditorField[]
-  itemFields?: BlockEditorField[]
-}
+  name: string;
+  label: string;
+  control: string;
+  valueType?: string;
+  description?: string;
+  placeholder?: string;
+  options?: string[];
+  fields?: BlockEditorField[];
+  itemFields?: BlockEditorField[];
+};
 
 export type BlockDefinition = {
-  type: string
-  version: string
-  displayName: string
-  category: string
-  defaultProps?: Record<string, unknown>
-  editorSchema?: BlockEditorField[]
-}
+  type: string;
+  version: string;
+  displayName: string;
+  category: string;
+  defaultProps?: Record<string, unknown>;
+  editorSchema?: BlockEditorField[];
+};
 
 export type GenerationMetadata = {
-  prompt: string
-  themePreset?: string
-  assetsNeeded?: string[]
-  assumptions?: string[]
-  validationRetryCount?: number
-}
+  prompt: string;
+  themePreset?: string;
+  assetsNeeded?: string[];
+  assumptions?: string[];
+  validationRetryCount?: number;
+};
 
 export type SiteDraftResponse = {
-  draft: SiteDraft
-  generation: GenerationMetadata
-  blockRegistry: BlockDefinition[]
-}
+  draft: SiteDraft;
+  generation: GenerationMetadata;
+  blockRegistry: BlockDefinition[];
+};
 
 export type SiteRepromptResponse = {
-  jobId: string
-  draft: SiteDraft
-}
+  jobId: string;
+  draft: SiteDraft;
+};
 
 export type PublishSiteResponse = {
-  version: SiteVersion
-  hostname: string
-  publicUrl: string
-  snapshot: PublishedSnapshot
-}
+  version: SiteVersion;
+  hostname: string;
+  publicUrl: string;
+  snapshot: PublishedSnapshot;
+};
 
 export type RollbackSiteResponse = {
-  version: SiteVersion
-  hostname: string
-  publicUrl: string
-}
+  version: SiteVersion;
+  hostname: string;
+  publicUrl: string;
+};
 
 export type ThemeOption = {
-  id: string
-  label: string
-  description?: string
-}
+  id: string;
+  label: string;
+  description?: string;
+};
 
 export type ThemeSelection = {
-  palette: string
-  fontPreset: string
-  sectionSpacing: string
-  radius: string
-  buttonStyle: string
-  imageStyle: string
-}
+  palette: string;
+  fontPreset: string;
+  sectionSpacing: string;
+  radius: string;
+  buttonStyle: string;
+  imageStyle: string;
+};
 
 export type ThemeEditorCatalog = {
-  palettes: ThemeOption[]
-  fontPresets: ThemeOption[]
-  sectionSpacings: ThemeOption[]
-  radii: ThemeOption[]
-  buttonStyles: ThemeOption[]
-  imageStyles: ThemeOption[]
-}
+  palettes: ThemeOption[];
+  fontPresets: ThemeOption[];
+  sectionSpacings: ThemeOption[];
+  radii: ThemeOption[];
+  buttonStyles: ThemeOption[];
+  imageStyles: ThemeOption[];
+};
 
 export type ThemeState = {
-  theme: SiteDraft['theme']
-  selection: ThemeSelection
-  options: ThemeEditorCatalog
-}
+  theme: SiteDraft["theme"];
+  selection: ThemeSelection;
+  options: ThemeEditorCatalog;
+};
 
 export type AssetMetadata = {
-  fileName?: string
-  contentType?: string
-  requestedSizeBytes?: number
-  sizeBytes?: number
-  width?: number
-  height?: number
-  etag?: string
-  uploadStatus?: string
-  uploadedAt?: string
-}
+  fileName?: string;
+  contentType?: string;
+  requestedSizeBytes?: number;
+  sizeBytes?: number;
+  width?: number;
+  height?: number;
+  etag?: string;
+  uploadStatus?: string;
+  uploadedAt?: string;
+};
 
 export type AssetRecord = {
-  id: string
-  workspaceId: string
-  siteId?: string
-  kind: string
-  storageKey: string
-  publicUrl?: string
-  downloadUrl?: string
-  altText?: string
-  metadata: AssetMetadata
-  createdBy?: string
-  createdAt: string
-}
+  id: string;
+  workspaceId: string;
+  siteId?: string;
+  kind: string;
+  storageKey: string;
+  publicUrl?: string;
+  downloadUrl?: string;
+  altText?: string;
+  metadata: AssetMetadata;
+  createdBy?: string;
+  createdAt: string;
+};
 
-export type FormSubmissionStatus = 'new' | 'reviewed' | 'resolved' | 'spam'
+export type FormSubmissionStatus = "new" | "reviewed" | "resolved" | "spam";
 
 export type FormSubmissionRecord = {
-  id: string
-  siteId: string
-  pageId?: string
-  blockId?: string
-  status: FormSubmissionStatus
-  payload: Record<string, unknown>
-  createdAt: string
-  pageTitle?: string
-}
+  id: string;
+  siteId: string;
+  pageId?: string;
+  blockId?: string;
+  status: FormSubmissionStatus;
+  payload: Record<string, unknown>;
+  createdAt: string;
+  pageTitle?: string;
+};
 
 export type AssetUploadTicket = {
-  asset: AssetRecord
+  asset: AssetRecord;
   upload: {
-    url: string
-    method: string
-    headers?: Record<string, string>
-    expiresAt: string
-  }
-}
+    url: string;
+    method: string;
+    headers?: Record<string, string>;
+    expiresAt: string;
+  };
+};
 
 export type SiteVersionsResponse = {
-  versions: SiteVersion[]
-}
+  versions: SiteVersion[];
+};
 
 export type PublishedSiteResponse = {
-  siteSlug: string
-  hostname?: string
-  publicUrl: string
-  version: SiteVersion
-  pagePath: string
-  page: SiteDraft['pages'][number]
-  snapshot: PublishedSnapshot
-}
+  siteSlug: string;
+  hostname?: string;
+  publicUrl: string;
+  version: SiteVersion;
+  pagePath: string;
+  page: SiteDraft["pages"][number];
+  snapshot: PublishedSnapshot;
+};
 
-const defaultAPIBaseURL = 'http://localhost:8080'
+export type PreviewTokenResponse = {
+  token: string;
+  expiresAt: string;
+};
+
+export type PreviewDraftResponse = {
+  draft: SiteDraft;
+};
+
+const defaultAPIBaseURL = "http://localhost:8080";
 
 export function getAPIBaseURL() {
-  return viteEnv('VITE_API_BASE_URL') ?? defaultAPIBaseURL
+  return viteEnv("VITE_API_BASE_URL") ?? defaultAPIBaseURL;
 }
 
 function viteEnv(name: string) {
   const meta = import.meta as ImportMeta & {
-    env?: Record<string, string | undefined>
-  }
-  return meta.env?.[name]
+    env?: Record<string, string | undefined>;
+  };
+  return meta.env?.[name];
 }
 
 export async function apiFetch<T>(
@@ -291,68 +300,68 @@ export async function apiFetch<T>(
   init: RequestInit = {},
   retryOnUnauthorized = true,
 ): Promise<T> {
-  const method = (init.method ?? 'GET').toUpperCase()
+  const method = (init.method ?? "GET").toUpperCase();
   const response = await fetch(new URL(path, getAPIBaseURL()), {
-    credentials: 'include',
+    credentials: "include",
     headers: {
-      Accept: 'application/json',
+      Accept: "application/json",
       ...buildCSRFHeaders(method),
       ...init.headers,
     },
     ...init,
-  })
+  });
 
   if (!response.ok) {
     if (
       response.status === 401 &&
       retryOnUnauthorized &&
-      path !== '/api/auth/login' &&
-      path !== '/api/auth/refresh'
+      path !== "/api/auth/login" &&
+      path !== "/api/auth/refresh"
     ) {
-      await refreshAuthSession()
-      return apiFetch<T>(path, init, false)
+      await refreshAuthSession();
+      return apiFetch<T>(path, init, false);
     }
 
-    const payload = await response.json().catch(() => null)
-    throw new APIError(response.status, payload)
+    const payload = await response.json().catch(() => null);
+    throw new APIError(response.status, payload);
   }
 
   if (response.status === 204) {
-    return undefined as T
+    return undefined as T;
   }
 
-  return response.json() as Promise<T>
+  return response.json() as Promise<T>;
 }
 
 function buildCSRFHeaders(method: string): HeadersInit {
   if (
-    method === 'GET' ||
-    method === 'HEAD' ||
-    method === 'OPTIONS' ||
-    typeof document === 'undefined'
+    method === "GET" ||
+    method === "HEAD" ||
+    method === "OPTIONS" ||
+    typeof document === "undefined"
   ) {
-    return {}
+    return {};
   }
 
-  const token = readCookie('snaelda_csrf_token')
+  const token = readCookie("snaelda_csrf_token");
   if (!token) {
-    return {}
+    return {};
   }
 
   return {
-    'X-CSRF-Token': token,
-  }
+    "X-CSRF-Token": token,
+  };
 }
 
 function readCookie(name: string) {
-  const prefix = `${name}=`
-  for (const cookie of document.cookie.split(';')) {
-    const trimmed = cookie.trim()
+  const prefix = `${name}=`;
+  for (const cookie of document.cookie.split(";")) {
+    const trimmed = cookie.trim();
     if (trimmed.startsWith(prefix)) {
-      return decodeURIComponent(trimmed.slice(prefix.length))
+      return decodeURIComponent(trimmed.slice(prefix.length));
     }
   }
-  return ''
+  return "";
 }
 
 async function publicAPIRequest<T>(
@@ -360,100 +369,116 @@ async function publicAPIRequest<T>(
   init: RequestInit = {},
 ): Promise<T> {
   const response = await fetch(new URL(path, getAPIBaseURL()), {
-    credentials: 'omit',
+    credentials: "omit",
     headers: {
-      Accept: 'application/json',
+      Accept: "application/json",
       ...init.headers,
     },
     ...init,
-  })
+  });
 
   if (!response.ok) {
-    const payload = await response.json().catch(() => null)
-    throw new APIError(response.status, payload)
+    const payload = await response.json().catch(() => null);
+    throw new APIError(response.status, payload);
   }
 
   if (response.status === 204) {
-    return undefined as T
+    return undefined as T;
   }
 
-  return response.json() as Promise<T>
+  return response.json() as Promise<T>;
 }
 
 export async function getCurrentSession() {
-  return apiFetch<AuthSession>('/api/auth/me')
+  return apiFetch<AuthSession>("/api/auth/me");
 }
 
 export async function refreshAuthSession() {
   return apiFetch<AuthSession>(
-    '/api/auth/refresh',
+    "/api/auth/refresh",
     {
-      method: 'POST',
+      method: "POST",
     },
     false,
-  )
+  );
 }
 
 export async function login(email: string, name?: string) {
-  return apiFetch<AuthSession>('/api/auth/login', {
-    method: 'POST',
+  return apiFetch<AuthSession>("/api/auth/login", {
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({ email, name }),
-  })
+  });
 }
 
 export async function logout() {
-  return apiFetch<{ status: string }>('/api/auth/logout', {
-    method: 'POST',
-  })
+  return apiFetch<{ status: string }>("/api/auth/logout", {
+    method: "POST",
+  });
 }
 
 export async function listSites() {
-  return apiFetch<{ sites: SiteSummary[] }>('/api/sites')
+  return apiFetch<{ sites: SiteSummary[] }>("/api/sites");
 }
 
 export async function getSiteDraft(siteId: string) {
-  return apiFetch<SiteDraftResponse>(`/api/sites/${siteId}`)
+  return apiFetch<SiteDraftResponse>(`/api/sites/${siteId}`);
+}
+
+export async function createPreviewToken(siteId: string) {
+  return apiFetch<PreviewTokenResponse>(`/api/sites/${siteId}/preview-token`, {
+    method: "POST",
+  });
+}
+
+export async function revokePreviewToken(siteId: string) {
+  return apiFetch<void>(`/api/sites/${siteId}/preview-token`, {
+    method: "DELETE",
+  });
+}
+
+export async function getPreviewDraft(token: string) {
+  return publicAPIRequest<PreviewDraftResponse>(`/api/public/preview/${token}`);
 }
 
 export async function createSite(input: {
-  name: string
-  prompt?: string
-  slug?: string
+  name: string;
+  prompt?: string;
+  slug?: string;
 }) {
-  return apiFetch<{ draft: SiteDraft }>('/api/sites', {
-    method: 'POST',
+  return apiFetch<{ draft: SiteDraft }>("/api/sites", {
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify(input),
-  })
+  });
 }
 
 export async function generateSite(input: {
-  name?: string
-  prompt: string
-  slug?: string
+  name?: string;
+  prompt: string;
+  slug?: string;
 }) {
-  return apiFetch<SiteRepromptResponse>('/api/sites/generate', {
-    method: 'POST',
+  return apiFetch<SiteRepromptResponse>("/api/sites/generate", {
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify(input),
-  })
+  });
 }
 
 export async function repromptSite(siteId: string, input: { prompt: string }) {
   return apiFetch<SiteRepromptResponse>(`/api/sites/${siteId}/reprompt`, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify(input),
-  })
+  });
 }
 
 export async function repromptPage(
@@ -464,39 +489,39 @@ export async function repromptPage(
   return apiFetch<SiteRepromptResponse>(
     `/api/sites/${siteId}/pages/${pageId}/reprompt`,
     {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(input),
     },
-  )
+  );
 }
 
 export async function undoSiteReprompt(siteId: string) {
   return apiFetch<{ draft: SiteDraft }>(`/api/sites/${siteId}/undo`, {
-    method: 'POST',
-  })
+    method: "POST",
+  });
 }
 
 export async function updateSite(
   siteId: string,
   input: {
-    name?: string
-    slug?: string
+    name?: string;
+    slug?: string;
   },
 ) {
   return apiFetch<{ draft: SiteDraft }>(`/api/sites/${siteId}`, {
-    method: 'PATCH',
+    method: "PATCH",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify(input),
-  })
+  });
 }
 
 export async function getSiteTheme(siteId: string) {
-  return apiFetch<ThemeState>(`/api/sites/${siteId}/theme`)
+  return apiFetch<ThemeState>(`/api/sites/${siteId}/theme`);
 }
 
 export async function updateSiteTheme(
@@ -504,195 +529,195 @@ export async function updateSiteTheme(
   input: Partial<ThemeSelection>,
 ) {
   return apiFetch<ThemeState>(`/api/sites/${siteId}/theme`, {
-    method: 'PATCH',
+    method: "PATCH",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify(input),
-  })
+  });
 }
 
 export async function createAssetUploadURL(input: {
-  siteId: string
-  fileName: string
-  contentType: string
-  sizeBytes: number
-  kind?: string
-  altText?: string
+  siteId: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  kind?: string;
+  altText?: string;
 }) {
-  return apiFetch<AssetUploadTicket>('/api/assets/upload-url', {
-    method: 'POST',
+  return apiFetch<AssetUploadTicket>("/api/assets/upload-url", {
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify(input),
-  })
+  });
 }
 
 export async function completeAssetUpload(
   assetId: string,
   input: {
-    altText?: string
-    width?: number
-    height?: number
+    altText?: string;
+    width?: number;
+    height?: number;
   } = {},
 ) {
-  return apiFetch<{ asset: AssetRecord }>('/api/assets/complete', {
-    method: 'POST',
+  return apiFetch<{ asset: AssetRecord }>("/api/assets/complete", {
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({ assetId, ...input }),
-  })
+  });
 }
 
 export async function listSiteAssets(siteId: string) {
-  return apiFetch<{ assets: AssetRecord[] }>(`/api/sites/${siteId}/assets`)
+  return apiFetch<{ assets: AssetRecord[] }>(`/api/sites/${siteId}/assets`);
 }
 
 export async function listSiteFormSubmissions(siteId: string) {
   return apiFetch<{ submissions: FormSubmissionRecord[] }>(
     `/api/sites/${siteId}/form-submissions`,
-  )
+  );
 }
 
 export async function updateFormSubmission(
   submissionId: string,
   input: {
-    status: FormSubmissionStatus
+    status: FormSubmissionStatus;
   },
 ) {
   return apiFetch<{ submission: FormSubmissionRecord }>(
     `/api/form-submissions/${submissionId}`,
     {
-      method: 'PATCH',
+      method: "PATCH",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(input),
     },
-  )
+  );
 }
 
 export async function updateAsset(
   assetId: string,
   input: {
-    altText?: string
+    altText?: string;
   },
 ) {
   return apiFetch<{ asset: AssetRecord }>(`/api/assets/${assetId}`, {
-    method: 'PATCH',
+    method: "PATCH",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify(input),
-  })
+  });
 }
 
 export async function deleteAsset(assetId: string) {
   return apiFetch<void>(`/api/assets/${assetId}`, {
-    method: 'DELETE',
-  })
+    method: "DELETE",
+  });
 }
 
 export async function createPage(
   siteId: string,
   input: {
-    title: string
-    slug?: string
-    includeInNavigation?: boolean
+    title: string;
+    slug?: string;
+    includeInNavigation?: boolean;
   },
 ) {
   return apiFetch<{ draft: SiteDraft }>(`/api/sites/${siteId}/pages`, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify(input),
-  })
+  });
 }
 
 export async function updatePage(
   siteId: string,
   pageId: string,
   input: {
-    title?: string
-    slug?: string
+    title?: string;
+    slug?: string;
     seo?: {
-      title?: string
-      description?: string
-    }
-    includeInNavigation?: boolean
+      title?: string;
+      description?: string;
+    };
+    includeInNavigation?: boolean;
   },
 ) {
   return apiFetch<{ draft: SiteDraft }>(
     `/api/sites/${siteId}/pages/${pageId}`,
     {
-      method: 'PATCH',
+      method: "PATCH",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(input),
     },
-  )
+  );
 }
 
 export async function deletePage(siteId: string, pageId: string) {
   return apiFetch<{ draft: SiteDraft }>(
     `/api/sites/${siteId}/pages/${pageId}`,
     {
-      method: 'DELETE',
+      method: "DELETE",
     },
-  )
+  );
 }
 
 export async function reorderPages(siteId: string, pageIds: string[]) {
   return apiFetch<{ draft: SiteDraft }>(`/api/sites/${siteId}/pages/reorder`, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({ pageIds }),
-  })
+  });
 }
 
 export async function reorderSiteNavigation(siteId: string, pageIds: string[]) {
   return apiFetch<{ draft: SiteDraft }>(
     `/api/sites/${siteId}/navigation/reorder`,
     {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({ pageIds }),
     },
-  )
+  );
 }
 
 export async function createBlock(
   siteId: string,
   pageId: string,
   input: {
-    type: string
-    version?: string
+    type: string;
+    version?: string;
   },
 ) {
   return apiFetch<{ draft: SiteDraft }>(
     `/api/sites/${siteId}/pages/${pageId}/blocks`,
     {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(input),
     },
-  )
+  );
 }
 
 export async function deleteSite(siteId: string) {
   return apiFetch<unknown>(`/api/sites/${siteId}`, {
-    method: 'DELETE',
-  })
+    method: "DELETE",
+  });
 }
 
 export async function updateBlock(
@@ -700,20 +725,20 @@ export async function updateBlock(
   pageId: string,
   blockId: string,
   input: {
-    props?: Record<string, unknown>
-    hidden?: boolean
+    props?: Record<string, unknown>;
+    hidden?: boolean;
   },
 ) {
   return apiFetch<{ draft: SiteDraft }>(
     `/api/sites/${siteId}/pages/${pageId}/blocks/${blockId}`,
     {
-      method: 'PATCH',
+      method: "PATCH",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(input),
     },
-  )
+  );
 }
 
 export async function deleteBlock(
@@ -724,9 +749,9 @@ export async function deleteBlock(
   return apiFetch<{ draft: SiteDraft }>(
     `/api/sites/${siteId}/pages/${pageId}/blocks/${blockId}`,
     {
-      method: 'DELETE',
+      method: "DELETE",
     },
-  )
+  );
 }
 
 export async function duplicateBlock(
@@ -737,9 +762,9 @@ export async function duplicateBlock(
   return apiFetch<{ draft: SiteDraft }>(
     `/api/sites/${siteId}/pages/${pageId}/blocks/${blockId}/duplicate`,
     {
-      method: 'POST',
+      method: "POST",
     },
-  )
+  );
 }
 
 export async function reorderBlocks(
@@ -750,67 +775,67 @@ export async function reorderBlocks(
   return apiFetch<{ draft: SiteDraft }>(
     `/api/sites/${siteId}/pages/${pageId}/blocks/reorder`,
     {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({ blockIds }),
     },
-  )
+  );
 }
 
 export async function publishSite(
   siteId: string,
   input: {
-    publishNote?: string
+    publishNote?: string;
   } = {},
 ) {
   return apiFetch<PublishSiteResponse>(`/api/sites/${siteId}/publish`, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify(input),
-  })
+  });
 }
 
 export async function listSiteVersions(siteId: string) {
-  return apiFetch<SiteVersionsResponse>(`/api/sites/${siteId}/versions`)
+  return apiFetch<SiteVersionsResponse>(`/api/sites/${siteId}/versions`);
 }
 
 export async function rollbackSiteVersion(siteId: string, versionId: string) {
   return apiFetch<RollbackSiteResponse>(
     `/api/sites/${siteId}/rollback/${versionId}`,
     {
-      method: 'POST',
+      method: "POST",
     },
-  )
+  );
 }
 
-export async function getPublishedSite(siteSlug: string, pagePath = '/') {
-  const search = new URLSearchParams()
-  if (pagePath && pagePath !== '/') {
-    search.set('path', pagePath)
+export async function getPublishedSite(siteSlug: string, pagePath = "/") {
+  const search = new URLSearchParams();
+  if (pagePath && pagePath !== "/") {
+    search.set("path", pagePath);
   }
 
-  const suffix = search.size > 0 ? `?${search.toString()}` : ''
+  const suffix = search.size > 0 ? `?${search.toString()}` : "";
   return publicAPIRequest<PublishedSiteResponse>(
     `/api/public/sites/${siteSlug}${suffix}`,
-  )
+  );
 }
 
 export async function getPublishedSiteByHostname(
   hostname: string,
-  pagePath = '/',
+  pagePath = "/",
 ) {
-  const search = new URLSearchParams({ hostname })
-  if (pagePath && pagePath !== '/') {
-    search.set('path', pagePath)
+  const search = new URLSearchParams({ hostname });
+  if (pagePath && pagePath !== "/") {
+    search.set("path", pagePath);
   }
 
   return publicAPIRequest<PublishedSiteResponse>(
     `/api/public/render?${search.toString()}`,
-  )
+  );
 }
 
 export async function submitPublicForm(
@@ -821,11 +846,11 @@ export async function submitPublicForm(
   return publicAPIRequest<{ status: string; message: string }>(
     `/api/public/forms/${siteId}/${blockId}/submit`,
     {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({ payload }),
     },
-  )
+  );
 }

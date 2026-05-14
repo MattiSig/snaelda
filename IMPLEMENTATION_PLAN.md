@@ -252,7 +252,8 @@ This plan is sequenced for the shortest path to a working prototype first. The p
 - [ ] Sanitize rich text input.
 - [ ] Validate all URLs and reject unsafe protocols.
 - [ ] Restrict embeds to allowlisted providers if embeds are added.
-- [ ] Add preview tokens that are random, site-scoped, expiring, and revocable.
+- [x] Add preview tokens that are random, site-scoped, expiring, and revocable.
+  Verified on May 14, 2026 by adding hashed `site_preview_tokens` persistence plus authenticated issue/revoke APIs and a public token-backed draft preview route, then running `make test`, `npm run web:lint`, `npm run web:build`, and a live Playwright flow on `http://localhost:3001` that created a share link from `Planner Spindle Test`, opened the unauthenticated `/preview/:token` page successfully, and confirmed a revoked token returned the expected invalid-or-expired state.
 - [x] Add request logging for generation, publish, form submission, and public rendering failures.
   Verified on May 14, 2026 by upgrading the API request logger to record response status and emit failure-category logs for generation, publishing, public form submissions, and public rendering routes, and covering the behavior with `go test ./internal/api`.
 - [ ] Add public artifact cache invalidation on publish, rollback, and domain changes.

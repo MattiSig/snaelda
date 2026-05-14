@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/authorization"
@@ -16,6 +17,7 @@ type Handler struct {
 	reader     Reader
 	mutator    Mutator
 	authorizer Authorizer
+	previews   PreviewTokenService
 }
 
 type Authorizer interface {
@@ -23,11 +25,12 @@ type Authorizer interface {
 	RequireSite(ctx context.Context, siteID string, allowedRoles ...string) (authorization.Scope, error)
 }
 
-func NewHandler(db DB) *Handler {
+func NewHandler(db DB, previewTokenTTL time.Duration) *Handler {
 	return &Handler{
 		reader:     NewPostgresReader(db),
 		mutator:    NewPostgresMutator(db),
 		authorizer: authorization.New(db),
+		previews:   NewPostgresPreviewTokenService(db, previewTokenTTL),
 	}
 }
 
@@ -46,7 +49,10 @@ func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.
 	mux.Handle("DELETE /api/sites/{siteId}/pages/{pageId}/blocks/{blockId}", requireUser(http.HandlerFunc(h.deleteBlock)))
 	mux.Handle("POST /api/sites/{siteId}/pages/{pageId}/blocks/{blockId}/duplicate", requireUser(http.HandlerFunc(h.duplicateBlock)))
 	mux.Handle("POST /api/sites/{siteId}/pages/{pageId}/blocks/reorder", requireUser(http.HandlerFunc(h.reorderBlocks)))
+	mux.Handle("POST /api/sites/{siteId}/preview-token", requireUser(http.HandlerFunc(h.issuePreviewToken)))
+	mux.Handle("DELETE /api/sites/{siteId}/preview-token", requireUser(http.HandlerFunc(h.revokePreviewToken)))
 	mux.Handle("DELETE /api/sites/{siteId}", requireUser(http.HandlerFunc(h.delete)))
+	mux.HandleFunc("GET /api/public/preview/{token}", h.getPreviewByToken)
 }
 
 type createSiteRequest struct {
@@ -93,6 +99,11 @@ type updateBlockRequest struct {
 
 type reorderBlocksRequest struct {
 	BlockIDs []string `json:"blockIds"`
+}
+
+type previewTokenResponse struct {
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expiresAt"`
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
@@ -513,6 +524,72 @@ func (h *Handler) reorderBlocks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"draft": draft})
 }
 
+func (h *Handler) issuePreviewToken(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	if siteID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_site_id", "site id is required")
+		return
+	}
+	if _, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor); err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
+		return
+	}
+
+	previewToken, err := h.previews.Issue(r.Context(), siteID, user.ID)
+	if err != nil {
+		writeSiteError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, previewTokenResponse{
+		Token:     previewToken.Token,
+		ExpiresAt: previewToken.ExpiresAt,
+	})
+}
+
+func (h *Handler) revokePreviewToken(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	if siteID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_site_id", "site id is required")
+		return
+	}
+	if _, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor); err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+
+	if err := h.previews.Revoke(r.Context(), siteID); err != nil {
+		writeSiteError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) getPreviewByToken(w http.ResponseWriter, r *http.Request) {
+	token := r.PathValue("token")
+	if token == "" {
+		writeError(w, http.StatusBadRequest, "invalid_preview_token", "preview token is required")
+		return
+	}
+
+	draft, err := h.previews.LoadDraft(r.Context(), token)
+	if err != nil {
+		writeSiteError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"draft": draft,
+	})
+}
+
 func writeSiteError(w http.ResponseWriter, err error) {
 	var validationErr siteconfig.ValidationError
 	switch {
@@ -556,6 +633,10 @@ func writeSiteError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "invalid_block_order", "block reorder must include every block exactly once")
 	case errors.Is(err, ErrNavigationOrderInvalid):
 		writeError(w, http.StatusBadRequest, "invalid_navigation_order", "navigation reorder must include every visible navigation page exactly once")
+	case errors.Is(err, ErrPreviewTokenNotFound):
+		writeError(w, http.StatusNotFound, "preview_token_not_found", "preview link is invalid or expired")
+	case errors.Is(err, ErrPreviewTokenInvalid):
+		writeError(w, http.StatusBadRequest, "invalid_preview_token", "preview token is invalid")
 	case errors.Is(err, siteconfig.ErrBlockTypeUnknown):
 		writeError(w, http.StatusBadRequest, "unknown_block_type", "block type is not registered")
 	case errors.Is(err, siteconfig.ErrBlockVersionUnknown):

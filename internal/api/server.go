@@ -88,7 +88,7 @@ func (s *Server) Handler() http.Handler {
 
 	mountAuthenticatedPlaceholderModule(mux, s.auth, workspaces.Module{})
 	if store, ok := s.database.(sites.DB); ok {
-		sites.NewHandler(store).Mount(mux, s.auth.RequireUser)
+		sites.NewHandler(store, s.config.PreviewTokenTTL).Mount(mux, s.auth.RequireUser)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, sites.Module{})
 	}
