@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -11,6 +13,8 @@ type Config struct {
 	AppEnv                string
 	HTTPAddr              string
 	AppBaseURL            string
+	PublicBaseURL         string
+	PublicBaseDomain      string
 	DatabaseURL           string
 	AuthJWTSecret         string
 	AuthIssuer            string
@@ -55,6 +59,7 @@ func Load() (Config, error) {
 		AppEnv:                appEnv,
 		HTTPAddr:              getEnv("HTTP_ADDR", ":8080"),
 		AppBaseURL:            getEnv("APP_BASE_URL", "http://localhost:3000"),
+		PublicBaseURL:         getEnv("PUBLIC_BASE_URL", "http://localhost:3000"),
 		DatabaseURL:           os.Getenv("DATABASE_URL"),
 		AuthJWTSecret:         getEnv("AUTH_JWT_SECRET", "development-auth-secret-change-me"),
 		AuthIssuer:            getEnv("AUTH_ISSUER", "snaelda-api"),
@@ -81,6 +86,11 @@ func Load() (Config, error) {
 	if cfg.AppEnv != "test" && cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
 	}
+	publicBaseDomain, err := resolvePublicBaseDomain(cfg.PublicBaseURL, os.Getenv("PUBLIC_BASE_DOMAIN"))
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.PublicBaseDomain = publicBaseDomain
 	if cfg.AuthJWTSecret == "" {
 		return Config{}, fmt.Errorf("AUTH_JWT_SECRET is required")
 	}
@@ -102,8 +112,34 @@ func Load() (Config, error) {
 	if cfg.PreviewTokenTTL <= 0 {
 		return Config{}, fmt.Errorf("PREVIEW_TOKEN_TTL must be positive")
 	}
+	if cfg.PublicBaseURL == "" {
+		return Config{}, fmt.Errorf("PUBLIC_BASE_URL is required")
+	}
+	if cfg.PublicBaseDomain == "" {
+		return Config{}, fmt.Errorf("PUBLIC_BASE_DOMAIN is required")
+	}
 
 	return cfg, nil
+}
+
+func resolvePublicBaseDomain(publicBaseURL string, override string) (string, error) {
+	if trimmed := normalizeHostname(override); trimmed != "" {
+		return trimmed, nil
+	}
+
+	parsed, err := url.Parse(strings.TrimSpace(publicBaseURL))
+	if err != nil {
+		return "", fmt.Errorf("PUBLIC_BASE_URL must be a valid URL: %w", err)
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("PUBLIC_BASE_URL must include scheme and host")
+	}
+
+	return normalizeHostname(parsed.Hostname()), nil
+}
+
+func normalizeHostname(value string) string {
+	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(value)), ".")
 }
 
 func getEnv(key string, fallback string) string {

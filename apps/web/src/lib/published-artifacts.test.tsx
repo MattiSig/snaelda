@@ -1,68 +1,80 @@
-import { describe, expect, it } from 'vitest'
-import { buildPublishedArtifactBundle } from './published-artifacts'
-import type { PublishedSnapshot } from './api'
+import { describe, expect, it } from "vitest";
+import { buildPublishedArtifactBundle } from "./published-artifacts";
+import type { PublishedSnapshot } from "./api";
 
-describe('published artifact bundle', () => {
-  it('renders per-page html and crawl artifacts for a published snapshot', () => {
+describe("published artifact bundle", () => {
+  it("renders per-page html and crawl artifacts for a published snapshot", () => {
     const bundle = buildPublishedArtifactBundle({
-      appBaseURL: 'http://localhost:3000',
-      siteSlug: 'loom-light',
-      hostname: 'loom-light.localhost',
+      publicBaseURL: "https://sites.snaelda.test",
+      siteSlug: "loom-light",
+      hostname: "loom-light.snaelda.test",
       version: {
-        id: 'version-3',
-        siteId: 'site-1',
+        id: "version-3",
+        siteId: "site-1",
         versionNumber: 3,
-        createdAt: '2026-05-11T08:00:00Z',
+        createdAt: "2026-05-11T08:00:00Z",
         isCurrent: true,
       },
       snapshot: buildSnapshot(),
-    })
+    });
 
-    expect(bundle.schemaVersion).toBe('published_artifacts.v1')
+    expect(bundle.schemaVersion).toBe("published_artifacts.v1");
 
-    const pageArtifact = bundle.files.find((file) => file.path === 'pages/contact/index.html')
-    expect(pageArtifact?.contentType).toBe('text/html; charset=utf-8')
-    expect(pageArtifact?.body).toContain('Say hello')
-    expect(pageArtifact?.body).toContain('href="/"')
-    expect(pageArtifact?.body).not.toContain('/public/loom-light/contact')
+    const pageArtifact = bundle.files.find(
+      (file) => file.path === "pages/contact/index.html",
+    );
+    expect(pageArtifact?.contentType).toBe("text/html; charset=utf-8");
+    expect(pageArtifact?.body).toContain("Say hello");
+    expect(pageArtifact?.body).toContain('href="/"');
+    expect(pageArtifact?.body).not.toContain("/public/loom-light/contact");
 
-    const themeArtifact = bundle.files.find((file) => file.path === 'assets/theme.css')
-    expect(themeArtifact?.body).toContain('--site-background: #151215;')
-    expect(themeArtifact?.body).toContain('--site-primary: #8fc6ff;')
+    const themeArtifact = bundle.files.find(
+      (file) => file.path === "assets/theme.css",
+    );
+    expect(themeArtifact?.body).toContain("--site-background: #151215;");
+    expect(themeArtifact?.body).toContain("--site-primary: #8fc6ff;");
 
-    const sitemap = bundle.files.find((file) => file.path === 'sitemap.xml')
-    expect(sitemap?.body).toContain('<loc>http://loom-light.localhost:3000/</loc>')
-    expect(sitemap?.body).toContain('<loc>http://loom-light.localhost:3000/contact</loc>')
+    const sitemap = bundle.files.find((file) => file.path === "sitemap.xml");
+    expect(sitemap?.body).toContain(
+      "<loc>https://loom-light.snaelda.test/</loc>",
+    );
+    expect(sitemap?.body).toContain(
+      "<loc>https://loom-light.snaelda.test/contact</loc>",
+    );
 
-    const robots = bundle.files.find((file) => file.path === 'robots.txt')
-    expect(robots?.body).toContain('Sitemap: http://loom-light.localhost:3000/sitemap.xml')
+    const robots = bundle.files.find((file) => file.path === "robots.txt");
+    expect(robots?.body).toContain(
+      "Sitemap: https://loom-light.snaelda.test/sitemap.xml",
+    );
 
-    const manifest = bundle.files.find((file) => file.path === 'manifest.json')
-    expect(manifest?.body).toContain('"pagePath": "/contact"')
-    expect(manifest?.body).toContain('"canonicalUrl": "http://loom-light.localhost:3000/contact"')
-  })
-})
+    const manifest = bundle.files.find((file) => file.path === "manifest.json");
+    expect(manifest?.body).toContain('"pagePath": "/contact"');
+    expect(manifest?.body).toContain(
+      '"canonicalUrl": "https://loom-light.snaelda.test/contact"',
+    );
+  });
+});
 
 function buildSnapshot(): PublishedSnapshot {
   return {
-    schemaVersion: 'site_snapshot.v1',
+    schemaVersion: "site_snapshot.v1",
     site: {
-      id: 'site-1',
-      name: 'Loom & Light',
-      defaultLocale: 'en',
+      id: "site-1",
+      name: "Loom & Light",
+      defaultLocale: "en",
       seo: {
-        title: 'Loom & Light',
-        description: 'Warm sites spun from a prompt.',
+        title: "Loom & Light",
+        description: "Warm sites spun from a prompt.",
       },
     },
     theme: {
-      version: 'theme.v1',
+      version: "theme.v1",
       tokens: {
         colors: {
-          background: '#151215',
-          foreground: '#f6f2ec',
-          primary: '#8fc6ff',
-          border: '#5a3e57',
+          background: "#151215",
+          foreground: "#f6f2ec",
+          primary: "#8fc6ff",
+          border: "#5a3e57",
         },
         typography: {},
         layout: {},
@@ -71,51 +83,51 @@ function buildSnapshot(): PublishedSnapshot {
     },
     navigation: {
       primary: [
-        { label: 'Home', pageId: 'page-home' },
-        { label: 'Contact', pageId: 'page-contact' },
+        { label: "Home", pageId: "page-home" },
+        { label: "Contact", pageId: "page-contact" },
       ],
     },
     pages: [
       {
-        id: 'page-home',
-        title: 'Home',
-        slug: '/',
+        id: "page-home",
+        title: "Home",
+        slug: "/",
         blocks: [
           {
-            id: 'block-home',
-            type: 'hero',
-            version: 'block.v1',
+            id: "block-home",
+            type: "hero",
+            version: "block.v1",
             props: {
-              headline: 'Spin a simple site',
+              headline: "Spin a simple site",
               primaryCta: {
-                label: 'Contact',
-                href: '/contact',
+                label: "Contact",
+                href: "/contact",
               },
-              layout: 'centered',
+              layout: "centered",
             },
           },
         ],
       },
       {
-        id: 'page-contact',
-        title: 'Contact',
-        slug: '/contact',
+        id: "page-contact",
+        title: "Contact",
+        slug: "/contact",
         seo: {
-          title: 'Contact | Loom & Light',
-          description: 'Drop by the studio this weekend.',
+          title: "Contact | Loom & Light",
+          description: "Drop by the studio this weekend.",
         },
         blocks: [
           {
-            id: 'block-contact',
-            type: 'text_section',
-            version: 'block.v1',
+            id: "block-contact",
+            type: "text_section",
+            version: "block.v1",
             props: {
-              heading: 'Say hello',
-              body: 'Send a note with your launch timeline.',
+              heading: "Say hello",
+              body: "Send a note with your launch timeline.",
             },
           },
         ],
       },
     ],
-  }
+  };
 }

@@ -39,11 +39,11 @@ type ArtifactManifestPage struct {
 }
 
 type ArtifactRenderInput struct {
-	AppBaseURL string                       `json:"appBaseURL"`
-	SiteSlug   string                       `json:"siteSlug"`
-	Hostname   string                       `json:"hostname,omitempty"`
-	Version    VersionSummary               `json:"version"`
-	Snapshot   siteconfig.PublishedSnapshot `json:"snapshot"`
+	PublicBaseURL string                       `json:"publicBaseURL"`
+	SiteSlug      string                       `json:"siteSlug"`
+	Hostname      string                       `json:"hostname,omitempty"`
+	Version       VersionSummary               `json:"version"`
+	Snapshot      siteconfig.PublishedSnapshot `json:"snapshot"`
 }
 
 type ArtifactRenderer interface {
@@ -58,17 +58,17 @@ type ArtifactStore interface {
 var ErrArtifactNotFound = errors.New("published artifact not found")
 
 type commandArtifactRenderer struct {
-	appBaseURL string
+	publicBaseURL string
 }
 
-func newCommandArtifactRenderer(appBaseURL string) ArtifactRenderer {
-	return &commandArtifactRenderer{appBaseURL: strings.TrimSpace(appBaseURL)}
+func newCommandArtifactRenderer(publicBaseURL string) ArtifactRenderer {
+	return &commandArtifactRenderer{publicBaseURL: strings.TrimSpace(publicBaseURL)}
 }
 
 func (r *commandArtifactRenderer) Render(ctx context.Context, input ArtifactRenderInput) (ArtifactBundle, error) {
 	payload := input
-	if strings.TrimSpace(payload.AppBaseURL) == "" {
-		payload.AppBaseURL = r.appBaseURL
+	if strings.TrimSpace(payload.PublicBaseURL) == "" {
+		payload.PublicBaseURL = r.publicBaseURL
 	}
 
 	body, err := json.Marshal(payload)

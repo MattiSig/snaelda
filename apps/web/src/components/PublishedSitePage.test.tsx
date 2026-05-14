@@ -22,8 +22,8 @@ describe("PublishedSitePage", () => {
 function buildPublishedSiteResponse(): PublishedSiteResponse {
   return {
     siteSlug: "loom-light",
-    hostname: "loom-light.localhost",
-    publicUrl: "http://localhost:3000/public/loom-light/contact",
+    hostname: "loom-light.snaelda.test",
+    publicUrl: "https://loom-light.snaelda.test/contact",
     pagePath: "/contact",
     version: {
       id: "version-3",
@@ -36,7 +36,7 @@ function buildPublishedSiteResponse(): PublishedSiteResponse {
       pagePath: "/contact",
       title: "Contact | Loom & Light",
       description: "Drop by the shop this weekend.",
-      canonicalUrl: "http://loom-light.localhost:3000/contact",
+      canonicalUrl: "https://loom-light.snaelda.test/contact",
       html: "<div><h1>Drop by the shop</h1><p>Open weekdays and most Saturdays.</p></div>",
     },
   };

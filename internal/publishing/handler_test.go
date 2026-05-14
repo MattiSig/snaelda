@@ -113,9 +113,10 @@ func TestPublishReturnsVersionAndPublicURL(t *testing.T) {
 		},
 	}
 	handler := Handler{
-		service:    publisher,
-		authorizer: fakePublishAuthorizer{},
-		appBaseURL: "http://localhost:3000",
+		service:       publisher,
+		authorizer:    fakePublishAuthorizer{},
+		appBaseURL:    "http://localhost:3000",
+		publicBaseURL: "http://localhost:3000",
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/sites/site_demo/publish", strings.NewReader(`{"publishNote":"First public draft"}`)).WithContext(auth.WithUser(context.Background(), auth.User{
@@ -150,7 +151,7 @@ func TestPublishReturnsVersionAndPublicURL(t *testing.T) {
 	if payload.Version.ID != "version-1" {
 		t.Fatalf("expected version in response, got %#v", payload.Version)
 	}
-	if payload.PublicURL != "http://localhost:3000/public/nordic-studio" {
+	if payload.PublicURL != "http://nordic-studio.localhost:3000/" {
 		t.Fatalf("expected public url, got %q", payload.PublicURL)
 	}
 }
@@ -198,9 +199,10 @@ func TestRollbackReturnsVersionAndPublicURL(t *testing.T) {
 		},
 	}
 	handler := Handler{
-		service:    publisher,
-		authorizer: fakePublishAuthorizer{},
-		appBaseURL: "http://localhost:3000",
+		service:       publisher,
+		authorizer:    fakePublishAuthorizer{},
+		appBaseURL:    "http://localhost:3000",
+		publicBaseURL: "http://localhost:3000",
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/sites/site_demo/rollback/version-1", nil).WithContext(auth.WithUser(context.Background(), auth.User{
@@ -232,7 +234,7 @@ func TestRollbackReturnsVersionAndPublicURL(t *testing.T) {
 	if payload.Version.ID != "version-1" {
 		t.Fatalf("expected rolled back version in response, got %#v", payload.Version)
 	}
-	if payload.PublicURL != "http://localhost:3000/public/nordic-studio" {
+	if payload.PublicURL != "http://nordic-studio.localhost:3000/" {
 		t.Fatalf("expected public url, got %q", payload.PublicURL)
 	}
 }
@@ -259,9 +261,10 @@ func TestGetPublishedSiteReturnsSnapshotWithoutAuth(t *testing.T) {
 		},
 	}
 	handler := Handler{
-		service:    publisher,
-		authorizer: fakePublishAuthorizer{},
-		appBaseURL: "http://localhost:3000",
+		service:       publisher,
+		authorizer:    fakePublishAuthorizer{},
+		appBaseURL:    "http://localhost:3000",
+		publicBaseURL: "http://localhost:3000",
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/public/sites/nordic-studio?path=/contact", nil)
@@ -278,6 +281,16 @@ func TestGetPublishedSiteReturnsSnapshotWithoutAuth(t *testing.T) {
 	}
 	if publisher.publishedPath != "/contact" {
 		t.Fatalf("expected page path to reach loader, got %q", publisher.publishedPath)
+	}
+
+	var payload struct {
+		PublicURL string `json:"publicUrl"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.PublicURL != "http://nordic-studio.localhost:3000/contact" {
+		t.Fatalf("expected hosted public url, got %q", payload.PublicURL)
 	}
 }
 
@@ -303,9 +316,10 @@ func TestGetPublishedSiteByHostnameReturnsSnapshotWithoutAuth(t *testing.T) {
 		},
 	}
 	handler := Handler{
-		service:    publisher,
-		authorizer: fakePublishAuthorizer{},
-		appBaseURL: "http://localhost:3000",
+		service:       publisher,
+		authorizer:    fakePublishAuthorizer{},
+		appBaseURL:    "http://localhost:3000",
+		publicBaseURL: "http://localhost:3000",
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/public/render?hostname=nordic-studio.localhost:3000&path=/contact", nil)

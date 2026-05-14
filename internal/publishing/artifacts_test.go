@@ -81,10 +81,12 @@ func TestPublishRendersAndStoresArtifactsBeforeCommit(t *testing.T) {
 	}
 	store := &fakeArtifactStore{}
 	service := Service{
-		db:       db,
-		reader:   fakeDraftReader{draft: buildArtifactDraft()},
-		renderer: renderer,
-		store:    store,
+		db:               db,
+		reader:           fakeDraftReader{draft: buildArtifactDraft()},
+		renderer:         renderer,
+		store:            store,
+		publicBaseURL:    "http://localhost:3000",
+		publicBaseDomain: "localhost",
 	}
 
 	result, err := service.Publish(
@@ -102,6 +104,9 @@ func TestPublishRendersAndStoresArtifactsBeforeCommit(t *testing.T) {
 	}
 	if renderer.input.Hostname != "nordic-studio.localhost" {
 		t.Fatalf("expected renderer hostname, got %#v", renderer.input)
+	}
+	if renderer.input.PublicBaseURL != "http://localhost:3000" {
+		t.Fatalf("expected renderer public base url, got %#v", renderer.input)
 	}
 	if renderer.input.SiteSlug != "nordic-studio" {
 		t.Fatalf("expected renderer site slug, got %#v", renderer.input)
@@ -129,10 +134,12 @@ func TestPublishDoesNotMarkSiteLiveWhenArtifactStorageFails(t *testing.T) {
 		},
 	}
 	service := Service{
-		db:       db,
-		reader:   fakeDraftReader{draft: buildArtifactDraft()},
-		renderer: &fakeArtifactRenderer{bundle: validArtifactBundleForDraft()},
-		store:    &fakeArtifactStore{err: errors.New("disk full")},
+		db:               db,
+		reader:           fakeDraftReader{draft: buildArtifactDraft()},
+		renderer:         &fakeArtifactRenderer{bundle: validArtifactBundleForDraft()},
+		store:            &fakeArtifactStore{err: errors.New("disk full")},
+		publicBaseURL:    "http://localhost:3000",
+		publicBaseDomain: "localhost",
 	}
 
 	_, err := service.Publish(
@@ -181,11 +188,13 @@ func TestPublishInvalidatesPublishedSiteCacheAfterCommit(t *testing.T) {
 		HTML:         "<div>published</div>",
 	})
 	service := Service{
-		db:       db,
-		reader:   fakeDraftReader{draft: buildArtifactDraft()},
-		renderer: &fakeArtifactRenderer{bundle: validArtifactBundleForDraft()},
-		store:    &fakeArtifactStore{},
-		cache:    cache,
+		db:               db,
+		reader:           fakeDraftReader{draft: buildArtifactDraft()},
+		renderer:         &fakeArtifactRenderer{bundle: validArtifactBundleForDraft()},
+		store:            &fakeArtifactStore{},
+		cache:            cache,
+		publicBaseURL:    "http://localhost:3000",
+		publicBaseDomain: "localhost",
 	}
 
 	_, err := service.Publish(
@@ -218,10 +227,12 @@ func TestPublishRejectsIncompleteArtifactBundle(t *testing.T) {
 		},
 	}
 	service := Service{
-		db:       db,
-		reader:   fakeDraftReader{draft: buildArtifactDraft()},
-		renderer: &fakeArtifactRenderer{bundle: ArtifactBundle{SchemaVersion: "published_artifacts.v1"}},
-		store:    &fakeArtifactStore{},
+		db:               db,
+		reader:           fakeDraftReader{draft: buildArtifactDraft()},
+		renderer:         &fakeArtifactRenderer{bundle: ArtifactBundle{SchemaVersion: "published_artifacts.v1"}},
+		store:            &fakeArtifactStore{},
+		publicBaseURL:    "http://localhost:3000",
+		publicBaseDomain: "localhost",
 	}
 
 	_, err := service.Publish(

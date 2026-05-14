@@ -263,6 +263,23 @@ export type SiteVersionsResponse = {
   versions: SiteVersion[];
 };
 
+export type SiteDomain = {
+  id: string;
+  hostname: string;
+  type: string;
+  status: string;
+  publicUrl?: string;
+};
+
+export type SiteDomainsResponse = {
+  siteId: string;
+  siteSlug: string;
+  published: boolean;
+  hostedHostname: string;
+  publicUrl?: string;
+  domains: SiteDomain[];
+};
+
 export type PublishedSiteResponse = {
   siteSlug: string;
   hostname?: string;
@@ -806,6 +823,10 @@ export async function publishSite(
 
 export async function listSiteVersions(siteId: string) {
   return apiFetch<SiteVersionsResponse>(`/api/sites/${siteId}/versions`);
+}
+
+export async function getSiteDomains(siteId: string) {
+  return apiFetch<SiteDomainsResponse>(`/api/sites/${siteId}/domains`);
 }
 
 export async function rollbackSiteVersion(siteId: string, versionId: string) {

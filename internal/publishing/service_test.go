@@ -94,8 +94,10 @@ func TestBuildPublishedSnapshotAddsSEOFallbacks(t *testing.T) {
 func TestRollbackSetsLiveVersionAndRecordsAuditEvent(t *testing.T) {
 	store := newFakePublishingStore()
 	service := Service{
-		db:     store,
-		reader: fakePublishingReader{},
+		db:               store,
+		reader:           fakePublishingReader{},
+		publicBaseURL:    "http://localhost:3000",
+		publicBaseDomain: "localhost",
 	}
 
 	result, err := service.Rollback(
@@ -134,8 +136,10 @@ func TestRollbackSetsLiveVersionAndRecordsAuditEvent(t *testing.T) {
 func TestRollbackRejectsUnknownVersion(t *testing.T) {
 	store := newFakePublishingStore()
 	service := Service{
-		db:     store,
-		reader: fakePublishingReader{},
+		db:               store,
+		reader:           fakePublishingReader{},
+		publicBaseURL:    "http://localhost:3000",
+		publicBaseDomain: "localhost",
 	}
 
 	_, err := service.Rollback(
@@ -496,10 +500,12 @@ func TestRollbackInvalidatesPublishedSiteCache(t *testing.T) {
 		HTML:         "<div>contact</div>",
 	})
 	service := Service{
-		db:     store,
-		store:  store,
-		reader: fakePublishingReader{},
-		cache:  cache,
+		db:               store,
+		store:            store,
+		reader:           fakePublishingReader{},
+		cache:            cache,
+		publicBaseURL:    "http://localhost:3000",
+		publicBaseDomain: "localhost",
 	}
 
 	_, err := service.Rollback(

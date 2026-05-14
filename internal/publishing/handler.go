@@ -16,9 +16,10 @@ import (
 )
 
 type Handler struct {
-	service    Publisher
-	authorizer Authorizer
-	appBaseURL string
+	service       Publisher
+	authorizer    Authorizer
+	appBaseURL    string
+	publicBaseURL string
 }
 
 type Publisher interface {
@@ -39,14 +40,17 @@ type publishRequest struct {
 	PublishNote string `json:"publishNote,omitempty"`
 }
 
-func NewHandler(db DB, appBaseURL string, artifactsDir string) *Handler {
+func NewHandler(db DB, appBaseURL string, publicBaseURL string, publicBaseDomain string, artifactsDir string) *Handler {
 	return &Handler{
 		service: NewService(db, ServiceConfig{
-			AppBaseURL:   appBaseURL,
-			ArtifactsDir: artifactsDir,
+			AppBaseURL:       appBaseURL,
+			PublicBaseURL:    publicBaseURL,
+			PublicBaseDomain: publicBaseDomain,
+			ArtifactsDir:     artifactsDir,
 		}),
-		authorizer: authorization.New(db),
-		appBaseURL: strings.TrimRight(appBaseURL, "/"),
+		authorizer:    authorization.New(db),
+		appBaseURL:    strings.TrimRight(appBaseURL, "/"),
+		publicBaseURL: strings.TrimSpace(publicBaseURL),
 	}
 }
 
@@ -93,7 +97,7 @@ func (h *Handler) publish(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"version":   result.Version,
 		"hostname":  result.Hostname,
-		"publicUrl": h.publicURLFromSlug(result.SiteSlug),
+		"publicUrl": h.publicURL(result.SiteSlug, result.Hostname, "/"),
 		"snapshot":  result.Snapshot,
 	})
 }
@@ -151,7 +155,7 @@ func (h *Handler) rollback(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"version":   result.Version,
 		"hostname":  result.Hostname,
-		"publicUrl": h.publicURLFromSlug(result.SiteSlug),
+		"publicUrl": h.publicURL(result.SiteSlug, result.Hostname, "/"),
 	})
 }
 
@@ -172,7 +176,7 @@ func (h *Handler) getPublishedSite(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"siteSlug":  result.SiteSlug,
 		"hostname":  result.Hostname,
-		"publicUrl": h.publicURLFromPath(result.SiteSlug, result.PagePath),
+		"publicUrl": h.publicURL(result.SiteSlug, result.Hostname, result.PagePath),
 		"version":   result.Version,
 		"pagePath":  result.PagePath,
 		"page":      result.Page,
@@ -196,7 +200,7 @@ func (h *Handler) getPublishedSiteByHostname(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, map[string]any{
 		"siteSlug":  result.SiteSlug,
 		"hostname":  result.Hostname,
-		"publicUrl": h.publicURLFromHostname(result.Hostname, result.PagePath),
+		"publicUrl": h.publicURL(result.SiteSlug, result.Hostname, result.PagePath),
 		"version":   result.Version,
 		"pagePath":  result.PagePath,
 		"page":      result.Page,
@@ -238,11 +242,11 @@ func (h *Handler) getPublishedArtifact(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, result.File.Body)
 }
 
-func (h *Handler) publicURLFromSlug(siteSlug string) string {
-	return h.publicURLFromPath(siteSlug, "/")
-}
+func (h *Handler) publicURL(siteSlug string, hostname string, pagePath string) string {
+	if normalizedHostname := normalizeHostname(hostname); normalizedHostname != "" {
+		return h.publicURLFromHostname(normalizedHostname, pagePath)
+	}
 
-func (h *Handler) publicURLFromPath(siteSlug string, pagePath string) string {
 	path := "/public/" + siteSlug
 	if pagePath != "" && pagePath != "/" {
 		path += pagePath
@@ -261,8 +265,8 @@ func (h *Handler) publicURLFromHostname(hostname string, pagePath string) string
 
 	scheme := "http"
 	port := ""
-	if h.appBaseURL != "" {
-		if baseURL, err := url.Parse(h.appBaseURL); err == nil {
+	if h.publicBaseURL != "" {
+		if baseURL, err := url.Parse(h.publicBaseURL); err == nil {
 			if baseURL.Scheme != "" {
 				scheme = baseURL.Scheme
 			}

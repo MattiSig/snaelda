@@ -5,7 +5,7 @@ import { normalizePagePath } from "@/lib/public-site";
 import { buildSiteThemeStyle } from "@/lib/site-theme";
 
 export type PublishedArtifactRenderInput = {
-  appBaseURL: string;
+  publicBaseURL: string;
   siteSlug: string;
   hostname?: string;
   version: SiteVersion;
@@ -167,7 +167,7 @@ function buildCanonicalURL(
   input: PublishedArtifactRenderInput,
   pagePath: string,
 ) {
-  const url = new URL(input.appBaseURL);
+  const url = new URL(input.publicBaseURL);
   if (input.hostname) {
     url.hostname = input.hostname;
   }

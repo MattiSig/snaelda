@@ -14,7 +14,7 @@ describe("published site helpers", () => {
     expect(result.links).toEqual([
       {
         rel: "canonical",
-        href: "http://loom-light.localhost:3000/contact",
+        href: "https://loom-light.snaelda.test/contact",
       },
     ]);
     expect(result.meta).toContainEqual({
@@ -29,7 +29,7 @@ describe("published site helpers", () => {
 
   it("builds page urls for hosted domains without the local public prefix", () => {
     expect(buildPublishedPageURL(buildHostedPublishedSite(), "/contact")).toBe(
-      "http://loom-light.localhost:3000/contact",
+      "https://loom-light.snaelda.test/contact",
     );
   });
 
@@ -46,8 +46,8 @@ describe("published site helpers", () => {
 function buildPathPublishedSite(): PublishedSiteResponse {
   return {
     siteSlug: "loom-light",
-    hostname: "loom-light.localhost",
-    publicUrl: "http://localhost:3000/public/loom-light/contact",
+    hostname: "loom-light.snaelda.test",
+    publicUrl: "https://loom-light.snaelda.test/contact",
     pagePath: "/contact",
     version: {
       id: "version-3",
@@ -60,7 +60,7 @@ function buildPathPublishedSite(): PublishedSiteResponse {
       pagePath: "/contact",
       title: "Contact | Loom & Light",
       description: "Drop by the studio this weekend.",
-      canonicalUrl: "http://loom-light.localhost:3000/contact",
+      canonicalUrl: "https://loom-light.snaelda.test/contact",
       html: "<div>Contact</div>",
     },
   };
@@ -69,6 +69,6 @@ function buildPathPublishedSite(): PublishedSiteResponse {
 function buildHostedPublishedSite(): PublishedSiteResponse {
   return {
     ...buildPathPublishedSite(),
-    publicUrl: "http://loom-light.localhost:3000/contact",
+    publicUrl: "https://loom-light.snaelda.test/contact",
   };
 }

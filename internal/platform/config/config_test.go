@@ -53,6 +53,12 @@ func TestLoadUsesLocalStorageDefaults(t *testing.T) {
 	if cfg.PublishedArtifactsDir != "var/published-artifacts" {
 		t.Fatalf("expected default published artifacts dir, got %q", cfg.PublishedArtifactsDir)
 	}
+	if cfg.PublicBaseURL != "http://localhost:3000" {
+		t.Fatalf("expected default public base url, got %q", cfg.PublicBaseURL)
+	}
+	if cfg.PublicBaseDomain != "localhost" {
+		t.Fatalf("expected derived localhost public base domain, got %q", cfg.PublicBaseDomain)
+	}
 }
 
 func TestLoadAllowsStorageOverrides(t *testing.T) {
@@ -65,6 +71,8 @@ func TestLoadAllowsStorageOverrides(t *testing.T) {
 	t.Setenv("S3_FORCE_PATH_STYLE", "false")
 	t.Setenv("PUBLISHED_ARTIFACTS_DIR", "/tmp/snaelda-artifacts")
 	t.Setenv("PREVIEW_TOKEN_TTL", "96h")
+	t.Setenv("PUBLIC_BASE_URL", "https://sites.snaelda.test")
+	t.Setenv("PUBLIC_BASE_DOMAIN", "sites.snaelda.test")
 
 	cfg, err := Load()
 	if err != nil {
@@ -94,6 +102,12 @@ func TestLoadAllowsStorageOverrides(t *testing.T) {
 	}
 	if cfg.PreviewTokenTTL != 96*time.Hour {
 		t.Fatalf("expected overridden preview token ttl, got %s", cfg.PreviewTokenTTL)
+	}
+	if cfg.PublicBaseURL != "https://sites.snaelda.test" {
+		t.Fatalf("expected overridden public base url, got %q", cfg.PublicBaseURL)
+	}
+	if cfg.PublicBaseDomain != "sites.snaelda.test" {
+		t.Fatalf("expected overridden public base domain, got %q", cfg.PublicBaseDomain)
 	}
 }
 
@@ -137,6 +151,16 @@ func TestLoadRejectsInvalidPreviewTokenDuration(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsInvalidPublicBaseURL(t *testing.T) {
+	t.Setenv("APP_ENV", "test")
+	unsetStorageEnv(t)
+	t.Setenv("PUBLIC_BASE_URL", "not-a-url")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid public base url error")
+	}
+}
+
 func TestLoadRequiresProductionAuthSecret(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	t.Setenv("DATABASE_URL", "postgres://example")
@@ -158,4 +182,6 @@ func unsetStorageEnv(t *testing.T) {
 	t.Setenv("S3_FORCE_PATH_STYLE", "")
 	t.Setenv("PUBLISHED_ARTIFACTS_DIR", "")
 	t.Setenv("PREVIEW_TOKEN_TTL", "")
+	t.Setenv("PUBLIC_BASE_URL", "")
+	t.Setenv("PUBLIC_BASE_DOMAIN", "")
 }

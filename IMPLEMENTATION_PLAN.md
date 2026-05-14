@@ -13,17 +13,11 @@ This file now tracks confirmed remaining work only. Items are sorted by implemen
 - [x] Added [specs/16-runtime-lifecycles-and-analytics.md](./specs/16-runtime-lifecycles-and-analytics.md) to define public visibility rules, domain/runtime semantics, and MVP analytics scope that were previously only implied.
 - [x] Public page reads now resolve from stored published artifacts plus `manifest.json` metadata instead of rebuilding from `site_versions.snapshot`, and public `/public/{slug}` routes no longer carry internal publish framing.
 - [x] Publish now validates artifact completeness before promoting a version live, including page HTML, crawl files, theme CSS, and artifact manifest metadata.
+- [x] Hosted public URLs now use an explicit deployment contract via `PUBLIC_BASE_URL` and `PUBLIC_BASE_DOMAIN`, so publish-time hostnames, canonical URLs, sitemap entries, and builder live links no longer assume `{slug}.localhost` or `/public/{slug}` as the production shape.
+- [x] `internal/domains` is now a real authenticated module with a site-domain read API, exposing hosted-domain state from `site_domains` instead of remaining placeholder-only.
+- [x] The builder publish panel now surfaces the actual hosted live URL and opens the live hostname directly instead of treating the internal `/public/{slug}` route as the primary customer-facing address.
 
 ## Priority Backlog
-
-- [ ] Replace local-only hosted URL assumptions with real deployment-grade public domain handling.
-  Confirmed gap: hosted URLs still assume local-development behavior like `{slug}.localhost` and `/public/{slug}` helpers rather than a true `{site-slug}.{public-base-domain}` contract.
-
-- [ ] Implement a real `domains` module for hosted-domain management and cache invalidation on domain changes.
-  Confirmed gap: `internal/domains` is still placeholder-only even though `site_domains` exists and specs depend on hostname-driven resolution.
-
-- [ ] Make public pages feel like customer sites rather than internal publish previews, and surface the actual live URL in publish/rollback UX.
-  Confirmed gap: the builder publish flow still does not prominently use the returned hostname/public URL.
 
 - [ ] Replace the deterministic generation template builder with a provider-backed structured AI generation pipeline.
   Confirmed gap: generation still uses a heuristic template planner rather than a model-backed structured-output flow with explicit prompt-to-plan semantics.

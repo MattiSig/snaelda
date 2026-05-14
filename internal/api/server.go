@@ -105,11 +105,25 @@ func (s *Server) Handler() http.Handler {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, generation.Module{})
 	}
 	if store, ok := s.database.(publishing.DB); ok {
-		publishing.NewHandler(store, s.config.AppBaseURL, s.config.PublishedArtifactsDir).Mount(mux, s.auth.RequireUser)
+		publishing.NewHandler(
+			store,
+			s.config.AppBaseURL,
+			s.config.PublicBaseURL,
+			s.config.PublicBaseDomain,
+			s.config.PublishedArtifactsDir,
+		).Mount(mux, s.auth.RequireUser)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, publishing.Module{})
 	}
-	mountAuthenticatedPlaceholderModule(mux, s.auth, domains.Module{})
+	if store, ok := s.database.(domains.DB); ok {
+		domains.NewHandler(store, domains.HandlerConfig{
+			AppBaseURL:       s.config.AppBaseURL,
+			PublicBaseURL:    s.config.PublicBaseURL,
+			PublicBaseDomain: s.config.PublicBaseDomain,
+		}).Mount(mux, s.auth.RequireUser)
+	} else {
+		mountAuthenticatedPlaceholderModule(mux, s.auth, domains.Module{})
+	}
 	if store, ok := s.database.(assets.DB); ok {
 		storage, err := assets.NewS3Storage(assets.StorageConfig{
 			Endpoint:        s.config.S3Endpoint,

@@ -81,19 +81,23 @@ type PublishedArtifactResult struct {
 }
 
 type ServiceConfig struct {
-	AppBaseURL   string
-	ArtifactsDir string
-	Renderer     ArtifactRenderer
-	Store        ArtifactStore
-	Cache        publishedSiteCache
+	AppBaseURL       string
+	PublicBaseURL    string
+	PublicBaseDomain string
+	ArtifactsDir     string
+	Renderer         ArtifactRenderer
+	Store            ArtifactStore
+	Cache            publishedSiteCache
 }
 
 type Service struct {
-	db       DB
-	reader   sites.Reader
-	renderer ArtifactRenderer
-	store    ArtifactStore
-	cache    publishedSiteCache
+	db               DB
+	reader           sites.Reader
+	renderer         ArtifactRenderer
+	store            ArtifactStore
+	cache            publishedSiteCache
+	publicBaseURL    string
+	publicBaseDomain string
 }
 
 type siteMetadata struct {
@@ -110,7 +114,7 @@ type publishedSiteLookup struct {
 func NewService(db DB, cfg ServiceConfig) *Service {
 	renderer := cfg.Renderer
 	if renderer == nil {
-		renderer = newCommandArtifactRenderer(cfg.AppBaseURL)
+		renderer = newCommandArtifactRenderer(cfg.PublicBaseURL)
 	}
 	store := cfg.Store
 	if store == nil {
@@ -122,11 +126,13 @@ func NewService(db DB, cfg ServiceConfig) *Service {
 	}
 
 	return &Service{
-		db:       db,
-		reader:   sites.NewPostgresReader(db),
-		renderer: renderer,
-		store:    store,
-		cache:    cache,
+		db:               db,
+		reader:           sites.NewPostgresReader(db),
+		renderer:         renderer,
+		store:            store,
+		cache:            cache,
+		publicBaseURL:    strings.TrimSpace(cfg.PublicBaseURL),
+		publicBaseDomain: normalizeHostname(cfg.PublicBaseDomain),
 	}
 }
 
@@ -183,16 +189,17 @@ func (s *Service) Publish(ctx context.Context, siteID string, userID string, inp
 		return PublishResult{}, fmt.Errorf("insert published version: %w", err)
 	}
 
-	hostname, err := ensureSubdomain(ctx, tx, siteID, metadata.SiteSlug)
+	hostname, err := ensureSubdomain(ctx, tx, siteID, metadata.SiteSlug, s.publicBaseDomain)
 	if err != nil {
 		return PublishResult{}, err
 	}
 
 	artifacts, err := s.renderer.Render(ctx, ArtifactRenderInput{
-		SiteSlug: metadata.SiteSlug,
-		Hostname: hostname,
-		Version:  version,
-		Snapshot: snapshot,
+		PublicBaseURL: s.publicBaseURL,
+		SiteSlug:      metadata.SiteSlug,
+		Hostname:      hostname,
+		Version:       version,
+		Snapshot:      snapshot,
 	})
 	if err != nil {
 		return PublishResult{}, err
@@ -808,8 +815,13 @@ func recordAuditEvent(ctx context.Context, store audit.Store, event audit.Event)
 	return nil
 }
 
-func ensureSubdomain(ctx context.Context, tx pgx.Tx, siteID string, siteSlug string) (string, error) {
-	hostname := siteSlug + ".localhost"
+func ensureSubdomain(ctx context.Context, tx pgx.Tx, siteID string, siteSlug string, publicBaseDomain string) (string, error) {
+	normalizedBaseDomain := normalizeHostname(publicBaseDomain)
+	if normalizedBaseDomain == "" {
+		return "", fmt.Errorf("public base domain is required")
+	}
+
+	hostname := normalizeHostname(siteSlug + "." + normalizedBaseDomain)
 
 	var domainID string
 	var currentHostname string
