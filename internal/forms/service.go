@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/MattiSig/snaelda/internal/siteconfig"
-	"github.com/MattiSig/snaelda/internal/sites"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -20,6 +19,7 @@ var (
 	ErrSiteRequired            = errors.New("site id is required")
 	ErrBlockRequired           = errors.New("block id is required")
 	ErrSiteNotFound            = errors.New("site was not found")
+	ErrSiteNotPublished        = errors.New("site has no published version")
 	ErrFormBlockNotFound       = errors.New("contact form block was not found")
 	ErrFormBlockInvalid        = errors.New("block is not a contact form")
 	ErrSubmissionNotFound      = errors.New("form submission was not found")
@@ -40,13 +40,8 @@ type DB interface {
 	BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error)
 }
 
-type DraftReader interface {
-	LoadDraft(ctx context.Context, siteID string) (siteconfig.SiteDraft, error)
-}
-
 type Service struct {
-	db     DB
-	reader DraftReader
+	db DB
 }
 
 type Submission struct {
@@ -83,10 +78,7 @@ type resolvedForm struct {
 }
 
 func NewService(db DB) *Service {
-	return &Service{
-		db:     db,
-		reader: sites.NewPostgresReader(db),
-	}
+	return &Service{db: db}
 }
 
 func (s *Service) Submit(ctx context.Context, input SubmitInput) (SubmitResult, error) {
@@ -202,25 +194,15 @@ func (s *Service) UpdateStatus(ctx context.Context, submissionID string, input U
 }
 
 func (s *Service) resolveForm(ctx context.Context, siteID string, blockID string) (resolvedForm, error) {
-	if snapshot, ok, err := s.loadPublishedSnapshot(ctx, siteID); err != nil {
-		return resolvedForm{}, err
-	} else if ok {
-		if form, found, err := findFormInPages(snapshot.Pages, blockID); err != nil {
-			return resolvedForm{}, err
-		} else if found {
-			return form, nil
-		}
-	}
-
-	draft, err := s.reader.LoadDraft(ctx, siteID)
-	if errors.Is(err, sites.ErrNotFound) {
-		return resolvedForm{}, ErrSiteNotFound
-	}
+	snapshot, ok, err := s.loadPublishedSnapshot(ctx, siteID)
 	if err != nil {
-		return resolvedForm{}, fmt.Errorf("load draft for form resolution: %w", err)
+		return resolvedForm{}, err
+	}
+	if !ok {
+		return resolvedForm{}, ErrSiteNotPublished
 	}
 
-	form, found, err := findFormInPages(draft.Pages, blockID)
+	form, found, err := findFormInPages(snapshot.Pages, blockID)
 	if err != nil {
 		return resolvedForm{}, err
 	}

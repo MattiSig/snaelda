@@ -148,6 +148,8 @@ func writeFormError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "invalid_block_id", "block id is required")
 	case errors.Is(err, ErrSiteNotFound):
 		writeError(w, http.StatusNotFound, "site_not_found", "site was not found")
+	case errors.Is(err, ErrSiteNotPublished):
+		writeError(w, http.StatusNotFound, "site_not_published", "site has not been published")
 	case errors.Is(err, ErrFormBlockNotFound):
 		writeError(w, http.StatusNotFound, "form_not_found", "contact form was not found")
 	case errors.Is(err, ErrFormBlockInvalid):

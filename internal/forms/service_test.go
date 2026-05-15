@@ -9,27 +9,14 @@ import (
 	"time"
 
 	"github.com/MattiSig/snaelda/internal/siteconfig"
-	"github.com/MattiSig/snaelda/internal/sites"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-type stubDraftReader struct {
-	draft siteconfig.SiteDraft
-	err   error
-}
-
-func (r stubDraftReader) LoadDraft(context.Context, string) (siteconfig.SiteDraft, error) {
-	return r.draft, r.err
-}
-
 func TestSubmitStoresValidatedSubmissionFromPublishedSnapshot(t *testing.T) {
 	store := newFakeFormStore()
 	store.siteSnapshots["site-1"] = publishedContactSnapshot()
-	service := Service{
-		db:     store,
-		reader: stubDraftReader{err: sites.ErrNotFound},
-	}
+	service := Service{db: store}
 
 	result, err := service.Submit(context.Background(), SubmitInput{
 		SiteID:  "site-1",
@@ -58,13 +45,10 @@ func TestSubmitStoresValidatedSubmissionFromPublishedSnapshot(t *testing.T) {
 	}
 }
 
-func TestSubmitFallsBackToDraftWhenSiteIsUnpublished(t *testing.T) {
-	service := Service{
-		db:     newFakeFormStore(),
-		reader: stubDraftReader{draft: draftWithContactForm()},
-	}
+func TestSubmitRejectsUnpublishedSite(t *testing.T) {
+	service := Service{db: newFakeFormStore()}
 
-	result, err := service.Submit(context.Background(), SubmitInput{
+	_, err := service.Submit(context.Background(), SubmitInput{
 		SiteID:  "site-1",
 		BlockID: "block-contact",
 		Payload: map[string]any{
@@ -73,19 +57,42 @@ func TestSubmitFallsBackToDraftWhenSiteIsUnpublished(t *testing.T) {
 			"message": "Need a warmer brand direction.",
 		},
 	})
-	if err != nil {
-		t.Fatalf("submit unpublished draft form: %v", err)
+	if !errors.Is(err, ErrSiteNotPublished) {
+		t.Fatalf("expected ErrSiteNotPublished, got %v", err)
 	}
-	if result.Submission.PageID != "page-home" {
-		t.Fatalf("expected page-home submission, got %q", result.Submission.PageID)
+}
+
+func TestSubmitRejectsBlockOnlyInDraft(t *testing.T) {
+	store := newFakeFormStore()
+	snapshot := publishedContactSnapshot()
+	snapshot.Pages = []siteconfig.PageDraft{{
+		ID:     "page-home",
+		Title:  "Home",
+		Slug:   "/",
+		SEO:    siteconfig.SEOConfig{Title: "Loom & Light", Description: "Calm studio sites."},
+		Blocks: []siteconfig.BlockInstance{},
+	}}
+	store.siteSnapshots["site-1"] = snapshot
+	service := Service{db: store}
+
+	_, err := service.Submit(context.Background(), SubmitInput{
+		SiteID:  "site-1",
+		BlockID: "block-contact",
+		Payload: map[string]any{
+			"name":    "Ada Lovelace",
+			"email":   "ada@example.com",
+			"message": "Need a warmer brand direction.",
+		},
+	})
+	if !errors.Is(err, ErrFormBlockNotFound) {
+		t.Fatalf("expected ErrFormBlockNotFound, got %v", err)
 	}
 }
 
 func TestSubmitRejectsInvalidPayload(t *testing.T) {
-	service := Service{
-		db:     newFakeFormStore(),
-		reader: stubDraftReader{draft: draftWithContactForm()},
-	}
+	store := newFakeFormStore()
+	store.siteSnapshots["site-1"] = publishedContactSnapshot()
+	service := Service{db: store}
 
 	_, err := service.Submit(context.Background(), SubmitInput{
 		SiteID:  "site-1",
@@ -119,7 +126,7 @@ func TestListBySiteReturnsStoredSubmissions(t *testing.T) {
 			PageTitle: "Home",
 		},
 	})
-	service := Service{db: store, reader: stubDraftReader{}}
+	service := Service{db: store}
 
 	submissions, err := service.ListBySite(context.Background(), "site-1")
 	if err != nil {
@@ -147,7 +154,7 @@ func TestUpdateStatusPersistsSubmissionStatus(t *testing.T) {
 			PageTitle: "Home",
 		},
 	})
-	service := Service{db: store, reader: stubDraftReader{}}
+	service := Service{db: store}
 	nextStatus := "reviewed"
 
 	submission, err := service.UpdateStatus(context.Background(), "submission-1", UpdateSubmissionInput{

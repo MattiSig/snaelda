@@ -108,6 +108,10 @@ func (s *fakeAssetService) PublicDownloadURLBySiteSlug(context.Context, string, 
 	return s.publicDownloadURL, nil
 }
 
+func (s *fakeAssetService) PublicDownloadURLByHostname(context.Context, string, string) (string, error) {
+	return s.publicDownloadURL, nil
+}
+
 func (s *fakeAssetService) ListBySite(context.Context, string) ([]Asset, error) {
 	return nil, nil
 }

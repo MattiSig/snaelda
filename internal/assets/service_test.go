@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MattiSig/snaelda/internal/siteconfig"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -156,10 +157,11 @@ func TestDeleteRemovesStorageObjectAndRow(t *testing.T) {
 	}
 }
 
-func TestPublicDownloadURLBySiteSlugRequiresPublishedSite(t *testing.T) {
+func TestPublicDownloadURLBySiteSlugRequiresPublishedReference(t *testing.T) {
 	store := newFakeAssetStore()
 	store.siteSlugs["site-1"] = "loom-light"
 	store.publishedSites["site-1"] = true
+	store.publishedSnapshots["site-1"] = snapshotReferencingAsset("asset-1")
 	store.assets["asset-1"] = storedAsset{
 		Asset: Asset{
 			ID:          "asset-1",
@@ -178,6 +180,79 @@ func TestPublicDownloadURLBySiteSlugRequiresPublishedSite(t *testing.T) {
 	downloadURL, err := service.PublicDownloadURLBySiteSlug(context.Background(), "loom-light", "asset-1")
 	if err != nil {
 		t.Fatalf("public download url: %v", err)
+	}
+	if downloadURL != "http://download.test/public" {
+		t.Fatalf("expected public download url, got %q", downloadURL)
+	}
+}
+
+func TestPublicDownloadURLBySiteSlugRejectsAssetNotInPublishedSnapshot(t *testing.T) {
+	store := newFakeAssetStore()
+	store.siteSlugs["site-1"] = "loom-light"
+	store.publishedSites["site-1"] = true
+	store.publishedSnapshots["site-1"] = snapshotReferencingAsset("asset-2")
+	store.assets["asset-1"] = storedAsset{
+		Asset: Asset{
+			ID:          "asset-1",
+			WorkspaceID: "workspace-1",
+			SiteID:      "site-1",
+			Kind:        "image",
+			StorageKey:  "key-1",
+			Metadata:    AssetMetadata{UploadStatus: "uploaded"},
+			CreatedAt:   time.Now().UTC(),
+		},
+	}
+	service := NewService(store, &fakeStorage{downloadURL: "http://download.test/public"})
+
+	_, err := service.PublicDownloadURLBySiteSlug(context.Background(), "loom-light", "asset-1")
+	if !errors.Is(err, ErrAssetNotFound) {
+		t.Fatalf("expected ErrAssetNotFound for unreferenced asset, got %v", err)
+	}
+}
+
+func TestPublicDownloadURLBySiteSlugRejectsUnpublishedSite(t *testing.T) {
+	store := newFakeAssetStore()
+	store.siteSlugs["site-1"] = "loom-light"
+	store.assets["asset-1"] = storedAsset{
+		Asset: Asset{
+			ID:          "asset-1",
+			WorkspaceID: "workspace-1",
+			SiteID:      "site-1",
+			Kind:        "image",
+			StorageKey:  "key-1",
+			Metadata:    AssetMetadata{UploadStatus: "uploaded"},
+			CreatedAt:   time.Now().UTC(),
+		},
+	}
+	service := NewService(store, &fakeStorage{downloadURL: "http://download.test/public"})
+
+	_, err := service.PublicDownloadURLBySiteSlug(context.Background(), "loom-light", "asset-1")
+	if !errors.Is(err, ErrAssetNotFound) {
+		t.Fatalf("expected ErrAssetNotFound when site has no published version, got %v", err)
+	}
+}
+
+func TestPublicDownloadURLByHostnameMatchesActiveDomain(t *testing.T) {
+	store := newFakeAssetStore()
+	store.siteHostnames["site-1"] = "loom-light.snaelda.app"
+	store.publishedSites["site-1"] = true
+	store.publishedSnapshots["site-1"] = snapshotReferencingAsset("asset-1")
+	store.assets["asset-1"] = storedAsset{
+		Asset: Asset{
+			ID:          "asset-1",
+			WorkspaceID: "workspace-1",
+			SiteID:      "site-1",
+			Kind:        "image",
+			StorageKey:  "key-1",
+			Metadata:    AssetMetadata{UploadStatus: "uploaded"},
+			CreatedAt:   time.Now().UTC(),
+		},
+	}
+	service := NewService(store, &fakeStorage{downloadURL: "http://download.test/public"})
+
+	downloadURL, err := service.PublicDownloadURLByHostname(context.Background(), "loom-light.snaelda.app", "asset-1")
+	if err != nil {
+		t.Fatalf("public download url by hostname: %v", err)
 	}
 	if downloadURL != "http://download.test/public" {
 		t.Fatalf("expected public download url, got %q", downloadURL)
@@ -218,16 +293,58 @@ type storedAsset struct {
 }
 
 type fakeAssetStore struct {
-	assets         map[string]storedAsset
-	siteSlugs      map[string]string
-	publishedSites map[string]bool
+	assets             map[string]storedAsset
+	siteSlugs          map[string]string
+	siteHostnames      map[string]string
+	publishedSites     map[string]bool
+	publishedSnapshots map[string]siteconfig.PublishedSnapshot
 }
 
 func newFakeAssetStore() *fakeAssetStore {
 	return &fakeAssetStore{
-		assets:         map[string]storedAsset{},
-		siteSlugs:      map[string]string{},
-		publishedSites: map[string]bool{},
+		assets:             map[string]storedAsset{},
+		siteSlugs:          map[string]string{},
+		siteHostnames:      map[string]string{},
+		publishedSites:     map[string]bool{},
+		publishedSnapshots: map[string]siteconfig.PublishedSnapshot{},
+	}
+}
+
+func snapshotReferencingAsset(assetIDs ...string) siteconfig.PublishedSnapshot {
+	images := make([]any, 0, len(assetIDs))
+	for index, id := range assetIDs {
+		images = append(images, map[string]any{
+			"title":   "Image " + id,
+			"caption": "",
+			"image": map[string]any{
+				"assetId": id,
+				"alt":     "alt " + id,
+			},
+		})
+		_ = index
+	}
+	return siteconfig.PublishedSnapshot{
+		SchemaVersion: siteconfig.SiteConfigVersionV1,
+		Site:          siteconfig.PublishedSite{ID: "site-1", Name: "Loom & Light", DefaultLocale: "en"},
+		Theme:         siteconfig.ThemePreset(siteconfig.ThemePaletteMeanerDark),
+		Navigation: siteconfig.NavigationConfig{
+			Primary: []siteconfig.NavigationItem{{Label: "Home", PageID: "page-home"}},
+		},
+		Pages: []siteconfig.PageDraft{{
+			ID:    "page-home",
+			Title: "Home",
+			Slug:  "/",
+			Blocks: []siteconfig.BlockInstance{{
+				ID:      "block-gallery",
+				Type:    "gallery",
+				Version: siteconfig.BlockVersionV1,
+				Props: map[string]any{
+					"heading": "Featured work",
+					"layout":  "grid",
+					"images":  images,
+				},
+			}},
+		}},
 	}
 }
 
@@ -271,19 +388,42 @@ func (s *fakeAssetStore) QueryRow(_ context.Context, sql string, args ...any) pg
 		}
 		s.assets[id] = asset
 		return fakeAssetRow{createdAt: asset.CreatedAt}
-	case strings.Contains(sql, "from assets"):
-		if len(args) == 2 {
-			siteSlug := args[0].(string)
-			assetID := args[1].(string)
-			asset, ok := s.assets[assetID]
-			if !ok {
-				return fakeAssetRow{err: pgx.ErrNoRows}
-			}
-			if s.siteSlugs[asset.SiteID] != siteSlug || !s.publishedSites[asset.SiteID] {
-				return fakeAssetRow{err: pgx.ErrNoRows}
-			}
-			return fakeAssetRow{asset: &asset.Asset}
+	case strings.Contains(sql, "join site_versions sv"):
+		assetID := args[1].(string)
+		asset, ok := s.assets[assetID]
+		if !ok {
+			return fakeAssetRow{err: pgx.ErrNoRows}
 		}
+		if !s.publishedSites[asset.SiteID] {
+			return fakeAssetRow{err: pgx.ErrNoRows}
+		}
+		switch {
+		case strings.Contains(sql, "where s.slug = $1"):
+			siteSlug := args[0].(string)
+			if s.siteSlugs[asset.SiteID] != siteSlug {
+				return fakeAssetRow{err: pgx.ErrNoRows}
+			}
+		case strings.Contains(sql, "lower(d.hostname) = $1"):
+			hostname := args[0].(string)
+			if strings.ToLower(s.siteHostnames[asset.SiteID]) != hostname {
+				return fakeAssetRow{err: pgx.ErrNoRows}
+			}
+		default:
+			return fakeAssetRow{err: errors.New("unexpected public asset query")}
+		}
+		snapshot, ok := s.publishedSnapshots[asset.SiteID]
+		var snapshotJSON []byte
+		if ok {
+			payload, err := json.Marshal(snapshot)
+			if err != nil {
+				return fakeAssetRow{err: err}
+			}
+			snapshotJSON = payload
+		} else {
+			snapshotJSON = []byte(`{}`)
+		}
+		return fakeAssetRow{asset: &asset.Asset, snapshotJSON: snapshotJSON}
+	case strings.Contains(sql, "from assets"):
 		id := args[0].(string)
 		asset, ok := s.assets[id]
 		if !ok {
@@ -326,9 +466,10 @@ func (s *fakeAssetStore) Exec(_ context.Context, sql string, args ...any) (pgcon
 }
 
 type fakeAssetRow struct {
-	asset     *Asset
-	createdAt time.Time
-	err       error
+	asset        *Asset
+	snapshotJSON []byte
+	createdAt    time.Time
+	err          error
 }
 
 func (r fakeAssetRow) Scan(dest ...any) error {
@@ -354,6 +495,9 @@ func (r fakeAssetRow) Scan(dest ...any) error {
 	*dest[7].(*[]byte) = metadataJSON
 	*dest[8].(*string) = r.asset.CreatedBy
 	*dest[9].(*time.Time) = r.asset.CreatedAt
+	if len(dest) > 10 {
+		*dest[10].(*[]byte) = r.snapshotJSON
+	}
 	return nil
 }
 

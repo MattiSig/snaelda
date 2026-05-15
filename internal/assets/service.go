@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/MattiSig/snaelda/internal/platform/ids"
+	"github.com/MattiSig/snaelda/internal/siteconfig"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -324,30 +325,150 @@ func (s *Service) DownloadURL(ctx context.Context, assetID string) (string, erro
 }
 
 func (s *Service) PublicDownloadURLBySiteSlug(ctx context.Context, siteSlug string, assetID string) (string, error) {
-	asset, err := scanAssetRow(s.db.QueryRow(ctx, `
-		select a.id::text,
-		       a.workspace_id::text,
-		       coalesce(a.site_id::text, ''),
-		       a.kind,
-		       a.storage_key,
-		       coalesce(a.public_url, ''),
-		       coalesce(a.alt_text, ''),
-		       a.metadata,
-		       coalesce(a.created_by::text, ''),
-		       a.created_at
-		from assets a
-		join sites s on s.id = a.site_id
-		where s.slug = $1
-		  and a.id = $2
-		  and s.published_version_id is not null
-	`, strings.TrimSpace(siteSlug), strings.TrimSpace(assetID)))
-	if errors.Is(err, pgx.ErrNoRows) {
+	return s.publicDownloadURL(ctx, publicAssetLookup{
+		bySlug:   strings.TrimSpace(siteSlug),
+		assetID:  strings.TrimSpace(assetID),
+		matchKey: "slug",
+	})
+}
+
+func (s *Service) PublicDownloadURLByHostname(ctx context.Context, hostname string, assetID string) (string, error) {
+	return s.publicDownloadURL(ctx, publicAssetLookup{
+		byHostname: strings.ToLower(strings.TrimSpace(hostname)),
+		assetID:    strings.TrimSpace(assetID),
+		matchKey:   "hostname",
+	})
+}
+
+type publicAssetLookup struct {
+	bySlug     string
+	byHostname string
+	assetID    string
+	matchKey   string
+}
+
+func (s *Service) publicDownloadURL(ctx context.Context, lookup publicAssetLookup) (string, error) {
+	if lookup.assetID == "" {
 		return "", ErrAssetNotFound
 	}
-	if err != nil {
-		return "", fmt.Errorf("load public asset: %w", err)
+
+	var (
+		asset        Asset
+		snapshotJSON []byte
+	)
+	switch lookup.matchKey {
+	case "slug":
+		if lookup.bySlug == "" {
+			return "", ErrAssetNotFound
+		}
+		row := s.db.QueryRow(ctx, `
+			select a.id::text,
+			       a.workspace_id::text,
+			       coalesce(a.site_id::text, ''),
+			       a.kind,
+			       a.storage_key,
+			       coalesce(a.public_url, ''),
+			       coalesce(a.alt_text, ''),
+			       a.metadata,
+			       coalesce(a.created_by::text, ''),
+			       a.created_at,
+			       sv.snapshot
+			from assets a
+			join sites s on s.id = a.site_id
+			join site_versions sv on sv.id = s.published_version_id
+			where s.slug = $1
+			  and a.id = $2
+		`, lookup.bySlug, lookup.assetID)
+		var err error
+		asset, snapshotJSON, err = scanPublicAssetRow(row)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrAssetNotFound
+		}
+		if err != nil {
+			return "", fmt.Errorf("load public asset by slug: %w", err)
+		}
+	case "hostname":
+		if lookup.byHostname == "" {
+			return "", ErrAssetNotFound
+		}
+		row := s.db.QueryRow(ctx, `
+			select a.id::text,
+			       a.workspace_id::text,
+			       coalesce(a.site_id::text, ''),
+			       a.kind,
+			       a.storage_key,
+			       coalesce(a.public_url, ''),
+			       coalesce(a.alt_text, ''),
+			       a.metadata,
+			       coalesce(a.created_by::text, ''),
+			       a.created_at,
+			       sv.snapshot
+			from assets a
+			join site_domains d on d.site_id = a.site_id
+			join sites s on s.id = a.site_id
+			join site_versions sv on sv.id = s.published_version_id
+			where lower(d.hostname) = $1
+			  and d.status = 'active'
+			  and a.id = $2
+			order by d.updated_at desc, d.created_at desc
+			limit 1
+		`, lookup.byHostname, lookup.assetID)
+		var err error
+		asset, snapshotJSON, err = scanPublicAssetRow(row)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrAssetNotFound
+		}
+		if err != nil {
+			return "", fmt.Errorf("load public asset by hostname: %w", err)
+		}
+	default:
+		return "", ErrAssetNotFound
 	}
+
+	var snapshot siteconfig.PublishedSnapshot
+	if err := json.Unmarshal(snapshotJSON, &snapshot); err != nil {
+		return "", fmt.Errorf("decode published snapshot for asset lookup: %w", err)
+	}
+
+	references := siteconfig.CollectAssetIDs(snapshot.Pages)
+	if _, referenced := references[asset.ID]; !referenced {
+		return "", ErrAssetNotFound
+	}
+
 	return s.downloadURLForAsset(ctx, asset)
+}
+
+func scanPublicAssetRow(row pgx.Row) (Asset, []byte, error) {
+	var (
+		asset        Asset
+		metadataJSON []byte
+		snapshotJSON []byte
+	)
+	if err := row.Scan(
+		&asset.ID,
+		&asset.WorkspaceID,
+		&asset.SiteID,
+		&asset.Kind,
+		&asset.StorageKey,
+		&asset.PublicURL,
+		&asset.AltText,
+		&metadataJSON,
+		&asset.CreatedBy,
+		&asset.CreatedAt,
+		&snapshotJSON,
+	); err != nil {
+		return Asset{}, nil, err
+	}
+	if len(metadataJSON) == 0 {
+		metadataJSON = []byte(`{}`)
+	}
+	if err := json.Unmarshal(metadataJSON, &asset.Metadata); err != nil {
+		return Asset{}, nil, fmt.Errorf("decode asset metadata: %w", err)
+	}
+	if len(snapshotJSON) == 0 {
+		snapshotJSON = []byte(`{}`)
+	}
+	return asset, snapshotJSON, nil
 }
 
 func (s *Service) Delete(ctx context.Context, assetID string) error {

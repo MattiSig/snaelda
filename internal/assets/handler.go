@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"strings"
 
@@ -16,6 +17,7 @@ type AssetService interface {
 	CompleteUpload(ctx context.Context, assetID string, input CompleteUploadInput) (Asset, error)
 	DownloadURL(ctx context.Context, assetID string) (string, error)
 	PublicDownloadURLBySiteSlug(ctx context.Context, siteSlug string, assetID string) (string, error)
+	PublicDownloadURLByHostname(ctx context.Context, hostname string, assetID string) (string, error)
 	ListBySite(ctx context.Context, siteID string) ([]Asset, error)
 	Update(ctx context.Context, assetID string, input UpdateAssetInput) (Asset, error)
 	Delete(ctx context.Context, assetID string) error
@@ -66,6 +68,7 @@ func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.
 	mux.Handle("PATCH /api/assets/{assetId}", requireUser(http.HandlerFunc(h.updateAsset)))
 	mux.Handle("DELETE /api/assets/{assetId}", requireUser(http.HandlerFunc(h.deleteAsset)))
 	mux.HandleFunc("GET /api/public/sites/{siteSlug}/assets/{assetId}", h.redirectPublicAssetContent)
+	mux.HandleFunc("GET /api/public/assets/{assetId}", h.redirectPublicAssetContentByHostname)
 }
 
 func (h *Handler) createUploadURL(w http.ResponseWriter, r *http.Request) {
@@ -161,6 +164,52 @@ func (h *Handler) redirectPublicAssetContent(w http.ResponseWriter, r *http.Requ
 	}
 
 	http.Redirect(w, r, downloadURL, http.StatusTemporaryRedirect)
+}
+
+func (h *Handler) redirectPublicAssetContentByHostname(w http.ResponseWriter, r *http.Request) {
+	assetID := strings.TrimSpace(r.PathValue("assetId"))
+	hostname := publicHostnameFromRequest(r)
+	if assetID == "" || hostname == "" {
+		writeError(w, http.StatusBadRequest, "invalid_public_asset", "hostname and asset id are required")
+		return
+	}
+
+	downloadURL, err := h.service.PublicDownloadURLByHostname(r.Context(), hostname, assetID)
+	if err != nil {
+		writeAssetError(w, err)
+		return
+	}
+
+	http.Redirect(w, r, downloadURL, http.StatusTemporaryRedirect)
+}
+
+func publicHostnameFromRequest(r *http.Request) string {
+	for _, value := range []string{
+		r.URL.Query().Get("hostname"),
+		r.Header.Get("X-Forwarded-Host"),
+		r.Host,
+	} {
+		if normalized := normalizeHostname(value); normalized != "" {
+			return normalized
+		}
+	}
+	return ""
+}
+
+func normalizeHostname(raw string) string {
+	value := strings.TrimSpace(strings.ToLower(raw))
+	if value == "" {
+		return ""
+	}
+	if host, _, err := net.SplitHostPort(value); err == nil {
+		value = host
+	} else if strings.Count(value, ":") == 1 {
+		host, port, found := strings.Cut(value, ":")
+		if found && host != "" && port != "" {
+			value = host
+		}
+	}
+	return strings.TrimSuffix(value, ".")
 }
 
 func (h *Handler) listSiteAssets(w http.ResponseWriter, r *http.Request) {

@@ -19,6 +19,8 @@ This file now tracks confirmed remaining work only. Items are sorted by implemen
 - [x] Generation now supports a provider-backed structured-output planner through OpenAI when configured, while keeping deterministic fallback behavior for local and unconfigured environments.
 - [x] Generation metadata writes and generation-job completion are now mandatory success conditions rather than best-effort side effects.
 - [x] Theme regeneration is now a first-class authenticated API plus builder action via `POST /api/sites/:siteId/theme/regenerate`.
+- [x] Public form submission now resolves strictly against the active published version's snapshot; unpublished sites and draft-only blocks are rejected at the public submit endpoint.
+- [x] Public asset delivery now requires the asset to be referenced by the active published version, and supports both the `siteSlug` path and the hostname-based hosted-public resolution flow (`GET /api/public/assets/{assetId}`).
 
 ## Priority Backlog
 
@@ -27,12 +29,6 @@ This file now tracks confirmed remaining work only. Items are sorted by implemen
 
 - [ ] Make navigation explicitly editable canonical data instead of a mostly page-derived structure.
   Confirmed gap: ordering and inclusion exist, but internal labels/external items are not treated as full first-class editable navigation records.
-
-- [ ] Restrict public form submission to the active published version only.
-  Confirmed gap: the public forms service can currently fall back to draft content when a published block is not found.
-
-- [ ] Restrict public asset delivery to assets referenced by the active published version or a valid preview token.
-  Confirmed gap: public asset access is broader than the published-site contract and is keyed by site slug rather than the full hosted-public resolution flow.
 
 - [ ] Add durable spam handling for public forms.
   Confirmed gap: public form rate limiting is process-local and `spam_score` is unused; basic scoring/filtering is still missing.
