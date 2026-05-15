@@ -66,6 +66,7 @@ type PublishedSiteResult struct {
 }
 
 type PublishedPageArtifact struct {
+	PageID       string `json:"pageId,omitempty"`
 	PagePath     string `json:"pagePath"`
 	Title        string `json:"title"`
 	Description  string `json:"description"`
@@ -733,6 +734,7 @@ func (s *Service) loadPublishedArtifactPage(ctx context.Context, lookup publishe
 	}
 
 	return PublishedPageArtifact{
+		PageID:       manifestPage.PageID,
 		PagePath:     pagePath,
 		Title:        manifestPage.Title,
 		Description:  manifestPage.Description,

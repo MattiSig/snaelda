@@ -25,6 +25,7 @@ import { Route as PublicSiteSlugSplatRouteImport } from './routes/public.$siteSl
 import { Route as AppSitesSiteIdRouteImport } from './routes/app.sites.$siteId'
 import { Route as AppSitesSiteIdIndexRouteImport } from './routes/app.sites.$siteId.index'
 import { Route as AppSitesSiteIdPreviewRouteImport } from './routes/app.sites.$siteId.preview'
+import { Route as AppSitesSiteIdAnalyticsRouteImport } from './routes/app.sites.$siteId.analytics'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -108,6 +109,11 @@ const AppSitesSiteIdPreviewRoute = AppSitesSiteIdPreviewRouteImport.update({
   path: '/preview',
   getParentRoute: () => AppSitesSiteIdRoute,
 } as any)
+const AppSitesSiteIdAnalyticsRoute = AppSitesSiteIdAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => AppSitesSiteIdRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -124,6 +130,7 @@ export interface FileRoutesByFullPath {
   '/public/$siteSlug/robots.txt': typeof PublicSiteSlugRobotsDottxtRoute
   '/public/$siteSlug/sitemap.xml': typeof PublicSiteSlugSitemapDotxmlRoute
   '/public/$siteSlug/': typeof PublicSiteSlugIndexRoute
+  '/app/sites/$siteId/analytics': typeof AppSitesSiteIdAnalyticsRoute
   '/app/sites/$siteId/preview': typeof AppSitesSiteIdPreviewRoute
   '/app/sites/$siteId/': typeof AppSitesSiteIdIndexRoute
 }
@@ -139,6 +146,7 @@ export interface FileRoutesByTo {
   '/public/$siteSlug/robots.txt': typeof PublicSiteSlugRobotsDottxtRoute
   '/public/$siteSlug/sitemap.xml': typeof PublicSiteSlugSitemapDotxmlRoute
   '/public/$siteSlug': typeof PublicSiteSlugIndexRoute
+  '/app/sites/$siteId/analytics': typeof AppSitesSiteIdAnalyticsRoute
   '/app/sites/$siteId/preview': typeof AppSitesSiteIdPreviewRoute
   '/app/sites/$siteId': typeof AppSitesSiteIdIndexRoute
 }
@@ -158,6 +166,7 @@ export interface FileRoutesById {
   '/public/$siteSlug/robots.txt': typeof PublicSiteSlugRobotsDottxtRoute
   '/public/$siteSlug/sitemap.xml': typeof PublicSiteSlugSitemapDotxmlRoute
   '/public/$siteSlug/': typeof PublicSiteSlugIndexRoute
+  '/app/sites/$siteId/analytics': typeof AppSitesSiteIdAnalyticsRoute
   '/app/sites/$siteId/preview': typeof AppSitesSiteIdPreviewRoute
   '/app/sites/$siteId/': typeof AppSitesSiteIdIndexRoute
 }
@@ -178,6 +187,7 @@ export interface FileRouteTypes {
     | '/public/$siteSlug/robots.txt'
     | '/public/$siteSlug/sitemap.xml'
     | '/public/$siteSlug/'
+    | '/app/sites/$siteId/analytics'
     | '/app/sites/$siteId/preview'
     | '/app/sites/$siteId/'
   fileRoutesByTo: FileRoutesByTo
@@ -193,6 +203,7 @@ export interface FileRouteTypes {
     | '/public/$siteSlug/robots.txt'
     | '/public/$siteSlug/sitemap.xml'
     | '/public/$siteSlug'
+    | '/app/sites/$siteId/analytics'
     | '/app/sites/$siteId/preview'
     | '/app/sites/$siteId'
   id:
@@ -211,6 +222,7 @@ export interface FileRouteTypes {
     | '/public/$siteSlug/robots.txt'
     | '/public/$siteSlug/sitemap.xml'
     | '/public/$siteSlug/'
+    | '/app/sites/$siteId/analytics'
     | '/app/sites/$siteId/preview'
     | '/app/sites/$siteId/'
   fileRoutesById: FileRoutesById
@@ -340,15 +352,24 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSitesSiteIdPreviewRouteImport
       parentRoute: typeof AppSitesSiteIdRoute
     }
+    '/app/sites/$siteId/analytics': {
+      id: '/app/sites/$siteId/analytics'
+      path: '/analytics'
+      fullPath: '/app/sites/$siteId/analytics'
+      preLoaderRoute: typeof AppSitesSiteIdAnalyticsRouteImport
+      parentRoute: typeof AppSitesSiteIdRoute
+    }
   }
 }
 
 interface AppSitesSiteIdRouteChildren {
+  AppSitesSiteIdAnalyticsRoute: typeof AppSitesSiteIdAnalyticsRoute
   AppSitesSiteIdPreviewRoute: typeof AppSitesSiteIdPreviewRoute
   AppSitesSiteIdIndexRoute: typeof AppSitesSiteIdIndexRoute
 }
 
 const AppSitesSiteIdRouteChildren: AppSitesSiteIdRouteChildren = {
+  AppSitesSiteIdAnalyticsRoute: AppSitesSiteIdAnalyticsRoute,
   AppSitesSiteIdPreviewRoute: AppSitesSiteIdPreviewRoute,
   AppSitesSiteIdIndexRoute: AppSitesSiteIdIndexRoute,
 }

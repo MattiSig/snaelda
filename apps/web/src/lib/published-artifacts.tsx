@@ -29,6 +29,7 @@ type PublishedArtifactManifest = {
   hostname?: string;
   version: SiteVersion;
   pages: Array<{
+    pageId: string;
     pagePath: string;
     filePath: string;
     title: string;
@@ -51,6 +52,7 @@ export function buildPublishedArtifactBundle(
     const canonicalUrl = buildCanonicalURL(input, page.slug);
 
     return {
+      pageId: page.id,
       pagePath: normalizePagePath(page.slug),
       filePath,
       title,
@@ -76,7 +78,8 @@ export function buildPublishedArtifactBundle(
     hostname: input.hostname || undefined,
     version: input.version,
     pages: pages.map(
-      ({ pagePath, filePath, title, description, canonicalUrl }) => ({
+      ({ pageId, pagePath, filePath, title, description, canonicalUrl }) => ({
+        pageId,
         pagePath,
         filePath,
         title,

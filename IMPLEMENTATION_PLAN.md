@@ -21,6 +21,9 @@ This file now tracks confirmed remaining work only. Items are sorted by implemen
 - [x] Theme regeneration is now a first-class authenticated API plus builder action via `POST /api/sites/:siteId/theme/regenerate`.
 - [x] Public form submission now resolves strictly against the active published version's snapshot; unpublished sites and draft-only blocks are rejected at the public submit endpoint.
 - [x] Public asset delivery now requires the asset to be referenced by the active published version, and supports both the `siteSlug` path and the hostname-based hosted-public resolution flow (`GET /api/public/assets/{assetId}`).
+- [x] Published public page resolution now records non-blocking views into `page_view_daily`, filtering empty/bot user agents and known health-check paths via `analytics.CountableRequest`.
+- [x] Added `GET /api/sites/{siteId}/analytics?window=7d|30d|all` returning total views, per-page views, and a gap-filled daily trend for authorized site members.
+- [x] Builder now has a dedicated site analytics view at `/app/sites/{siteId}/analytics` with a window selector, total counter, daily trend chart, and per-page breakdown.
 
 ## Priority Backlog
 
@@ -35,12 +38,6 @@ This file now tracks confirmed remaining work only. Items are sorted by implemen
 
 - [ ] Add audit events for site create, generation, re-prompt, asset upload, and destructive edits.
   Confirmed gap: publish and rollback are audited, but the broader authoring lifecycle is not yet fully covered.
-
-- [ ] Add non-blocking published-page view counting, aggregate writes into `page_view_daily`, and expose the first analytics APIs.
-  Confirmed gap: the schema is present, but counting and analytics read endpoints are not implemented.
-
-- [ ] Add the first builder analytics views for total views, views by page, and daily trend windows.
-  Scope is now defined in [specs/16-runtime-lifecycles-and-analytics.md](./specs/16-runtime-lifecycles-and-analytics.md).
 
 - [ ] Reconcile the implemented API surface with the spec and remove placeholder module drift.
   Confirmed gap: `workspaces`, `pages`, `blocks`, and `billing` are still mounted as placeholder modules even though some page/block behavior is implemented through `sites`; either the API/resource boundaries need to be implemented as separate modules or the specs need to be narrowed to the consolidated shape.

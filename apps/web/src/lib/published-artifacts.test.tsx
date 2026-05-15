@@ -52,6 +52,7 @@ describe("published artifact bundle", () => {
     expect(manifest?.body).toContain(
       '"canonicalUrl": "https://loom-light.snaelda.test/contact"',
     );
+    expect(manifest?.body).toContain('"pageId": "page-contact"');
   });
 });
 

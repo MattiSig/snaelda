@@ -831,6 +831,40 @@ export async function listSiteVersions(siteId: string) {
   return apiFetch<SiteVersionsResponse>(`/api/sites/${siteId}/versions`);
 }
 
+export type AnalyticsWindow = "7d" | "30d" | "all";
+
+export type SiteAnalyticsPage = {
+  pageId: string;
+  title?: string;
+  slug?: string;
+  viewCount: number;
+};
+
+export type SiteAnalyticsDaily = {
+  date: string;
+  viewCount: number;
+};
+
+export type SiteAnalytics = {
+  siteId: string;
+  window: AnalyticsWindow;
+  rangeStart?: string;
+  rangeEnd?: string;
+  totalViews: number;
+  pages: SiteAnalyticsPage[];
+  dailyViews: SiteAnalyticsDaily[];
+};
+
+export async function getSiteAnalytics(
+  siteId: string,
+  window: AnalyticsWindow = "7d",
+) {
+  const search = new URLSearchParams({ window });
+  return apiFetch<{ analytics: SiteAnalytics }>(
+    `/api/sites/${siteId}/analytics?${search.toString()}`,
+  );
+}
+
 export async function getSiteDomains(siteId: string) {
   return apiFetch<SiteDomainsResponse>(`/api/sites/${siteId}/domains`);
 }

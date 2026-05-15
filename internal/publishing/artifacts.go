@@ -31,6 +31,7 @@ type ArtifactManifest struct {
 }
 
 type ArtifactManifestPage struct {
+	PageID       string `json:"pageId,omitempty"`
 	PagePath     string `json:"pagePath"`
 	FilePath     string `json:"filePath"`
 	Title        string `json:"title"`

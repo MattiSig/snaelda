@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MattiSig/snaelda/internal/analytics"
 	"github.com/MattiSig/snaelda/internal/assets"
 	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/billing"
@@ -119,15 +120,24 @@ func (s *Server) Handler() http.Handler {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, generation.Module{})
 	}
 	if store, ok := s.database.(publishing.DB); ok {
-		publishing.NewHandler(
+		publishHandler := publishing.NewHandler(
 			store,
 			s.config.AppBaseURL,
 			s.config.PublicBaseURL,
 			s.config.PublicBaseDomain,
 			s.config.PublishedArtifactsDir,
-		).Mount(mux, s.auth.RequireUser)
+		)
+		if analyticsStore, ok := s.database.(analytics.Store); ok {
+			publishHandler = publishHandler.WithViewRecorder(analytics.NewRecorder(analyticsStore, s.logger))
+		}
+		publishHandler.Mount(mux, s.auth.RequireUser)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, publishing.Module{})
+	}
+	if store, ok := s.database.(analytics.DB); ok {
+		analytics.NewHandler(store).Mount(mux, s.auth.RequireUser)
+	} else {
+		mountAuthenticatedPlaceholderModule(mux, s.auth, analytics.Module{})
 	}
 	if store, ok := s.database.(domains.DB); ok {
 		domains.NewHandler(store, domains.HandlerConfig{

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/MattiSig/snaelda/internal/analytics"
 	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/authorization"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
@@ -20,6 +21,13 @@ type Handler struct {
 	authorizer    Authorizer
 	appBaseURL    string
 	publicBaseURL string
+	viewRecorder  PageViewRecorder
+}
+
+// PageViewRecorder is implemented by analytics.Recorder. The interface lets the
+// handler stay decoupled from the concrete analytics package in tests.
+type PageViewRecorder interface {
+	RecordAsync(view analytics.PageView)
 }
 
 type Publisher interface {
@@ -52,6 +60,16 @@ func NewHandler(db DB, appBaseURL string, publicBaseURL string, publicBaseDomain
 		appBaseURL:    strings.TrimRight(appBaseURL, "/"),
 		publicBaseURL: strings.TrimSpace(publicBaseURL),
 	}
+}
+
+// WithViewRecorder attaches a non-blocking page view recorder used after each
+// public page resolution. Returns the handler for chaining.
+func (h *Handler) WithViewRecorder(recorder PageViewRecorder) *Handler {
+	if h == nil {
+		return nil
+	}
+	h.viewRecorder = recorder
+	return h
 }
 
 func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.Handler) {
@@ -173,6 +191,8 @@ func (h *Handler) getPublishedSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.recordPageView(r, result)
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"siteSlug":  result.SiteSlug,
 		"hostname":  result.Hostname,
@@ -197,6 +217,8 @@ func (h *Handler) getPublishedSiteByHostname(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	h.recordPageView(r, result)
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"siteSlug":  result.SiteSlug,
 		"hostname":  result.Hostname,
@@ -204,6 +226,22 @@ func (h *Handler) getPublishedSiteByHostname(w http.ResponseWriter, r *http.Requ
 		"version":   result.Version,
 		"pagePath":  result.PagePath,
 		"page":      result.Page,
+	})
+}
+
+func (h *Handler) recordPageView(r *http.Request, result PublishedSiteResult) {
+	if h.viewRecorder == nil {
+		return
+	}
+	if !analytics.CountableRequest(r) {
+		return
+	}
+	if result.Version.SiteID == "" || result.Page.PageID == "" {
+		return
+	}
+	h.viewRecorder.RecordAsync(analytics.PageView{
+		SiteID: result.Version.SiteID,
+		PageID: result.Page.PageID,
 	})
 }
 

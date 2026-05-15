@@ -4,7 +4,7 @@ import {
   createFileRoute,
   useRouterState,
 } from '@tanstack/react-router'
-import { ChevronDown, Eye, Home, LogOut, PencilLine } from 'lucide-react'
+import { BarChart3, ChevronDown, Eye, Home, LogOut, PencilLine } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import {
   APIError,
@@ -31,6 +31,7 @@ function AppLayout() {
   const siteId = siteMatch?.[1] ?? ''
   const isBuilderRoute = /^\/app\/sites\/[^/]+\/?$/.test(pathname)
   const isPreviewRoute = /^\/app\/sites\/[^/]+\/preview\/?$/.test(pathname)
+  const isAnalyticsRoute = /^\/app\/sites\/[^/]+\/analytics\/?$/.test(pathname)
 
   useEffect(() => {
     let isMounted = true
@@ -182,6 +183,18 @@ function AppLayout() {
             {siteId ? (
               <>
                 <Link
+                  to="/app/sites/$siteId/analytics"
+                  params={{ siteId }}
+                  search={{ window: '7d' as const }}
+                  className={cn(
+                    actions.inlineLink,
+                    isAnalyticsRoute && 'border-[var(--thread-teal)] bg-[var(--surface-3)]',
+                  )}
+                >
+                  <BarChart3 className="size-4" />
+                  Analytics
+                </Link>
+                <Link
                   to="/app/sites/$siteId/preview"
                   params={{ siteId }}
                   className={cn(
@@ -195,6 +208,7 @@ function AppLayout() {
                 <Link
                   to="/app/sites/$siteId"
                   params={{ siteId }}
+                  search={{ panel: undefined }}
                   className={cn(
                     actions.inlineLink,
                     isBuilderRoute && 'border-[var(--thread-teal)] bg-[var(--surface-3)]',
