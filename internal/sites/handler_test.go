@@ -41,6 +41,8 @@ type fakeMutator struct {
 	pageDeleted              siteconfig.SiteDraft
 	pagesReordered           siteconfig.SiteDraft
 	navigationReordered      siteconfig.SiteDraft
+	navigationUpdated        siteconfig.SiteDraft
+	navigationUpdatedItems   []siteconfig.NavigationItem
 	blockCreated             siteconfig.SiteDraft
 	blockUpdated             siteconfig.SiteDraft
 	blockDeleted             siteconfig.SiteDraft
@@ -118,6 +120,13 @@ func (m *fakeMutator) ReorderNavigation(_ context.Context, workspaceID string, s
 	m.pageSiteID = siteID
 	m.reorderNavigationPageIDs = pageIDs
 	return m.navigationReordered, m.err
+}
+
+func (m *fakeMutator) UpdateNavigation(_ context.Context, workspaceID string, siteID string, items []siteconfig.NavigationItem) (siteconfig.SiteDraft, error) {
+	m.deleteWorkspaceID = workspaceID
+	m.pageSiteID = siteID
+	m.navigationUpdatedItems = items
+	return m.navigationUpdated, m.err
 }
 
 func (m *fakeMutator) CreateBlock(_ context.Context, workspaceID string, siteID string, pageID string, input CreateBlockInput) (siteconfig.SiteDraft, error) {

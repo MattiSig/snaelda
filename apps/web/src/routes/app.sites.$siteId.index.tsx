@@ -36,7 +36,8 @@ import {
   rollbackSiteVersion,
   reorderBlocks,
   reorderPages,
-  reorderSiteNavigation,
+  updateSiteNavigation,
+  type NavigationItemInput,
   type AssetRecord,
   type BlockDefinition,
   type FormSubmissionRecord,
@@ -132,6 +133,11 @@ function SiteDetail() {
   const [pageStatusMessage, setPageStatusMessage] = useState("");
   const [navigationErrorMessage, setNavigationErrorMessage] = useState("");
   const [navigationStatusMessage, setNavigationStatusMessage] = useState("");
+  const [navigationDraft, setNavigationDraft] = useState<NavigationItemInput[]>(
+    [],
+  );
+  const [externalLinkLabel, setExternalLinkLabel] = useState("");
+  const [externalLinkHref, setExternalLinkHref] = useState("");
   const [blockErrorMessage, setBlockErrorMessage] = useState("");
   const [blockStatusMessage, setBlockStatusMessage] = useState("");
   const [themeErrorMessage, setThemeErrorMessage] = useState("");
@@ -197,6 +203,7 @@ function SiteDetail() {
     setSelectedPageId(nextPage?.id ?? "");
     setSelectedBlockId(nextBlock?.id ?? "");
     syncSelectedPageFields(nextDraft, nextPage);
+    setNavigationDraft(navigationItemsFromDraft(nextDraft));
     setNavigationErrorMessage("");
     setNavigationStatusMessage("");
   }
@@ -242,6 +249,7 @@ function SiteDetail() {
           setSelectedPageId(initialPage?.id ?? "");
           setSelectedBlockId(initialPage?.blocks[0]?.id ?? "");
           syncSelectedPageFields(draftResponse.draft, initialPage);
+          setNavigationDraft(navigationItemsFromDraft(draftResponse.draft));
           setIsLoading(false);
         },
       )
@@ -434,36 +442,99 @@ function SiteDetail() {
     }
   }
 
-  async function handleMoveNavigation(pageId: string, direction: -1 | 1) {
+  function updateNavigationDraftItem(
+    index: number,
+    patch: Partial<NavigationItemInput>,
+  ) {
+    setNavigationDraft((items) =>
+      items.map((item, current) =>
+        current === index ? { ...item, ...patch } : item,
+      ),
+    );
+    setNavigationStatusMessage("");
+  }
+
+  function moveNavigationDraftItem(index: number, direction: -1 | 1) {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= navigationDraft.length) {
+      return;
+    }
+    setNavigationDraft((items) => {
+      const next = [...items];
+      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+      return next;
+    });
+    setNavigationStatusMessage("");
+  }
+
+  function removeNavigationDraftItem(index: number) {
+    setNavigationDraft((items) => items.filter((_, current) => current !== index));
+    setNavigationStatusMessage("");
+  }
+
+  function addNavigationPageReference(pageId: string) {
     if (!draft) {
       return;
     }
-    const currentNavigationPages = getNavigationPages(draft);
-    const nextOrder = moveItem(currentNavigationPages, pageId, direction);
-    if (!nextOrder) {
+    const page = draft.pages.find((candidate) => candidate.id === pageId);
+    if (!page) {
       return;
     }
+    setNavigationDraft((items) => [
+      ...items,
+      { label: page.title, pageId: page.id },
+    ]);
+    setNavigationStatusMessage("");
+  }
 
+  function addNavigationExternalLink(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const label = externalLinkLabel.trim();
+    const href = externalLinkHref.trim();
+    if (!label || !href) {
+      setNavigationErrorMessage(
+        "External links need both a label and a destination URL.",
+      );
+      return;
+    }
+    setNavigationDraft((items) => [...items, { label, href }]);
+    setExternalLinkLabel("");
+    setExternalLinkHref("");
+    setNavigationErrorMessage("");
+    setNavigationStatusMessage("");
+  }
+
+  async function handleSaveNavigation() {
     setIsSavingNavigation(true);
     setNavigationErrorMessage("");
     setNavigationStatusMessage("");
 
+    const sanitized = navigationDraft.map((item) => ({
+      label: item.label.trim(),
+      pageId: item.pageId,
+      href: item.href,
+    }));
+
     try {
-      const response = await reorderSiteNavigation(
-        siteId,
-        nextOrder.map((page) => page.id),
-      );
+      const response = await updateSiteNavigation(siteId, sanitized);
       applyDraftUpdate(response.draft, selectedPage?.id, selectedBlock?.id);
-      setNavigationStatusMessage("Primary navigation order updated.");
+      setNavigationStatusMessage("Navigation updated.");
     } catch (error) {
       setNavigationErrorMessage(
-        error instanceof APIError
-          ? error.message
-          : "Could not reorder navigation",
+        error instanceof APIError ? error.message : "Could not save navigation",
       );
     } finally {
       setIsSavingNavigation(false);
     }
+  }
+
+  function handleResetNavigation() {
+    if (!draft) {
+      return;
+    }
+    setNavigationDraft(navigationItemsFromDraft(draft));
+    setNavigationErrorMessage("");
+    setNavigationStatusMessage("");
   }
 
   async function handleSaveBlock(
@@ -1079,13 +1150,18 @@ function SiteDetail() {
     selectedPage && selectedBlock
       ? selectedPage.blocks.findIndex((block) => block.id === selectedBlock.id)
       : -1;
-  const navigationPages = getNavigationPages(draft);
-  const hiddenNavigationPageCount = draft.pages.filter(
-    (page) => !draft.navigation.primary.some((item) => item.pageId === page.id),
-  ).length;
-  const externalNavigationCount = draft.navigation.primary.filter(
-    (item) => !item.pageId && item.href,
-  ).length;
+  const navigationDraftPageIds = new Set(
+    navigationDraft
+      .map((item) => item.pageId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const navigationAvailablePages = draft.pages.filter(
+    (page) => !navigationDraftPageIds.has(page.id),
+  );
+  const navigationIsDirty = !sameNavigationItems(
+    navigationDraft,
+    navigationItemsFromDraft(draft),
+  );
   const hasContactForm = draft.pages.some((page) =>
     page.blocks.some((block) => block.type === "contact_form"),
   );
@@ -1288,70 +1364,192 @@ function SiteDetail() {
         <div>
           <p className={text.eyebrow}>Navigation</p>
           <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
-            Set the main menu order
+            Edit the main menu
           </h2>
+          <p className={cn(text.p, "mt-2 text-sm")}>
+            Labels are independent of page titles, so you can name menu items
+            anything you like. Add internal pages or external links, reorder
+            them, then save the menu.
+          </p>
         </div>
 
-        {navigationPages.length > 0 ? (
+        {navigationDraft.length > 0 ? (
           <div className="grid gap-3">
-            {navigationPages.map((page, index) => (
-              <article key={page.id} className={workspaceRow}>
-                <div>
-                  <strong className="block text-[var(--paper)]">
-                    {page.title}
-                  </strong>
-                  <small className="text-[var(--paper-muted)]">
-                    {page.slug}
-                  </small>
-                </div>
-                <div className={actions.row}>
-                  <Button
-                    type="button"
-                    variant="plain"
-                    className={actions.inlineLink}
-                    disabled={index === 0 || isSavingNavigation}
-                    onClick={() => handleMoveNavigation(page.id, -1)}
-                  >
-                    Earlier
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="plain"
-                    className={actions.inlineLink}
-                    disabled={
-                      index === navigationPages.length - 1 || isSavingNavigation
-                    }
-                    onClick={() => handleMoveNavigation(page.id, 1)}
-                  >
-                    Later
-                  </Button>
-                </div>
-              </article>
-            ))}
-
-            {navigationErrorMessage ? (
-              <p className={text.error}>{navigationErrorMessage}</p>
-            ) : null}
-            {navigationStatusMessage ? (
-              <p className={text.success}>{navigationStatusMessage}</p>
-            ) : null}
-
-            <p className={form.hint}>
-              {hiddenNavigationPageCount > 0
-                ? `${hiddenNavigationPageCount} page${hiddenNavigationPageCount === 1 ? "" : "s"} currently stay out of the main menu.`
-                : "Every page is currently included in the main menu."}
-              {externalNavigationCount > 0
-                ? ` ${externalNavigationCount} external link${externalNavigationCount === 1 ? "" : "s"} still sit after the page links.`
-                : ""}
-            </p>
+            {navigationDraft.map((item, index) => {
+              const page = item.pageId
+                ? draft.pages.find((candidate) => candidate.id === item.pageId)
+                : null;
+              const subtitle = item.pageId
+                ? page
+                  ? `Internal page · ${page.slug}`
+                  : "Internal page · missing"
+                : `External link · ${item.href ?? ""}`;
+              return (
+                <article
+                  key={`${item.pageId ?? "ext"}-${item.href ?? ""}-${index}`}
+                  className={cn(workspaceRow, "items-start gap-4")}
+                >
+                  <div className="grid flex-1 gap-2">
+                    <label
+                      htmlFor={`nav-label-${index}`}
+                      className={text.label}
+                    >
+                      Menu label
+                    </label>
+                    <Input
+                      id={`nav-label-${index}`}
+                      value={item.label}
+                      onChange={(event) =>
+                        updateNavigationDraftItem(index, {
+                          label: event.target.value,
+                        })
+                      }
+                      maxLength={60}
+                    />
+                    {item.href !== undefined ? (
+                      <div className="grid gap-2">
+                        <label
+                          htmlFor={`nav-href-${index}`}
+                          className={text.label}
+                        >
+                          External URL
+                        </label>
+                        <Input
+                          id={`nav-href-${index}`}
+                          value={item.href}
+                          onChange={(event) =>
+                            updateNavigationDraftItem(index, {
+                              href: event.target.value,
+                            })
+                          }
+                          placeholder="https://example.com"
+                        />
+                      </div>
+                    ) : null}
+                    <small className="text-[var(--paper-muted)]">{subtitle}</small>
+                  </div>
+                  <div className={cn(actions.row, "flex-col items-stretch")}>
+                    <Button
+                      type="button"
+                      variant="plain"
+                      className={actions.inlineLink}
+                      disabled={index === 0 || isSavingNavigation}
+                      onClick={() => moveNavigationDraftItem(index, -1)}
+                    >
+                      Move up
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="plain"
+                      className={actions.inlineLink}
+                      disabled={
+                        index === navigationDraft.length - 1 || isSavingNavigation
+                      }
+                      onClick={() => moveNavigationDraftItem(index, 1)}
+                    >
+                      Move down
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="plain"
+                      className={actions.inlineLink}
+                      disabled={isSavingNavigation}
+                      onClick={() => removeNavigationDraftItem(index)}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         ) : (
           <div className={emptyState}>
             <p className={text.p}>
-              Include at least one page in the main navigation to reorder it.
+              The menu is empty. Add a page or external link below.
             </p>
           </div>
         )}
+
+        <div className="grid gap-3">
+          <p className={text.label}>Add an internal page</p>
+          {navigationAvailablePages.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {navigationAvailablePages.map((page) => (
+                <Button
+                  key={page.id}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isSavingNavigation}
+                  onClick={() => addNavigationPageReference(page.id)}
+                >
+                  + {page.title}
+                </Button>
+              ))}
+            </div>
+          ) : (
+            <p className={form.hint}>
+              Every page is already in the menu. Create more pages below to add
+              them.
+            </p>
+          )}
+        </div>
+
+        <form className={form.grid} onSubmit={addNavigationExternalLink}>
+          <p className={text.label}>Add an external link</p>
+          <div className="grid gap-2 md:grid-cols-[1fr_2fr_auto]">
+            <Input
+              value={externalLinkLabel}
+              onChange={(event) => setExternalLinkLabel(event.target.value)}
+              placeholder="Label"
+              maxLength={60}
+            />
+            <Input
+              value={externalLinkHref}
+              onChange={(event) => setExternalLinkHref(event.target.value)}
+              placeholder="https://example.com"
+            />
+            <Button
+              type="submit"
+              size="sm"
+              variant="outline"
+              disabled={
+                isSavingNavigation ||
+                externalLinkLabel.trim() === "" ||
+                externalLinkHref.trim() === ""
+              }
+            >
+              Add link
+            </Button>
+          </div>
+        </form>
+
+        <div className={cn(actions.row, "flex-wrap")}>
+          <Button
+            type="button"
+            disabled={isSavingNavigation || !navigationIsDirty}
+            onClick={handleSaveNavigation}
+          >
+            {isSavingNavigation ? "Saving..." : "Save navigation"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isSavingNavigation || !navigationIsDirty}
+            onClick={handleResetNavigation}
+          >
+            Discard changes
+          </Button>
+        </div>
+
+        {navigationErrorMessage ? (
+          <p className={text.error}>{navigationErrorMessage}</p>
+        ) : null}
+        {navigationStatusMessage ? (
+          <p className={text.success}>{navigationStatusMessage}</p>
+        ) : null}
       </section>
 
       <section className={workspaceSection}>
@@ -2127,14 +2325,45 @@ function findNewBlock(
   );
 }
 
-function getNavigationPages(draft: SiteDraft) {
-  return draft.navigation.primary
-    .map((item) =>
-      item.pageId
-        ? (draft.pages.find((page) => page.id === item.pageId) ?? null)
-        : null,
-    )
-    .filter((page): page is DraftPage => page !== null);
+function navigationItemsFromDraft(draft: SiteDraft): NavigationItemInput[] {
+  const items: NavigationItemInput[] = [];
+  for (const item of draft.navigation.primary) {
+    if (item.pageId) {
+      const page = draft.pages.find((candidate) => candidate.id === item.pageId);
+      if (!page) {
+        continue;
+      }
+      items.push({ label: item.label, pageId: item.pageId });
+      continue;
+    }
+    if (item.href) {
+      items.push({ label: item.label, href: item.href });
+    }
+  }
+  return items;
+}
+
+function sameNavigationItems(
+  left: NavigationItemInput[],
+  right: NavigationItemInput[],
+): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index];
+    const b = right[index];
+    if (a.label !== b.label) {
+      return false;
+    }
+    if ((a.pageId ?? "") !== (b.pageId ?? "")) {
+      return false;
+    }
+    if ((a.href ?? "") !== (b.href ?? "")) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function moveItem<T extends { id: string }>(

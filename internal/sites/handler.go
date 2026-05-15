@@ -44,6 +44,7 @@ func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.
 	mux.Handle("DELETE /api/sites/{siteId}/pages/{pageId}", requireUser(http.HandlerFunc(h.deletePage)))
 	mux.Handle("POST /api/sites/{siteId}/pages/reorder", requireUser(http.HandlerFunc(h.reorderPages)))
 	mux.Handle("POST /api/sites/{siteId}/navigation/reorder", requireUser(http.HandlerFunc(h.reorderNavigation)))
+	mux.Handle("PUT /api/sites/{siteId}/navigation", requireUser(http.HandlerFunc(h.updateNavigation)))
 	mux.Handle("POST /api/sites/{siteId}/pages/{pageId}/blocks", requireUser(http.HandlerFunc(h.createBlock)))
 	mux.Handle("PATCH /api/sites/{siteId}/pages/{pageId}/blocks/{blockId}", requireUser(http.HandlerFunc(h.updateBlock)))
 	mux.Handle("DELETE /api/sites/{siteId}/pages/{pageId}/blocks/{blockId}", requireUser(http.HandlerFunc(h.deleteBlock)))
@@ -85,6 +86,16 @@ type reorderPagesRequest struct {
 
 type reorderNavigationRequest struct {
 	PageIDs []string `json:"pageIds"`
+}
+
+type navigationItemRequest struct {
+	Label  string `json:"label"`
+	PageID string `json:"pageId,omitempty"`
+	Href   string `json:"href,omitempty"`
+}
+
+type updateNavigationRequest struct {
+	Primary []navigationItemRequest `json:"primary"`
 }
 
 type createBlockRequest struct {
@@ -387,6 +398,42 @@ func (h *Handler) reorderNavigation(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"draft": draft})
 }
 
+func (h *Handler) updateNavigation(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	if siteID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_site_id", "site id is required")
+		return
+	}
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+
+	var payload updateNavigationRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "request body must be valid JSON")
+		return
+	}
+
+	items := make([]siteconfig.NavigationItem, 0, len(payload.Primary))
+	for _, raw := range payload.Primary {
+		items = append(items, siteconfig.NavigationItem{
+			Label:  strings.TrimSpace(raw.Label),
+			PageID: strings.TrimSpace(raw.PageID),
+			Href:   strings.TrimSpace(raw.Href),
+		})
+	}
+
+	draft, err := h.mutator.UpdateNavigation(r.Context(), scope.WorkspaceID, siteID, items)
+	if err != nil {
+		writeSiteError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"draft": draft})
+}
+
 func (h *Handler) createBlock(w http.ResponseWriter, r *http.Request) {
 	siteID := r.PathValue("siteId")
 	pageID := r.PathValue("pageId")
@@ -633,6 +680,16 @@ func writeSiteError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "invalid_block_order", "block reorder must include every block exactly once")
 	case errors.Is(err, ErrNavigationOrderInvalid):
 		writeError(w, http.StatusBadRequest, "invalid_navigation_order", "navigation reorder must include every visible navigation page exactly once")
+	case errors.Is(err, ErrNavigationLabelRequired):
+		writeError(w, http.StatusBadRequest, "invalid_navigation_label", "navigation item label is required")
+	case errors.Is(err, ErrNavigationLabelTooLong):
+		writeError(w, http.StatusBadRequest, "invalid_navigation_label", "navigation item label is too long")
+	case errors.Is(err, ErrNavigationItemInvalid):
+		writeError(w, http.StatusBadRequest, "invalid_navigation_item", "navigation item must reference a page or include an href, not both")
+	case errors.Is(err, ErrNavigationPageUnknown):
+		writeError(w, http.StatusBadRequest, "invalid_navigation_item", "navigation item references a page that does not exist")
+	case errors.Is(err, ErrNavigationHrefInvalid):
+		writeError(w, http.StatusBadRequest, "invalid_navigation_href", "navigation item href is invalid")
 	case errors.Is(err, ErrPreviewTokenNotFound):
 		writeError(w, http.StatusNotFound, "preview_token_not_found", "preview link is invalid or expired")
 	case errors.Is(err, ErrPreviewTokenInvalid):

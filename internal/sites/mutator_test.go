@@ -206,7 +206,7 @@ func TestUpdatePageCanHidePageFromNavigation(t *testing.T) {
 	}
 }
 
-func TestUpdatePageSyncsExplicitNavigationLabelAndPreservesExternalLinks(t *testing.T) {
+func TestUpdatePagePreservesEditedNavigationLabelAndExternalLinks(t *testing.T) {
 	store := newFakeMutationStore()
 	draft := validHandlerDraft()
 	draft.Site.ID = "site-1"
@@ -228,7 +228,7 @@ func TestUpdatePageSyncsExplicitNavigationLabelAndPreservesExternalLinks(t *test
 	})
 	draft.Navigation.Primary = []siteconfig.NavigationItem{
 		{Label: "Home", PageID: "page_home"},
-		{Label: "Contact", PageID: "page_contact"},
+		{Label: "Say hello", PageID: "page_contact"},
 		{Label: "Instagram", Href: "https://example.com/instagram"},
 	}
 	store.drafts[draft.Site.ID] = draft
@@ -246,8 +246,8 @@ func TestUpdatePageSyncsExplicitNavigationLabelAndPreservesExternalLinks(t *test
 	if err != nil {
 		t.Fatalf("update page: %v", err)
 	}
-	if got := updated.Navigation.Primary[1].Label; got != "Reach us" {
-		t.Fatalf("expected page-backed navigation label to sync, got %#v", updated.Navigation.Primary)
+	if got := updated.Navigation.Primary[1].Label; got != "Say hello" {
+		t.Fatalf("expected user-edited navigation label to survive page rename, got %#v", updated.Navigation.Primary)
 	}
 	if got := updated.Navigation.Primary[2].Href; got != "https://example.com/instagram" {
 		t.Fatalf("expected external navigation link to survive, got %#v", updated.Navigation.Primary)
@@ -308,10 +308,11 @@ func TestReorderPagesPersistsRequestedOrder(t *testing.T) {
 			},
 		},
 	})
-	draft.Navigation.Primary = append(draft.Navigation.Primary, siteconfig.NavigationItem{
-		Label: "Instagram",
-		Href:  "https://example.com/instagram",
-	})
+	draft.Navigation.Primary = []siteconfig.NavigationItem{
+		{Label: "Home", PageID: "page_home"},
+		{Label: "Contact", PageID: "page_contact"},
+		{Label: "Instagram", Href: "https://example.com/instagram"},
+	}
 	store.drafts[draft.Site.ID] = draft
 
 	mutator := &PostgresMutator{
@@ -324,12 +325,24 @@ func TestReorderPagesPersistsRequestedOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reorder pages: %v", err)
 	}
-	if updated.Pages[0].ID != "page_contact" || updated.Navigation.Primary[0].PageID != "page_contact" {
-		t.Fatalf("expected reordered pages and navigation, got %#v %#v", updated.Pages, updated.Navigation.Primary)
+	if updated.Pages[0].ID != "page_contact" {
+		t.Fatalf("expected pages to be reordered, got %#v", updated.Pages)
 	}
-	if got := updated.Navigation.Primary[2].Href; got != "https://example.com/instagram" {
+	if updated.Navigation.Primary[0].PageID != "page_home" {
+		t.Fatalf("expected navigation order to stay independent of page order, got %#v", updated.Navigation.Primary)
+	}
+	if got := findExternalNavigationHref(updated.Navigation.Primary); got != "https://example.com/instagram" {
 		t.Fatalf("expected external navigation item to be preserved, got %#v", updated.Navigation.Primary)
 	}
+}
+
+func findExternalNavigationHref(items []siteconfig.NavigationItem) string {
+	for _, item := range items {
+		if item.PageID == "" && item.Href != "" {
+			return item.Href
+		}
+	}
+	return ""
 }
 
 func TestReorderNavigationPersistsRequestedOrderWithoutMovingExternalLinks(t *testing.T) {
@@ -378,6 +391,145 @@ func TestReorderNavigationPersistsRequestedOrderWithoutMovingExternalLinks(t *te
 	if got := updated.Navigation.Primary[2].Href; got != "https://example.com/instagram" {
 		t.Fatalf("expected external navigation item to stay appended, got %#v", updated.Navigation.Primary)
 	}
+}
+
+func TestUpdateNavigationReplacesItemsAndReconcilesInclusion(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := validHandlerDraft()
+	draft.Site.ID = "site-1"
+	draft.Pages = append(draft.Pages, siteconfig.PageDraft{
+		ID:    "page_about",
+		Title: "About",
+		Slug:  "/about",
+		Blocks: []siteconfig.BlockInstance{
+			{
+				ID:      "block_about",
+				Type:    "text_section",
+				Version: siteconfig.BlockVersionV1,
+				Props: map[string]any{
+					"heading": "About",
+					"body":    "About copy.",
+				},
+			},
+		},
+	})
+	draft.Navigation.Primary = []siteconfig.NavigationItem{
+		{Label: "Home", PageID: "page_home"},
+		{Label: "About", PageID: "page_about"},
+	}
+	store.drafts[draft.Site.ID] = draft
+
+	mutator := &PostgresMutator{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	items := []siteconfig.NavigationItem{
+		{Label: "Welcome", PageID: "page_home"},
+		{Label: "Instagram", Href: "https://example.com/instagram"},
+	}
+	updated, err := mutator.UpdateNavigation(context.Background(), "workspace-1", "site-1", items)
+	if err != nil {
+		t.Fatalf("update navigation: %v", err)
+	}
+	if len(updated.Navigation.Primary) != 2 {
+		t.Fatalf("expected two navigation items, got %#v", updated.Navigation.Primary)
+	}
+	if updated.Navigation.Primary[0].Label != "Welcome" || updated.Navigation.Primary[0].PageID != "page_home" {
+		t.Fatalf("expected first item to be welcome page link, got %#v", updated.Navigation.Primary[0])
+	}
+	if updated.Navigation.Primary[1].Label != "Instagram" || updated.Navigation.Primary[1].Href != "https://example.com/instagram" {
+		t.Fatalf("expected external link to be saved, got %#v", updated.Navigation.Primary[1])
+	}
+
+	aboutPage := findPageByID(updated.Pages, "page_about")
+	if aboutPage == nil {
+		t.Fatalf("expected about page to remain in draft, got %#v", updated.Pages)
+	}
+	includeAbout, _ := aboutPage.Settings["includeInNavigation"].(bool)
+	if includeAbout {
+		t.Fatalf("expected about page to be excluded from navigation after update, got %#v", aboutPage.Settings)
+	}
+	homePage := findPageByID(updated.Pages, "page_home")
+	if homePage == nil {
+		t.Fatalf("expected home page to remain in draft, got %#v", updated.Pages)
+	}
+	includeHome, _ := homePage.Settings["includeInNavigation"].(bool)
+	if !includeHome {
+		t.Fatalf("expected home page to stay included in navigation, got %#v", homePage.Settings)
+	}
+}
+
+func TestUpdateNavigationRejectsInvalidHref(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := validHandlerDraft()
+	draft.Site.ID = "site-1"
+	store.drafts[draft.Site.ID] = draft
+
+	mutator := &PostgresMutator{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	_, err := mutator.UpdateNavigation(context.Background(), "workspace-1", "site-1", []siteconfig.NavigationItem{
+		{Label: "Home", PageID: "page_home"},
+		{Label: "Bad", Href: "javascript:alert(1)"},
+	})
+	if !errors.Is(err, ErrNavigationHrefInvalid) {
+		t.Fatalf("expected invalid href error, got %v", err)
+	}
+}
+
+func TestUpdateNavigationRejectsItemWithoutTarget(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := validHandlerDraft()
+	draft.Site.ID = "site-1"
+	store.drafts[draft.Site.ID] = draft
+
+	mutator := &PostgresMutator{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	_, err := mutator.UpdateNavigation(context.Background(), "workspace-1", "site-1", []siteconfig.NavigationItem{
+		{Label: "Home", PageID: "page_home"},
+		{Label: "Empty"},
+	})
+	if !errors.Is(err, ErrNavigationItemInvalid) {
+		t.Fatalf("expected invalid item error, got %v", err)
+	}
+}
+
+func TestUpdateNavigationRejectsMissingLabel(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := validHandlerDraft()
+	draft.Site.ID = "site-1"
+	store.drafts[draft.Site.ID] = draft
+
+	mutator := &PostgresMutator{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	_, err := mutator.UpdateNavigation(context.Background(), "workspace-1", "site-1", []siteconfig.NavigationItem{
+		{Label: "", PageID: "page_home"},
+	})
+	if !errors.Is(err, ErrNavigationLabelRequired) {
+		t.Fatalf("expected missing label error, got %v", err)
+	}
+}
+
+func findPageByID(pages []siteconfig.PageDraft, pageID string) *siteconfig.PageDraft {
+	for index, page := range pages {
+		if page.ID == pageID {
+			return &pages[index]
+		}
+	}
+	return nil
 }
 
 func TestReorderNavigationRejectsMissingIncludedPage(t *testing.T) {

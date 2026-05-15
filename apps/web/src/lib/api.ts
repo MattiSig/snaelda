@@ -324,13 +324,13 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const method = (init.method ?? "GET").toUpperCase();
   const response = await fetch(new URL(path, getAPIBaseURL()), {
+    ...init,
     credentials: "include",
     headers: {
       Accept: "application/json",
       ...buildCSRFHeaders(method),
       ...init.headers,
     },
-    ...init,
   });
 
   if (!response.ok) {
@@ -720,6 +720,25 @@ export async function reorderSiteNavigation(siteId: string, pageIds: string[]) {
       body: JSON.stringify({ pageIds }),
     },
   );
+}
+
+export type NavigationItemInput = {
+  label: string;
+  pageId?: string;
+  href?: string;
+};
+
+export async function updateSiteNavigation(
+  siteId: string,
+  items: NavigationItemInput[],
+) {
+  return apiFetch<{ draft: SiteDraft }>(`/api/sites/${siteId}/navigation`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ primary: items }),
+  });
 }
 
 export async function createBlock(

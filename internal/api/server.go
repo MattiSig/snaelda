@@ -173,7 +173,7 @@ func (s *Server) Handler() http.Handler {
 	}
 	mountAuthenticatedPlaceholderModule(mux, s.auth, billing.Module{})
 
-	return s.recover(s.logRequests(s.noCache(s.csrf(s.cors(mux)))))
+	return s.cors(s.recover(s.logRequests(s.noCache(s.csrf(mux)))))
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
@@ -257,7 +257,7 @@ func (s *Server) cors(next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, X-CSRF-Token")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 			w.Header().Add("Vary", "Origin")
 		}
 

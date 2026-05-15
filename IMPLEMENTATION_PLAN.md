@@ -24,14 +24,12 @@ This file now tracks confirmed remaining work only. Items are sorted by implemen
 - [x] Published public page resolution now records non-blocking views into `page_view_daily`, filtering empty/bot user agents and known health-check paths via `analytics.CountableRequest`.
 - [x] Added `GET /api/sites/{siteId}/analytics?window=7d|30d|all` returning total views, per-page views, and a gap-filled daily trend for authorized site members.
 - [x] Builder now has a dedicated site analytics view at `/app/sites/{siteId}/analytics` with a window selector, total counter, daily trend chart, and per-page breakdown.
+- [x] Navigation is now first-class editable canonical data. The mutator preserves user-edited labels across page renames, `PUT /api/sites/{siteId}/navigation` replaces the whole primary list (internal + external items, validated), and the builder gained a richer navigation editor that lets the user rename items, add external links, reorder, and remove items as a single saved unit.
 
 ## Priority Backlog
 
 - [ ] Decide and implement the MVP starter-image policy.
   Priority decision: either keep uploaded assets plus placeholders/gradients as the only MVP path, or add backend-owned starter-image search with attribution metadata and plan it as core instead of an unowned optional.
-
-- [ ] Make navigation explicitly editable canonical data instead of a mostly page-derived structure.
-  Confirmed gap: ordering and inclusion exist, but internal labels/external items are not treated as full first-class editable navigation records.
 
 - [ ] Add durable spam handling for public forms.
   Confirmed gap: public form rate limiting is process-local and `spam_score` is unused; basic scoring/filtering is still missing.

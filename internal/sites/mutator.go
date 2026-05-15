@@ -35,7 +35,14 @@ var (
 	ErrBlockTypeRequired       = errors.New("block type is required")
 	ErrBlockOrderInvalid       = errors.New("block reorder must include every block exactly once")
 	ErrNavigationOrderInvalid  = errors.New("navigation reorder must include every visible navigation page exactly once")
+	ErrNavigationLabelRequired = errors.New("navigation item label is required")
+	ErrNavigationItemInvalid   = errors.New("navigation item must reference a page or include an href")
+	ErrNavigationPageUnknown   = errors.New("navigation item references a page that does not exist")
+	ErrNavigationHrefInvalid   = errors.New("navigation item href is invalid")
+	ErrNavigationLabelTooLong  = errors.New("navigation item label is too long")
 )
+
+const navigationLabelMaxLength = 60
 
 type mutationDB interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
@@ -50,6 +57,7 @@ type Mutator interface {
 	DeletePage(ctx context.Context, workspaceID string, siteID string, pageID string) (siteconfig.SiteDraft, error)
 	ReorderPages(ctx context.Context, workspaceID string, siteID string, pageIDs []string) (siteconfig.SiteDraft, error)
 	ReorderNavigation(ctx context.Context, workspaceID string, siteID string, pageIDs []string) (siteconfig.SiteDraft, error)
+	UpdateNavigation(ctx context.Context, workspaceID string, siteID string, items []siteconfig.NavigationItem) (siteconfig.SiteDraft, error)
 	CreateBlock(ctx context.Context, workspaceID string, siteID string, pageID string, input CreateBlockInput) (siteconfig.SiteDraft, error)
 	UpdateBlock(ctx context.Context, workspaceID string, siteID string, pageID string, blockID string, input UpdateBlockInput) (siteconfig.SiteDraft, error)
 	DeleteBlock(ctx context.Context, workspaceID string, siteID string, pageID string, blockID string) (siteconfig.SiteDraft, error)
@@ -323,6 +331,25 @@ func (m *PostgresMutator) ReorderNavigation(ctx context.Context, workspaceID str
 		return siteconfig.SiteDraft{}, err
 	}
 	draft.Navigation = navigation
+
+	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	return m.reader.LoadDraft(ctx, siteID)
+}
+
+func (m *PostgresMutator) UpdateNavigation(ctx context.Context, workspaceID string, siteID string, items []siteconfig.NavigationItem) (siteconfig.SiteDraft, error) {
+	draft, err := m.reader.LoadDraft(ctx, siteID)
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+
+	navigation, includedPageIDs, err := normalizeNavigationItems(items, draft.Pages)
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	draft.Navigation = navigation
+	draft.Pages = applyNavigationInclusion(draft.Pages, includedPageIDs)
 
 	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
 		return siteconfig.SiteDraft{}, err
@@ -641,27 +668,48 @@ func syncNavigationWithPages(
 	existing siteconfig.NavigationConfig,
 	pages []siteconfig.PageDraft,
 ) siteconfig.NavigationConfig {
-	externalItems := make([]siteconfig.NavigationItem, 0, len(existing.Primary))
-	for _, item := range existing.Primary {
-		if item.PageID == "" && item.Href != "" {
-			externalItems = append(externalItems, item)
+	pageByID := make(map[string]siteconfig.PageDraft, len(pages))
+	includedPageIDs := make(map[string]bool, len(pages))
+	for _, page := range pages {
+		pageByID[page.ID] = page
+		if pageIncludedInNavigation(page.Settings) {
+			includedPageIDs[page.ID] = true
 		}
 	}
 
-	navigation := siteconfig.NavigationConfig{
-		Primary: make([]siteconfig.NavigationItem, 0, len(pages)+len(externalItems)),
-	}
-	for _, page := range pages {
-		if !pageIncludedInNavigation(page.Settings) {
+	primary := make([]siteconfig.NavigationItem, 0, len(existing.Primary)+len(pages))
+	seenPageIDs := make(map[string]bool, len(existing.Primary))
+	for _, item := range existing.Primary {
+		if item.PageID != "" {
+			if !includedPageIDs[item.PageID] {
+				continue
+			}
+			seenPageIDs[item.PageID] = true
+			primary = append(primary, siteconfig.NavigationItem{
+				Label:  item.Label,
+				PageID: item.PageID,
+			})
 			continue
 		}
-		navigation.Primary = append(navigation.Primary, siteconfig.NavigationItem{
+		if item.Href != "" {
+			primary = append(primary, siteconfig.NavigationItem{
+				Label: item.Label,
+				Href:  item.Href,
+			})
+		}
+	}
+
+	for _, page := range pages {
+		if !includedPageIDs[page.ID] || seenPageIDs[page.ID] {
+			continue
+		}
+		primary = append(primary, siteconfig.NavigationItem{
 			Label:  page.Title,
 			PageID: page.ID,
 		})
 	}
-	navigation.Primary = append(navigation.Primary, externalItems...)
-	return navigation
+
+	return siteconfig.NavigationConfig{Primary: primary}
 }
 
 func findPageIndex(pages []siteconfig.PageDraft, pageID string) int {
@@ -724,6 +772,73 @@ func reorderBlocks(blocks []siteconfig.BlockInstance, blockIDs []string) ([]site
 	return reordered, nil
 }
 
+func normalizeNavigationItems(
+	items []siteconfig.NavigationItem,
+	pages []siteconfig.PageDraft,
+) (siteconfig.NavigationConfig, map[string]bool, error) {
+	pageIDs := make(map[string]bool, len(pages))
+	for _, page := range pages {
+		pageIDs[page.ID] = true
+	}
+
+	normalized := make([]siteconfig.NavigationItem, 0, len(items))
+	seenPageIDs := make(map[string]bool, len(items))
+	includedPageIDs := make(map[string]bool, len(items))
+	for _, item := range items {
+		label := strings.TrimSpace(item.Label)
+		if label == "" {
+			return siteconfig.NavigationConfig{}, nil, ErrNavigationLabelRequired
+		}
+		if len(label) > navigationLabelMaxLength {
+			return siteconfig.NavigationConfig{}, nil, ErrNavigationLabelTooLong
+		}
+
+		hasPageID := strings.TrimSpace(item.PageID) != ""
+		hasHref := strings.TrimSpace(item.Href) != ""
+		if hasPageID == hasHref {
+			return siteconfig.NavigationConfig{}, nil, ErrNavigationItemInvalid
+		}
+
+		if hasPageID {
+			pageID := strings.TrimSpace(item.PageID)
+			if !pageIDs[pageID] {
+				return siteconfig.NavigationConfig{}, nil, ErrNavigationPageUnknown
+			}
+			if seenPageIDs[pageID] {
+				return siteconfig.NavigationConfig{}, nil, ErrNavigationItemInvalid
+			}
+			seenPageIDs[pageID] = true
+			includedPageIDs[pageID] = true
+			normalized = append(normalized, siteconfig.NavigationItem{
+				Label:  label,
+				PageID: pageID,
+			})
+			continue
+		}
+
+		href := strings.TrimSpace(item.Href)
+		if err := siteconfig.ValidateURL(href); err != nil {
+			return siteconfig.NavigationConfig{}, nil, ErrNavigationHrefInvalid
+		}
+		normalized = append(normalized, siteconfig.NavigationItem{
+			Label: label,
+			Href:  href,
+		})
+	}
+
+	return siteconfig.NavigationConfig{Primary: normalized}, includedPageIDs, nil
+}
+
+func applyNavigationInclusion(pages []siteconfig.PageDraft, includedPageIDs map[string]bool) []siteconfig.PageDraft {
+	updated := make([]siteconfig.PageDraft, len(pages))
+	for index, page := range pages {
+		include := includedPageIDs[page.ID]
+		page.Settings = pageSettingsValue(&include, page.Settings)
+		updated[index] = page
+	}
+	return updated
+}
+
 func reorderNavigation(
 	existing siteconfig.NavigationConfig,
 	pages []siteconfig.PageDraft,
@@ -742,6 +857,13 @@ func reorderNavigation(
 		return siteconfig.NavigationConfig{}, ErrNavigationOrderInvalid
 	}
 
+	existingLabels := make(map[string]string, len(existing.Primary))
+	for _, item := range existing.Primary {
+		if item.PageID != "" {
+			existingLabels[item.PageID] = item.Label
+		}
+	}
+
 	seen := make(map[string]bool, len(pageIDs))
 	reordered := make([]siteconfig.NavigationItem, 0, len(existing.Primary))
 	for _, pageID := range pageIDs {
@@ -750,8 +872,12 @@ func reorderNavigation(
 			return siteconfig.NavigationConfig{}, ErrNavigationOrderInvalid
 		}
 		seen[pageID] = true
+		label := existingLabels[pageID]
+		if label == "" {
+			label = page.Title
+		}
 		reordered = append(reordered, siteconfig.NavigationItem{
-			Label:  page.Title,
+			Label:  label,
 			PageID: page.ID,
 		})
 	}
