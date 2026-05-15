@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/authorization"
+	"github.com/MattiSig/snaelda/internal/platform/audit"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
 )
 
@@ -25,12 +27,34 @@ type Authorizer interface {
 	RequireSite(ctx context.Context, siteID string, allowedRoles ...string) (authorization.Scope, error)
 }
 
+// HandlerConfig customizes the sites Handler. Optional fields default to
+// no-op behavior so the tests can keep using the bare NewHandler call.
+type HandlerConfig struct {
+	PreviewTokenTTL time.Duration
+	AuditRecorder   *audit.Recorder
+	Logger          *slog.Logger
+}
+
 func NewHandler(db DB, previewTokenTTL time.Duration) *Handler {
+	return NewHandlerWithConfig(db, HandlerConfig{PreviewTokenTTL: previewTokenTTL})
+}
+
+// NewHandlerWithConfig builds the sites Handler with optional audit
+// recording and logging. The audit recorder is wired into the mutator so
+// authoring-lifecycle events are recorded to audit_events.
+func NewHandlerWithConfig(db DB, cfg HandlerConfig) *Handler {
+	mutatorOptions := []MutatorOption{}
+	if cfg.AuditRecorder != nil {
+		mutatorOptions = append(mutatorOptions, WithAuditRecorder(cfg.AuditRecorder))
+	}
+	if cfg.Logger != nil {
+		mutatorOptions = append(mutatorOptions, WithLogger(cfg.Logger))
+	}
 	return &Handler{
 		reader:     NewPostgresReader(db),
-		mutator:    NewPostgresMutator(db),
+		mutator:    NewPostgresMutator(db, mutatorOptions...),
 		authorizer: authorization.New(db),
-		previews:   NewPostgresPreviewTokenService(db, previewTokenTTL),
+		previews:   NewPostgresPreviewTokenService(db, cfg.PreviewTokenTTL),
 	}
 }
 

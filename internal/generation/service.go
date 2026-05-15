@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/MattiSig/snaelda/internal/platform/audit"
 	"github.com/MattiSig/snaelda/internal/platform/ids"
 	"github.com/MattiSig/snaelda/internal/platform/slugs"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
@@ -71,6 +72,7 @@ type Service struct {
 	imagery       *StarterImagery
 	assetImporter AssetImporter
 	logger        *slog.Logger
+	recorder      *audit.Recorder
 }
 
 // ServiceOption customizes the Service constructed by NewService.
@@ -96,6 +98,30 @@ func WithAssetImporter(importer AssetImporter) ServiceOption {
 func WithLogger(logger *slog.Logger) ServiceOption {
 	return func(s *Service) {
 		s.logger = logger
+	}
+}
+
+// WithAuditRecorder attaches an audit recorder so generation and re-prompt
+// lifecycle events are written to audit_events.
+func WithAuditRecorder(recorder *audit.Recorder) ServiceOption {
+	return func(s *Service) {
+		s.recorder = recorder
+	}
+}
+
+func (s *Service) recordAudit(ctx context.Context, event audit.Event) {
+	if s == nil || s.recorder == nil {
+		return
+	}
+	if err := s.recorder.Record(ctx, event); err != nil {
+		if s.logger != nil {
+			s.logger.Warn("record audit event",
+				"action", event.Action,
+				"siteId", event.SiteID,
+				"workspaceId", event.WorkspaceID,
+				"error", err.Error(),
+			)
+		}
 	}
 }
 
@@ -150,6 +176,21 @@ func (s *Service) Generate(ctx context.Context, workspaceID string, userID strin
 		_ = s.failGenerationJob(ctx, jobID, persistErr)
 		return GenerateResult{}, persistErr
 	}
+
+	s.recordAudit(ctx, audit.Event{
+		WorkspaceID: workspaceID,
+		SiteID:      draft.Site.ID,
+		UserID:      userID,
+		Action:      "site.generate",
+		Metadata: map[string]any{
+			"jobId":                jobID,
+			"siteName":             draft.Site.Name,
+			"siteSlug":             draft.Site.Slug,
+			"themePreset":          plan.ThemePreset,
+			"pageCount":            len(plan.Pages),
+			"validationRetryCount": validationRetryCount,
+		},
+	})
 
 	return GenerateResult{
 		JobID: jobID,
@@ -223,6 +264,18 @@ func (s *Service) RepromptSite(ctx context.Context, workspaceID string, userID s
 	if err != nil {
 		return GenerateResult{}, err
 	}
+	s.recordAudit(ctx, audit.Event{
+		WorkspaceID: workspaceID,
+		SiteID:      siteID,
+		UserID:      userID,
+		Action:      "site.reprompt",
+		Metadata: map[string]any{
+			"jobId":                jobID,
+			"themePreset":          plan.ThemePreset,
+			"pageCount":            len(plan.Pages),
+			"validationRetryCount": validationRetryCount,
+		},
+	})
 	return GenerateResult{
 		JobID: jobID,
 		Draft: savedDraft,
@@ -307,6 +360,19 @@ func (s *Service) RepromptPage(ctx context.Context, workspaceID string, userID s
 	if err != nil {
 		return GenerateResult{}, err
 	}
+	s.recordAudit(ctx, audit.Event{
+		WorkspaceID: workspaceID,
+		SiteID:      siteID,
+		UserID:      userID,
+		Action:      "page.reprompt",
+		Metadata: map[string]any{
+			"jobId":   jobID,
+			"pageId":  pageID,
+			"title":   pagePlan.Title,
+			"slug":    pagePlan.Slug,
+			"blocks":  len(pagePlan.Blocks),
+		},
+	})
 	return GenerateResult{
 		JobID: jobID,
 		Draft: savedDraft,

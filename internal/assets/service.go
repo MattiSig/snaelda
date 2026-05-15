@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/MattiSig/snaelda/internal/auth"
+	"github.com/MattiSig/snaelda/internal/platform/audit"
 	"github.com/MattiSig/snaelda/internal/platform/ids"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
 	"github.com/jackc/pgx/v5"
@@ -54,6 +57,48 @@ type Service struct {
 	storage        Storage
 	uploadURLTTL   time.Duration
 	downloadURLTTL time.Duration
+	recorder       *audit.Recorder
+	logger         *slog.Logger
+}
+
+// Option customizes the asset Service constructed by NewService.
+type Option func(*Service)
+
+// WithAuditRecorder attaches an audit recorder so asset upload and delete
+// events are written to audit_events.
+func WithAuditRecorder(recorder *audit.Recorder) Option {
+	return func(s *Service) {
+		s.recorder = recorder
+	}
+}
+
+// WithLogger sets the structured logger used to report best-effort audit
+// recording failures.
+func WithLogger(logger *slog.Logger) Option {
+	return func(s *Service) {
+		s.logger = logger
+	}
+}
+
+func (s *Service) recordAudit(ctx context.Context, event audit.Event) {
+	if s == nil || s.recorder == nil {
+		return
+	}
+	if event.UserID == "" {
+		if user, ok := auth.UserFromContext(ctx); ok {
+			event.UserID = user.ID
+		}
+	}
+	if err := s.recorder.Record(ctx, event); err != nil {
+		if s.logger != nil {
+			s.logger.Warn("record audit event",
+				"action", event.Action,
+				"workspaceId", event.WorkspaceID,
+				"siteId", event.SiteID,
+				"error", err.Error(),
+			)
+		}
+	}
 }
 
 type Asset struct {
@@ -122,13 +167,19 @@ type UpdateAssetInput struct {
 	AltText *string
 }
 
-func NewService(db DB, storage Storage) *Service {
-	return &Service{
+func NewService(db DB, storage Storage, options ...Option) *Service {
+	service := &Service{
 		db:             db,
 		storage:        storage,
 		uploadURLTTL:   defaultUploadURLTTL,
 		downloadURLTTL: defaultDownloadURLTTL,
 	}
+	for _, option := range options {
+		if option != nil {
+			option(service)
+		}
+	}
+	return service
 }
 
 func (s *Service) CreateUpload(ctx context.Context, input CreateUploadInput) (CreateUploadResult, error) {
@@ -344,6 +395,20 @@ func (s *Service) CompleteUpload(ctx context.Context, assetID string, input Comp
 	if err != nil {
 		return Asset{}, err
 	}
+
+	s.recordAudit(ctx, audit.Event{
+		WorkspaceID: asset.WorkspaceID,
+		SiteID:      asset.SiteID,
+		UserID:      asset.CreatedBy,
+		Action:      "asset.upload",
+		Metadata: map[string]any{
+			"assetId":     asset.ID,
+			"kind":        asset.Kind,
+			"fileName":    asset.Metadata.FileName,
+			"contentType": asset.Metadata.ContentType,
+			"sizeBytes":   asset.Metadata.SizeBytes,
+		},
+	})
 
 	return asset, nil
 }
@@ -594,6 +659,16 @@ func (s *Service) Delete(ctx context.Context, assetID string) error {
 	if tag.RowsAffected() == 0 {
 		return ErrAssetNotFound
 	}
+	s.recordAudit(ctx, audit.Event{
+		WorkspaceID: asset.WorkspaceID,
+		SiteID:      asset.SiteID,
+		Action:      "asset.delete",
+		Metadata: map[string]any{
+			"assetId":  asset.ID,
+			"kind":     asset.Kind,
+			"fileName": asset.Metadata.FileName,
+		},
+	})
 	return nil
 }
 

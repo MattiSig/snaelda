@@ -6,10 +6,167 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MattiSig/snaelda/internal/platform/audit"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
+
+const (
+	auditTestWorkspaceID = "00000000-0000-4000-8000-000000000101"
+	auditTestSiteID      = "00000000-0000-4000-8000-000000000201"
+	auditTestPageID      = "00000000-0000-4000-8000-000000000301"
+	auditTestBlockID     = "00000000-0000-4000-8000-000000000401"
+)
+
+type capturedAuditEvent struct {
+	action      string
+	workspaceID string
+	siteID      string
+}
+
+type fakeAuditStore struct {
+	events []capturedAuditEvent
+}
+
+func (s *fakeAuditStore) Exec(_ context.Context, _ string, args ...any) (pgconn.CommandTag, error) {
+	event := capturedAuditEvent{}
+	if value, ok := args[0].(string); ok {
+		event.workspaceID = value
+	}
+	if value, ok := args[1].(string); ok {
+		event.siteID = value
+	}
+	if value, ok := args[3].(string); ok {
+		event.action = value
+	}
+	s.events = append(s.events, event)
+	return pgconn.NewCommandTag("INSERT 0 1"), nil
+}
+
+func TestCreateSiteRecordsAuditEvent(t *testing.T) {
+	store := newFakeMutationStore()
+	auditStore := &fakeAuditStore{}
+
+	mutator := &PostgresMutator{
+		db:       store,
+		reader:   store,
+		writer:   store,
+		recorder: audit.NewRecorder(auditStore),
+	}
+
+	draft, err := mutator.CreateSite(context.Background(), auditTestWorkspaceID, CreateSiteInput{
+		Name: "Nordic Studio",
+	})
+	if err != nil {
+		t.Fatalf("create site: %v", err)
+	}
+	if len(auditStore.events) != 1 {
+		t.Fatalf("expected one audit event, got %#v", auditStore.events)
+	}
+	event := auditStore.events[0]
+	if event.action != "site.create" || event.workspaceID != auditTestWorkspaceID {
+		t.Fatalf("unexpected audit event %#v", event)
+	}
+	if event.siteID == "" || event.siteID != draft.Site.ID {
+		t.Fatalf("expected audit event siteID %q, got %q", draft.Site.ID, event.siteID)
+	}
+}
+
+func TestDeleteSiteRecordsAuditEvent(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := validHandlerDraft()
+	draft.Site.ID = auditTestSiteID
+	store.drafts[draft.Site.ID] = draft
+
+	auditStore := &fakeAuditStore{}
+	mutator := &PostgresMutator{
+		db:       store,
+		reader:   store,
+		writer:   store,
+		recorder: audit.NewRecorder(auditStore),
+	}
+
+	if err := mutator.DeleteSite(context.Background(), auditTestWorkspaceID, auditTestSiteID); err != nil {
+		t.Fatalf("delete site: %v", err)
+	}
+	if len(auditStore.events) != 1 || auditStore.events[0].action != "site.delete" {
+		t.Fatalf("expected site.delete audit event, got %#v", auditStore.events)
+	}
+}
+
+func TestDeletePageRecordsAuditEvent(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := validHandlerDraft()
+	draft.Site.ID = auditTestSiteID
+	draft.Pages = append(draft.Pages, siteconfig.PageDraft{
+		ID:    auditTestPageID,
+		Title: "About",
+		Slug:  "/about",
+		Blocks: []siteconfig.BlockInstance{
+			{
+				ID:      "block_about",
+				Type:    "text_section",
+				Version: siteconfig.BlockVersionV1,
+				Props: map[string]any{
+					"heading": "About",
+					"body":    "About copy.",
+				},
+			},
+		},
+	})
+	store.drafts[draft.Site.ID] = draft
+
+	auditStore := &fakeAuditStore{}
+	mutator := &PostgresMutator{
+		db:       store,
+		reader:   store,
+		writer:   store,
+		recorder: audit.NewRecorder(auditStore),
+	}
+
+	if _, err := mutator.DeletePage(context.Background(), auditTestWorkspaceID, auditTestSiteID, auditTestPageID); err != nil {
+		t.Fatalf("delete page: %v", err)
+	}
+	if len(auditStore.events) != 1 || auditStore.events[0].action != "page.delete" {
+		t.Fatalf("expected page.delete audit event, got %#v", auditStore.events)
+	}
+}
+
+func TestDeleteBlockRecordsAuditEvent(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := validHandlerDraft()
+	draft.Site.ID = auditTestSiteID
+	draft.Pages[0].ID = auditTestPageID
+	draft.Pages[0].Blocks = append(draft.Pages[0].Blocks, siteconfig.BlockInstance{
+		ID:      auditTestBlockID,
+		Type:    "text_section",
+		Version: siteconfig.BlockVersionV1,
+		Props: map[string]any{
+			"heading": "About",
+			"body":    "About copy.",
+		},
+	})
+	draft.Navigation = siteconfig.NavigationConfig{
+		Primary: []siteconfig.NavigationItem{{Label: "Home", PageID: auditTestPageID}},
+	}
+	store.drafts[draft.Site.ID] = draft
+
+	auditStore := &fakeAuditStore{}
+	mutator := &PostgresMutator{
+		db:       store,
+		reader:   store,
+		writer:   store,
+		recorder: audit.NewRecorder(auditStore),
+	}
+
+	if _, err := mutator.DeleteBlock(context.Background(), auditTestWorkspaceID, auditTestSiteID, auditTestPageID, auditTestBlockID); err != nil {
+		t.Fatalf("delete block: %v", err)
+	}
+	if len(auditStore.events) != 1 || auditStore.events[0].action != "block.delete" {
+		t.Fatalf("expected block.delete audit event, got %#v", auditStore.events)
+	}
+}
 
 func TestCreateSiteGeneratesUniqueSlugAndStoresPrompt(t *testing.T) {
 	store := newFakeMutationStore()

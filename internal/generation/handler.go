@@ -10,6 +10,7 @@ import (
 
 	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/authorization"
+	"github.com/MattiSig/snaelda/internal/platform/audit"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
 	"github.com/MattiSig/snaelda/internal/sites"
 )
@@ -24,6 +25,7 @@ type HandlerConfig struct {
 	StarterImagery *StarterImagery
 	AssetImporter  AssetImporter
 	Logger         *slog.Logger
+	AuditRecorder  *audit.Recorder
 }
 
 type Generator interface {
@@ -58,6 +60,9 @@ func NewHandler(db DB, cfg HandlerConfig) *Handler {
 	}
 	if cfg.Logger != nil {
 		options = append(options, WithLogger(cfg.Logger))
+	}
+	if cfg.AuditRecorder != nil {
+		options = append(options, WithAuditRecorder(cfg.AuditRecorder))
 	}
 	return &Handler{
 		service:    NewService(db, cfg.Planner, options...),

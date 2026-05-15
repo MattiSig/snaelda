@@ -18,6 +18,7 @@ import (
 	"github.com/MattiSig/snaelda/internal/generation"
 	"github.com/MattiSig/snaelda/internal/imagery"
 	"github.com/MattiSig/snaelda/internal/pages"
+	"github.com/MattiSig/snaelda/internal/platform/audit"
 	"github.com/MattiSig/snaelda/internal/platform/config"
 	"github.com/MattiSig/snaelda/internal/publishing"
 	"github.com/MattiSig/snaelda/internal/sites"
@@ -102,6 +103,11 @@ func (s *Server) Handler() http.Handler {
 		themeHandlerConfig.Regenerator = generationPlanner
 	}
 
+	var auditRecorder *audit.Recorder
+	if auditStore, ok := s.database.(audit.Store); ok {
+		auditRecorder = audit.NewRecorder(auditStore)
+	}
+
 	var assetService *assets.Service
 	if assetStore, ok := s.database.(assets.DB); ok {
 		assetStorage, err := assets.NewS3Storage(assets.StorageConfig{
@@ -115,7 +121,11 @@ func (s *Server) Handler() http.Handler {
 		if err != nil {
 			s.logger.Error("configure asset storage", "error", err)
 		} else {
-			assetService = assets.NewService(assetStore, assetStorage)
+			assetOptions := []assets.Option{assets.WithLogger(s.logger)}
+			if auditRecorder != nil {
+				assetOptions = append(assetOptions, assets.WithAuditRecorder(auditRecorder))
+			}
+			assetService = assets.NewService(assetStore, assetStorage, assetOptions...)
 		}
 	}
 
@@ -131,10 +141,20 @@ func (s *Server) Handler() http.Handler {
 			generationHandlerConfig.StarterImagery = nil
 		}
 	}
+	if generationHandlerConfig.Logger == nil {
+		generationHandlerConfig.Logger = s.logger
+	}
+	if auditRecorder != nil {
+		generationHandlerConfig.AuditRecorder = auditRecorder
+	}
 
 	mountAuthenticatedPlaceholderModule(mux, s.auth, workspaces.Module{})
 	if store, ok := s.database.(sites.DB); ok {
-		sites.NewHandler(store, s.config.PreviewTokenTTL).Mount(mux, s.auth.RequireUser)
+		sites.NewHandlerWithConfig(store, sites.HandlerConfig{
+			PreviewTokenTTL: s.config.PreviewTokenTTL,
+			AuditRecorder:   auditRecorder,
+			Logger:          s.logger,
+		}).Mount(mux, s.auth.RequireUser)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, sites.Module{})
 	}

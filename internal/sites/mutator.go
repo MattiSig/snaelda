@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"strings"
 
+	"github.com/MattiSig/snaelda/internal/auth"
+	"github.com/MattiSig/snaelda/internal/platform/audit"
 	"github.com/MattiSig/snaelda/internal/platform/ids"
 	"github.com/MattiSig/snaelda/internal/platform/slugs"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
@@ -101,16 +104,66 @@ type UpdateBlockInput struct {
 }
 
 type PostgresMutator struct {
-	db     mutationDB
-	reader Reader
-	writer Writer
+	db       mutationDB
+	reader   Reader
+	writer   Writer
+	recorder *audit.Recorder
+	logger   *slog.Logger
 }
 
-func NewPostgresMutator(db DB) *PostgresMutator {
-	return &PostgresMutator{
+// MutatorOption customizes the PostgresMutator constructed by
+// NewPostgresMutator.
+type MutatorOption func(*PostgresMutator)
+
+// WithAuditRecorder attaches an audit recorder so authoring-lifecycle events
+// (site create, destructive page/block/site deletes) are written to
+// audit_events.
+func WithAuditRecorder(recorder *audit.Recorder) MutatorOption {
+	return func(m *PostgresMutator) {
+		m.recorder = recorder
+	}
+}
+
+// WithLogger sets the structured logger used to report best-effort audit
+// recording failures.
+func WithLogger(logger *slog.Logger) MutatorOption {
+	return func(m *PostgresMutator) {
+		m.logger = logger
+	}
+}
+
+func NewPostgresMutator(db DB, options ...MutatorOption) *PostgresMutator {
+	mutator := &PostgresMutator{
 		db:     db,
 		reader: NewPostgresReader(db),
 		writer: NewPostgresWriter(db),
+	}
+	for _, option := range options {
+		if option != nil {
+			option(mutator)
+		}
+	}
+	return mutator
+}
+
+func (m *PostgresMutator) recordAudit(ctx context.Context, event audit.Event) {
+	if m == nil || m.recorder == nil {
+		return
+	}
+	if event.UserID == "" {
+		if user, ok := auth.UserFromContext(ctx); ok {
+			event.UserID = user.ID
+		}
+	}
+	if err := m.recorder.Record(ctx, event); err != nil {
+		if m.logger != nil {
+			m.logger.Warn("record audit event",
+				"action", event.Action,
+				"siteId", event.SiteID,
+				"workspaceId", event.WorkspaceID,
+				"error", err.Error(),
+			)
+		}
 	}
 }
 
@@ -140,6 +193,16 @@ func (m *PostgresMutator) CreateSite(ctx context.Context, workspaceID string, in
 	if err != nil {
 		return siteconfig.SiteDraft{}, err
 	}
+	m.recordAudit(ctx, audit.Event{
+		WorkspaceID: workspaceID,
+		SiteID:      savedDraft.Site.ID,
+		Action:      "site.create",
+		Metadata: map[string]any{
+			"name":       savedDraft.Site.Name,
+			"slug":       savedDraft.Site.Slug,
+			"hasPrompt":  strings.TrimSpace(input.Prompt) != "",
+		},
+	})
 	return savedDraft, nil
 }
 
@@ -294,11 +357,22 @@ func (m *PostgresMutator) DeletePage(ctx context.Context, workspaceID string, si
 		return siteconfig.SiteDraft{}, ErrHomepageDeleteForbidden
 	}
 
+	deletedPage := draft.Pages[pageIndex]
 	draft.Pages = append(draft.Pages[:pageIndex], draft.Pages[pageIndex+1:]...)
 	draft.Navigation = syncNavigationWithPages(draft.Navigation, draft.Pages)
 	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
 		return siteconfig.SiteDraft{}, err
 	}
+	m.recordAudit(ctx, audit.Event{
+		WorkspaceID: workspaceID,
+		SiteID:      siteID,
+		Action:      "page.delete",
+		Metadata: map[string]any{
+			"pageId": deletedPage.ID,
+			"title":  deletedPage.Title,
+			"slug":   deletedPage.Slug,
+		},
+	})
 	return m.reader.LoadDraft(ctx, siteID)
 }
 
@@ -358,6 +432,12 @@ func (m *PostgresMutator) UpdateNavigation(ctx context.Context, workspaceID stri
 }
 
 func (m *PostgresMutator) DeleteSite(ctx context.Context, workspaceID string, siteID string) error {
+	var siteName, siteSlug string
+	if draft, err := m.reader.LoadDraft(ctx, siteID); err == nil {
+		siteName = draft.Site.Name
+		siteSlug = draft.Site.Slug
+	}
+
 	tag, err := m.db.Exec(ctx, `
 		delete from sites
 		where id = $1
@@ -369,6 +449,15 @@ func (m *PostgresMutator) DeleteSite(ctx context.Context, workspaceID string, si
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
+	m.recordAudit(ctx, audit.Event{
+		WorkspaceID: workspaceID,
+		SiteID:      siteID,
+		Action:      "site.delete",
+		Metadata: map[string]any{
+			"name": siteName,
+			"slug": siteSlug,
+		},
+	})
 	return nil
 }
 
@@ -478,6 +567,7 @@ func (m *PostgresMutator) DeleteBlock(ctx context.Context, workspaceID string, s
 		return siteconfig.SiteDraft{}, ErrBlockNotFound
 	}
 
+	deletedBlock := draft.Pages[pageIndex].Blocks[blockIndex]
 	draft.Pages[pageIndex].Blocks = append(
 		draft.Pages[pageIndex].Blocks[:blockIndex],
 		draft.Pages[pageIndex].Blocks[blockIndex+1:]...,
@@ -485,6 +575,17 @@ func (m *PostgresMutator) DeleteBlock(ctx context.Context, workspaceID string, s
 	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
 		return siteconfig.SiteDraft{}, err
 	}
+	m.recordAudit(ctx, audit.Event{
+		WorkspaceID: workspaceID,
+		SiteID:      siteID,
+		Action:      "block.delete",
+		Metadata: map[string]any{
+			"pageId":  pageID,
+			"blockId": deletedBlock.ID,
+			"type":    deletedBlock.Type,
+			"version": deletedBlock.Version,
+		},
+	})
 	return m.reader.LoadDraft(ctx, siteID)
 }
 
