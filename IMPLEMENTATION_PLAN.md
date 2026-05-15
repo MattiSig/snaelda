@@ -16,17 +16,11 @@ This file now tracks confirmed remaining work only. Items are sorted by implemen
 - [x] Hosted public URLs now use an explicit deployment contract via `PUBLIC_BASE_URL` and `PUBLIC_BASE_DOMAIN`, so publish-time hostnames, canonical URLs, sitemap entries, and builder live links no longer assume `{slug}.localhost` or `/public/{slug}` as the production shape.
 - [x] `internal/domains` is now a real authenticated module with a site-domain read API, exposing hosted-domain state from `site_domains` instead of remaining placeholder-only.
 - [x] The builder publish panel now surfaces the actual hosted live URL and opens the live hostname directly instead of treating the internal `/public/{slug}` route as the primary customer-facing address.
+- [x] Generation now supports a provider-backed structured-output planner through OpenAI when configured, while keeping deterministic fallback behavior for local and unconfigured environments.
+- [x] Generation metadata writes and generation-job completion are now mandatory success conditions rather than best-effort side effects.
+- [x] Theme regeneration is now a first-class authenticated API plus builder action via `POST /api/sites/:siteId/theme/regenerate`.
 
 ## Priority Backlog
-
-- [ ] Replace the deterministic generation template builder with a provider-backed structured AI generation pipeline.
-  Confirmed gap: generation still uses a heuristic template planner rather than a model-backed structured-output flow with explicit prompt-to-plan semantics.
-
-- [ ] Make generation-job persistence and generation metadata writes mandatory rather than best-effort.
-  Confirmed gap: generation can currently return success even when job-finalization or metadata persistence fails.
-
-- [ ] Add theme regeneration as a first-class API and builder action.
-  Confirmed gap: `POST /api/sites/:siteId/theme/regenerate` is specified but not implemented.
 
 - [ ] Decide and implement the MVP starter-image policy.
   Priority decision: either keep uploaded assets plus placeholders/gradients as the only MVP path, or add backend-owned starter-image search with attribution metadata and plan it as core instead of an unowned optional.

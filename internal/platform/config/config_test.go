@@ -59,6 +59,9 @@ func TestLoadUsesLocalStorageDefaults(t *testing.T) {
 	if cfg.PublicBaseDomain != "localhost" {
 		t.Fatalf("expected derived localhost public base domain, got %q", cfg.PublicBaseDomain)
 	}
+	if cfg.OpenAIModel != "gpt-5-mini" {
+		t.Fatalf("expected default OpenAI model, got %q", cfg.OpenAIModel)
+	}
 }
 
 func TestLoadAllowsStorageOverrides(t *testing.T) {
@@ -168,6 +171,17 @@ func TestLoadRequiresProductionAuthSecret(t *testing.T) {
 
 	if _, err := Load(); err == nil {
 		t.Fatal("expected production auth secret error")
+	}
+}
+
+func TestLoadRequiresOpenAIModelWhenAPIKeyIsSet(t *testing.T) {
+	t.Setenv("APP_ENV", "test")
+	unsetStorageEnv(t)
+	t.Setenv("OPENAI_API_KEY", "test-key")
+	t.Setenv("OPENAI_MODEL", " ")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected openai model error")
 	}
 }
 

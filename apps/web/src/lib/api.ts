@@ -559,6 +559,12 @@ export async function updateSiteTheme(
   });
 }
 
+export async function regenerateSiteTheme(siteId: string) {
+  return apiFetch<ThemeState>(`/api/sites/${siteId}/theme/regenerate`, {
+    method: "POST",
+  });
+}
+
 export async function createAssetUploadURL(input: {
   siteId: string;
   fileName: string;

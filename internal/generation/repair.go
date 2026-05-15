@@ -17,15 +17,21 @@ var (
 )
 
 func repairGenerationPlan(plan generationPlan) generationPlan {
-	repaired := generationPlan{
-		SiteName:     firstNonEmpty(cleanGeneratedText(plan.SiteName, 120), "Small Good Studio"),
-		SiteGoal:     firstNonEmpty(cleanGeneratedText(plan.SiteGoal, 180), siteGoalForCategory("business")),
-		ThemePreset:  normalizeGeneratedThemePreset(plan.ThemePreset),
-		AssetsNeeded: repairAssetsNeeded(plan.AssetsNeeded),
-		Assumptions:  repairAssumptions(plan.Assumptions),
+	themeSelection := siteconfig.ThemeSelection{}
+	if hasThemeSelection(plan.ThemeSelection) {
+		themeSelection = normalizeThemeSelection(plan.ThemeSelection)
 	}
 
-	repaired.Theme = repairTheme(repaired.ThemePreset, plan.Theme)
+	repaired := generationPlan{
+		SiteName:       firstNonEmpty(cleanGeneratedText(plan.SiteName, 120), "Small Good Studio"),
+		SiteGoal:       firstNonEmpty(cleanGeneratedText(plan.SiteGoal, 180), siteGoalForCategory("business")),
+		ThemePreset:    normalizeGeneratedThemePreset(firstNonEmpty(plan.ThemeSelection.Palette, plan.ThemePreset)),
+		ThemeSelection: themeSelection,
+		AssetsNeeded:   repairAssetsNeeded(plan.AssetsNeeded),
+		Assumptions:    repairAssumptions(plan.Assumptions),
+	}
+
+	repaired.Theme = repairTheme(repaired.ThemePreset, repaired.ThemeSelection, plan.Theme)
 	repaired.Pages = repairPages(repaired.SiteName, repaired.SiteGoal, plan.Pages)
 	return repaired
 }
@@ -41,11 +47,27 @@ func normalizeGeneratedThemePreset(value string) string {
 	}
 }
 
-func repairTheme(preset string, theme siteconfig.ThemeConfig) siteconfig.ThemeConfig {
+func repairTheme(preset string, selection siteconfig.ThemeSelection, theme siteconfig.ThemeConfig) siteconfig.ThemeConfig {
+	if selection.Palette != "" {
+		return siteconfig.BuildTheme(selection)
+	}
 	if generatedThemeIsValid(theme) {
 		return theme
 	}
 	return siteconfig.ThemePreset(preset)
+}
+
+func normalizeThemeSelection(selection siteconfig.ThemeSelection) siteconfig.ThemeSelection {
+	return siteconfig.DetectThemeSelection(siteconfig.BuildTheme(selection))
+}
+
+func hasThemeSelection(selection siteconfig.ThemeSelection) bool {
+	return selection.Palette != "" ||
+		selection.FontPreset != "" ||
+		selection.SectionSpacing != "" ||
+		selection.Radius != "" ||
+		selection.ButtonStyle != "" ||
+		selection.ImageStyle != ""
 }
 
 func generatedThemeIsValid(theme siteconfig.ThemeConfig) bool {

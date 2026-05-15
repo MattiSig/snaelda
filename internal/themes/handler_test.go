@@ -19,6 +19,7 @@ type stubThemeService struct {
 	workspace string
 	siteID    string
 	err       error
+	regenCall bool
 }
 
 func (s *stubThemeService) Load(context.Context, string) (ThemeState, error) {
@@ -29,6 +30,13 @@ func (s *stubThemeService) Update(_ context.Context, workspaceID string, siteID 
 	s.workspace = workspaceID
 	s.siteID = siteID
 	s.updateIn = input
+	return s.state, s.err
+}
+
+func (s *stubThemeService) Regenerate(_ context.Context, workspaceID string, siteID string) (ThemeState, error) {
+	s.workspace = workspaceID
+	s.siteID = siteID
+	s.regenCall = true
 	return s.state, s.err
 }
 
@@ -109,5 +117,36 @@ func TestUpdateThemePassesTrimmedSelection(t *testing.T) {
 	}
 	if service.updateIn.ImageStyle == nil || *service.updateIn.ImageStyle != siteconfig.ThemeImagePaperCut {
 		t.Fatalf("expected trimmed image style, got %#v", service.updateIn.ImageStyle)
+	}
+}
+
+func TestRegenerateThemeUsesScopedWorkspace(t *testing.T) {
+	service := &stubThemeService{
+		state: ThemeState{
+			Theme:     siteconfig.ThemePreset(siteconfig.ThemePalettePlayfulRibbon),
+			Selection: siteconfig.DetectThemeSelection(siteconfig.ThemePreset(siteconfig.ThemePalettePlayfulRibbon)),
+			Options:   siteconfig.DefaultThemeEditorCatalog(),
+		},
+	}
+	handler := Handler{
+		service:    service,
+		authorizer: stubThemeAuthorizer{},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/site_demo/theme/regenerate", nil).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: authorization.RoleOwner,
+	}))
+	req.SetPathValue("siteId", "site_demo")
+	res := httptest.NewRecorder()
+
+	handler.regenerate(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	if !service.regenCall || service.workspace != "workspace-1" || service.siteID != "site_demo" {
+		t.Fatalf("expected scoped regenerate call, got regen=%t workspace=%q site=%q", service.regenCall, service.workspace, service.siteID)
 	}
 }

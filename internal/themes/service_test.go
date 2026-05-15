@@ -18,6 +18,15 @@ func (r stubReader) LoadDraft(context.Context, string) (siteconfig.SiteDraft, er
 	return r.draft, r.err
 }
 
+type stubMetadataReader struct {
+	prompt string
+	err    error
+}
+
+func (r stubMetadataReader) LoadGenerationMetadata(context.Context, string) (sites.GenerationMetadata, error) {
+	return sites.GenerationMetadata{Prompt: r.prompt}, r.err
+}
+
 type stubWriter struct {
 	workspaceID string
 	draft       siteconfig.SiteDraft
@@ -30,10 +39,24 @@ func (w *stubWriter) SaveDraft(_ context.Context, workspaceID string, draft site
 	return w.err
 }
 
+type stubThemeRegenerator struct {
+	prompt    string
+	draft     siteconfig.SiteDraft
+	selection siteconfig.ThemeSelection
+	err       error
+}
+
+func (s *stubThemeRegenerator) RegenerateThemeSelection(_ context.Context, prompt string, draft siteconfig.SiteDraft) (siteconfig.ThemeSelection, error) {
+	s.prompt = prompt
+	s.draft = draft
+	return s.selection, s.err
+}
+
 func TestLoadReturnsDetectedThemeState(t *testing.T) {
 	service := Service{
-		reader: stubReader{draft: sampleThemeDraft()},
-		writer: &stubWriter{},
+		reader:   stubReader{draft: sampleThemeDraft()},
+		writer:   &stubWriter{},
+		metadata: stubMetadataReader{},
 	}
 
 	state, err := service.Load(context.Background(), "site_demo")
@@ -51,8 +74,9 @@ func TestLoadReturnsDetectedThemeState(t *testing.T) {
 func TestUpdateRebuildsThemeFromSelection(t *testing.T) {
 	writer := &stubWriter{}
 	service := Service{
-		reader: stubReader{draft: sampleThemeDraft()},
-		writer: writer,
+		reader:   stubReader{draft: sampleThemeDraft()},
+		writer:   writer,
+		metadata: stubMetadataReader{},
 	}
 
 	state, err := service.Update(context.Background(), "workspace-1", "site_demo", UpdateInput{
@@ -85,8 +109,9 @@ func TestUpdateRebuildsThemeFromSelection(t *testing.T) {
 
 func TestUpdateRejectsUnknownPalette(t *testing.T) {
 	service := Service{
-		reader: stubReader{draft: sampleThemeDraft()},
-		writer: &stubWriter{},
+		reader:   stubReader{draft: sampleThemeDraft()},
+		writer:   &stubWriter{},
+		metadata: stubMetadataReader{},
 	}
 
 	_, err := service.Update(context.Background(), "workspace-1", "site_demo", UpdateInput{
@@ -99,8 +124,9 @@ func TestUpdateRejectsUnknownPalette(t *testing.T) {
 
 func TestUpdateRejectsUnknownButtonStyle(t *testing.T) {
 	service := Service{
-		reader: stubReader{draft: sampleThemeDraft()},
-		writer: &stubWriter{},
+		reader:   stubReader{draft: sampleThemeDraft()},
+		writer:   &stubWriter{},
+		metadata: stubMetadataReader{},
 	}
 
 	_, err := service.Update(context.Background(), "workspace-1", "site_demo", UpdateInput{
@@ -113,8 +139,9 @@ func TestUpdateRejectsUnknownButtonStyle(t *testing.T) {
 
 func TestUpdateMapsMissingDraftToNotFound(t *testing.T) {
 	service := Service{
-		reader: stubReader{err: sites.ErrNotFound},
-		writer: &stubWriter{},
+		reader:   stubReader{err: sites.ErrNotFound},
+		writer:   &stubWriter{},
+		metadata: stubMetadataReader{},
 	}
 
 	_, err := service.Update(context.Background(), "workspace-1", "site_demo", UpdateInput{
@@ -122,6 +149,53 @@ func TestUpdateMapsMissingDraftToNotFound(t *testing.T) {
 	})
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected not found error, got %v", err)
+	}
+}
+
+func TestRegenerateRebuildsThemeFromProviderSelection(t *testing.T) {
+	writer := &stubWriter{}
+	regenerator := &stubThemeRegenerator{
+		selection: siteconfig.ThemeSelection{
+			Palette:        siteconfig.ThemePalettePlayfulRibbon,
+			FontPreset:     siteconfig.ThemeFontStudioSans,
+			SectionSpacing: siteconfig.ThemeSpacingSnug,
+			Radius:         siteconfig.ThemeRadiusPillowy,
+			ButtonStyle:    siteconfig.ThemeButtonInkSolid,
+			ImageStyle:     siteconfig.ThemeImagePaperCut,
+		},
+	}
+	service := Service{
+		reader:     stubReader{draft: sampleThemeDraft()},
+		writer:     writer,
+		metadata:   stubMetadataReader{prompt: "A warm yarn studio site for workshops and dyed skeins."},
+		regenerate: regenerator,
+	}
+
+	state, err := service.Regenerate(context.Background(), "workspace-1", "site_demo")
+	if err != nil {
+		t.Fatalf("regenerate theme: %v", err)
+	}
+	if regenerator.prompt != "A warm yarn studio site for workshops and dyed skeins." {
+		t.Fatalf("expected generation prompt to reach regenerator, got %q", regenerator.prompt)
+	}
+	if writer.draft.Theme.Tokens.Colors["background"] != "#fff7ee" {
+		t.Fatalf("expected regenerated theme to be saved, got %#v", writer.draft.Theme.Tokens.Colors)
+	}
+	if state.Selection.Palette != siteconfig.ThemePalettePlayfulRibbon {
+		t.Fatalf("expected regenerated selection, got %#v", state.Selection)
+	}
+}
+
+func TestRegenerateRequiresConfiguredProvider(t *testing.T) {
+	service := Service{
+		reader:   stubReader{draft: sampleThemeDraft()},
+		writer:   &stubWriter{},
+		metadata: stubMetadataReader{},
+	}
+
+	_, err := service.Regenerate(context.Background(), "workspace-1", "site_demo")
+	if !errors.Is(err, ErrThemeRegenerationOff) {
+		t.Fatalf("expected regeneration unavailable error, got %v", err)
 	}
 }
 

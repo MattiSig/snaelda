@@ -21,6 +21,7 @@ var (
 	ErrThemeRadiusInvalid      = errors.New("theme radius is invalid")
 	ErrThemeButtonStyleInvalid = errors.New("theme button style is invalid")
 	ErrThemeImageStyleInvalid  = errors.New("theme image style is invalid")
+	ErrThemeRegenerationOff    = errors.New("theme regeneration is not configured")
 )
 
 type DB interface {
@@ -38,9 +39,19 @@ type draftWriter interface {
 	SaveDraft(ctx context.Context, workspaceID string, draft siteconfig.SiteDraft) error
 }
 
+type generationMetadataReader interface {
+	LoadGenerationMetadata(ctx context.Context, siteID string) (sites.GenerationMetadata, error)
+}
+
+type themeRegenerator interface {
+	RegenerateThemeSelection(ctx context.Context, prompt string, draft siteconfig.SiteDraft) (siteconfig.ThemeSelection, error)
+}
+
 type Service struct {
-	reader draftReader
-	writer draftWriter
+	reader     draftReader
+	writer     draftWriter
+	metadata   generationMetadataReader
+	regenerate themeRegenerator
 }
 
 type ThemeState struct {
@@ -58,10 +69,16 @@ type UpdateInput struct {
 	ImageStyle     *string
 }
 
-func NewService(db DB) *Service {
+type ServiceConfig struct {
+	Regenerator themeRegenerator
+}
+
+func NewService(db DB, cfg ServiceConfig) *Service {
 	return &Service{
-		reader: sites.NewPostgresReader(db),
-		writer: sites.NewPostgresWriter(db),
+		reader:     sites.NewPostgresReader(db),
+		writer:     sites.NewPostgresWriter(db),
+		metadata:   sites.NewPostgresReader(db),
+		regenerate: cfg.Regenerator,
 	}
 }
 
@@ -112,6 +129,45 @@ func (s *Service) Update(ctx context.Context, workspaceID string, siteID string,
 	}
 	if input.ImageStyle != nil {
 		selection.ImageStyle = strings.TrimSpace(*input.ImageStyle)
+	}
+	if err := validateSelection(selection); err != nil {
+		return ThemeState{}, err
+	}
+
+	draft.Theme = siteconfig.BuildTheme(selection)
+	if err := s.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
+		return ThemeState{}, err
+	}
+
+	return themeStateFromDraft(draft), nil
+}
+
+func (s *Service) Regenerate(ctx context.Context, workspaceID string, siteID string) (ThemeState, error) {
+	if s.regenerate == nil {
+		return ThemeState{}, ErrThemeRegenerationOff
+	}
+
+	draft, err := s.reader.LoadDraft(ctx, siteID)
+	if errors.Is(err, sites.ErrNotFound) {
+		return ThemeState{}, ErrNotFound
+	}
+	if err != nil {
+		return ThemeState{}, fmt.Errorf("load draft theme: %w", err)
+	}
+
+	metadata, err := s.metadata.LoadGenerationMetadata(ctx, siteID)
+	if err != nil && !errors.Is(err, sites.ErrNotFound) {
+		return ThemeState{}, fmt.Errorf("load generation metadata: %w", err)
+	}
+
+	prompt := strings.TrimSpace(metadata.Prompt)
+	if prompt == "" {
+		prompt = fmt.Sprintf("Create a distinct, production-safe theme for %s.", draft.Site.Name)
+	}
+
+	selection, err := s.regenerate.RegenerateThemeSelection(ctx, prompt, draft)
+	if err != nil {
+		return ThemeState{}, err
 	}
 	if err := validateSelection(selection); err != nil {
 		return ThemeState{}, err

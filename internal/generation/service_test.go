@@ -357,6 +357,54 @@ func TestGenerateFailsAfterValidationRetryExhausted(t *testing.T) {
 	t.Fatalf("expected failed generation job, got %#v", store.jobs)
 }
 
+func TestGenerateFailsWhenMetadataPersistenceFails(t *testing.T) {
+	store := newFakeGenerationStore()
+	store.siteUpdateErr = errors.New("write generation summary")
+	service := Service{
+		db:     store,
+		writer: store,
+	}
+
+	_, err := service.Generate(context.Background(), "workspace-1", "user-1", GenerateInput{
+		Name:   "North Light Studio",
+		Prompt: "A calm portfolio site for a photography studio that needs a gallery.",
+	})
+	if err == nil || !strings.Contains(err.Error(), "write generation summary") {
+		t.Fatalf("expected metadata persistence error, got %v", err)
+	}
+	if store.jobs["job-1"].Status != "failed" {
+		t.Fatalf("expected job to be marked failed, got %#v", store.jobs["job-1"])
+	}
+}
+
+func TestRepromptSiteFailsWhenJobCompletionFails(t *testing.T) {
+	store := newFakeGenerationStore()
+	service := Service{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	initial, err := service.Generate(context.Background(), "workspace-1", "user-1", GenerateInput{
+		Name:   "North Light Studio",
+		Prompt: "A calm portfolio site for a photography studio that needs a gallery.",
+	})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	store.completeJobErr = errors.New("update generation job")
+	_, err = service.RepromptSite(context.Background(), "workspace-1", "user-1", initial.Draft.Site.ID, RepromptInput{
+		Prompt: "Make it warmer and add pricing.",
+	})
+	if err == nil || !strings.Contains(err.Error(), "update generation job") {
+		t.Fatalf("expected job completion error, got %v", err)
+	}
+	if store.jobs["job-2"].Status != "failed" {
+		t.Fatalf("expected second job to be marked failed, got %#v", store.jobs["job-2"])
+	}
+}
+
 func TestRepairGenerationPlanRepairsSafeIssues(t *testing.T) {
 	pages := make([]generationPagePlan, 0, siteconfig.MaxPagesPerSite+2)
 	for index := 0; index < siteconfig.MaxPagesPerSite+2; index++ {
@@ -469,6 +517,8 @@ type fakeGenerationStore struct {
 	revisions       []draftRevisionRecord
 	saveDraftErrors []error
 	saveDraftCalls  int
+	completeJobErr  error
+	siteUpdateErr   error
 }
 
 type fakeGenerationJob struct {
@@ -481,11 +531,11 @@ type fakeGenerationJob struct {
 
 func newFakeGenerationStore() *fakeGenerationStore {
 	return &fakeGenerationStore{
-		drafts:  map[string]siteconfig.SiteDraft{},
-		jobs:    map[string]fakeGenerationJob{},
-		slugs:   map[string]bool{},
-		prompts: map[string]string{},
-		summary: map[string]map[string]any{},
+		drafts:      map[string]siteconfig.SiteDraft{},
+		jobs:        map[string]fakeGenerationJob{},
+		slugs:       map[string]bool{},
+		prompts:     map[string]string{},
+		summary:     map[string]map[string]any{},
 		summaryJSON: map[string][]byte{},
 	}
 }
@@ -562,6 +612,9 @@ func (s *fakeGenerationStore) QueryRow(_ context.Context, sql string, args ...an
 func (s *fakeGenerationStore) Exec(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 	switch {
 	case strings.Contains(sql, "update generation_jobs") && strings.Contains(sql, "status = 'completed'"):
+		if s.completeJobErr != nil {
+			return pgconn.CommandTag{}, s.completeJobErr
+		}
 		job := s.jobs[args[2].(string)]
 		job.SiteID = args[0].(string)
 		job.Status = "completed"
@@ -579,6 +632,9 @@ func (s *fakeGenerationStore) Exec(_ context.Context, sql string, args ...any) (
 		s.jobs[job.ID] = job
 		return pgconn.NewCommandTag("UPDATE 1"), nil
 	case strings.Contains(sql, "update sites"):
+		if s.siteUpdateErr != nil {
+			return pgconn.CommandTag{}, s.siteUpdateErr
+		}
 		siteID := args[2].(string)
 		if _, ok := s.drafts[siteID]; !ok {
 			return pgconn.NewCommandTag("UPDATE 0"), nil

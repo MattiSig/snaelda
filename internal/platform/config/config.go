@@ -15,6 +15,8 @@ type Config struct {
 	AppBaseURL            string
 	PublicBaseURL         string
 	PublicBaseDomain      string
+	OpenAIAPIKey          string
+	OpenAIModel           string
 	DatabaseURL           string
 	AuthJWTSecret         string
 	AuthIssuer            string
@@ -60,6 +62,8 @@ func Load() (Config, error) {
 		HTTPAddr:              getEnv("HTTP_ADDR", ":8080"),
 		AppBaseURL:            getEnv("APP_BASE_URL", "http://localhost:3000"),
 		PublicBaseURL:         getEnv("PUBLIC_BASE_URL", "http://localhost:3000"),
+		OpenAIAPIKey:          strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
+		OpenAIModel:           getEnv("OPENAI_MODEL", "gpt-5-mini"),
 		DatabaseURL:           os.Getenv("DATABASE_URL"),
 		AuthJWTSecret:         getEnv("AUTH_JWT_SECRET", "development-auth-secret-change-me"),
 		AuthIssuer:            getEnv("AUTH_ISSUER", "snaelda-api"),
@@ -117,6 +121,11 @@ func Load() (Config, error) {
 	}
 	if cfg.PublicBaseDomain == "" {
 		return Config{}, fmt.Errorf("PUBLIC_BASE_DOMAIN is required")
+	}
+	if cfg.OpenAIAPIKey == "" {
+		cfg.OpenAIModel = strings.TrimSpace(cfg.OpenAIModel)
+	} else if strings.TrimSpace(cfg.OpenAIModel) == "" {
+		return Config{}, fmt.Errorf("OPENAI_MODEL is required when OPENAI_API_KEY is set")
 	}
 
 	return cfg, nil

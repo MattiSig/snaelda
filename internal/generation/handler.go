@@ -18,6 +18,10 @@ type Handler struct {
 	authorizer Authorizer
 }
 
+type HandlerConfig struct {
+	Planner generationPlanBuilder
+}
+
 type Generator interface {
 	Generate(ctx context.Context, workspaceID string, userID string, input GenerateInput) (GenerateResult, error)
 	RepromptSite(ctx context.Context, workspaceID string, userID string, siteID string, input RepromptInput) (GenerateResult, error)
@@ -40,9 +44,9 @@ type repromptRequest struct {
 	Prompt string `json:"prompt"`
 }
 
-func NewHandler(db DB) *Handler {
+func NewHandler(db DB, cfg HandlerConfig) *Handler {
 	return &Handler{
-		service:    NewService(db),
+		service:    NewService(db, cfg.Planner),
 		authorizer: authorization.New(db),
 	}
 }

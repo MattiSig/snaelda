@@ -69,12 +69,15 @@ type Service struct {
 	planner generationPlanBuilder
 }
 
-func NewService(db DB) *Service {
+func NewService(db DB, planner generationPlanBuilder) *Service {
+	if planner == nil {
+		planner = defaultGenerationPlanBuilder
+	}
 	return &Service{
 		db:      db,
 		reader:  sites.NewPostgresReader(db),
 		writer:  sites.NewPostgresWriter(db),
-		planner: defaultGenerationPlanBuilder,
+		planner: planner,
 	}
 }
 
@@ -103,10 +106,9 @@ func (s *Service) Generate(ctx context.Context, workspaceID string, userID strin
 	metadataErr := s.saveSiteMetadata(ctx, workspaceID, draft.Site.ID, prompt, plan, validationRetryCount)
 	jobErr := s.completeGenerationJob(ctx, jobID, draft.Site.ID, plan)
 	if metadataErr != nil || jobErr != nil {
-		return GenerateResult{
-			JobID: jobID,
-			Draft: draft,
-		}, nil
+		persistErr := errors.Join(metadataErr, jobErr)
+		_ = s.failGenerationJob(ctx, jobID, persistErr)
+		return GenerateResult{}, persistErr
 	}
 
 	return GenerateResult{
@@ -164,8 +166,14 @@ func (s *Service) RepromptSite(ctx context.Context, workspaceID string, userID s
 		return GenerateResult{}, err
 	}
 
-	_ = s.saveSiteMetadata(ctx, workspaceID, siteID, prompt, plan, validationRetryCount)
-	_ = s.completeGenerationJob(ctx, jobID, siteID, plan)
+	if err := s.saveSiteMetadata(ctx, workspaceID, siteID, prompt, plan, validationRetryCount); err != nil {
+		_ = s.failGenerationJob(ctx, jobID, err)
+		return GenerateResult{}, err
+	}
+	if err := s.completeGenerationJob(ctx, jobID, siteID, plan); err != nil {
+		_ = s.failGenerationJob(ctx, jobID, err)
+		return GenerateResult{}, err
+	}
 
 	savedDraft, err := s.reader.LoadDraft(ctx, siteID)
 	if err != nil {
@@ -246,7 +254,10 @@ func (s *Service) RepromptPage(ctx context.Context, workspaceID string, userID s
 		AssetsNeeded: metadata.assetsNeeded(),
 		Assumptions:  metadata.assumptions(),
 	}
-	_ = s.completeGenerationJob(ctx, jobID, siteID, pageSummaryPlan)
+	if err := s.completeGenerationJob(ctx, jobID, siteID, pageSummaryPlan); err != nil {
+		_ = s.failGenerationJob(ctx, jobID, err)
+		return GenerateResult{}, err
+	}
 
 	savedDraft, err := s.reader.LoadDraft(ctx, siteID)
 	if err != nil {
@@ -333,13 +344,14 @@ type generationInputContext struct {
 }
 
 type generationPlan struct {
-	SiteName     string                 `json:"siteName"`
-	SiteGoal     string                 `json:"siteGoal"`
-	ThemePreset  string                 `json:"themePreset"`
-	Theme        siteconfig.ThemeConfig `json:"theme"`
-	Pages        []generationPagePlan   `json:"pages"`
-	AssetsNeeded []string               `json:"assetsNeeded"`
-	Assumptions  []string               `json:"assumptions"`
+	SiteName       string                    `json:"siteName"`
+	SiteGoal       string                    `json:"siteGoal"`
+	ThemePreset    string                    `json:"themePreset"`
+	ThemeSelection siteconfig.ThemeSelection `json:"themeSelection,omitempty"`
+	Theme          siteconfig.ThemeConfig    `json:"theme"`
+	Pages          []generationPagePlan      `json:"pages"`
+	AssetsNeeded   []string                  `json:"assetsNeeded"`
+	Assumptions    []string                  `json:"assumptions"`
 }
 
 type generationPagePlan struct {

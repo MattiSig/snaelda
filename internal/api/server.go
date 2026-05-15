@@ -86,6 +86,20 @@ func (s *Server) Handler() http.Handler {
 
 	s.auth.Mount(mux)
 
+	generationPlanner, err := generation.NewOpenAIPlanner(generation.OpenAIPlannerConfig{
+		APIKey: s.config.OpenAIAPIKey,
+		Model:  s.config.OpenAIModel,
+	})
+	if err != nil {
+		s.logger.Error("configure generation planner", "error", err)
+	}
+	var generationPlanBuilder generation.HandlerConfig
+	var themeHandlerConfig themes.HandlerConfig
+	if generationPlanner != nil {
+		generationPlanBuilder.Planner = generationPlanner.BuildPlan
+		themeHandlerConfig.Regenerator = generationPlanner
+	}
+
 	mountAuthenticatedPlaceholderModule(mux, s.auth, workspaces.Module{})
 	if store, ok := s.database.(sites.DB); ok {
 		sites.NewHandler(store, s.config.PreviewTokenTTL).Mount(mux, s.auth.RequireUser)
@@ -95,12 +109,12 @@ func (s *Server) Handler() http.Handler {
 	mountAuthenticatedPlaceholderModule(mux, s.auth, pages.Module{})
 	mountAuthenticatedPlaceholderModule(mux, s.auth, blocks.Module{})
 	if store, ok := s.database.(themes.DB); ok {
-		themes.NewHandler(store).Mount(mux, s.auth.RequireUser)
+		themes.NewHandler(store, themeHandlerConfig).Mount(mux, s.auth.RequireUser)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, themes.Module{})
 	}
 	if store, ok := s.database.(generation.DB); ok {
-		generation.NewHandler(store).Mount(mux, s.auth.RequireUser)
+		generation.NewHandler(store, generationPlanBuilder).Mount(mux, s.auth.RequireUser)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, generation.Module{})
 	}

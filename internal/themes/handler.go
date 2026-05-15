@@ -19,6 +19,7 @@ type Handler struct {
 type ThemeService interface {
 	Load(ctx context.Context, siteID string) (ThemeState, error)
 	Update(ctx context.Context, workspaceID string, siteID string, input UpdateInput) (ThemeState, error)
+	Regenerate(ctx context.Context, workspaceID string, siteID string) (ThemeState, error)
 }
 
 type Authorizer interface {
@@ -34,9 +35,13 @@ type updateThemeRequest struct {
 	ImageStyle     *string `json:"imageStyle,omitempty"`
 }
 
-func NewHandler(db DB) *Handler {
+type HandlerConfig struct {
+	Regenerator themeRegenerator
+}
+
+func NewHandler(db DB, cfg HandlerConfig) *Handler {
 	return &Handler{
-		service:    NewService(db),
+		service:    NewService(db, ServiceConfig{Regenerator: cfg.Regenerator}),
 		authorizer: authorization.New(db),
 	}
 }
@@ -44,6 +49,7 @@ func NewHandler(db DB) *Handler {
 func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.Handler) {
 	mux.Handle("GET /api/sites/{siteId}/theme", requireUser(http.HandlerFunc(h.get)))
 	mux.Handle("PATCH /api/sites/{siteId}/theme", requireUser(http.HandlerFunc(h.update)))
+	mux.Handle("POST /api/sites/{siteId}/theme/regenerate", requireUser(http.HandlerFunc(h.regenerate)))
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
@@ -98,6 +104,26 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, state)
 }
 
+func (h *Handler) regenerate(w http.ResponseWriter, r *http.Request) {
+	siteID := strings.TrimSpace(r.PathValue("siteId"))
+	if siteID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_site_id", "site id is required")
+		return
+	}
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+
+	state, err := h.service.Regenerate(r.Context(), scope.WorkspaceID, siteID)
+	if err != nil {
+		writeThemeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, state)
+}
+
 func trimPointer(value *string) *string {
 	if value == nil {
 		return nil
@@ -125,6 +151,8 @@ func writeThemeError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "invalid_theme_button_style", "theme button style is not supported")
 	case errors.Is(err, ErrThemeImageStyleInvalid):
 		writeError(w, http.StatusBadRequest, "invalid_theme_image_style", "theme image style is not supported")
+	case errors.Is(err, ErrThemeRegenerationOff):
+		writeError(w, http.StatusServiceUnavailable, "theme_regeneration_unavailable", "theme regeneration is not configured")
 	case errors.As(err, &validationErr):
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"error": map[string]string{

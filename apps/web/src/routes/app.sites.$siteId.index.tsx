@@ -30,6 +30,7 @@ import {
   listSiteAssets,
   listSiteVersions,
   publishSite,
+  regenerateSiteTheme,
   repromptPage,
   repromptSite,
   rollbackSiteVersion,
@@ -136,6 +137,7 @@ function SiteDetail() {
   const [themeErrorMessage, setThemeErrorMessage] = useState("");
   const [themeStatusMessage, setThemeStatusMessage] = useState("");
   const [isSavingTheme, setIsSavingTheme] = useState(false);
+  const [isRegeneratingTheme, setIsRegeneratingTheme] = useState(false);
   const [isSavingNavigation, setIsSavingNavigation] = useState(false);
   const [isUploadingAsset, setIsUploadingAsset] = useState(false);
   const [isRepromptingSite, setIsRepromptingSite] = useState(false);
@@ -607,6 +609,33 @@ function SiteDetail() {
       );
     } finally {
       setIsSavingTheme(false);
+    }
+  }
+
+  async function handleRegenerateTheme() {
+    setIsRegeneratingTheme(true);
+    setThemeErrorMessage("");
+    setThemeStatusMessage("");
+
+    try {
+      const response = await regenerateSiteTheme(siteId);
+      setThemeSelection(response.selection);
+      setThemeOptions(response.options);
+      setDraft((current) =>
+        current
+          ? {
+              ...current,
+              theme: response.theme,
+            }
+          : current,
+      );
+      setThemeStatusMessage("Theme regenerated from the site brief.");
+    } catch (error) {
+      setThemeErrorMessage(
+        error instanceof APIError ? error.message : "Could not regenerate theme",
+      );
+    } finally {
+      setIsRegeneratingTheme(false);
     }
   }
 
@@ -1826,9 +1855,19 @@ function SiteDetail() {
               <p className={text.success}>{themeStatusMessage}</p>
             ) : null}
 
-            <Button type="submit" disabled={isSavingTheme}>
-              {isSavingTheme ? "Saving theme..." : "Save theme"}
-            </Button>
+            <div className="flex flex-wrap gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleRegenerateTheme}
+                disabled={isSavingTheme || isRegeneratingTheme}
+              >
+                {isRegeneratingTheme ? "Regenerating theme..." : "Regenerate theme"}
+              </Button>
+              <Button type="submit" disabled={isSavingTheme || isRegeneratingTheme}>
+                {isSavingTheme ? "Saving theme..." : "Save theme"}
+              </Button>
+            </div>
           </form>
         ) : (
           <div className={emptyState}>
