@@ -55,7 +55,7 @@ type staticLimiter struct {
 	allowed bool
 }
 
-func (l staticLimiter) Allow(string) bool {
+func (l staticLimiter) Allow(context.Context, string, string, string) bool {
 	return l.allowed
 }
 
@@ -179,15 +179,16 @@ func TestInMemorySubmissionRateLimiterTrimsExpiredEntries(t *testing.T) {
 	base := time.Date(2026, 5, 12, 12, 0, 0, 0, time.UTC)
 	limiter.now = func() time.Time { return base }
 
-	if !limiter.Allow("site:block:ip") || !limiter.Allow("site:block:ip") {
+	ctx := context.Background()
+	if !limiter.Allow(ctx, "site", "block", "ip") || !limiter.Allow(ctx, "site", "block", "ip") {
 		t.Fatal("expected first two attempts to pass")
 	}
-	if limiter.Allow("site:block:ip") {
+	if limiter.Allow(ctx, "site", "block", "ip") {
 		t.Fatal("expected third attempt to be limited")
 	}
 
 	limiter.now = func() time.Time { return base.Add(2 * time.Minute) }
-	if !limiter.Allow("site:block:ip") {
+	if !limiter.Allow(ctx, "site", "block", "ip") {
 		t.Fatal("expected limiter to reset after the window elapsed")
 	}
 }

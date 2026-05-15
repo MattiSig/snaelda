@@ -89,6 +89,67 @@ func TestSubmitRejectsBlockOnlyInDraft(t *testing.T) {
 	}
 }
 
+func TestSubmitMarksHoneypotSubmissionsAsSpam(t *testing.T) {
+	store := newFakeFormStore()
+	store.siteSnapshots["site-1"] = publishedContactSnapshot()
+	service := Service{db: store}
+
+	result, err := service.Submit(context.Background(), SubmitInput{
+		SiteID:  "site-1",
+		BlockID: "block-contact",
+		Payload: map[string]any{
+			"name":    "Ada Lovelace",
+			"email":   "ada@example.com",
+			"message": "Hello",
+			"hp_url":  "http://spammer.example",
+		},
+	})
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	if result.Submission.Status != "spam" {
+		t.Fatalf("expected submission to be classified as spam, got %q", result.Submission.Status)
+	}
+	if result.Submission.SpamScore == nil || *result.Submission.SpamScore < 1.0 {
+		t.Fatalf("expected high spam score, got %#v", result.Submission.SpamScore)
+	}
+	if len(store.submissions) != 1 {
+		t.Fatalf("expected the submission to be stored, got %d", len(store.submissions))
+	}
+	if got := store.submissions[0].Payload["hp_url"]; got != nil {
+		t.Fatalf("expected honeypot field to be stripped from stored payload, got %#v", got)
+	}
+}
+
+func TestSubmitRecordsSpamScoreOnAcceptedSubmission(t *testing.T) {
+	store := newFakeFormStore()
+	store.siteSnapshots["site-1"] = publishedContactSnapshot()
+	service := Service{db: store}
+
+	result, err := service.Submit(context.Background(), SubmitInput{
+		SiteID:  "site-1",
+		BlockID: "block-contact",
+		Payload: map[string]any{
+			"name":    "Ada Lovelace",
+			"email":   "ada@example.com",
+			"message": "Hi, just checking in about a new website.",
+		},
+		ClientIPHash: "ip-hash-1",
+	})
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	if result.Submission.Status != "new" {
+		t.Fatalf("expected clean submission to remain new, got %q", result.Submission.Status)
+	}
+	if result.Submission.SpamScore == nil {
+		t.Fatalf("expected spam score to be populated, got nil")
+	}
+	if store.submissions[0].clientIPHash != "ip-hash-1" {
+		t.Fatalf("expected client ip hash to be persisted, got %q", store.submissions[0].clientIPHash)
+	}
+}
+
 func TestSubmitRejectsInvalidPayload(t *testing.T) {
 	store := newFakeFormStore()
 	store.siteSnapshots["site-1"] = publishedContactSnapshot()
@@ -176,6 +237,7 @@ type fakeFormStore struct {
 
 type storedSubmission struct {
 	Submission
+	clientIPHash string
 }
 
 func newFakeFormStore() *fakeFormStore {
@@ -218,16 +280,31 @@ func (s *fakeFormStore) QueryRow(_ context.Context, sql string, args ...any) pgx
 		if err := json.Unmarshal(payloadJSON, &payload); err != nil {
 			return fakeFormRow{err: err}
 		}
+		score, _ := args[5].(float64)
+		signals := []string{}
+		if signalsJSON, ok := args[6].([]byte); ok && len(signalsJSON) > 0 {
+			if err := json.Unmarshal(signalsJSON, &signals); err != nil {
+				return fakeFormRow{err: err}
+			}
+		}
+		clientIPHash := ""
+		if hash, ok := args[7].(string); ok {
+			clientIPHash = hash
+		}
+		spamScore := score
 		submission := storedSubmission{
 			Submission: Submission{
-				ID:        "submission-" + string(rune('0'+s.nextID)),
-				SiteID:    args[0].(string),
-				PageID:    args[1].(string),
-				BlockID:   args[2].(string),
-				Status:    args[4].(string),
-				Payload:   payload,
-				CreatedAt: time.Date(2026, 5, 12, 12, s.nextID, 0, 0, time.UTC),
+				ID:          "submission-" + string(rune('0'+s.nextID)),
+				SiteID:      args[0].(string),
+				PageID:      args[1].(string),
+				BlockID:     args[2].(string),
+				Status:      args[4].(string),
+				Payload:     payload,
+				SpamScore:   &spamScore,
+				SpamSignals: signals,
+				CreatedAt:   time.Date(2026, 5, 12, 12, s.nextID, 0, 0, time.UTC),
 			},
+			clientIPHash: clientIPHash,
 		}
 		s.nextID++
 		s.submissions = append(s.submissions, submission)
@@ -244,6 +321,10 @@ func (s *fakeFormStore) QueryRow(_ context.Context, sql string, args ...any) pgx
 			if err != nil {
 				return fakeFormRow{err: err}
 			}
+			signalsJSON, err := json.Marshal(s.submissions[index].SpamSignals)
+			if err != nil {
+				return fakeFormRow{err: err}
+			}
 			return fakeFormRow{values: []any{
 				s.submissions[index].ID,
 				s.submissions[index].SiteID,
@@ -253,6 +334,8 @@ func (s *fakeFormStore) QueryRow(_ context.Context, sql string, args ...any) pgx
 				payloadJSON,
 				s.submissions[index].CreatedAt,
 				s.submissions[index].PageTitle,
+				s.submissions[index].SpamScore,
+				signalsJSON,
 			}}
 		}
 		return fakeFormRow{err: pgx.ErrNoRows}
@@ -294,6 +377,10 @@ func (r *fakeFormRows) Scan(dest ...any) error {
 	if err != nil {
 		return err
 	}
+	signalsJSON, err := json.Marshal(row.SpamSignals)
+	if err != nil {
+		return err
+	}
 	values := []any{
 		row.ID,
 		row.SiteID,
@@ -303,18 +390,10 @@ func (r *fakeFormRows) Scan(dest ...any) error {
 		payloadJSON,
 		row.CreatedAt,
 		row.PageTitle,
+		row.SpamScore,
+		signalsJSON,
 	}
-	for index, value := range values {
-		switch target := dest[index].(type) {
-		case *string:
-			*target = value.(string)
-		case *[]byte:
-			*target = value.([]byte)
-		case *time.Time:
-			*target = value.(time.Time)
-		}
-	}
-	return nil
+	return assignScanValues(dest, values)
 }
 
 type fakeFormRow struct {
@@ -326,14 +405,45 @@ func (r fakeFormRow) Scan(dest ...any) error {
 	if r.err != nil {
 		return r.err
 	}
-	for index, value := range r.values {
+	return assignScanValues(dest, r.values)
+}
+
+func assignScanValues(dest []any, values []any) error {
+	for index, value := range values {
 		switch target := dest[index].(type) {
 		case *string:
 			*target = value.(string)
 		case *[]byte:
+			if value == nil {
+				*target = nil
+				continue
+			}
 			*target = value.([]byte)
 		case *time.Time:
 			*target = value.(time.Time)
+		case *int:
+			switch typed := value.(type) {
+			case int:
+				*target = typed
+			case int64:
+				*target = int(typed)
+			default:
+				return errors.New("unexpected int source")
+			}
+		case **float64:
+			if value == nil {
+				*target = nil
+				continue
+			}
+			switch typed := value.(type) {
+			case *float64:
+				*target = typed
+			case float64:
+				v := typed
+				*target = &v
+			default:
+				return errors.New("unexpected float source")
+			}
 		default:
 			return errors.New("unexpected scan destination")
 		}

@@ -45,20 +45,23 @@ type Service struct {
 }
 
 type Submission struct {
-	ID        string         `json:"id"`
-	SiteID    string         `json:"siteId"`
-	PageID    string         `json:"pageId,omitempty"`
-	BlockID   string         `json:"blockId,omitempty"`
-	Status    string         `json:"status"`
-	Payload   map[string]any `json:"payload"`
-	CreatedAt time.Time      `json:"createdAt"`
-	PageTitle string         `json:"pageTitle,omitempty"`
+	ID          string         `json:"id"`
+	SiteID      string         `json:"siteId"`
+	PageID      string         `json:"pageId,omitempty"`
+	BlockID     string         `json:"blockId,omitempty"`
+	Status      string         `json:"status"`
+	Payload     map[string]any `json:"payload"`
+	CreatedAt   time.Time      `json:"createdAt"`
+	PageTitle   string         `json:"pageTitle,omitempty"`
+	SpamScore   *float64       `json:"spamScore,omitempty"`
+	SpamSignals []string       `json:"spamSignals,omitempty"`
 }
 
 type SubmitInput struct {
-	SiteID  string
-	BlockID string
-	Payload map[string]any
+	SiteID       string
+	BlockID      string
+	Payload      map[string]any
+	ClientIPHash string
 }
 
 type SubmitResult struct {
@@ -96,7 +99,9 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (SubmitResult, 
 		return SubmitResult{}, err
 	}
 
-	payload, err := normalizeSubmissionPayload(form.Definition, input.Payload)
+	rawPayload, honeypotFields := extractHoneypotFields(input.Payload)
+
+	payload, err := normalizeSubmissionPayload(form.Definition, rawPayload)
 	if err != nil {
 		return SubmitResult{}, err
 	}
@@ -106,18 +111,32 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (SubmitResult, 
 		return SubmitResult{}, fmt.Errorf("encode form payload: %w", err)
 	}
 
-	submission := Submission{
-		SiteID:  siteID,
-		PageID:  form.PageID,
-		BlockID: blockID,
-		Status:  "new",
-		Payload: payload,
+	assessment := assessPayload(payload, honeypotFields)
+	status := "new"
+	if assessment.IsSpam() {
+		status = "spam"
 	}
+	score := assessment.Score
+	signalsJSON, err := json.Marshal(assessment.Signals)
+	if err != nil {
+		return SubmitResult{}, fmt.Errorf("encode spam signals: %w", err)
+	}
+
+	submission := Submission{
+		SiteID:      siteID,
+		PageID:      form.PageID,
+		BlockID:     blockID,
+		Status:      status,
+		Payload:     payload,
+		SpamScore:   &score,
+		SpamSignals: assessment.Signals,
+	}
+	clientIPHash := strings.TrimSpace(input.ClientIPHash)
 	if err := s.db.QueryRow(ctx, `
-		insert into form_submissions (site_id, page_id, block_id, payload, status)
-		values ($1::uuid, nullif($2, '')::uuid, nullif($3, '')::uuid, $4, $5)
+		insert into form_submissions (site_id, page_id, block_id, payload, status, spam_score, spam_signals, client_ip_hash)
+		values ($1::uuid, nullif($2, '')::uuid, nullif($3, '')::uuid, $4, $5, $6, $7, nullif($8, ''))
 		returning id::text, created_at
-	`, siteID, form.PageID, blockID, payloadJSON, submission.Status).Scan(&submission.ID, &submission.CreatedAt); err != nil {
+	`, siteID, form.PageID, blockID, payloadJSON, submission.Status, score, signalsJSON, clientIPHash).Scan(&submission.ID, &submission.CreatedAt); err != nil {
 		return SubmitResult{}, fmt.Errorf("store form submission: %w", err)
 	}
 
@@ -136,7 +155,9 @@ func (s *Service) ListBySite(ctx context.Context, siteID string) ([]Submission, 
 		       fs.status,
 		       fs.payload,
 		       fs.created_at,
-		       coalesce(p.title, '')
+		       coalesce(p.title, ''),
+		       fs.spam_score,
+		       coalesce(fs.spam_signals, '[]'::jsonb)
 		from form_submissions fs
 		left join pages p on p.id = fs.page_id
 		where fs.site_id = $1::uuid
@@ -182,7 +203,9 @@ func (s *Service) UpdateStatus(ctx context.Context, submissionID string, input U
 		          fs.status,
 		          fs.payload,
 		          fs.created_at,
-		          coalesce((select title from pages where id = fs.page_id), '')
+		          coalesce((select title from pages where id = fs.page_id), ''),
+		          fs.spam_score,
+		          coalesce(fs.spam_signals, '[]'::jsonb)
 	`, strings.TrimSpace(submissionID), status))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Submission{}, ErrSubmissionNotFound
@@ -401,6 +424,8 @@ func scanSubmission(scanner interface {
 }) (Submission, error) {
 	var submission Submission
 	var payloadJSON []byte
+	var spamScore *float64
+	var spamSignalsJSON []byte
 	if err := scanner.Scan(
 		&submission.ID,
 		&submission.SiteID,
@@ -410,6 +435,8 @@ func scanSubmission(scanner interface {
 		&payloadJSON,
 		&submission.CreatedAt,
 		&submission.PageTitle,
+		&spamScore,
+		&spamSignalsJSON,
 	); err != nil {
 		return Submission{}, fmt.Errorf("scan form submission: %w", err)
 	}
@@ -418,6 +445,12 @@ func scanSubmission(scanner interface {
 	}
 	if submission.Payload == nil {
 		submission.Payload = map[string]any{}
+	}
+	submission.SpamScore = spamScore
+	if len(spamSignalsJSON) > 0 {
+		if err := json.Unmarshal(spamSignalsJSON, &submission.SpamSignals); err != nil {
+			return Submission{}, fmt.Errorf("decode form submission spam signals: %w", err)
+		}
 	}
 	return submission, nil
 }

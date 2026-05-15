@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/MattiSig/snaelda/internal/authorization"
@@ -27,7 +26,7 @@ type Authorizer interface {
 }
 
 type submissionRateLimiter interface {
-	Allow(key string) bool
+	Allow(ctx context.Context, siteID string, blockID string, clientIPHash string) bool
 }
 
 type Handler struct {
@@ -48,7 +47,7 @@ func NewHandler(db DB) *Handler {
 	return &Handler{
 		service:    NewService(db),
 		authorizer: authorization.New(db),
-		limiter:    newInMemorySubmissionRateLimiter(5, 10*time.Minute),
+		limiter:    NewDurableSubmissionRateLimiter(db, 5, 10*time.Minute, nil),
 	}
 }
 
@@ -66,9 +65,9 @@ func (h *Handler) submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	clientIPHash := HashClientIP(clientIPFromRequest(r))
 	if h.limiter != nil {
-		key := siteID + ":" + blockID + ":" + clientIPFromRequest(r)
-		if !h.limiter.Allow(key) {
+		if !h.limiter.Allow(r.Context(), siteID, blockID, clientIPHash) {
 			writeError(w, http.StatusTooManyRequests, "rate_limited", "please wait before submitting this form again")
 			return
 		}
@@ -81,9 +80,10 @@ func (h *Handler) submit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := h.service.Submit(r.Context(), SubmitInput{
-		SiteID:  siteID,
-		BlockID: blockID,
-		Payload: payload.Payload,
+		SiteID:       siteID,
+		BlockID:      blockID,
+		Payload:      payload.Payload,
+		ClientIPHash: clientIPHash,
 	})
 	if err != nil {
 		writeFormError(w, err)
@@ -225,44 +225,3 @@ func clientIPFromRequest(r *http.Request) string {
 	return "unknown"
 }
 
-type inMemorySubmissionRateLimiter struct {
-	mu      sync.Mutex
-	now     func() time.Time
-	limit   int
-	window  time.Duration
-	entries map[string][]time.Time
-}
-
-func newInMemorySubmissionRateLimiter(limit int, window time.Duration) *inMemorySubmissionRateLimiter {
-	return &inMemorySubmissionRateLimiter{
-		now:     time.Now,
-		limit:   limit,
-		window:  window,
-		entries: map[string][]time.Time{},
-	}
-}
-
-func (l *inMemorySubmissionRateLimiter) Allow(key string) bool {
-	if l == nil {
-		return true
-	}
-
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	now := l.now().UTC()
-	cutoff := now.Add(-l.window)
-	candidates := l.entries[key][:0]
-	for _, attemptedAt := range l.entries[key] {
-		if attemptedAt.After(cutoff) {
-			candidates = append(candidates, attemptedAt)
-		}
-	}
-	if len(candidates) >= l.limit {
-		l.entries[key] = candidates
-		return false
-	}
-
-	l.entries[key] = append(candidates, now)
-	return true
-}

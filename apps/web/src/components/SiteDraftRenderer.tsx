@@ -623,6 +623,7 @@ function ContactFormBlock({
   props: Record<string, unknown>
 }) {
   const [values, setValues] = useState<Record<string, string>>({})
+  const [honeypot, setHoneypot] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
@@ -646,8 +647,10 @@ function ContactFormBlock({
         result[field.name] = values[field.name] ?? ''
         return result
       }, {})
+      payload.hp_url = honeypot
       const response = await submitPublicForm(siteId, blockId, payload)
       setValues({})
+      setHoneypot('')
       setSuccessMessage(response.message)
     } catch (error) {
       setErrorMessage(
@@ -727,6 +730,29 @@ function ContactFormBlock({
           ))}
 
           <input type="hidden" name="pageId" value={pageId} />
+
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              left: '-10000px',
+              width: '1px',
+              height: '1px',
+              overflow: 'hidden',
+            }}
+          >
+            <label>
+              Leave this field empty
+              <input
+                type="text"
+                name="hp_url"
+                tabIndex={-1}
+                autoComplete="off"
+                value={honeypot}
+                onChange={(event) => setHoneypot(event.target.value)}
+              />
+            </label>
+          </div>
 
           {errorMessage ? <p className={text.error}>{errorMessage}</p> : null}
           {successMessage ? (
