@@ -1696,6 +1696,32 @@ function SiteDetail() {
                         Alt: {asset.altText}
                       </p>
                     ) : null}
+                    {asset.metadata.provenance ? (
+                      <p className="m-0 text-sm text-[var(--paper-muted)]">
+                        Starter from{" "}
+                        <span className="font-medium capitalize text-[var(--paper)]">
+                          {asset.metadata.provenance.provider}
+                        </span>
+                        {asset.metadata.provenance.author ? (
+                          <>
+                            {" "}
+                            · Photo by{" "}
+                            {asset.metadata.provenance.authorUrl ? (
+                              <a
+                                href={asset.metadata.provenance.authorUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="underline"
+                              >
+                                {asset.metadata.provenance.author}
+                              </a>
+                            ) : (
+                              asset.metadata.provenance.author
+                            )}
+                          </>
+                        ) : null}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               </article>

@@ -503,7 +503,14 @@ function AssetField({
           <option value="">Select a site asset</option>
           {assetLibrary.map((asset) => (
             <option key={asset.id} value={asset.id}>
-              {asset.metadata.fileName || asset.id}
+              {[
+                asset.metadata.fileName || asset.id,
+                asset.metadata.provenance
+                  ? `(${asset.metadata.provenance.provider} starter)`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(' ')}
             </option>
           ))}
         </Select>
@@ -529,6 +536,17 @@ function AssetField({
             <small className="text-[var(--paper-muted)]">
               {selectedAsset.metadata.contentType || 'Image'}
             </small>
+            {selectedAsset.metadata.provenance ? (
+              <small className="text-[var(--paper-muted)]">
+                Starter from{' '}
+                <span className="font-medium text-[var(--paper)] capitalize">
+                  {selectedAsset.metadata.provenance.provider}
+                </span>
+                {selectedAsset.metadata.provenance.author
+                  ? ` · Photo by ${selectedAsset.metadata.provenance.author}`
+                  : null}
+              </small>
+            ) : null}
           </div>
         </div>
       ) : (

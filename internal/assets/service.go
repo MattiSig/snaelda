@@ -1,6 +1,7 @@
 package assets
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -70,15 +71,29 @@ type Asset struct {
 }
 
 type AssetMetadata struct {
-	FileName           string     `json:"fileName,omitempty"`
-	ContentType        string     `json:"contentType,omitempty"`
-	RequestedSizeBytes int64      `json:"requestedSizeBytes,omitempty"`
-	SizeBytes          int64      `json:"sizeBytes,omitempty"`
-	Width              int        `json:"width,omitempty"`
-	Height             int        `json:"height,omitempty"`
-	ETag               string     `json:"etag,omitempty"`
-	UploadStatus       string     `json:"uploadStatus,omitempty"`
-	UploadedAt         *time.Time `json:"uploadedAt,omitempty"`
+	FileName           string           `json:"fileName,omitempty"`
+	ContentType        string           `json:"contentType,omitempty"`
+	RequestedSizeBytes int64            `json:"requestedSizeBytes,omitempty"`
+	SizeBytes          int64            `json:"sizeBytes,omitempty"`
+	Width              int              `json:"width,omitempty"`
+	Height             int              `json:"height,omitempty"`
+	ETag               string           `json:"etag,omitempty"`
+	UploadStatus       string           `json:"uploadStatus,omitempty"`
+	UploadedAt         *time.Time       `json:"uploadedAt,omitempty"`
+	Provenance         *AssetProvenance `json:"provenance,omitempty"`
+}
+
+// AssetProvenance captures where a backend-imported asset originally came
+// from so the renderer can show attribution and the builder can show the
+// source in the asset library.
+type AssetProvenance struct {
+	Provider   string `json:"provider"`
+	ProviderID string `json:"providerId,omitempty"`
+	Author     string `json:"author,omitempty"`
+	AuthorURL  string `json:"authorUrl,omitempty"`
+	License    string `json:"license,omitempty"`
+	Query      string `json:"query,omitempty"`
+	SourceURL  string `json:"sourceUrl,omitempty"`
 }
 
 type CreateUploadInput struct {
@@ -184,6 +199,97 @@ func (s *Service) CreateUpload(ctx context.Context, input CreateUploadInput) (Cr
 	}
 
 	return CreateUploadResult{Asset: asset, Upload: upload}, nil
+}
+
+// ImportExternalInput describes a backend-managed asset import — typically a
+// starter image fetched from an imagery provider during generation. The
+// service uploads the raw bytes to object storage and writes a complete
+// asset row that the renderer can reference immediately.
+type ImportExternalInput struct {
+	WorkspaceID string
+	SiteID      string
+	UserID      string
+	FileName    string
+	ContentType string
+	Body        []byte
+	AltText     string
+	Width       int
+	Height      int
+	Provenance  AssetProvenance
+}
+
+// ImportExternal stores an externally-sourced asset directly without going
+// through the presigned-upload dance. It is used by generation when the
+// backend selects a starter image on the user's behalf.
+func (s *Service) ImportExternal(ctx context.Context, input ImportExternalInput) (Asset, error) {
+	if strings.TrimSpace(input.SiteID) == "" {
+		return Asset{}, ErrSiteRequired
+	}
+
+	fileName := sanitizeFileName(input.FileName)
+	if fileName == "" {
+		return Asset{}, ErrAssetNameRequired
+	}
+
+	contentType := strings.ToLower(strings.TrimSpace(input.ContentType))
+	if !allowedImageContentTypes[contentType] {
+		return Asset{}, ErrAssetContentTypeInvalid
+	}
+	if len(input.Body) <= 0 || int64(len(input.Body)) > maxAssetSize {
+		return Asset{}, ErrAssetSizeInvalid
+	}
+
+	assetID, err := ids.New()
+	if err != nil {
+		return Asset{}, fmt.Errorf("generate asset id: %w", err)
+	}
+	storageKey := buildStorageKey(input.WorkspaceID, input.SiteID, assetID, fileName)
+
+	head, err := s.storage.PutObject(ctx, storageKey, contentType, bytes.NewReader(input.Body))
+	if err != nil {
+		return Asset{}, fmt.Errorf("upload imported asset: %w", err)
+	}
+
+	now := time.Now().UTC()
+	provenance := input.Provenance
+	metadata := AssetMetadata{
+		FileName:           fileName,
+		ContentType:        contentType,
+		RequestedSizeBytes: int64(len(input.Body)),
+		SizeBytes:          head.SizeBytes,
+		ETag:               head.ETag,
+		Width:              input.Width,
+		Height:             input.Height,
+		UploadStatus:       "uploaded",
+		UploadedAt:         &now,
+		Provenance:         &provenance,
+	}
+
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return Asset{}, fmt.Errorf("encode asset metadata: %w", err)
+	}
+
+	asset := Asset{
+		ID:          assetID,
+		WorkspaceID: input.WorkspaceID,
+		SiteID:      input.SiteID,
+		Kind:        defaultAssetKind,
+		StorageKey:  storageKey,
+		AltText:     normalizeAltText(input.AltText),
+		Metadata:    metadata,
+		CreatedBy:   strings.TrimSpace(input.UserID),
+	}
+
+	if err := s.db.QueryRow(ctx, `
+		insert into assets (id, workspace_id, site_id, kind, storage_key, alt_text, metadata, created_by)
+		values ($1, $2, $3, $4, $5, nullif($6, ''), $7, nullif($8, '')::uuid)
+		returning created_at
+	`, asset.ID, asset.WorkspaceID, asset.SiteID, asset.Kind, asset.StorageKey, asset.AltText, metadataJSON, asset.CreatedBy).Scan(&asset.CreatedAt); err != nil {
+		return Asset{}, fmt.Errorf("create imported asset row: %w", err)
+	}
+
+	return asset, nil
 }
 
 func (s *Service) CompleteUpload(ctx context.Context, assetID string, input CompleteUploadInput) (Asset, error) {
@@ -489,6 +595,77 @@ func (s *Service) Delete(ctx context.Context, assetID string) error {
 		return ErrAssetNotFound
 	}
 	return nil
+}
+
+// LookupCredits returns the publish-time attribution credits for assets
+// whose provenance points back to an imagery provider. Rows without
+// provenance are omitted so unrelated user uploads do not appear in the
+// credit footer.
+func (s *Service) LookupCredits(ctx context.Context, assetIDs []string) ([]siteconfig.ImageCredit, error) {
+	rows, err := s.LoadProvenance(ctx, assetIDs)
+	if err != nil {
+		return nil, err
+	}
+	credits := make([]siteconfig.ImageCredit, 0, len(rows))
+	for _, asset := range rows {
+		provenance := asset.Metadata.Provenance
+		if provenance == nil {
+			continue
+		}
+		credits = append(credits, siteconfig.ImageCredit{
+			Provider:  strings.TrimSpace(provenance.Provider),
+			Author:    strings.TrimSpace(provenance.Author),
+			AuthorURL: strings.TrimSpace(provenance.AuthorURL),
+			SourceURL: strings.TrimSpace(provenance.SourceURL),
+			License:   strings.TrimSpace(provenance.License),
+		})
+	}
+	return credits, nil
+}
+
+// LoadProvenance returns the asset rows for the supplied ids that carry
+// importer provenance metadata. Rows without provenance are skipped. The
+// publishing pipeline uses this to compute attribution for credits on the
+// rendered public pages.
+func (s *Service) LoadProvenance(ctx context.Context, assetIDs []string) ([]Asset, error) {
+	if len(assetIDs) == 0 {
+		return nil, nil
+	}
+
+	rows, err := s.db.Query(ctx, `
+		select id::text,
+		       workspace_id::text,
+		       coalesce(site_id::text, ''),
+		       kind,
+		       storage_key,
+		       coalesce(public_url, ''),
+		       coalesce(alt_text, ''),
+		       metadata,
+		       coalesce(created_by::text, ''),
+		       created_at
+		from assets
+		where id = any($1::uuid[])
+	`, assetIDs)
+	if err != nil {
+		return nil, fmt.Errorf("load asset provenance: %w", err)
+	}
+	defer rows.Close()
+
+	assets := []Asset{}
+	for rows.Next() {
+		asset, err := scanAsset(rows)
+		if err != nil {
+			return nil, err
+		}
+		if asset.Metadata.Provenance == nil || asset.Metadata.Provenance.Provider == "" {
+			continue
+		}
+		assets = append(assets, asset)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate asset provenance: %w", err)
+	}
+	return assets, nil
 }
 
 func (s *Service) loadAsset(ctx context.Context, assetID string) (Asset, error) {

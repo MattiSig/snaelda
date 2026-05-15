@@ -14,6 +14,64 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+type fakeAssetProvenance struct {
+	credits     []siteconfig.ImageCredit
+	requestedID []string
+}
+
+func (f *fakeAssetProvenance) LookupCredits(_ context.Context, assetIDs []string) ([]siteconfig.ImageCredit, error) {
+	f.requestedID = append(f.requestedID, assetIDs...)
+	return f.credits, nil
+}
+
+func TestEnrichSnapshotCreditsAttachesImageCredits(t *testing.T) {
+	lookup := &fakeAssetProvenance{credits: []siteconfig.ImageCredit{
+		{Provider: "pexels", Author: "Test Photographer", AuthorURL: "https://www.pexels.com/@test", SourceURL: "https://www.pexels.com/photo/1", License: "Pexels License"},
+		{Provider: "pexels", Author: "Test Photographer", AuthorURL: "https://www.pexels.com/@test", SourceURL: "https://www.pexels.com/photo/1", License: "Pexels License"},
+	}}
+	service := &Service{assetProvenance: lookup}
+
+	snapshot := &siteconfig.PublishedSnapshot{
+		Pages: []siteconfig.PageDraft{{
+			ID: "p1", Slug: "/", Title: "Home",
+			Blocks: []siteconfig.BlockInstance{{
+				ID: "b1", Type: "hero", Version: siteconfig.BlockVersionV1,
+				Props: map[string]any{"image": map[string]any{"assetId": "asset-1"}},
+			}},
+		}},
+	}
+
+	if err := service.enrichSnapshotCredits(context.Background(), snapshot); err != nil {
+		t.Fatalf("enrich credits: %v", err)
+	}
+	if len(snapshot.ImageCredits) != 1 {
+		t.Fatalf("expected dedup to leave one credit, got %#v", snapshot.ImageCredits)
+	}
+	if snapshot.ImageCredits[0].Provider != "pexels" {
+		t.Fatalf("expected pexels provider, got %q", snapshot.ImageCredits[0].Provider)
+	}
+	if len(lookup.requestedID) != 1 || lookup.requestedID[0] != "asset-1" {
+		t.Fatalf("expected lookup with asset-1, got %#v", lookup.requestedID)
+	}
+}
+
+func TestEnrichSnapshotCreditsSkipsWhenNoAssets(t *testing.T) {
+	lookup := &fakeAssetProvenance{}
+	service := &Service{assetProvenance: lookup}
+	snapshot := &siteconfig.PublishedSnapshot{
+		Pages: []siteconfig.PageDraft{{ID: "p1", Slug: "/", Title: "Home", Blocks: []siteconfig.BlockInstance{{ID: "b1", Type: "text_section", Props: map[string]any{"heading": "Hi"}}}}},
+	}
+	if err := service.enrichSnapshotCredits(context.Background(), snapshot); err != nil {
+		t.Fatalf("enrich credits: %v", err)
+	}
+	if snapshot.ImageCredits != nil {
+		t.Fatalf("expected nil credits, got %#v", snapshot.ImageCredits)
+	}
+	if len(lookup.requestedID) != 0 {
+		t.Fatalf("expected no lookup, got %#v", lookup.requestedID)
+	}
+}
+
 func TestBuildPublishedSnapshotAddsSEOFallbacks(t *testing.T) {
 	draft := siteconfig.SiteDraft{
 		Site: siteconfig.DraftSite{

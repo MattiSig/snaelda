@@ -1,8 +1,10 @@
 package assets
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -44,6 +46,7 @@ type Storage interface {
 	CreateDownloadURL(ctx context.Context, key string, expires time.Duration) (string, error)
 	HeadObject(ctx context.Context, key string) (ObjectHead, error)
 	DeleteObject(ctx context.Context, key string) error
+	PutObject(ctx context.Context, key string, contentType string, body io.Reader) (ObjectHead, error)
 }
 
 type S3Storage struct {
@@ -141,6 +144,29 @@ func (s *S3Storage) HeadObject(ctx context.Context, key string) (ObjectHead, err
 		SizeBytes:   aws.ToInt64(result.ContentLength),
 		ETag:        strings.Trim(aws.ToString(result.ETag), `"`),
 	}, nil
+}
+
+func (s *S3Storage) PutObject(ctx context.Context, key string, contentType string, body io.Reader) (ObjectHead, error) {
+	if err := s.ensureBucket(ctx); err != nil {
+		return ObjectHead{}, err
+	}
+
+	buffer, err := io.ReadAll(body)
+	if err != nil {
+		return ObjectHead{}, fmt.Errorf("read object body: %w", err)
+	}
+
+	if _, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:        aws.String(s.bucket),
+		Key:           aws.String(key),
+		ContentType:   aws.String(contentType),
+		ContentLength: aws.Int64(int64(len(buffer))),
+		Body:          bytes.NewReader(buffer),
+	}); err != nil {
+		return ObjectHead{}, fmt.Errorf("put object: %w", err)
+	}
+
+	return s.HeadObject(ctx, key)
 }
 
 func (s *S3Storage) DeleteObject(ctx context.Context, key string) error {

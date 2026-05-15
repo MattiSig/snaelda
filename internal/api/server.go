@@ -16,6 +16,7 @@ import (
 	"github.com/MattiSig/snaelda/internal/domains"
 	"github.com/MattiSig/snaelda/internal/forms"
 	"github.com/MattiSig/snaelda/internal/generation"
+	"github.com/MattiSig/snaelda/internal/imagery"
 	"github.com/MattiSig/snaelda/internal/pages"
 	"github.com/MattiSig/snaelda/internal/platform/config"
 	"github.com/MattiSig/snaelda/internal/publishing"
@@ -94,11 +95,41 @@ func (s *Server) Handler() http.Handler {
 	if err != nil {
 		s.logger.Error("configure generation planner", "error", err)
 	}
-	var generationPlanBuilder generation.HandlerConfig
+	var generationHandlerConfig generation.HandlerConfig
 	var themeHandlerConfig themes.HandlerConfig
 	if generationPlanner != nil {
-		generationPlanBuilder.Planner = generationPlanner.BuildPlan
+		generationHandlerConfig.Planner = generationPlanner.BuildPlan
 		themeHandlerConfig.Regenerator = generationPlanner
+	}
+
+	var assetService *assets.Service
+	if assetStore, ok := s.database.(assets.DB); ok {
+		assetStorage, err := assets.NewS3Storage(assets.StorageConfig{
+			Endpoint:        s.config.S3Endpoint,
+			Bucket:          s.config.S3Bucket,
+			Region:          s.config.S3Region,
+			AccessKeyID:     s.config.S3AccessKeyID,
+			SecretAccessKey: s.config.S3SecretAccessKey,
+			ForcePathStyle:  s.config.S3ForcePathStyle,
+		})
+		if err != nil {
+			s.logger.Error("configure asset storage", "error", err)
+		} else {
+			assetService = assets.NewService(assetStore, assetStorage)
+		}
+	}
+
+	if pexelsClient := imagery.NewPexelsClient(imagery.PexelsConfig{
+		APIKey: s.config.PexelsAPIKey,
+	}); pexelsClient != nil {
+		generationHandlerConfig.StarterImagery = generation.NewStarterImagery(pexelsClient)
+		generationHandlerConfig.Logger = s.logger
+		if assetService != nil {
+			generationHandlerConfig.AssetImporter = assetService
+		} else {
+			s.logger.Warn("starter imagery configured without asset service; disabling starter imagery")
+			generationHandlerConfig.StarterImagery = nil
+		}
 	}
 
 	mountAuthenticatedPlaceholderModule(mux, s.auth, workspaces.Module{})
@@ -115,18 +146,21 @@ func (s *Server) Handler() http.Handler {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, themes.Module{})
 	}
 	if store, ok := s.database.(generation.DB); ok {
-		generation.NewHandler(store, generationPlanBuilder).Mount(mux, s.auth.RequireUser)
+		generation.NewHandler(store, generationHandlerConfig).Mount(mux, s.auth.RequireUser)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, generation.Module{})
 	}
 	if store, ok := s.database.(publishing.DB); ok {
-		publishHandler := publishing.NewHandler(
-			store,
-			s.config.AppBaseURL,
-			s.config.PublicBaseURL,
-			s.config.PublicBaseDomain,
-			s.config.PublishedArtifactsDir,
-		)
+		publishConfig := publishing.ServiceConfig{
+			AppBaseURL:       s.config.AppBaseURL,
+			PublicBaseURL:    s.config.PublicBaseURL,
+			PublicBaseDomain: s.config.PublicBaseDomain,
+			ArtifactsDir:     s.config.PublishedArtifactsDir,
+		}
+		if assetService != nil {
+			publishConfig.AssetProvenance = assetService
+		}
+		publishHandler := publishing.NewHandlerWithConfig(store, publishConfig, s.config.AppBaseURL, s.config.PublicBaseURL)
 		if analyticsStore, ok := s.database.(analytics.Store); ok {
 			publishHandler = publishHandler.WithViewRecorder(analytics.NewRecorder(analyticsStore, s.logger))
 		}
@@ -148,21 +182,8 @@ func (s *Server) Handler() http.Handler {
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, domains.Module{})
 	}
-	if store, ok := s.database.(assets.DB); ok {
-		storage, err := assets.NewS3Storage(assets.StorageConfig{
-			Endpoint:        s.config.S3Endpoint,
-			Bucket:          s.config.S3Bucket,
-			Region:          s.config.S3Region,
-			AccessKeyID:     s.config.S3AccessKeyID,
-			SecretAccessKey: s.config.S3SecretAccessKey,
-			ForcePathStyle:  s.config.S3ForcePathStyle,
-		})
-		if err != nil {
-			s.logger.Error("configure asset storage", "error", err)
-			mountAuthenticatedPlaceholderModule(mux, s.auth, assets.Module{})
-		} else {
-			assets.NewHandler(store, storage).Mount(mux, s.auth.RequireUser)
-		}
+	if store, ok := s.database.(assets.DB); ok && assetService != nil {
+		assets.NewHandlerWithService(store, assetService).Mount(mux, s.auth.RequireUser)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, assets.Module{})
 	}

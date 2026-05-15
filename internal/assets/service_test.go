@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -232,6 +233,55 @@ func TestPublicDownloadURLBySiteSlugRejectsUnpublishedSite(t *testing.T) {
 	}
 }
 
+func TestImportExternalStoresAssetWithProvenance(t *testing.T) {
+	store := newFakeAssetStore()
+	storage := &fakeStorage{head: ObjectHead{ETag: "etag-imported"}}
+	service := NewService(store, storage)
+
+	body := []byte("fake-jpeg-binary")
+	asset, err := service.ImportExternal(context.Background(), ImportExternalInput{
+		WorkspaceID: "workspace-1",
+		SiteID:      "site-1",
+		UserID:      "user-1",
+		FileName:    "pexels-12345.jpg",
+		ContentType: "image/jpeg",
+		Body:        body,
+		AltText:     "Studio scene",
+		Width:       2400,
+		Height:      1600,
+		Provenance: AssetProvenance{
+			Provider:   "pexels",
+			ProviderID: "12345",
+			Author:     "Test Photographer",
+			AuthorURL:  "https://www.pexels.com/@test",
+			License:    "Pexels License",
+			Query:      "stockholm photography studio",
+			SourceURL:  "https://www.pexels.com/photo/12345",
+		},
+	})
+	if err != nil {
+		t.Fatalf("import external: %v", err)
+	}
+	if asset.ID == "" {
+		t.Fatal("expected generated asset id")
+	}
+	if asset.Metadata.UploadStatus != "uploaded" {
+		t.Fatalf("expected uploaded status, got %q", asset.Metadata.UploadStatus)
+	}
+	if asset.Metadata.Provenance == nil || asset.Metadata.Provenance.Provider != "pexels" {
+		t.Fatalf("expected provenance recorded, got %#v", asset.Metadata.Provenance)
+	}
+	if storage.putKey == "" || string(storage.putBody) != string(body) {
+		t.Fatalf("expected storage put with body, got key=%q body_len=%d", storage.putKey, len(storage.putBody))
+	}
+	if storage.putContentType != "image/jpeg" {
+		t.Fatalf("expected content type forwarded, got %q", storage.putContentType)
+	}
+	if len(store.assets) != 1 {
+		t.Fatalf("expected one stored asset, got %d", len(store.assets))
+	}
+}
+
 func TestPublicDownloadURLByHostnameMatchesActiveDomain(t *testing.T) {
 	store := newFakeAssetStore()
 	store.siteHostnames["site-1"] = "loom-light.snaelda.app"
@@ -260,12 +310,16 @@ func TestPublicDownloadURLByHostnameMatchesActiveDomain(t *testing.T) {
 }
 
 type fakeStorage struct {
-	upload      PresignedUpload
-	head        ObjectHead
-	downloadURL string
-	deletedKey  string
-	headErr     error
-	deleteErr   error
+	upload         PresignedUpload
+	head           ObjectHead
+	downloadURL    string
+	deletedKey     string
+	headErr        error
+	deleteErr      error
+	putKey         string
+	putContentType string
+	putBody        []byte
+	putErr         error
 }
 
 func (s *fakeStorage) CreateUpload(context.Context, string, string, time.Duration) (PresignedUpload, error) {
@@ -286,6 +340,26 @@ func (s *fakeStorage) HeadObject(context.Context, string) (ObjectHead, error) {
 func (s *fakeStorage) DeleteObject(_ context.Context, key string) error {
 	s.deletedKey = key
 	return s.deleteErr
+}
+
+func (s *fakeStorage) PutObject(_ context.Context, key string, contentType string, body io.Reader) (ObjectHead, error) {
+	if s.putErr != nil {
+		return ObjectHead{}, s.putErr
+	}
+	bodyBytes, err := io.ReadAll(body)
+	if err != nil {
+		return ObjectHead{}, err
+	}
+	s.putKey = key
+	s.putContentType = contentType
+	s.putBody = bodyBytes
+	if s.head.SizeBytes == 0 {
+		s.head.SizeBytes = int64(len(bodyBytes))
+	}
+	if s.head.ContentType == "" {
+		s.head.ContentType = contentType
+	}
+	return s.head, nil
 }
 
 type storedAsset struct {

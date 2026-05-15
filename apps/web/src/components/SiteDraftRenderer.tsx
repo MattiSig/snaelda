@@ -3,6 +3,7 @@ import { useState } from 'react'
 import {
   APIError,
   submitPublicForm,
+  type ImageCredit,
   type PublishedSnapshot,
   type SiteDraft,
 } from '@/lib/api'
@@ -23,6 +24,7 @@ type RenderableSite = Pick<SiteDraft, 'theme' | 'navigation' | 'pages'> & {
       description?: string
     }
   }
+  imageCredits?: ImageCredit[]
 }
 
 type RoutablePage = {
@@ -69,89 +71,150 @@ export function SiteDraftRenderer({
   )
   const pageById = new Map(site.pages.map((page) => [page.id, page]))
   const slugToPage = new Map(site.pages.map((page) => [page.slug, page]))
-  const rootClassName = preview.shell
-  const headerClassName = cn(preview.frame, preview.header)
-  const pageClassName = preview.page
+  const homePage =
+    site.pages.find((page) => page.slug === '/') ?? site.pages[0]
+  const homeHref = homePage
+    ? resolveNavigationHref(
+        { pageId: homePage.id },
+        pageAnchors,
+        pageById,
+        slugToPage,
+        linkMode,
+        siteSlug,
+        publishedBasePath,
+      )
+    : '#'
 
   return (
-    <div className={rootClassName} style={buildSiteThemeStyle(site.theme)}>
-      <header className={headerClassName}>
-        <div>
-          {eyebrow ? <p className={text.eyebrow}>{eyebrow}</p> : null}
-          <h1 className="max-w-[10ch] font-serif text-[clamp(2.8rem,7vw,5.8rem)] font-bold leading-[0.96] text-[var(--site-foreground)]">
+    <div className={preview.shell} style={buildSiteThemeStyle(site.theme)}>
+      <header className={preview.header}>
+        <div className={preview.headerInner}>
+          <a className={preview.headerBrand} href={homeHref}>
             {site.site.name}
-          </h1>
-          {site.site.seo?.description ? (
-            <p className="text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
-              {site.site.seo.description}
-            </p>
-          ) : null}
-        </div>
-        <nav className={preview.nav} aria-label="Site navigation">
-          {site.navigation.primary.map((item) => (
-            <a
-              key={`${item.label}-${item.pageId ?? item.href ?? ''}`}
-              className={preview.navLink}
-              href={resolveNavigationHref(
-                item,
-                pageAnchors,
-                pageById,
-                slugToPage,
-                linkMode,
-                siteSlug,
-                publishedBasePath,
-              )}
-            >
-              {item.label}
-            </a>
-          ))}
-        </nav>
-      </header>
-
-      {renderedPages.map((page) => (
-        <article
-          key={page.id}
-          id={pageAnchor(page.slug, page.id)}
-          className={pageClassName}
-        >
-          {showPageMeta ? (
-            <div className={preview.pageMeta}>
-              <span>{page.title}</span>
-              <small className="text-[color-mix(in_oklch,var(--site-foreground)_62%,var(--site-background))]">
-                {page.slug}
-              </small>
-            </div>
-          ) : null}
-          <div className={preview.pageStack}>
-            {page.blocks
-              .filter((block) => !block.settings?.hidden)
-              .map((block, blockIndex) => {
-                const renderedBlock = renderSiteBlock({
-                  block,
-                  page,
-                  blockIndex,
-                  siteID: site.site.id,
+          </a>
+          <nav className={preview.nav} aria-label="Site navigation">
+            {site.navigation.primary.map((item) => (
+              <a
+                key={`${item.label}-${item.pageId ?? item.href ?? ''}`}
+                className={preview.navLink}
+                href={resolveNavigationHref(
+                  item,
+                  pageAnchors,
+                  pageById,
                   slugToPage,
                   linkMode,
                   siteSlug,
                   publishedBasePath,
-                })
+                )}
+              >
+                {item.label}
+              </a>
+            ))}
+          </nav>
+        </div>
+      </header>
 
-                if (!renderBlock) {
-                  return renderedBlock
-                }
+      <main className={preview.page}>
+        {renderedPages.map((page) => (
+          <article
+            key={page.id}
+            id={pageAnchor(page.slug, page.id)}
+            className="w-full"
+          >
+            {showPageMeta ? (
+              <div className={preview.pageMeta}>
+                <span>{eyebrow ? `${eyebrow} · ` : ''}{page.title}</span>
+                <small className="text-[color-mix(in_oklch,var(--site-foreground)_55%,var(--site-background))]">
+                  {page.slug}
+                </small>
+              </div>
+            ) : null}
+            <div className={preview.pageStack}>
+              {page.blocks
+                .filter((block) => !block.settings?.hidden)
+                .map((block, blockIndex) => {
+                  const renderedBlock = renderSiteBlock({
+                    block,
+                    page,
+                    blockIndex,
+                    siteID: site.site.id,
+                    slugToPage,
+                    linkMode,
+                    siteSlug,
+                    publishedBasePath,
+                  })
 
-                return renderBlock({
-                  block,
-                  page,
-                  blockIndex,
-                  children: renderedBlock,
-                })
-              })}
-          </div>
-        </article>
-      ))}
+                  if (!renderBlock) {
+                    return renderedBlock
+                  }
+
+                  return renderBlock({
+                    block,
+                    page,
+                    blockIndex,
+                    children: renderedBlock,
+                  })
+                })}
+            </div>
+          </article>
+        ))}
+      </main>
+      <ImageCreditsBand credits={'imageCredits' in site ? site.imageCredits : undefined} />
     </div>
+  )
+}
+
+function ImageCreditsBand({ credits }: { credits?: ImageCredit[] }) {
+  if (!credits || credits.length === 0) {
+    return null
+  }
+  const pexels = credits.filter((credit) => credit.provider === 'pexels')
+  if (pexels.length === 0) {
+    return null
+  }
+  return (
+    <aside
+      className="border-t border-[color-mix(in_oklch,var(--site-border)_45%,transparent)] bg-[color-mix(in_oklch,var(--site-background)_92%,var(--site-foreground))]"
+      aria-label="Image credits"
+    >
+      <div className="mx-auto flex w-full max-w-[1180px] flex-wrap items-center gap-x-3 gap-y-1 px-6 py-4 text-xs text-[color-mix(in_oklch,var(--site-foreground)_72%,var(--site-background))]">
+        <span>Imagery from</span>
+        <a
+          href="https://www.pexels.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-[var(--site-foreground)] hover:underline"
+        >
+          Pexels
+        </a>
+        <span aria-hidden="true">·</span>
+        <span>Photos by</span>
+        <span className="inline-flex flex-wrap items-center gap-x-2">
+          {pexels.map((credit, index) => {
+            const name = credit.author?.trim() || 'Pexels contributor'
+            const isLast = index === pexels.length - 1
+            const Element = credit.authorUrl ? 'a' : 'span'
+            return (
+              <span key={`${credit.author ?? 'pexels'}-${credit.sourceUrl ?? index}`}>
+                <Element
+                  {...(credit.authorUrl
+                    ? {
+                        href: credit.authorUrl,
+                        target: '_blank',
+                        rel: 'noopener noreferrer',
+                        className: 'font-medium text-[var(--site-foreground)] hover:underline',
+                      }
+                    : { className: 'font-medium text-[var(--site-foreground)]' })}
+                >
+                  {name}
+                </Element>
+                {!isLast ? <span aria-hidden="true">, </span> : null}
+              </span>
+            )
+          })}
+        </span>
+      </div>
+    </aside>
   )
 }
 
@@ -228,6 +291,15 @@ function renderSiteBlock({
         <ImageTextBlock
           key={block.id}
           props={block.props}
+          resolveHref={(href) =>
+            resolvePageHref(
+              href,
+              slugToPage,
+              linkMode,
+              siteSlug,
+              publishedBasePath,
+            )
+          }
           linkMode={linkMode}
           siteSlug={siteSlug}
         />
@@ -308,12 +380,20 @@ function renderSiteBlock({
           key={`${block.id}-${blockIndex}`}
           className={preview.panel}
         >
-          <p className={text.eyebrow}>Unsupported block</p>
-          <strong>{block.type}</strong>
+          <div className={preview.panelInner}>
+            <p className={text.eyebrow}>Unsupported block</p>
+            <strong>{block.type}</strong>
+          </div>
         </section>
       )
   }
 }
+
+const headingClass =
+  'font-serif text-[clamp(1.65rem,2.8vw,2.4rem)] font-bold leading-[1.08] tracking-tight text-[var(--site-foreground)]'
+
+const bodyClass =
+  'text-[1.05rem] leading-[1.65] text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]'
 
 function HeroBlock({
   props,
@@ -327,104 +407,160 @@ function HeroBlock({
   siteSlug?: string
 }) {
   const primary = asObject(props.primaryCta)
+  const secondary = asObject(props.secondaryCta)
   const image = asImageRef(props.image)
   const layout = asText(props.layout) || 'centered'
   const hasImage = image !== null
-  return (
-    <section className={cn(preview.panel, preview.hero)}>
-      <div
-        className={cn(
-          hasImage && layout !== 'centered'
-            ? 'grid gap-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(240px,0.95fr)] lg:items-center'
-            : 'grid gap-6',
-        )}
-      >
-        <div
-          className={cn(
-            'grid gap-4',
-            hasImage && layout === 'split-right' && 'lg:order-1',
-            hasImage && layout === 'split-left' && 'lg:order-2',
-          )}
-        >
-          {asText(props.eyebrow) ? (
-            <p className={text.eyebrow}>{asText(props.eyebrow)}</p>
-          ) : null}
-          <h2 className="max-w-[12ch] font-serif text-[clamp(2rem,4vw,3.2rem)] font-bold leading-[0.96] text-[var(--site-foreground)]">
-            {asText(props.headline)}
-          </h2>
-          {asText(props.subheadline) ? (
-            <p className="text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
-              {asText(props.subheadline)}
-            </p>
-          ) : null}
+  const isSplit = hasImage && layout !== 'centered'
+
+  const content = (
+    <div
+      className={cn(
+        'grid gap-6',
+        isSplit && layout === 'split-right' && 'lg:order-1',
+        isSplit && layout === 'split-left' && 'lg:order-2',
+        !isSplit && 'max-w-[22ch]',
+      )}
+    >
+      {asText(props.eyebrow) ? (
+        <p className={text.eyebrow}>{asText(props.eyebrow)}</p>
+      ) : null}
+      <h2 className="font-serif text-[clamp(2.6rem,6.2vw,5.4rem)] font-bold leading-[0.96] tracking-[-0.02em] text-[var(--site-foreground)]">
+        {asText(props.headline)}
+      </h2>
+      {asText(props.subheadline) ? (
+        <p className="max-w-[44ch] text-[1.15rem] leading-[1.6] text-[color-mix(in_oklch,var(--site-foreground)_78%,var(--site-background))]">
+          {asText(props.subheadline)}
+        </p>
+      ) : null}
+      {primary || secondary ? (
+        <div className={cn(preview.actionRow, 'mt-2')}>
           {primary ? (
-            <div className={preview.actionRow}>
-              <Button asChild variant="plain" className={preview.button}>
-                <a href={resolveHref(asText(primary.href) || '#')}>
-                  {asText(primary.label) ?? 'Continue'}
-                </a>
-              </Button>
-            </div>
+            <Button asChild variant="plain" className={preview.button}>
+              <a href={resolveHref(asText(primary.href) || '#')}>
+                {asText(primary.label) ?? 'Continue'}
+              </a>
+            </Button>
+          ) : null}
+          {secondary ? (
+            <Button
+              asChild
+              variant="plain"
+              className={cn(preview.button, preview.ghostButton)}
+            >
+              <a href={resolveHref(asText(secondary.href) || '#')}>
+                {asText(secondary.label) ?? 'Learn more'}
+              </a>
+            </Button>
           ) : null}
         </div>
-        {image ? (
-          <AssetImage
-            image={image}
-            linkMode={linkMode}
-            siteSlug={siteSlug}
-            altFallback={asText(props.headline) || 'Hero image'}
-            className={cn(
-              'min-h-[240px] w-full rounded-[var(--site-radius-inner)] border border-[var(--site-image-border)] bg-[var(--site-image-background)] object-cover shadow-[var(--site-image-shadow)]',
-              hasImage && layout === 'split-right' && 'lg:order-2',
-              hasImage && layout === 'split-left' && 'lg:order-1',
-            )}
-          />
-        ) : null}
+      ) : null}
+    </div>
+  )
+
+  return (
+    <section className={cn(preview.panel, preview.hero)}>
+      <div className={preview.panelInner}>
+        <div
+          className={cn(
+            isSplit
+              ? 'grid gap-12 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)] lg:items-center'
+              : 'grid gap-10',
+          )}
+        >
+          {content}
+          {image ? (
+            <AssetImage
+              image={image}
+              linkMode={linkMode}
+              siteSlug={siteSlug}
+              altFallback={asText(props.headline) || 'Hero image'}
+              className={cn(
+                'w-full rounded-[var(--site-radius-inner)] object-cover',
+                isSplit
+                  ? 'aspect-[4/5] lg:aspect-auto lg:h-full lg:min-h-[460px]'
+                  : 'aspect-[16/9] max-h-[520px]',
+                isSplit && layout === 'split-right' && 'lg:order-2',
+                isSplit && layout === 'split-left' && 'lg:order-1',
+              )}
+            />
+          ) : null}
+        </div>
       </div>
     </section>
   )
 }
 
 function TextSectionBlock({ props }: { props: Record<string, unknown> }) {
+  const alignment = asText(props.alignment) || 'left'
+  const width = asText(props.width) || 'default'
+  const widthClass =
+    width === 'narrow'
+      ? 'max-w-[56ch]'
+      : width === 'wide'
+        ? 'max-w-[78ch]'
+        : 'max-w-[68ch]'
+  const alignClass =
+    alignment === 'center'
+      ? 'text-center'
+      : alignment === 'right'
+        ? 'text-right'
+        : 'text-left'
+  const positionClass =
+    alignment === 'center'
+      ? 'mx-auto'
+      : alignment === 'right'
+        ? 'ml-auto'
+        : ''
+
   return (
     <section className={preview.panel}>
-      <h3 className="font-serif text-[1.6rem] font-bold leading-[0.96] text-[var(--site-foreground)]">
-        {asText(props.heading)}
-      </h3>
-      <p className="text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
-        {asText(props.body)}
-      </p>
+      <div className={preview.panelInner}>
+        <div
+          className={cn('grid gap-5', widthClass, positionClass, alignClass)}
+        >
+          <h3 className={headingClass}>{asText(props.heading)}</h3>
+          <p className={bodyClass}>{asText(props.body)}</p>
+        </div>
+      </div>
     </section>
   )
 }
 
 function FeaturesGridBlock({ props }: { props: Record<string, unknown> }) {
+  const columns = asInt(props.columns) ?? 3
+  const colsClass =
+    columns === 2
+      ? 'md:grid-cols-2'
+      : columns === 4
+        ? 'md:grid-cols-2 xl:grid-cols-4'
+        : 'md:grid-cols-2 xl:grid-cols-3'
   return (
     <section className={preview.panel}>
-      <div className={preview.sectionHeading}>
-        <h3 className="font-serif text-[1.6rem] font-bold leading-[0.96] text-[var(--site-foreground)]">
-          {asText(props.heading)}
-        </h3>
-        {asText(props.intro) ? (
-          <p className="text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
-            {asText(props.intro)}
-          </p>
-        ) : null}
-      </div>
-      <div className={preview.features}>
-        {asArray(props.items).map((item, index) => {
-          const value = asObject(item)
-          return (
-            <article key={index} className={preview.feature}>
-              <h4 className="mb-2.5 font-serif text-[1.15rem] font-bold leading-[0.96] text-[var(--site-foreground)]">
-                {asText(value?.title)}
-              </h4>
-              <p className="text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
-                {asText(value?.body)}
-              </p>
-            </article>
-          )
-        })}
+      <div className={preview.panelInner}>
+        <div className={preview.sectionHeading}>
+          <h3 className={headingClass}>{asText(props.heading)}</h3>
+          {asText(props.intro) ? (
+            <p className={bodyClass}>{asText(props.intro)}</p>
+          ) : null}
+        </div>
+        <div className={cn('grid gap-x-10 gap-y-12', colsClass)}>
+          {asArray(props.items).map((item, index) => {
+            const value = asObject(item)
+            const icon = asText(value?.icon)
+            return (
+              <div key={index} className={preview.feature}>
+                {icon ? <p className={text.eyebrow}>{icon}</p> : null}
+                <h4 className="mt-1 font-serif text-[1.2rem] font-bold leading-[1.15] text-[var(--site-foreground)]">
+                  {asText(value?.title)}
+                </h4>
+                <p className="leading-[1.6] text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
+                  {asText(value?.body)}
+                </p>
+              </div>
+            )
+          })}
+        </div>
       </div>
     </section>
   )
@@ -438,27 +574,39 @@ function CTABandBlock({
   resolveHref: (href: string) => string
 }) {
   const cta = asObject(props.cta)
+  const variant = asText(props.variant) || 'primary'
+  const surfaceClass =
+    variant === 'accent'
+      ? 'bg-[var(--site-primary)] text-[var(--site-background)] [--site-button-background:var(--site-background)] [--site-button-foreground:var(--site-primary)] [--site-button-border:var(--site-background)] [--site-button-ghost-foreground:var(--site-background)] [--site-button-ghost-border:var(--site-background)]'
+      : variant === 'secondary'
+        ? 'bg-[var(--site-surface)] text-[var(--site-foreground)]'
+        : preview.ctaSurface
   return (
-    <section className={cn(preview.panel, preview.actionRow)}>
-      <div>
-        <h3 className="font-serif text-[1.6rem] font-bold leading-[0.96] text-[var(--site-foreground)]">
-          {asText(props.heading)}
-        </h3>
-        <p className="text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
-          {asText(props.body)}
-        </p>
+    <section className={cn(preview.panel, surfaceClass)}>
+      <div
+        className={cn(
+          preview.panelInner,
+          'flex flex-wrap items-center justify-between gap-x-12 gap-y-6',
+        )}
+      >
+        <div className="grid max-w-[44ch] gap-3">
+          <h3 className="font-serif text-[clamp(1.75rem,3.2vw,2.8rem)] font-bold leading-[1.05] tracking-tight">
+            {asText(props.heading)}
+          </h3>
+          {asText(props.body) ? (
+            <p className="text-[1.05rem] leading-[1.6] opacity-85">
+              {asText(props.body)}
+            </p>
+          ) : null}
+        </div>
+        {cta ? (
+          <Button asChild variant="plain" className={preview.button}>
+            <a href={resolveHref(asText(cta.href) || '#')}>
+              {asText(cta.label) ?? 'Open'}
+            </a>
+          </Button>
+        ) : null}
       </div>
-      {cta ? (
-        <Button
-          asChild
-          variant="plain"
-          className={cn(preview.button, preview.ghostButton)}
-        >
-          <a href={resolveHref(asText(cta.href) || '#')}>
-            {asText(cta.label) ?? 'Open'}
-          </a>
-        </Button>
-      ) : null}
     </section>
   )
 }
@@ -512,99 +660,104 @@ function ContactFormBlock({
 
   return (
     <section className={preview.panel}>
-      <div className="mb-5 grid gap-2">
-        <p className={text.eyebrow}>Contact form</p>
-        <h3 className="font-serif text-[1.6rem] font-bold leading-[0.96] text-[var(--site-foreground)]">
-          {asText(props.heading)}
-        </h3>
-        {asText(props.intro) ? (
-          <p className="text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
-            {asText(props.intro)}
-          </p>
-        ) : null}
+      <div className={cn(preview.panelNarrow)}>
+        <div className="mb-8 grid gap-3">
+          <h3 className={headingClass}>{asText(props.heading)}</h3>
+          {asText(props.intro) ? (
+            <p className={bodyClass}>{asText(props.intro)}</p>
+          ) : null}
+        </div>
+
+        <form className="grid gap-5" onSubmit={handleSubmit}>
+          {fields.map((field) => (
+            <label key={field.name} className="grid gap-2">
+              <span className="text-sm font-medium text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
+                {field.label}
+                {field.required ? ' *' : ''}
+              </span>
+              {field.type === 'message' ? (
+                <Textarea
+                  name={field.name}
+                  rows={5}
+                  required={field.required}
+                  value={values[field.name] ?? ''}
+                  placeholder={formPlaceholder(field)}
+                  onChange={(event) =>
+                    setValues((current) => ({
+                      ...current,
+                      [field.name]: event.target.value,
+                    }))
+                  }
+                />
+              ) : field.type === 'select' ? (
+                <Select
+                  name={field.name}
+                  required={field.required}
+                  value={values[field.name] ?? ''}
+                  onChange={(event) =>
+                    setValues((current) => ({
+                      ...current,
+                      [field.name]: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">Select an option</option>
+                  {field.options.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </Select>
+              ) : (
+                <Input
+                  name={field.name}
+                  type={field.type === 'email' ? 'email' : 'text'}
+                  required={field.required}
+                  value={values[field.name] ?? ''}
+                  placeholder={formPlaceholder(field)}
+                  onChange={(event) =>
+                    setValues((current) => ({
+                      ...current,
+                      [field.name]: event.target.value,
+                    }))
+                  }
+                />
+              )}
+            </label>
+          ))}
+
+          <input type="hidden" name="pageId" value={pageId} />
+
+          {errorMessage ? <p className={text.error}>{errorMessage}</p> : null}
+          {successMessage ? (
+            <p className={text.success} aria-live="polite">
+              {successMessage}
+            </p>
+          ) : null}
+
+          <div>
+            <Button
+              type="submit"
+              disabled={isSubmitting}
+              className={preview.button}
+            >
+              {isSubmitting ? 'Sending...' : submitLabel}
+            </Button>
+          </div>
+        </form>
       </div>
-
-      <form className="grid gap-4" onSubmit={handleSubmit}>
-        {fields.map((field) => (
-          <label key={field.name} className="grid gap-2">
-            <span className={cn(text.label, 'tracking-[0.08em]')}>
-              {field.label}
-              {field.required ? ' *' : ''}
-            </span>
-            {field.type === 'message' ? (
-              <Textarea
-                name={field.name}
-                rows={5}
-                required={field.required}
-                value={values[field.name] ?? ''}
-                placeholder={formPlaceholder(field)}
-                onChange={(event) =>
-                  setValues((current) => ({
-                    ...current,
-                    [field.name]: event.target.value,
-                  }))
-                }
-              />
-            ) : field.type === 'select' ? (
-              <Select
-                name={field.name}
-                required={field.required}
-                value={values[field.name] ?? ''}
-                onChange={(event) =>
-                  setValues((current) => ({
-                    ...current,
-                    [field.name]: event.target.value,
-                  }))
-                }
-              >
-                <option value="">Select an option</option>
-                {field.options.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </Select>
-            ) : (
-              <Input
-                name={field.name}
-                type={field.type === 'email' ? 'email' : 'text'}
-                required={field.required}
-                value={values[field.name] ?? ''}
-                placeholder={formPlaceholder(field)}
-                onChange={(event) =>
-                  setValues((current) => ({
-                    ...current,
-                    [field.name]: event.target.value,
-                  }))
-                }
-              />
-            )}
-          </label>
-        ))}
-
-        <input type="hidden" name="pageId" value={pageId} />
-
-        {errorMessage ? <p className={text.error}>{errorMessage}</p> : null}
-        {successMessage ? (
-          <p className={text.success} aria-live="polite">
-            {successMessage}
-          </p>
-        ) : null}
-
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? 'Sending...' : submitLabel}
-        </Button>
-      </form>
     </section>
   )
 }
 
 function ImageTextBlock({
   props,
+  resolveHref,
   linkMode,
   siteSlug,
 }: {
   props: Record<string, unknown>
+  resolveHref: (href: string) => string
   linkMode: 'anchors' | 'published'
   siteSlug?: string
 }) {
@@ -612,43 +765,49 @@ function ImageTextBlock({
   const image = asImageRef(props.image)
   const imagePosition = asText(props.imagePosition) || 'right'
   return (
-    <section className={cn(preview.panel, preview.split)}>
-      <div className={cn(imagePosition === 'left' && 'lg:order-2')}>
-        <h3 className="font-serif text-[1.6rem] font-bold leading-[0.96] text-[var(--site-foreground)]">
-          {asText(props.heading)}
-        </h3>
-        <p className="text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
-          {asText(props.body)}
-        </p>
-        {cta ? (
-          <div className="mt-4">
-            <span className={preview.chip}>
-              {asText(cta.label) || 'Open link'}
-            </span>
-          </div>
-        ) : null}
-      </div>
-      {image ? (
-        <AssetImage
-          image={image}
-          linkMode={linkMode}
-          siteSlug={siteSlug}
-          altFallback={asText(props.heading) || 'Supporting image'}
-          className={cn(
-            'min-h-[220px] w-full rounded-[var(--site-radius-inner)] border border-[var(--site-image-border)] bg-[var(--site-image-background)] object-cover shadow-[var(--site-image-shadow)]',
-            imagePosition === 'left' && 'lg:order-1',
-          )}
-        />
-      ) : (
+    <section className={preview.panel}>
+      <div className={cn(preview.panelInner, preview.split)}>
         <div
           className={cn(
-            preview.imagePlaceholder,
-            imagePosition === 'left' && 'lg:order-1',
+            'grid gap-5',
+            imagePosition === 'left' && 'lg:order-2',
           )}
         >
-          <span>Image slot</span>
+          <h3 className={headingClass}>{asText(props.heading)}</h3>
+          <p className={bodyClass}>{asText(props.body)}</p>
+          {cta ? (
+            <div className="mt-2">
+              <Button asChild variant="plain" className={cn(preview.button, preview.ghostButton)}>
+                <a href={resolveHref(asText(cta.href) || '#')}>
+                  {asText(cta.label) || 'Open link'}
+                </a>
+              </Button>
+            </div>
+          ) : null}
         </div>
-      )}
+        {image ? (
+          <AssetImage
+            image={image}
+            linkMode={linkMode}
+            siteSlug={siteSlug}
+            altFallback={asText(props.heading) || 'Supporting image'}
+            className={cn(
+              'aspect-[4/5] w-full rounded-[var(--site-radius-inner)] object-cover lg:aspect-auto lg:h-full lg:min-h-[380px]',
+              imagePosition === 'left' && 'lg:order-1',
+            )}
+          />
+        ) : (
+          <div
+            className={cn(
+              preview.imagePlaceholder,
+              'min-h-[300px]',
+              imagePosition === 'left' && 'lg:order-1',
+            )}
+          >
+            <span>Image slot</span>
+          </div>
+        )}
+      </div>
     </section>
   )
 }
@@ -667,57 +826,67 @@ function GalleryBlock({
 
   return (
     <section className={preview.panel}>
-      <div className={preview.sectionHeading}>
-        <h3 className="font-serif text-[1.6rem] font-bold leading-[0.96] text-[var(--site-foreground)]">
-          {asText(props.heading)}
-        </h3>
-        {asText(props.intro) ? (
-          <p className="text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
-            {asText(props.intro)}
-          </p>
-        ) : null}
-      </div>
-      <div className={galleryGridClassName(layout)}>
-        {images.map((item, index) => {
-          const value = asObject(item)
-          const title = asText(value?.title) || `Image ${index + 1}`
-          const caption = asText(value?.caption)
-          const image = asImageRef(value?.image)
-          return (
-            <article
-              key={index}
-              className={cn(
-                preview.imagePlaceholderTall,
-                'relative overflow-hidden',
-                layout === 'spotlight' &&
-                  index === 0 &&
-                  'md:col-span-2 xl:col-span-3',
-                layout === 'masonry' && index % 3 === 0 && 'md:min-h-[340px]',
-              )}
-            >
-              {image ? (
-                <AssetImage
-                  image={image}
-                  linkMode={linkMode}
-                  siteSlug={siteSlug}
-                  altFallback={title}
-                  className="absolute inset-0 h-full w-full rounded-[var(--site-radius-inner)] object-cover"
-                />
-              ) : null}
-              <div className="absolute inset-0 rounded-[var(--site-radius-inner)] bg-[linear-gradient(180deg,transparent_0%,color-mix(in_oklch,var(--site-background)_22%,transparent)_54%,color-mix(in_oklch,var(--site-background)_82%,transparent)_100%)]" />
-              <div className="relative grid gap-1 rounded-[calc(var(--site-radius-inner)-8px)] border border-[color-mix(in_oklch,var(--site-border)_80%,var(--site-background))] bg-[var(--site-image-caption-background)] p-4 backdrop-blur-sm">
-                <strong className="font-serif text-[1.08rem] leading-tight text-[var(--site-foreground)]">
-                  {title}
-                </strong>
-                {caption ? (
-                  <p className="m-0 text-sm text-[color-mix(in_oklch,var(--site-foreground)_84%,var(--site-background))]">
-                    {caption}
-                  </p>
-                ) : null}
-              </div>
-            </article>
-          )
-        })}
+      <div className={preview.panelInner}>
+        <div className={preview.sectionHeading}>
+          <h3 className={headingClass}>{asText(props.heading)}</h3>
+          {asText(props.intro) ? (
+            <p className={bodyClass}>{asText(props.intro)}</p>
+          ) : null}
+        </div>
+        <div className={galleryGridClassName(layout)}>
+          {images.map((item, index) => {
+            const value = asObject(item)
+            const title = asText(value?.title) || `Image ${index + 1}`
+            const caption = asText(value?.caption)
+            const image = asImageRef(value?.image)
+            const isSpotlight = layout === 'spotlight' && index === 0
+            return (
+              <figure
+                key={index}
+                className={cn(
+                  'grid gap-3',
+                  isSpotlight && 'md:col-span-2 xl:col-span-3',
+                )}
+              >
+                {image ? (
+                  <AssetImage
+                    image={image}
+                    linkMode={linkMode}
+                    siteSlug={siteSlug}
+                    altFallback={title}
+                    className={cn(
+                      'w-full rounded-[var(--site-radius-inner)] object-cover',
+                      isSpotlight
+                        ? 'aspect-[21/9]'
+                        : layout === 'masonry' && index % 3 === 0
+                          ? 'aspect-[3/4]'
+                          : 'aspect-[4/3]',
+                    )}
+                  />
+                ) : (
+                  <div
+                    className={cn(
+                      preview.imagePlaceholderTall,
+                      isSpotlight && 'min-h-[440px]',
+                    )}
+                  >
+                    <span className="text-sm">{title}</span>
+                  </div>
+                )}
+                <figcaption className="grid gap-1">
+                  <span className="text-sm font-medium text-[var(--site-foreground)]">
+                    {title}
+                  </span>
+                  {caption ? (
+                    <span className="text-sm leading-[1.55] text-[color-mix(in_oklch,var(--site-foreground)_72%,var(--site-background))]">
+                      {caption}
+                    </span>
+                  ) : null}
+                </figcaption>
+              </figure>
+            )
+          })}
+        </div>
       </div>
     </section>
   )
@@ -734,49 +903,47 @@ function TestimonialsBlock({
 }) {
   return (
     <section className={preview.panel}>
-      <div className={preview.sectionHeading}>
-        <h3 className="font-serif text-[1.6rem] font-bold leading-[0.96] text-[var(--site-foreground)]">
-          {asText(props.heading)}
-        </h3>
-        {asText(props.intro) ? (
-          <p className="text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
-            {asText(props.intro)}
-          </p>
-        ) : null}
-      </div>
-      <div className={preview.cardGrid}>
-        {asArray(props.items).map((item, index) => {
-          const value = asObject(item)
-          const avatar = asImageRef(value?.avatar)
-          return (
-            <article key={index} className={preview.quoteCard}>
-              {avatar ? (
-                <div className="mb-1 flex items-center gap-3">
-                  <AssetImage
-                    image={avatar}
-                    linkMode={linkMode}
-                    siteSlug={siteSlug}
-                    altFallback={asText(value?.name) || 'Client portrait'}
-                    className="size-12 rounded-full border border-[var(--site-image-border)] bg-[var(--site-image-background)] object-cover shadow-[var(--site-image-shadow)]"
-                  />
-                </div>
-              ) : null}
-              <p className="m-0 font-serif text-[1.15rem] leading-[1.45] text-[var(--site-foreground)]">
-                "{asText(value?.quote)}"
-              </p>
-              <div>
-                <strong className="block text-[var(--site-foreground)]">
-                  {asText(value?.name)}
-                </strong>
-                {asText(value?.role) ? (
-                  <small className="text-[color-mix(in_oklch,var(--site-foreground)_76%,var(--site-background))]">
-                    {asText(value?.role)}
-                  </small>
-                ) : null}
-              </div>
-            </article>
-          )
-        })}
+      <div className={preview.panelInner}>
+        <div className={preview.sectionHeading}>
+          <h3 className={headingClass}>{asText(props.heading)}</h3>
+          {asText(props.intro) ? (
+            <p className={bodyClass}>{asText(props.intro)}</p>
+          ) : null}
+        </div>
+        <div className="grid gap-x-12 gap-y-10 md:grid-cols-2">
+          {asArray(props.items).map((item, index) => {
+            const value = asObject(item)
+            const avatar = asImageRef(value?.avatar)
+            return (
+              <figure key={index} className={preview.quoteCard}>
+                <blockquote className="m-0 font-serif text-[1.35rem] leading-[1.45] text-[var(--site-foreground)]">
+                  &ldquo;{asText(value?.quote)}&rdquo;
+                </blockquote>
+                <figcaption className="flex items-center gap-3">
+                  {avatar ? (
+                    <AssetImage
+                      image={avatar}
+                      linkMode={linkMode}
+                      siteSlug={siteSlug}
+                      altFallback={asText(value?.name) || 'Client portrait'}
+                      className="size-10 rounded-full object-cover"
+                    />
+                  ) : null}
+                  <div>
+                    <span className="block text-sm font-semibold text-[var(--site-foreground)]">
+                      {asText(value?.name)}
+                    </span>
+                    {asText(value?.role) ? (
+                      <span className="block text-sm text-[color-mix(in_oklch,var(--site-foreground)_68%,var(--site-background))]">
+                        {asText(value?.role)}
+                      </span>
+                    ) : null}
+                  </div>
+                </figcaption>
+              </figure>
+            )
+          })}
+        </div>
       </div>
     </section>
   )
@@ -791,57 +958,59 @@ function PricingPackagesBlock({
 }) {
   return (
     <section className={preview.panel}>
-      <div className={preview.sectionHeading}>
-        <h3 className="font-serif text-[1.6rem] font-bold leading-[0.96] text-[var(--site-foreground)]">
-          {asText(props.heading)}
-        </h3>
-        {asText(props.intro) ? (
-          <p className="text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
-            {asText(props.intro)}
-          </p>
-        ) : null}
-      </div>
-      <div className={preview.pricingGrid}>
-        {asArray(props.plans).map((item, index) => {
-          const value = asObject(item)
-          const cta = asObject(value?.cta)
-          return (
-            <article key={index} className={preview.pricingCard}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h4 className="mb-1 font-serif text-[1.2rem] font-bold leading-[0.96] text-[var(--site-foreground)]">
+      <div className={preview.panelInner}>
+        <div className={preview.sectionHeading}>
+          <h3 className={headingClass}>{asText(props.heading)}</h3>
+          {asText(props.intro) ? (
+            <p className={bodyClass}>{asText(props.intro)}</p>
+          ) : null}
+        </div>
+        <div className={preview.pricingGrid}>
+          {asArray(props.plans).map((item, index) => {
+            const value = asObject(item)
+            const cta = asObject(value?.cta)
+            return (
+              <article key={index} className={preview.pricingCard}>
+                <div className="grid gap-2">
+                  <h4 className="font-serif text-[1.3rem] font-bold leading-[1.1] text-[var(--site-foreground)]">
                     {asText(value?.name)}
                   </h4>
-                  <p className="m-0 text-sm text-[color-mix(in_oklch,var(--site-foreground)_78%,var(--site-background))]">
+                  <p className="m-0 font-serif text-[1.8rem] font-bold leading-none text-[var(--site-foreground)]">
+                    {asText(value?.price)}
+                  </p>
+                  <p className="m-0 text-sm leading-[1.55] text-[color-mix(in_oklch,var(--site-foreground)_78%,var(--site-background))]">
                     {asText(value?.description)}
                   </p>
                 </div>
-                <strong className="rounded-full border border-[var(--site-border)] bg-[var(--site-surface-muted)] px-3 py-2 text-[var(--site-foreground)]">
-                  {asText(value?.price)}
-                </strong>
-              </div>
-              <div className={preview.chipList}>
-                {asArray(value?.features).map((feature, featureIndex) => {
-                  const featureValue = asObject(feature)
-                  return (
-                    <span key={featureIndex} className={preview.chip}>
-                      {asText(featureValue?.text)}
-                    </span>
-                  )
-                })}
-              </div>
-              {cta ? (
-                <div>
-                  <Button asChild variant="plain" className={preview.button}>
-                    <a href={resolveHref(asText(cta.href) || '#')}>
-                      {asText(cta.label) || 'Get in touch'}
-                    </a>
-                  </Button>
-                </div>
-              ) : null}
-            </article>
-          )
-        })}
+                <ul className={preview.chipList}>
+                  {asArray(value?.features).map((feature, featureIndex) => {
+                    const featureValue = asObject(feature)
+                    return (
+                      <li key={featureIndex} className={preview.chip}>
+                        <span
+                          aria-hidden
+                          className="text-[var(--site-primary)]"
+                        >
+                          &#x2014;
+                        </span>
+                        <span>{asText(featureValue?.text)}</span>
+                      </li>
+                    )
+                  })}
+                </ul>
+                {cta ? (
+                  <div className="mt-auto">
+                    <Button asChild variant="plain" className={preview.button}>
+                      <a href={resolveHref(asText(cta.href) || '#')}>
+                        {asText(cta.label) || 'Get in touch'}
+                      </a>
+                    </Button>
+                  </div>
+                ) : null}
+              </article>
+            )
+          })}
+        </div>
       </div>
     </section>
   )
@@ -850,30 +1019,28 @@ function PricingPackagesBlock({
 function FAQBlock({ props }: { props: Record<string, unknown> }) {
   return (
     <section className={preview.panel}>
-      <div className={preview.sectionHeading}>
-        <h3 className="font-serif text-[1.6rem] font-bold leading-[0.96] text-[var(--site-foreground)]">
-          {asText(props.heading)}
-        </h3>
-        {asText(props.intro) ? (
-          <p className="text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
-            {asText(props.intro)}
-          </p>
-        ) : null}
-      </div>
-      <div className={preview.faqList}>
-        {asArray(props.items).map((item, index) => {
-          const value = asObject(item)
-          return (
-            <article key={index} className={preview.faqItem}>
-              <h4 className="mb-2 font-serif text-[1.08rem] font-bold leading-[1.05] text-[var(--site-foreground)]">
-                {asText(value?.question)}
-              </h4>
-              <p className="m-0 text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
-                {asText(value?.answer)}
-              </p>
-            </article>
-          )
-        })}
+      <div className={cn(preview.panelNarrow)}>
+        <div className={preview.sectionHeading}>
+          <h3 className={headingClass}>{asText(props.heading)}</h3>
+          {asText(props.intro) ? (
+            <p className={bodyClass}>{asText(props.intro)}</p>
+          ) : null}
+        </div>
+        <ul className={preview.faqList}>
+          {asArray(props.items).map((item, index) => {
+            const value = asObject(item)
+            return (
+              <li key={index} className={preview.faqItem}>
+                <h4 className="font-serif text-[1.15rem] font-bold leading-[1.25] text-[var(--site-foreground)]">
+                  {asText(value?.question)}
+                </h4>
+                <p className="m-0 leading-[1.65] text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
+                  {asText(value?.answer)}
+                </p>
+              </li>
+            )
+          })}
+        </ul>
       </div>
     </section>
   )
@@ -892,67 +1059,68 @@ function TeamProfileCardsBlock({
 }) {
   return (
     <section className={preview.panel}>
-      <div className={preview.sectionHeading}>
-        <h3 className="font-serif text-[1.6rem] font-bold leading-[0.96] text-[var(--site-foreground)]">
-          {asText(props.heading)}
-        </h3>
-        {asText(props.intro) ? (
-          <p className="text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
-            {asText(props.intro)}
-          </p>
-        ) : null}
-      </div>
-      <div className={preview.cardGrid}>
-        {asArray(props.people).map((item, index) => {
-          const value = asObject(item)
-          const photo = asImageRef(value?.photo)
-          return (
-            <article key={index} className={preview.pricingCard}>
-              <div className="grid gap-4">
+      <div className={preview.panelInner}>
+        <div className={preview.sectionHeading}>
+          <h3 className={headingClass}>{asText(props.heading)}</h3>
+          {asText(props.intro) ? (
+            <p className={bodyClass}>{asText(props.intro)}</p>
+          ) : null}
+        </div>
+        <div className={preview.cardGrid}>
+          {asArray(props.people).map((item, index) => {
+            const value = asObject(item)
+            const photo = asImageRef(value?.photo)
+            return (
+              <div key={index} className="grid gap-4">
                 {photo ? (
                   <AssetImage
                     image={photo}
                     linkMode={linkMode}
                     siteSlug={siteSlug}
                     altFallback={asText(value?.name) || 'Team profile'}
-                    className="min-h-[220px] w-full rounded-[var(--site-radius-inner)] border border-[var(--site-image-border)] bg-[var(--site-image-background)] object-cover shadow-[var(--site-image-shadow)]"
+                    className="aspect-[4/5] w-full rounded-[var(--site-radius-inner)] object-cover"
                   />
                 ) : (
                   <div
-                    className={cn(preview.imagePlaceholder, 'min-h-[160px]')}
+                    className={cn(
+                      preview.imagePlaceholder,
+                      'aspect-[4/5] min-h-0',
+                    )}
                   >
                     <span>{asText(value?.name) || 'Profile image slot'}</span>
                   </div>
                 )}
-                <div>
-                  <h4 className="mb-1 font-serif text-[1.2rem] font-bold leading-[0.96] text-[var(--site-foreground)]">
+                <div className="grid gap-1">
+                  <h4 className="font-serif text-[1.2rem] font-bold leading-[1.15] text-[var(--site-foreground)]">
                     {asText(value?.name)}
                   </h4>
-                  <p className="m-0 text-sm font-semibold text-[var(--site-primary)]">
+                  <p className="m-0 text-sm font-medium uppercase tracking-[0.08em] text-[color-mix(in_oklch,var(--site-foreground)_62%,var(--site-background))]">
                     {asText(value?.role)}
                   </p>
                 </div>
-                <p className="m-0 text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
+                <p className="m-0 leading-[1.6] text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
                   {asText(value?.bio)}
                 </p>
-                <div className={preview.footerLinks}>
-                  {asArray(value?.links).map((link, linkIndex) => {
-                    const linkValue = asObject(link)
-                    return (
-                      <a
-                        key={linkIndex}
-                        className={preview.chip}
-                        href={resolveHref(asText(linkValue?.href) || '#')}
-                      >
-                        {asText(linkValue?.label) || 'Open'}
-                      </a>
-                    )
-                  })}
-                </div>
+                {asArray(value?.links).length > 0 ? (
+                  <div className="flex flex-wrap gap-x-5 gap-y-2">
+                    {asArray(value?.links).map((link, linkIndex) => {
+                      const linkValue = asObject(link)
+                      return (
+                        <a
+                          key={linkIndex}
+                          className={preview.footerLink}
+                          href={resolveHref(asText(linkValue?.href) || '#')}
+                        >
+                          {asText(linkValue?.label) || 'Open'}
+                        </a>
+                      )
+                    })}
+                  </div>
+                ) : null}
               </div>
-            </article>
-          )
-        })}
+            )
+          })}
+        </div>
       </div>
     </section>
   )
@@ -967,61 +1135,64 @@ function FooterBlock({
 }) {
   return (
     <footer className={preview.footerShell}>
-      <div className="grid gap-3">
-        <div>
-          <p className={text.eyebrow}>Footer</p>
-          <h3 className="font-serif text-[1.8rem] font-bold leading-[0.96] text-[var(--site-foreground)]">
+      <div className={preview.footerInner}>
+        <div className="grid gap-3">
+          <h3 className="m-0 font-serif text-[1.4rem] font-bold leading-tight text-[var(--site-foreground)]">
             {asText(props.siteName)}
           </h3>
+          {asText(props.tagline) ? (
+            <p className="m-0 max-w-[44ch] text-[color-mix(in_oklch,var(--site-foreground)_78%,var(--site-background))]">
+              {asText(props.tagline)}
+            </p>
+          ) : null}
+          {asText(props.contactLine) ? (
+            <p className="m-0 text-sm text-[color-mix(in_oklch,var(--site-foreground)_72%,var(--site-background))]">
+              {asText(props.contactLine)}
+            </p>
+          ) : null}
         </div>
-        {asText(props.tagline) ? (
-          <p className="m-0 max-w-[44ch] text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
-            {asText(props.tagline)}
-          </p>
-        ) : null}
-        {asText(props.contactLine) ? (
-          <small className="text-[color-mix(in_oklch,var(--site-foreground)_78%,var(--site-background))]">
-            {asText(props.contactLine)}
-          </small>
-        ) : null}
+        <div className="grid gap-4 md:justify-self-end md:text-right">
+          {asArray(props.navigationLinks).length > 0 ? (
+            <div className={cn(preview.footerLinks, 'md:justify-end')}>
+              {asArray(props.navigationLinks).map((item, index) => {
+                const value = asObject(item)
+                return (
+                  <a
+                    key={index}
+                    className={preview.footerLink}
+                    href={resolveHref(asText(value?.href) || '#')}
+                  >
+                    {asText(value?.label)}
+                  </a>
+                )
+              })}
+            </div>
+          ) : null}
+          {asArray(props.socialLinks).length > 0 ? (
+            <div className={cn(preview.footerLinks, 'md:justify-end')}>
+              {asArray(props.socialLinks).map((item, index) => {
+                const value = asObject(item)
+                return (
+                  <a
+                    key={index}
+                    className={preview.footerLink}
+                    href={resolveHref(asText(value?.href) || '#')}
+                  >
+                    {asText(value?.label)}
+                  </a>
+                )
+              })}
+            </div>
+          ) : null}
+        </div>
       </div>
-      <div className="grid gap-4">
-        <div className={preview.footerLinks}>
-          {asArray(props.navigationLinks).map((item, index) => {
-            const value = asObject(item)
-            return (
-              <a
-                key={index}
-                className={preview.chip}
-                href={resolveHref(asText(value?.href) || '#')}
-              >
-                {asText(value?.label)}
-              </a>
-            )
-          })}
-        </div>
-        {asArray(props.socialLinks).length > 0 ? (
-          <div className={preview.footerLinks}>
-            {asArray(props.socialLinks).map((item, index) => {
-              const value = asObject(item)
-              return (
-                <a
-                  key={index}
-                  className={preview.chip}
-                  href={resolveHref(asText(value?.href) || '#')}
-                >
-                  {asText(value?.label)}
-                </a>
-              )
-            })}
-          </div>
-        ) : null}
-        {asText(props.copyright) ? (
-          <small className="text-[color-mix(in_oklch,var(--site-foreground)_76%,var(--site-background))]">
+      {asText(props.copyright) ? (
+        <div className="mx-auto mt-10 w-full max-w-[1180px] border-t border-[color-mix(in_oklch,var(--site-border)_45%,transparent)] pt-6">
+          <small className="text-xs text-[color-mix(in_oklch,var(--site-foreground)_62%,var(--site-background))]">
             {asText(props.copyright)}
           </small>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </footer>
   )
 }
@@ -1056,6 +1227,17 @@ function asObject(value: unknown) {
     return null
   }
   return value as Record<string, unknown>
+}
+
+function asInt(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.trunc(value)
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
 }
 
 function asFormFields(value: unknown) {
@@ -1133,11 +1315,11 @@ function AssetImage({
 function galleryGridClassName(layout: string) {
   switch (layout) {
     case 'masonry':
-      return 'grid gap-3.5 md:grid-cols-2 xl:grid-cols-3'
+      return 'grid gap-6 md:grid-cols-2 xl:grid-cols-3'
     case 'spotlight':
-      return 'grid gap-3.5 md:grid-cols-2 xl:grid-cols-3'
+      return 'grid gap-6 md:grid-cols-2 xl:grid-cols-3'
     default:
-      return preview.cardGrid
+      return 'grid gap-6 md:grid-cols-2 xl:grid-cols-3'
   }
 }
 

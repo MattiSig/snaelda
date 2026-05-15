@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 
@@ -63,22 +64,57 @@ type generationPlanFeedback struct {
 type generationPlanBuilder func(context.Context, generationInputContext, generationPlanFeedback) (generationPlan, error)
 
 type Service struct {
-	db      DB
-	reader  draftReader
-	writer  draftWriter
-	planner generationPlanBuilder
+	db            DB
+	reader        draftReader
+	writer        draftWriter
+	planner       generationPlanBuilder
+	imagery       *StarterImagery
+	assetImporter AssetImporter
+	logger        *slog.Logger
 }
 
-func NewService(db DB, planner generationPlanBuilder) *Service {
+// ServiceOption customizes the Service constructed by NewService.
+type ServiceOption func(*Service)
+
+// WithStarterImagery attaches a starter imagery provider so generation can
+// fetch backend-owned starter images for image slots.
+func WithStarterImagery(imagery *StarterImagery) ServiceOption {
+	return func(s *Service) {
+		s.imagery = imagery
+	}
+}
+
+// WithAssetImporter wires the asset import target used when starter
+// imagery is enabled. Required for starter imagery to take effect.
+func WithAssetImporter(importer AssetImporter) ServiceOption {
+	return func(s *Service) {
+		s.assetImporter = importer
+	}
+}
+
+// WithLogger sets a structured logger used when starter imagery falls back.
+func WithLogger(logger *slog.Logger) ServiceOption {
+	return func(s *Service) {
+		s.logger = logger
+	}
+}
+
+func NewService(db DB, planner generationPlanBuilder, options ...ServiceOption) *Service {
 	if planner == nil {
 		planner = defaultGenerationPlanBuilder
 	}
-	return &Service{
+	service := &Service{
 		db:      db,
 		reader:  sites.NewPostgresReader(db),
 		writer:  sites.NewPostgresWriter(db),
 		planner: planner,
 	}
+	for _, option := range options {
+		if option != nil {
+			option(service)
+		}
+	}
+	return service
 }
 
 func (s *Service) Generate(ctx context.Context, workspaceID string, userID string, input GenerateInput) (GenerateResult, error) {
@@ -101,6 +137,10 @@ func (s *Service) Generate(ctx context.Context, workspaceID string, userID strin
 	if err != nil {
 		_ = s.failGenerationJob(ctx, jobID, err)
 		return GenerateResult{}, err
+	}
+
+	if enriched, ok := s.enrichDraftWithStarterImagery(ctx, workspaceID, userID, draft, prompt); ok {
+		draft = enriched
 	}
 
 	metadataErr := s.saveSiteMetadata(ctx, workspaceID, draft.Site.ID, prompt, plan, validationRetryCount)
@@ -164,6 +204,10 @@ func (s *Service) RepromptSite(ctx context.Context, workspaceID string, userID s
 	if err := s.writer.SaveDraft(ctx, workspaceID, nextDraft); err != nil {
 		_ = s.failGenerationJob(ctx, jobID, err)
 		return GenerateResult{}, err
+	}
+
+	if enriched, ok := s.enrichDraftWithStarterImagery(ctx, workspaceID, userID, nextDraft, prompt); ok {
+		nextDraft = enriched
 	}
 
 	if err := s.saveSiteMetadata(ctx, workspaceID, siteID, prompt, plan, validationRetryCount); err != nil {
@@ -289,6 +333,103 @@ func (s *Service) UndoLastDraftRevision(ctx context.Context, workspaceID string,
 
 func defaultGenerationPlanBuilder(_ context.Context, input generationInputContext, _ generationPlanFeedback) (generationPlan, error) {
 	return buildGenerationPlan(input.NameHint, input.Prompt), nil
+}
+
+// enrichDraftWithStarterImagery fills empty image slots in the supplied
+// draft using the configured imagery provider, persists the updated draft,
+// and returns the enriched draft. When imagery is not configured or the
+// provider returns no usable images the draft is returned unchanged and the
+// second return value is false.
+func (s *Service) enrichDraftWithStarterImagery(ctx context.Context, workspaceID string, userID string, draft siteconfig.SiteDraft, prompt string) (siteconfig.SiteDraft, bool) {
+	if !s.imagery.available() || s.assetImporter == nil {
+		return draft, false
+	}
+
+	enriched := s.applyStarterImagery(ctx, workspaceID, userID, cloneDraftShallow(draft), prompt)
+	if !draftImageSlotsChanged(draft, enriched) {
+		return draft, false
+	}
+	if err := s.writer.SaveDraft(ctx, workspaceID, enriched); err != nil {
+		if s.logger != nil {
+			s.logger.Warn("persist starter imagery enrichment", "siteId", draft.Site.ID, "error", err.Error())
+		}
+		return draft, false
+	}
+	return enriched, true
+}
+
+func cloneDraftShallow(draft siteconfig.SiteDraft) siteconfig.SiteDraft {
+	clone := draft
+	clone.Pages = make([]siteconfig.PageDraft, len(draft.Pages))
+	for pageIndex, page := range draft.Pages {
+		clonedPage := page
+		clonedPage.Blocks = make([]siteconfig.BlockInstance, len(page.Blocks))
+		for blockIndex, block := range page.Blocks {
+			clonedBlock := block
+			if block.Props != nil {
+				clonedBlock.Props = deepCloneProps(block.Props)
+			}
+			clonedPage.Blocks[blockIndex] = clonedBlock
+		}
+		clone.Pages[pageIndex] = clonedPage
+	}
+	return clone
+}
+
+func deepCloneProps(props map[string]any) map[string]any {
+	clone := make(map[string]any, len(props))
+	for key, value := range props {
+		clone[key] = deepCloneValue(value)
+	}
+	return clone
+}
+
+func deepCloneValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return deepCloneProps(typed)
+	case []any:
+		copyList := make([]any, len(typed))
+		for index, item := range typed {
+			copyList[index] = deepCloneValue(item)
+		}
+		return copyList
+	default:
+		return typed
+	}
+}
+
+func draftImageSlotsChanged(before siteconfig.SiteDraft, after siteconfig.SiteDraft) bool {
+	if len(before.Pages) != len(after.Pages) {
+		return true
+	}
+	for pageIndex, beforePage := range before.Pages {
+		afterPage := after.Pages[pageIndex]
+		if len(beforePage.Blocks) != len(afterPage.Blocks) {
+			return true
+		}
+		for blockIndex, beforeBlock := range beforePage.Blocks {
+			afterBlock := afterPage.Blocks[blockIndex]
+			if propsHaveDifferentAssets(beforeBlock.Props, afterBlock.Props) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func propsHaveDifferentAssets(before map[string]any, after map[string]any) bool {
+	beforeIDs := siteconfig.CollectAssetIDs([]siteconfig.PageDraft{{Blocks: []siteconfig.BlockInstance{{Props: before}}}})
+	afterIDs := siteconfig.CollectAssetIDs([]siteconfig.PageDraft{{Blocks: []siteconfig.BlockInstance{{Props: after}}}})
+	if len(beforeIDs) != len(afterIDs) {
+		return true
+	}
+	for id := range afterIDs {
+		if _, ok := beforeIDs[id]; !ok {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) generateDraftWithRetry(ctx context.Context, workspaceID string, input generationInputContext) (generationPlan, siteconfig.SiteDraft, int, error) {

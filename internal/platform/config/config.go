@@ -17,6 +17,7 @@ type Config struct {
 	PublicBaseDomain      string
 	OpenAIAPIKey          string
 	OpenAIModel           string
+	PexelsAPIKey          string
 	DatabaseURL           string
 	AuthJWTSecret         string
 	AuthIssuer            string
@@ -64,6 +65,7 @@ func Load() (Config, error) {
 		PublicBaseURL:         getEnv("PUBLIC_BASE_URL", "http://localhost:3000"),
 		OpenAIAPIKey:          strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
 		OpenAIModel:           getEnv("OPENAI_MODEL", "gpt-5-mini"),
+		PexelsAPIKey:          strings.TrimSpace(os.Getenv("PEXELS_API_KEY")),
 		DatabaseURL:           os.Getenv("DATABASE_URL"),
 		AuthJWTSecret:         getEnv("AUTH_JWT_SECRET", "development-auth-secret-change-me"),
 		AuthIssuer:            getEnv("AUTH_ISSUER", "snaelda-api"),

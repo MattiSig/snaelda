@@ -89,6 +89,14 @@ type ServiceConfig struct {
 	Renderer         ArtifactRenderer
 	Store            ArtifactStore
 	Cache            publishedSiteCache
+	AssetProvenance  AssetProvenanceLookup
+}
+
+// AssetProvenanceLookup retrieves provenance metadata (provider, author,
+// source url, etc.) for assets referenced in the published snapshot so the
+// publisher can attach attribution credits at publish time.
+type AssetProvenanceLookup interface {
+	LookupCredits(ctx context.Context, assetIDs []string) ([]siteconfig.ImageCredit, error)
 }
 
 type Service struct {
@@ -99,6 +107,7 @@ type Service struct {
 	cache            publishedSiteCache
 	publicBaseURL    string
 	publicBaseDomain string
+	assetProvenance  AssetProvenanceLookup
 }
 
 type siteMetadata struct {
@@ -134,6 +143,7 @@ func NewService(db DB, cfg ServiceConfig) *Service {
 		cache:            cache,
 		publicBaseURL:    strings.TrimSpace(cfg.PublicBaseURL),
 		publicBaseDomain: normalizeHostname(cfg.PublicBaseDomain),
+		assetProvenance:  cfg.AssetProvenance,
 	}
 }
 
@@ -147,6 +157,9 @@ func (s *Service) Publish(ctx context.Context, siteID string, userID string, inp
 	}
 
 	snapshot := buildPublishedSnapshot(draft)
+	if err := s.enrichSnapshotCredits(ctx, &snapshot); err != nil {
+		return PublishResult{}, err
+	}
 	if err := siteconfig.ValidatePublishedSnapshot(snapshot); err != nil {
 		return PublishResult{}, err
 	}
@@ -878,6 +891,52 @@ func ensureSubdomain(ctx context.Context, tx pgx.Tx, siteID string, siteSlug str
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+// enrichSnapshotCredits walks the snapshot pages, resolves provenance for
+// every referenced asset, and writes the credit summary into the snapshot
+// so the public renderer can attribute backend-imported imagery.
+func (s *Service) enrichSnapshotCredits(ctx context.Context, snapshot *siteconfig.PublishedSnapshot) error {
+	if s == nil || s.assetProvenance == nil || snapshot == nil {
+		return nil
+	}
+
+	references := siteconfig.CollectAssetIDs(snapshot.Pages)
+	if len(references) == 0 {
+		snapshot.ImageCredits = nil
+		return nil
+	}
+	assetIDs := make([]string, 0, len(references))
+	for id := range references {
+		assetIDs = append(assetIDs, id)
+	}
+
+	credits, err := s.assetProvenance.LookupCredits(ctx, assetIDs)
+	if err != nil {
+		return fmt.Errorf("lookup asset provenance for snapshot: %w", err)
+	}
+	snapshot.ImageCredits = dedupeImageCredits(credits)
+	return nil
+}
+
+func dedupeImageCredits(credits []siteconfig.ImageCredit) []siteconfig.ImageCredit {
+	if len(credits) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	output := make([]siteconfig.ImageCredit, 0, len(credits))
+	for _, credit := range credits {
+		key := strings.ToLower(strings.TrimSpace(credit.Provider)) + "|" + strings.ToLower(strings.TrimSpace(credit.Author)) + "|" + strings.ToLower(strings.TrimSpace(credit.SourceURL))
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		output = append(output, credit)
+	}
+	if len(output) == 0 {
+		return nil
+	}
+	return output
 }
 
 func buildPublishedSnapshot(draft siteconfig.SiteDraft) siteconfig.PublishedSnapshot {

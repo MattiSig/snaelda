@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -19,7 +20,10 @@ type Handler struct {
 }
 
 type HandlerConfig struct {
-	Planner generationPlanBuilder
+	Planner        generationPlanBuilder
+	StarterImagery *StarterImagery
+	AssetImporter  AssetImporter
+	Logger         *slog.Logger
 }
 
 type Generator interface {
@@ -45,8 +49,18 @@ type repromptRequest struct {
 }
 
 func NewHandler(db DB, cfg HandlerConfig) *Handler {
+	options := []ServiceOption{}
+	if cfg.StarterImagery != nil {
+		options = append(options, WithStarterImagery(cfg.StarterImagery))
+	}
+	if cfg.AssetImporter != nil {
+		options = append(options, WithAssetImporter(cfg.AssetImporter))
+	}
+	if cfg.Logger != nil {
+		options = append(options, WithLogger(cfg.Logger))
+	}
 	return &Handler{
-		service:    NewService(db, cfg.Planner),
+		service:    NewService(db, cfg.Planner, options...),
 		authorizer: authorization.New(db),
 	}
 }

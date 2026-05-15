@@ -22,6 +22,18 @@ type PublishedSnapshot struct {
 	Theme         ThemeConfig      `json:"theme"`
 	Navigation    NavigationConfig `json:"navigation"`
 	Pages         []PageDraft      `json:"pages"`
+	ImageCredits  []ImageCredit    `json:"imageCredits,omitempty"`
+}
+
+// ImageCredit records the attribution data the renderer should surface on
+// public pages when a published version references a backend-imported
+// starter image (Pexels, Unsplash, etc.).
+type ImageCredit struct {
+	Provider  string `json:"provider"`
+	Author    string `json:"author,omitempty"`
+	AuthorURL string `json:"authorUrl,omitempty"`
+	SourceURL string `json:"sourceUrl,omitempty"`
+	License   string `json:"license,omitempty"`
 }
 
 type PublishedSite struct {

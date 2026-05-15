@@ -25,11 +25,9 @@ This file now tracks confirmed remaining work only. Items are sorted by implemen
 - [x] Added `GET /api/sites/{siteId}/analytics?window=7d|30d|all` returning total views, per-page views, and a gap-filled daily trend for authorized site members.
 - [x] Builder now has a dedicated site analytics view at `/app/sites/{siteId}/analytics` with a window selector, total counter, daily trend chart, and per-page breakdown.
 - [x] Navigation is now first-class editable canonical data. The mutator preserves user-edited labels across page renames, `PUT /api/sites/{siteId}/navigation` replaces the whole primary list (internal + external items, validated), and the builder gained a richer navigation editor that lets the user rename items, add external links, reorder, and remove items as a single saved unit.
+- [x] Backend-owned starter imagery via Pexels is live. `PEXELS_API_KEY` configures a new `internal/imagery` package with a Pexels client plus a per-run dedupe wrapper. Generation now derives 1–2 short search queries per empty image slot from page/block content, downloads the chosen Pexels photo, re-hosts the binary through `assets.Service.ImportExternal` as a normal `assets` row with `provenance` JSON, and falls back silently to the original blank-slot path on rate-limit, network failure, or empty results. Publish enriches the snapshot with `imageCredits` derived from asset provenance, and `SiteDraftRenderer` shows a "Imagery from Pexels · Photos by …" credit band on public pages whenever any Pexels asset is used. Builder asset picker and library now surface starter provenance ("Starter from Pexels · Photo by …").
 
 ## Priority Backlog
-
-- [ ] Decide and implement the MVP starter-image policy.
-  Priority decision: either keep uploaded assets plus placeholders/gradients as the only MVP path, or add backend-owned starter-image search with attribution metadata and plan it as core instead of an unowned optional.
 
 - [ ] Add durable spam handling for public forms.
   Confirmed gap: public form rate limiting is process-local and `spam_score` is unused; basic scoring/filtering is still missing.

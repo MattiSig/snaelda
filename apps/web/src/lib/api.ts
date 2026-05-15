@@ -102,6 +102,14 @@ export type SiteDraft = {
   }>;
 };
 
+export type ImageCredit = {
+  provider: string;
+  author?: string;
+  authorUrl?: string;
+  sourceUrl?: string;
+  license?: string;
+};
+
 export type PublishedSnapshot = {
   schemaVersion: string;
   site: {
@@ -116,6 +124,7 @@ export type PublishedSnapshot = {
   theme: SiteDraft["theme"];
   navigation: SiteDraft["navigation"];
   pages: SiteDraft["pages"];
+  imageCredits?: ImageCredit[];
 };
 
 export type SiteVersion = {
@@ -210,6 +219,16 @@ export type ThemeState = {
   options: ThemeEditorCatalog;
 };
 
+export type AssetProvenance = {
+  provider: string;
+  providerId?: string;
+  author?: string;
+  authorUrl?: string;
+  license?: string;
+  query?: string;
+  sourceUrl?: string;
+};
+
 export type AssetMetadata = {
   fileName?: string;
   contentType?: string;
@@ -220,6 +239,7 @@ export type AssetMetadata = {
   etag?: string;
   uploadStatus?: string;
   uploadedAt?: string;
+  provenance?: AssetProvenance;
 };
 
 export type AssetRecord = {

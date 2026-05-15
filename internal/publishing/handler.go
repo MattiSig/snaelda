@@ -49,13 +49,20 @@ type publishRequest struct {
 }
 
 func NewHandler(db DB, appBaseURL string, publicBaseURL string, publicBaseDomain string, artifactsDir string) *Handler {
+	return NewHandlerWithConfig(db, ServiceConfig{
+		AppBaseURL:       appBaseURL,
+		PublicBaseURL:    publicBaseURL,
+		PublicBaseDomain: publicBaseDomain,
+		ArtifactsDir:     artifactsDir,
+	}, appBaseURL, publicBaseURL)
+}
+
+// NewHandlerWithConfig accepts a full ServiceConfig so callers can inject
+// extras such as the asset provenance lookup used for publish-time
+// attribution credits.
+func NewHandlerWithConfig(db DB, cfg ServiceConfig, appBaseURL string, publicBaseURL string) *Handler {
 	return &Handler{
-		service: NewService(db, ServiceConfig{
-			AppBaseURL:       appBaseURL,
-			PublicBaseURL:    publicBaseURL,
-			PublicBaseDomain: publicBaseDomain,
-			ArtifactsDir:     artifactsDir,
-		}),
+		service:       NewService(db, cfg),
 		authorizer:    authorization.New(db),
 		appBaseURL:    strings.TrimRight(appBaseURL, "/"),
 		publicBaseURL: strings.TrimSpace(publicBaseURL),

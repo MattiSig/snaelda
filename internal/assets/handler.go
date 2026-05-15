@@ -60,6 +60,15 @@ func NewHandler(db DB, storage Storage) *Handler {
 	}
 }
 
+// NewHandlerWithService reuses an existing Service so the same instance can
+// back both the public handler and the generation flow's asset import path.
+func NewHandlerWithService(db DB, service AssetService) *Handler {
+	return &Handler{
+		service:    service,
+		authorizer: authorization.New(db),
+	}
+}
+
 func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.Handler) {
 	mux.Handle("POST /api/assets/upload-url", requireUser(http.HandlerFunc(h.createUploadURL)))
 	mux.Handle("POST /api/assets/complete", requireUser(http.HandlerFunc(h.completeUpload)))
