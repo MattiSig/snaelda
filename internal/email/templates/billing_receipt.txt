@@ -1,0 +1,7 @@
+Thanks for your payment to {{.ProductName}}.
+
+Workspace: {{.WorkspaceName}}
+Plan: {{.PlanName}}
+Amount: {{.Amount}} {{.Currency}}
+
+Receipt: {{.ReceiptURL}}

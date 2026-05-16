@@ -1,0 +1,5 @@
+Verify your email for {{.ProductName}}:
+
+{{.MagicURL}}
+
+It expires in {{.ExpiresIn}}.

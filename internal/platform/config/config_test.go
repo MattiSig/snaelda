@@ -59,6 +59,15 @@ func TestLoadUsesLocalStorageDefaults(t *testing.T) {
 	if cfg.PublicBaseDomain != "localhost" {
 		t.Fatalf("expected derived localhost public base domain, got %q", cfg.PublicBaseDomain)
 	}
+	if cfg.EmailTransport != "stdout" {
+		t.Fatalf("expected default email transport, got %q", cfg.EmailTransport)
+	}
+	if cfg.EmailFromAddress != "hi@snaelda.app" {
+		t.Fatalf("expected default email from address, got %q", cfg.EmailFromAddress)
+	}
+	if cfg.MailpitSMTPAddr != "localhost:1025" {
+		t.Fatalf("expected default mailpit smtp addr, got %q", cfg.MailpitSMTPAddr)
+	}
 	if cfg.OpenAIModel != "gpt-5-mini" {
 		t.Fatalf("expected default OpenAI model, got %q", cfg.OpenAIModel)
 	}
@@ -161,6 +170,27 @@ func TestLoadRejectsInvalidPublicBaseURL(t *testing.T) {
 
 	if _, err := Load(); err == nil {
 		t.Fatal("expected invalid public base url error")
+	}
+}
+
+func TestLoadRejectsInvalidEmailTransport(t *testing.T) {
+	t.Setenv("APP_ENV", "test")
+	unsetStorageEnv(t)
+	t.Setenv("EMAIL_TRANSPORT", "carrier-pigeon")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid email transport error")
+	}
+}
+
+func TestLoadRequiresResendAPIKey(t *testing.T) {
+	t.Setenv("APP_ENV", "test")
+	unsetStorageEnv(t)
+	t.Setenv("EMAIL_TRANSPORT", "resend")
+	t.Setenv("RESEND_API_KEY", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected resend api key error")
 	}
 }
 

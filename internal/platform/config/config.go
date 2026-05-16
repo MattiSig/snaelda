@@ -15,6 +15,12 @@ type Config struct {
 	AppBaseURL            string
 	PublicBaseURL         string
 	PublicBaseDomain      string
+	EmailTransport        string
+	EmailFromAddress      string
+	EmailFromName         string
+	EmailReplyTo          string
+	ResendAPIKey          string
+	MailpitSMTPAddr       string
 	OpenAIAPIKey          string
 	OpenAIModel           string
 	PexelsAPIKey          string
@@ -63,6 +69,12 @@ func Load() (Config, error) {
 		HTTPAddr:              getEnv("HTTP_ADDR", ":8080"),
 		AppBaseURL:            getEnv("APP_BASE_URL", "http://localhost:3000"),
 		PublicBaseURL:         getEnv("PUBLIC_BASE_URL", "http://localhost:3000"),
+		EmailTransport:        strings.ToLower(strings.TrimSpace(getEnv("EMAIL_TRANSPORT", "stdout"))),
+		EmailFromAddress:      strings.TrimSpace(getEnv("EMAIL_FROM_ADDRESS", "hi@snaelda.app")),
+		EmailFromName:         strings.TrimSpace(getEnv("EMAIL_FROM_NAME", "Snaelda")),
+		EmailReplyTo:          strings.TrimSpace(os.Getenv("EMAIL_REPLY_TO")),
+		ResendAPIKey:          strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
+		MailpitSMTPAddr:       strings.TrimSpace(getEnv("MAILPIT_SMTP_ADDR", "localhost:1025")),
 		OpenAIAPIKey:          strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
 		OpenAIModel:           getEnv("OPENAI_MODEL", "gpt-5-mini"),
 		PexelsAPIKey:          strings.TrimSpace(os.Getenv("PEXELS_API_KEY")),
@@ -123,6 +135,17 @@ func Load() (Config, error) {
 	}
 	if cfg.PublicBaseDomain == "" {
 		return Config{}, fmt.Errorf("PUBLIC_BASE_DOMAIN is required")
+	}
+	switch cfg.EmailTransport {
+	case "stdout", "mailpit", "resend":
+	default:
+		return Config{}, fmt.Errorf("EMAIL_TRANSPORT must be one of stdout, mailpit, resend")
+	}
+	if cfg.EmailFromAddress == "" {
+		return Config{}, fmt.Errorf("EMAIL_FROM_ADDRESS is required")
+	}
+	if cfg.EmailTransport == "resend" && cfg.ResendAPIKey == "" {
+		return Config{}, fmt.Errorf("RESEND_API_KEY is required when EMAIL_TRANSPORT=resend")
 	}
 	if cfg.OpenAIAPIKey == "" {
 		cfg.OpenAIModel = strings.TrimSpace(cfg.OpenAIModel)

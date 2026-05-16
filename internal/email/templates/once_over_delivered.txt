@@ -1,0 +1,4 @@
+Your {{.ProductName}} once-over is ready.
+
+Workspace: {{.WorkspaceName}}
+View delivery: {{.DeliveryURL}}

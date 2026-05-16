@@ -29,6 +29,12 @@ services:
     volumes:
       - seaweedfs-data:/data
 
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_WEB_PORT:-8025}:8025"
+
 volumes:
   postgres-data:
   seaweedfs-data:

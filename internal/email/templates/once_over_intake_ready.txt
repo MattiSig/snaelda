@@ -1,0 +1,4 @@
+Your {{.ProductName}} once-over intake is ready.
+
+Workspace: {{.WorkspaceName}}
+Open intake: {{.IntakeURL}}

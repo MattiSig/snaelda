@@ -1,0 +1,6 @@
+New form submission for {{.SiteName}}
+
+Page: {{.PageTitle}}
+Received: {{.SubmittedAt}}
+{{range .Fields}}
+- {{.Label}}: {{.Value}}{{end}}

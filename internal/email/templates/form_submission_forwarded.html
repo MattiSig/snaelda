@@ -1,0 +1,9 @@
+<html>
+  <body>
+    <p>New form submission for <strong>{{.SiteName}}</strong>.</p>
+    <p>Page: {{.PageTitle}}<br/>Received: {{.SubmittedAt}}</p>
+    <ul>
+      {{range .Fields}}<li><strong>{{.Label}}:</strong> {{.Value}}</li>{{end}}
+    </ul>
+  </body>
+</html>

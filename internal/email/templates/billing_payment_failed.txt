@@ -1,0 +1,4 @@
+Your {{.ProductName}} payment for {{.WorkspaceName}} could not be processed.
+
+Plan: {{.PlanName}}
+Update billing details: {{.PortalURL}}
