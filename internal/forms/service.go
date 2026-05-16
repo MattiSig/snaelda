@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/mail"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/MattiSig/snaelda/internal/email"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -41,7 +43,11 @@ type DB interface {
 }
 
 type Service struct {
-	db DB
+	db               DB
+	emailSender      email.Sender
+	emailRateLimiter *email.RateLimiter
+	logger           *slog.Logger
+	productName      string
 }
 
 type Submission struct {
@@ -76,12 +82,35 @@ type UpdateSubmissionInput struct {
 type resolvedForm struct {
 	PageID         string
 	BlockID        string
+	SiteName       string
+	PageTitle      string
 	Definition     siteconfig.FormDefinition
 	SuccessMessage string
 }
 
+type ServiceConfig struct {
+	EmailSender      email.Sender
+	EmailRateLimiter *email.RateLimiter
+	Logger           *slog.Logger
+	ProductName      string
+}
+
 func NewService(db DB) *Service {
-	return &Service{db: db}
+	return NewServiceWithConfig(db, ServiceConfig{})
+}
+
+func NewServiceWithConfig(db DB, cfg ServiceConfig) *Service {
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Service{
+		db:               db,
+		emailSender:      cfg.EmailSender,
+		emailRateLimiter: cfg.EmailRateLimiter,
+		logger:           logger,
+		productName:      firstNonEmpty(strings.TrimSpace(cfg.ProductName), "Snaelda"),
+	}
 }
 
 func (s *Service) Submit(ctx context.Context, input SubmitInput) (SubmitResult, error) {
@@ -139,6 +168,8 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (SubmitResult, 
 	`, siteID, form.PageID, blockID, payloadJSON, submission.Status, score, signalsJSON, clientIPHash).Scan(&submission.ID, &submission.CreatedAt); err != nil {
 		return SubmitResult{}, fmt.Errorf("store form submission: %w", err)
 	}
+
+	s.forwardSubmission(ctx, form, submission)
 
 	return SubmitResult{
 		Submission:     submission,
@@ -225,7 +256,7 @@ func (s *Service) resolveForm(ctx context.Context, siteID string, blockID string
 		return resolvedForm{}, ErrSiteNotPublished
 	}
 
-	form, found, err := findFormInPages(snapshot.Pages, blockID)
+	form, found, err := findFormInPages(snapshot.Site.Name, snapshot.Pages, blockID)
 	if err != nil {
 		return resolvedForm{}, err
 	}
@@ -266,7 +297,7 @@ func (s *Service) loadPublishedSnapshot(ctx context.Context, siteID string) (sit
 	return snapshot, true, nil
 }
 
-func findFormInPages(pages []siteconfig.PageDraft, blockID string) (resolvedForm, bool, error) {
+func findFormInPages(siteName string, pages []siteconfig.PageDraft, blockID string) (resolvedForm, bool, error) {
 	for _, page := range pages {
 		for _, block := range page.Blocks {
 			if block.ID != blockID {
@@ -283,6 +314,8 @@ func findFormInPages(pages []siteconfig.PageDraft, blockID string) (resolvedForm
 			return resolvedForm{
 				PageID:         page.ID,
 				BlockID:        block.ID,
+				SiteName:       siteName,
+				PageTitle:      page.Title,
 				Definition:     definition,
 				SuccessMessage: successMessage,
 			}, true, nil
@@ -473,4 +506,52 @@ func firstNonEmpty(value string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func (s *Service) forwardSubmission(ctx context.Context, form resolvedForm, submission Submission) {
+	if submission.Status == "spam" || s.emailSender.Mailer == nil {
+		return
+	}
+
+	destination := strings.TrimSpace(form.Definition.NotificationEmail)
+	if destination == "" {
+		return
+	}
+
+	if s.emailRateLimiter != nil {
+		allowed, err := s.emailRateLimiter.Allow(ctx, destination, "form_submission_forwarded",
+			email.RateLimitRule{Limit: 30, Window: time.Hour},
+		)
+		if err != nil {
+			s.logger.Warn("check form forwarding rate limit failed", "error", err, "siteId", submission.SiteID, "submissionId", submission.ID, "destination", destination)
+			return
+		}
+		if !allowed {
+			s.logger.Warn("form forwarding rate limited", "siteId", submission.SiteID, "submissionId", submission.ID, "destination", destination)
+			return
+		}
+	}
+
+	fields := make([]email.ForwardedField, 0, len(form.Definition.Fields))
+	for _, field := range form.Definition.Fields {
+		value, ok := submission.Payload[field.Name].(string)
+		if !ok || strings.TrimSpace(value) == "" {
+			continue
+		}
+		fields = append(fields, email.ForwardedField{
+			Label: field.Label,
+			Value: value,
+		})
+	}
+
+	_, err := s.emailSender.SendFormSubmissionForwarded(ctx, email.Address{Email: destination}, email.FormSubmissionForwardedTemplateData{
+		ProductName: s.productName,
+		SiteName:    form.SiteName,
+		PageTitle:   form.PageTitle,
+		SubmittedAt: submission.CreatedAt.UTC().Format(time.RFC3339),
+		Fields:      fields,
+	}, "form-submission:"+submission.ID)
+	if err != nil {
+		s.logger.Warn("send form forwarding email failed", "error", err, "siteId", submission.SiteID, "submissionId", submission.ID, "destination", destination)
+	}
 }

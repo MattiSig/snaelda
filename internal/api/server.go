@@ -38,6 +38,7 @@ type Server struct {
 	logger   *slog.Logger
 	database Pinger
 	auth     *auth.Handler
+	mailer   email.Mailer
 }
 
 type Config = config.Config
@@ -94,6 +95,7 @@ func NewServer(cfg ServerConfig) *Server {
 		config:   cfg.Config,
 		logger:   logger,
 		database: cfg.Database,
+		mailer:   mailer,
 		auth: auth.NewHandler(auth.HandlerConfig{
 			Store:           authStore,
 			Tokens:          tokenManager,
@@ -242,13 +244,24 @@ func (s *Server) Handler() http.Handler {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, assets.Module{})
 	}
 	if store, ok := s.database.(forms.DB); ok {
-		forms.NewHandler(store).Mount(mux, s.auth.RequireSession)
+		forms.NewHandlerWithConfig(store, forms.HandlerConfig{
+			EmailSender: email.Sender{
+				Mailer: s.mailer,
+				DefaultFrom: email.Address{
+					Email: s.config.EmailFromAddress,
+					Name:  s.config.EmailFromName,
+				},
+			},
+			EmailRateLimiter: email.NewRateLimiter(store),
+			Logger:           s.logger,
+			ProductName:      "Snaelda",
+		}).Mount(mux, s.auth.RequireSession)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, forms.Module{})
 	}
 	mountAuthenticatedPlaceholderModule(mux, s.auth, billing.Module{})
 
-	return s.cors(s.recover(s.logRequests(s.noCache(s.csrf(mux)))))
+	return s.cors(s.recover(s.logRequests(s.securityHeaders(s.noCache(s.csrf(mux))))))
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
@@ -376,10 +389,27 @@ func (s *Server) csrf(next http.Handler) http.Handler {
 func (s *Server) noCache(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isPrivateAPIRoute(r) {
-			w.Header().Set("Cache-Control", "no-store, private")
+			w.Header().Set("Cache-Control", "private, no-store")
 			w.Header().Set("Pragma", "no-cache")
 			w.Header().Set("Expires", "0")
 		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/healthz" && r.URL.Path != "/readyz" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("Content-Security-Policy", contentSecurityPolicy(r))
+
 		next.ServeHTTP(w, r)
 	})
 }
@@ -416,6 +446,32 @@ func requiresCSRFMitigation(r *http.Request) bool {
 	default:
 		return true
 	}
+}
+
+func contentSecurityPolicy(r *http.Request) string {
+	if isPublicRoute(r) {
+		return strings.Join([]string{
+			"default-src 'self'",
+			"base-uri 'self'",
+			"form-action 'self'",
+			"frame-ancestors 'none'",
+			"img-src 'self' data: https:",
+			"style-src 'self' 'unsafe-inline'",
+			"font-src 'self' data: https:",
+			"connect-src 'self'",
+			"object-src 'none'",
+			"script-src 'none'",
+		}, "; ")
+	}
+
+	return strings.Join([]string{
+		"default-src 'none'",
+		"base-uri 'none'",
+		"frame-ancestors 'none'",
+		"form-action 'none'",
+		"object-src 'none'",
+		"script-src 'none'",
+	}, "; ")
 }
 
 func requestFailureCategory(r *http.Request) string {

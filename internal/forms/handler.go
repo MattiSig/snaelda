@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/MattiSig/snaelda/internal/authorization"
+	"github.com/MattiSig/snaelda/internal/email"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
 )
 
@@ -35,6 +37,13 @@ type Handler struct {
 	limiter    submissionRateLimiter
 }
 
+type HandlerConfig struct {
+	EmailSender      email.Sender
+	EmailRateLimiter *email.RateLimiter
+	Logger           *slog.Logger
+	ProductName      string
+}
+
 type submitFormRequest struct {
 	Payload map[string]any `json:"payload"`
 }
@@ -44,8 +53,17 @@ type updateSubmissionRequest struct {
 }
 
 func NewHandler(db DB) *Handler {
+	return NewHandlerWithConfig(db, HandlerConfig{})
+}
+
+func NewHandlerWithConfig(db DB, cfg HandlerConfig) *Handler {
 	return &Handler{
-		service:    NewService(db),
+		service: NewServiceWithConfig(db, ServiceConfig{
+			EmailSender:      cfg.EmailSender,
+			EmailRateLimiter: cfg.EmailRateLimiter,
+			Logger:           cfg.Logger,
+			ProductName:      cfg.ProductName,
+		}),
 		authorizer: authorization.New(db),
 		limiter:    NewDurableSubmissionRateLimiter(db, 5, 10*time.Minute, nil),
 	}
@@ -224,4 +242,3 @@ func clientIPFromRequest(r *http.Request) string {
 	}
 	return "unknown"
 }
-

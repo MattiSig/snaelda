@@ -36,3 +36,49 @@ func (s Sender) SendMagicLinkVerify(ctx context.Context, to Address, data MagicL
 		Tags:     map[string]string{"template": "magic_link_verify"},
 	})
 }
+
+func (s Sender) SendOnceOverIntakeReady(ctx context.Context, to Address, data OnceOverIntakeReadyTemplateData) (SendResult, error) {
+	subject, textBody, htmlBody, err := RenderOnceOverIntakeReady(data)
+	if err != nil {
+		return SendResult{}, err
+	}
+	return s.Mailer.Send(ctx, Message{
+		To:       []Address{to},
+		From:     s.DefaultFrom,
+		Subject:  subject,
+		TextBody: textBody,
+		HTMLBody: htmlBody,
+		Tags:     map[string]string{"template": "once_over_intake_ready"},
+	})
+}
+
+func (s Sender) SendOnceOverDelivered(ctx context.Context, to Address, data OnceOverDeliveredTemplateData) (SendResult, error) {
+	subject, textBody, htmlBody, err := RenderOnceOverDelivered(data)
+	if err != nil {
+		return SendResult{}, err
+	}
+	return s.Mailer.Send(ctx, Message{
+		To:       []Address{to},
+		From:     s.DefaultFrom,
+		Subject:  subject,
+		TextBody: textBody,
+		HTMLBody: htmlBody,
+		Tags:     map[string]string{"template": "once_over_delivered"},
+	})
+}
+
+func (s Sender) SendFormSubmissionForwarded(ctx context.Context, to Address, data FormSubmissionForwardedTemplateData, idempotencyKey string) (SendResult, error) {
+	subject, textBody, htmlBody, err := RenderFormSubmissionForwarded(data)
+	if err != nil {
+		return SendResult{}, err
+	}
+	return s.Mailer.Send(ctx, Message{
+		To:             []Address{to},
+		From:           s.DefaultFrom,
+		Subject:        subject,
+		TextBody:       textBody,
+		HTMLBody:       htmlBody,
+		Tags:           map[string]string{"template": "form_submission_forwarded"},
+		IdempotencyKey: idempotencyKey,
+	})
+}

@@ -32,6 +32,7 @@ This file tracks confirmed remaining work only, sorted by implementation priorit
 - [x] Preview tokens (hashed, TTL, revocable) and public render via hostname or slug are implemented.
 - [x] Block CRUD (DnD + button reorder), page CRUD with SEO and nav inclusion, draft/preview/publish with versions/rollback, and site- and page-level reprompt with undo are all shipped.
 - [x] CSRF middleware, HttpOnly+Secure+SameSite=Lax cookies, durable per-IP rate limiting, URL allowlist, and plain-text-rejects-HTML are all in place.
+- [x] Public + authenticated response-header policy is now enforced in `internal/api/server.go` with explicit CSP, HSTS, frame/type/referrer headers, and `Cache-Control: private, no-store`; spec 12 includes the header table and the public CSP allows published inline styles.
 
 ## Priority Backlog
 
@@ -44,8 +45,9 @@ This file tracks confirmed remaining work only, sorted by implementation priorit
 
 - [ ] Finish the remaining transactional-email integrations from [specs/18-transactional-email.md](./specs/18-transactional-email.md) (cross-cutting blocker for specs 16 and 15).
   - [x] Auth slice is shipped: `POST /api/auth/magic-link` and `GET /api/auth/magic`, `magic_links` persistence, `internal/email/` transport wiring, and generic anti-enumeration responses for login requests.
-  - [ ] Hook the existing `internal/email/` package into billing, Once-over, and form-forwarding call sites; enforce Spec 18 per-purpose send windows on those endpoints.
-  - [ ] Acceptance follow-up: magic-link login is wired through the shared mailer; remaining verification work is Mailpit/Resend round-trips for auth plus the non-auth email call sites above.
+  - [x] Public contact-form forwarding is now wired through the shared mailer with `form_submission_forwarded`, durable destination-address rate limiting (`30/hour`), idempotency keyed on submission ID, and non-blocking failure handling so stored submissions still succeed if email delivery fails.
+  - [ ] Hook the existing `internal/email/` package into billing and Once-over call sites; enforce Spec 18 send windows on those endpoints.
+  - [ ] Acceptance follow-up: magic-link login and form forwarding are wired through the shared mailer; remaining verification work is Mailpit/Resend round-trips plus the future billing / Once-over call sites above.
 
 - [ ] Implement the `billing` module against Stripe (spec 15). MVP release blocker.
   - Replace the 8-line stub `internal/billing/module.go` mounted at `internal/api/server.go:215`; add Stripe Go SDK to `go.mod`.
@@ -62,12 +64,6 @@ This file tracks confirmed remaining work only, sorted by implementation priorit
   - Frontend: domain attach UI under `apps/web/src/routes/app.sites.$siteId.settings.*` with DNS instructions and verification state.
   - Gating: behind paid entitlement from the billing module.
   - Acceptance: paid user attaches `example.com`, verifies via DNS TXT, TLS issues automatically, public render serves on that host.
-
-- [ ] Apply public + authenticated response-header policy (spec 12 extension).
-  - Backend: add a security-header middleware in `internal/api/server.go` setting `Content-Security-Policy`, `Strict-Transport-Security`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` on public render and authenticated routes; ensure authenticated responses set `Cache-Control: private, no-store` consistently.
-  - Update `specs/12-security-validation-and-caching.md` with the explicit header table.
-  - Verify CSP allows the `dangerouslySetInnerHTML` use at `apps/web/src/components/PublishedSitePage.tsx:42`.
-  - Acceptance: securityheaders.com / observatory passes; published pages still render including inline styles required by theme tokens.
 
 - [ ] Productionize publish-artifact pipeline (spec 09, spec 16).
   - Replace the `npm run --workspace @snaelda/web render:artifacts` shell-out at `internal/publishing/artifacts.go:80-89` with an in-process renderer or a long-lived render worker; document the chosen path.

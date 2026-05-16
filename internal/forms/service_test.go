@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/MattiSig/snaelda/internal/email"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -16,7 +18,7 @@ import (
 func TestSubmitStoresValidatedSubmissionFromPublishedSnapshot(t *testing.T) {
 	store := newFakeFormStore()
 	store.siteSnapshots["site-1"] = publishedContactSnapshot()
-	service := Service{db: store}
+	service := NewService(store)
 
 	result, err := service.Submit(context.Background(), SubmitInput{
 		SiteID:  "site-1",
@@ -46,7 +48,7 @@ func TestSubmitStoresValidatedSubmissionFromPublishedSnapshot(t *testing.T) {
 }
 
 func TestSubmitRejectsUnpublishedSite(t *testing.T) {
-	service := Service{db: newFakeFormStore()}
+	service := NewService(newFakeFormStore())
 
 	_, err := service.Submit(context.Background(), SubmitInput{
 		SiteID:  "site-1",
@@ -73,7 +75,7 @@ func TestSubmitRejectsBlockOnlyInDraft(t *testing.T) {
 		Blocks: []siteconfig.BlockInstance{},
 	}}
 	store.siteSnapshots["site-1"] = snapshot
-	service := Service{db: store}
+	service := NewService(store)
 
 	_, err := service.Submit(context.Background(), SubmitInput{
 		SiteID:  "site-1",
@@ -92,7 +94,7 @@ func TestSubmitRejectsBlockOnlyInDraft(t *testing.T) {
 func TestSubmitMarksHoneypotSubmissionsAsSpam(t *testing.T) {
 	store := newFakeFormStore()
 	store.siteSnapshots["site-1"] = publishedContactSnapshot()
-	service := Service{db: store}
+	service := NewService(store)
 
 	result, err := service.Submit(context.Background(), SubmitInput{
 		SiteID:  "site-1",
@@ -124,7 +126,7 @@ func TestSubmitMarksHoneypotSubmissionsAsSpam(t *testing.T) {
 func TestSubmitRecordsSpamScoreOnAcceptedSubmission(t *testing.T) {
 	store := newFakeFormStore()
 	store.siteSnapshots["site-1"] = publishedContactSnapshot()
-	service := Service{db: store}
+	service := NewService(store)
 
 	result, err := service.Submit(context.Background(), SubmitInput{
 		SiteID:  "site-1",
@@ -153,7 +155,7 @@ func TestSubmitRecordsSpamScoreOnAcceptedSubmission(t *testing.T) {
 func TestSubmitRejectsInvalidPayload(t *testing.T) {
 	store := newFakeFormStore()
 	store.siteSnapshots["site-1"] = publishedContactSnapshot()
-	service := Service{db: store}
+	service := NewService(store)
 
 	_, err := service.Submit(context.Background(), SubmitInput{
 		SiteID:  "site-1",
@@ -170,6 +172,110 @@ func TestSubmitRejectsInvalidPayload(t *testing.T) {
 	}
 	if !validationErr.Has("invalid_email") || !validationErr.Has("required") {
 		t.Fatalf("expected invalid email and missing required issues, got %#v", validationErr.Issues)
+	}
+}
+
+func TestSubmitForwardsCleanSubmissionToNotificationEmail(t *testing.T) {
+	store := newFakeFormStore()
+	store.siteSnapshots["site-1"] = publishedContactSnapshotWithNotification("owner@example.com")
+	mailer := email.NewMemoryMailer()
+	service := NewServiceWithConfig(store, ServiceConfig{
+		EmailSender: email.Sender{
+			Mailer:      mailer,
+			DefaultFrom: email.Address{Email: "hi@snaelda.app", Name: "Snaelda"},
+		},
+		EmailRateLimiter: email.NewRateLimiter(store),
+		Logger:           slog.New(slog.DiscardHandler),
+		ProductName:      "Snaelda",
+	})
+
+	_, err := service.Submit(context.Background(), SubmitInput{
+		SiteID:  "site-1",
+		BlockID: "block-contact",
+		Payload: map[string]any{
+			"name":    "Ada Lovelace",
+			"email":   "ada@example.com",
+			"message": "Looking for a calmer studio site.",
+		},
+	})
+	if err != nil {
+		t.Fatalf("submit form: %v", err)
+	}
+
+	if len(mailer.Messages) != 1 {
+		t.Fatalf("expected one forwarded email, got %d", len(mailer.Messages))
+	}
+	if got := mailer.Messages[0].To[0].Email; got != "owner@example.com" {
+		t.Fatalf("expected owner destination, got %q", got)
+	}
+	if got := mailer.Messages[0].IdempotencyKey; got != "form-submission:submission-1" {
+		t.Fatalf("expected idempotency key, got %q", got)
+	}
+	if got := mailer.Messages[0].Tags["template"]; got != "form_submission_forwarded" {
+		t.Fatalf("expected forwarded template tag, got %#v", mailer.Messages[0].Tags)
+	}
+}
+
+func TestSubmitDoesNotForwardSpamSubmission(t *testing.T) {
+	store := newFakeFormStore()
+	store.siteSnapshots["site-1"] = publishedContactSnapshotWithNotification("owner@example.com")
+	mailer := email.NewMemoryMailer()
+	service := NewServiceWithConfig(store, ServiceConfig{
+		EmailSender: email.Sender{
+			Mailer:      mailer,
+			DefaultFrom: email.Address{Email: "hi@snaelda.app", Name: "Snaelda"},
+		},
+		Logger:      slog.New(slog.DiscardHandler),
+		ProductName: "Snaelda",
+	})
+
+	result, err := service.Submit(context.Background(), SubmitInput{
+		SiteID:  "site-1",
+		BlockID: "block-contact",
+		Payload: map[string]any{
+			"name":    "Ada Lovelace",
+			"email":   "ada@example.com",
+			"message": "Hello",
+			"hp_url":  "http://spammer.example",
+		},
+	})
+	if err != nil {
+		t.Fatalf("submit form: %v", err)
+	}
+	if result.Submission.Status != "spam" {
+		t.Fatalf("expected spam status, got %q", result.Submission.Status)
+	}
+	if len(mailer.Messages) != 0 {
+		t.Fatalf("expected no forwarded email for spam, got %d", len(mailer.Messages))
+	}
+}
+
+func TestSubmitKeepsWorkingWhenForwardingMailerFails(t *testing.T) {
+	store := newFakeFormStore()
+	store.siteSnapshots["site-1"] = publishedContactSnapshotWithNotification("owner@example.com")
+	service := NewServiceWithConfig(store, ServiceConfig{
+		EmailSender: email.Sender{
+			Mailer:      failingMailer{err: email.ErrProviderUnavailable},
+			DefaultFrom: email.Address{Email: "hi@snaelda.app", Name: "Snaelda"},
+		},
+		Logger:      slog.New(slog.DiscardHandler),
+		ProductName: "Snaelda",
+	})
+
+	result, err := service.Submit(context.Background(), SubmitInput{
+		SiteID:  "site-1",
+		BlockID: "block-contact",
+		Payload: map[string]any{
+			"name":    "Ada Lovelace",
+			"email":   "ada@example.com",
+			"message": "Looking for a calmer studio site.",
+		},
+	})
+	if err != nil {
+		t.Fatalf("submit form: %v", err)
+	}
+	if result.Submission.ID == "" {
+		t.Fatal("expected submission to persist despite forwarding failure")
 	}
 }
 
@@ -232,12 +338,27 @@ func TestUpdateStatusPersistsSubmissionStatus(t *testing.T) {
 type fakeFormStore struct {
 	siteSnapshots map[string]siteconfig.PublishedSnapshot
 	submissions   []storedSubmission
+	emailAttempts []emailAttempt
 	nextID        int
 }
 
 type storedSubmission struct {
 	Submission
 	clientIPHash string
+}
+
+type emailAttempt struct {
+	addressHash string
+	purpose     string
+	occurredAt  time.Time
+}
+
+type failingMailer struct {
+	err error
+}
+
+func (m failingMailer) Send(context.Context, email.Message) (email.SendResult, error) {
+	return email.SendResult{}, m.err
 }
 
 func newFakeFormStore() *fakeFormStore {
@@ -339,12 +460,30 @@ func (s *fakeFormStore) QueryRow(_ context.Context, sql string, args ...any) pgx
 			}}
 		}
 		return fakeFormRow{err: pgx.ErrNoRows}
+	case strings.Contains(sql, "from email_send_attempts"):
+		hash := args[0].(string)
+		purpose := args[1].(string)
+		cutoff := args[2].(time.Time)
+		attempts := 0
+		for _, attempt := range s.emailAttempts {
+			if attempt.addressHash == hash && attempt.purpose == purpose && attempt.occurredAt.After(cutoff) {
+				attempts++
+			}
+		}
+		return fakeFormRow{values: []any{attempts}}
 	default:
 		return fakeFormRow{err: errors.New("unexpected query")}
 	}
 }
 
-func (s *fakeFormStore) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
+func (s *fakeFormStore) Exec(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	if strings.Contains(sql, "insert into email_send_attempts") {
+		s.emailAttempts = append(s.emailAttempts, emailAttempt{
+			addressHash: args[0].(string),
+			purpose:     args[1].(string),
+			occurredAt:  args[2].(time.Time),
+		})
+	}
 	return pgconn.CommandTag{}, nil
 }
 
@@ -488,6 +627,15 @@ func draftWithContactForm() siteconfig.SiteDraft {
 }
 
 func publishedContactSnapshot() siteconfig.PublishedSnapshot {
+	return publishedContactSnapshotWithNotification("")
+}
+
+func publishedContactSnapshotWithNotification(notificationEmail string) siteconfig.PublishedSnapshot {
+	draft := draftWithContactForm()
+	if notificationEmail != "" {
+		draft.Pages[0].Blocks[0].Props["notificationEmail"] = notificationEmail
+	}
+
 	return siteconfig.PublishedSnapshot{
 		SchemaVersion: siteconfig.SiteConfigVersionV1,
 		Site: siteconfig.PublishedSite{
@@ -501,6 +649,6 @@ func publishedContactSnapshot() siteconfig.PublishedSnapshot {
 		},
 		Theme:      siteconfig.ThemePreset(siteconfig.ThemePaletteMeanerDark),
 		Navigation: siteconfig.NavigationConfig{Primary: []siteconfig.NavigationItem{{Label: "Home", PageID: "page-home"}}},
-		Pages:      draftWithContactForm().Pages,
+		Pages:      draft.Pages,
 	}
 }

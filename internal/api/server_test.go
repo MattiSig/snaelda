@@ -315,8 +315,61 @@ func TestPrivateReadRoutesDisableCaching(t *testing.T) {
 
 	server.Handler().ServeHTTP(res, req)
 
-	if got := res.Header().Get("Cache-Control"); got != "no-store, private" {
+	if got := res.Header().Get("Cache-Control"); got != "private, no-store" {
 		t.Fatalf("expected no-store cache policy, got %q", got)
+	}
+}
+
+func TestPrivateRoutesApplySecurityHeaders(t *testing.T) {
+	server := NewServer(ServerConfig{
+		Config: config.Config{
+			AppEnv:     "test",
+			HTTPAddr:   "127.0.0.1:0",
+			AppBaseURL: "http://localhost:3000",
+		},
+		Logger: slog.New(slog.DiscardHandler),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	req.AddCookie(validAuthCookie(t))
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+
+	if got := res.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Fatalf("expected x-frame-options deny, got %q", got)
+	}
+	if got := res.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("expected nosniff, got %q", got)
+	}
+	if got := res.Header().Get("Strict-Transport-Security"); got != "max-age=31536000; includeSubDomains" {
+		t.Fatalf("expected hsts header, got %q", got)
+	}
+	if got := res.Header().Get("Content-Security-Policy"); !strings.Contains(got, "default-src 'none'") {
+		t.Fatalf("expected private api csp, got %q", got)
+	}
+}
+
+func TestPublicRoutesApplyRenderableSecurityHeaders(t *testing.T) {
+	server := NewServer(ServerConfig{
+		Config: config.Config{
+			AppEnv:     "test",
+			HTTPAddr:   "127.0.0.1:0",
+			AppBaseURL: "http://localhost:3000",
+		},
+		Logger: slog.New(slog.DiscardHandler),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/public/render?hostname=missing.localhost", nil)
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+
+	if got := res.Header().Get("Content-Security-Policy"); !strings.Contains(got, "style-src 'self' 'unsafe-inline'") {
+		t.Fatalf("expected public csp to allow inline styles, got %q", got)
+	}
+	if got := res.Header().Get("Content-Security-Policy"); !strings.Contains(got, "script-src 'none'") {
+		t.Fatalf("expected public csp to block scripts, got %q", got)
 	}
 }
 
