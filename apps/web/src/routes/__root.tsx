@@ -56,7 +56,10 @@ function RootDocument({ children }: { children: ReactNode }) {
     select: (state) => state.location.pathname,
   });
   const forceDark =
-    pathname === "/" || pathname === "/login" || pathname.startsWith("/app");
+    pathname === "/" ||
+    pathname === "/login" ||
+    pathname.startsWith("/app") ||
+    pathname.startsWith("/restore");
 
   useEffect(() => {
     const storedMode = window.localStorage.getItem("snaelda-color-mode");
@@ -104,6 +107,7 @@ function RootDocument({ children }: { children: ReactNode }) {
           <header className={topbar.shell}>
             <Link
               to="/"
+              search={{ restore: '' }}
               className={topbar.brand}
               activeOptions={{ exact: true }}
             >
@@ -118,7 +122,6 @@ function RootDocument({ children }: { children: ReactNode }) {
               <nav aria-label="Primary navigation" className={topbar.nav}>
                 <Link
                   to="/login"
-                  search={{ redirect: "/app" }}
                   className={topbar.link}
                 >
                   Sign in

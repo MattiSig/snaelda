@@ -142,12 +142,23 @@ type previewTokenResponse struct {
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
-	user, ok := auth.UserFromContext(r.Context())
+	session, ok := auth.SessionFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
+		if user, userOK := auth.UserFromContext(r.Context()); userOK {
+			session = auth.Session{
+				Kind:          auth.SessionKindAuthenticated,
+				WorkspaceID:   user.WorkspaceID,
+				WorkspaceRole: user.WorkspaceRole,
+				User:          &user,
+			}
+			ok = true
+		}
+	}
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "a session is required")
 		return
 	}
-	workspaceID := user.WorkspaceID
+	workspaceID := session.WorkspaceID
 	if workspaceID == "" {
 		writeError(w, http.StatusForbidden, "forbidden", "workspace access is required")
 		return
@@ -161,6 +172,9 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list_sites_failed", "could not list sites")
 		return
+	}
+	if sites == nil {
+		sites = []Summary{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"sites": sites})
 }
@@ -198,12 +212,23 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
-	user, ok := auth.UserFromContext(r.Context())
+	session, ok := auth.SessionFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
+		if user, userOK := auth.UserFromContext(r.Context()); userOK {
+			session = auth.Session{
+				Kind:          auth.SessionKindAuthenticated,
+				WorkspaceID:   user.WorkspaceID,
+				WorkspaceRole: user.WorkspaceRole,
+				User:          &user,
+			}
+			ok = true
+		}
+	}
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "a session is required")
 		return
 	}
-	workspaceID := user.WorkspaceID
+	workspaceID := session.WorkspaceID
 	if workspaceID == "" {
 		writeError(w, http.StatusForbidden, "forbidden", "workspace access is required")
 		return
@@ -606,13 +631,28 @@ func (h *Handler) issuePreviewToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, ok := auth.UserFromContext(r.Context())
+	session, ok := auth.SessionFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
+		if user, userOK := auth.UserFromContext(r.Context()); userOK {
+			session = auth.Session{
+				Kind:          auth.SessionKindAuthenticated,
+				WorkspaceID:   user.WorkspaceID,
+				WorkspaceRole: user.WorkspaceRole,
+				User:          &user,
+			}
+			ok = true
+		}
+	}
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "a session is required")
 		return
 	}
 
-	previewToken, err := h.previews.Issue(r.Context(), siteID, user.ID)
+	userID := ""
+	if session.User != nil {
+		userID = session.User.ID
+	}
+	previewToken, err := h.previews.Issue(r.Context(), siteID, userID)
 	if err != nil {
 		writeSiteError(w, err)
 		return

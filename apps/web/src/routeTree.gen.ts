@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
+import { Route as RestoreRouteImport } from './routes/restore'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as SplatRouteImport } from './routes/$'
@@ -35,6 +36,11 @@ const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
 const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
   id: '/robots.txt',
   path: '/robots.txt',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RestoreRoute = RestoreRouteImport.update({
+  id: '/restore',
+  path: '/restore',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -120,6 +126,7 @@ export interface FileRoutesByFullPath {
   '/$': typeof SplatRoute
   '/app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/restore': typeof RestoreRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/preview/$token': typeof PreviewTokenRoute
@@ -138,6 +145,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
   '/login': typeof LoginRoute
+  '/restore': typeof RestoreRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/preview/$token': typeof PreviewTokenRoute
@@ -156,6 +164,7 @@ export interface FileRoutesById {
   '/$': typeof SplatRoute
   '/app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/restore': typeof RestoreRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/preview/$token': typeof PreviewTokenRoute
@@ -177,6 +186,7 @@ export interface FileRouteTypes {
     | '/$'
     | '/app'
     | '/login'
+    | '/restore'
     | '/robots.txt'
     | '/sitemap.xml'
     | '/preview/$token'
@@ -195,6 +205,7 @@ export interface FileRouteTypes {
     | '/'
     | '/$'
     | '/login'
+    | '/restore'
     | '/robots.txt'
     | '/sitemap.xml'
     | '/preview/$token'
@@ -212,6 +223,7 @@ export interface FileRouteTypes {
     | '/$'
     | '/app'
     | '/login'
+    | '/restore'
     | '/robots.txt'
     | '/sitemap.xml'
     | '/preview/$token'
@@ -232,6 +244,7 @@ export interface RootRouteChildren {
   SplatRoute: typeof SplatRoute
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
+  RestoreRoute: typeof RestoreRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   PreviewTokenRoute: typeof PreviewTokenRoute
@@ -252,6 +265,13 @@ declare module '@tanstack/react-router' {
       path: '/robots.txt'
       fullPath: '/robots.txt'
       preLoaderRoute: typeof RobotsDottxtRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/restore': {
+      id: '/restore'
+      path: '/restore'
+      fullPath: '/restore'
+      preLoaderRoute: typeof RestoreRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -413,6 +433,7 @@ const rootRouteChildren: RootRouteChildren = {
   SplatRoute: SplatRoute,
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
+  RestoreRoute: RestoreRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   PreviewTokenRoute: PreviewTokenRoute,

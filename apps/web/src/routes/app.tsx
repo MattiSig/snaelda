@@ -4,16 +4,21 @@ import {
   createFileRoute,
   useRouterState,
 } from '@tanstack/react-router'
-import { BarChart3, ChevronDown, Eye, Home, LogOut, PencilLine } from 'lucide-react'
+import { BarChart3, ChevronDown, Eye, Home, Link2, LogOut, PencilLine, ShieldCheck } from 'lucide-react'
+import type { FormEvent } from 'react'
 import { useEffect, useRef, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   APIError,
-  type AuthSession,
+  claimWorkspace,
+  createRecoveryKey,
+  type BuilderSession,
   getCurrentSession,
   getSiteDraft,
   logout,
 } from '@/lib/api'
-import { actions, layout, paddedPanel, text } from '@/lib/styles'
+import { actions, form, layout, paddedPanel, text } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/app')({
@@ -22,10 +27,17 @@ export const Route = createFileRoute('/app')({
 
 function AppLayout() {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
-  const [session, setSession] = useState<AuthSession | null>(null)
+  const [session, setSession] = useState<BuilderSession | null>(null)
   const [errorMessage, setErrorMessage] = useState('')
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false)
   const [currentSiteName, setCurrentSiteName] = useState('')
+  const [isSavePanelOpen, setIsSavePanelOpen] = useState(false)
+  const [claimEmail, setClaimEmail] = useState('')
+  const [claimName, setClaimName] = useState('')
+  const [saveStatusMessage, setSaveStatusMessage] = useState('')
+  const [saveErrorMessage, setSaveErrorMessage] = useState('')
+  const [recoveryURL, setRecoveryURL] = useState('')
+  const [isSavingWorkspace, setIsSavingWorkspace] = useState(false)
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
   const siteMatch = pathname.match(/^\/app\/sites\/([^/]+)/)
   const siteId = siteMatch?.[1] ?? ''
@@ -40,12 +52,13 @@ function AppLayout() {
       .then((nextSession) => {
         if (isMounted) {
           setSession(nextSession)
+          setClaimEmail(nextSession.user?.email ?? '')
+          setClaimName(nextSession.user?.name ?? '')
         }
       })
       .catch((error) => {
         if (error instanceof APIError && error.status === 401) {
-          const redirect = encodeURIComponent(window.location.pathname)
-          window.location.href = `/login?redirect=${redirect}`
+          window.location.href = '/'
           return
         }
         if (isMounted) {
@@ -56,7 +69,7 @@ function AppLayout() {
     return () => {
       isMounted = false
     }
-  }, [])
+  }, [pathname])
 
   useEffect(() => {
     let isMounted = true
@@ -109,7 +122,45 @@ function AppLayout() {
   async function handleSignOut() {
     setIsAccountMenuOpen(false)
     await logout()
-    window.location.href = '/login'
+    window.location.href = '/'
+  }
+
+  async function handleClaimWorkspace(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setIsSavingWorkspace(true)
+    setSaveErrorMessage('')
+    setSaveStatusMessage('')
+
+    try {
+      const response = await claimWorkspace(claimEmail, claimName)
+      setSession(response.session)
+      setRecoveryURL('')
+      setSaveStatusMessage('Magic link sent. Open the email to finish securing this workspace.')
+    } catch (error) {
+      setSaveErrorMessage(
+        error instanceof APIError ? error.message : 'Could not save this workspace',
+      )
+    } finally {
+      setIsSavingWorkspace(false)
+    }
+  }
+
+  async function handleCreateRecoveryKey() {
+    setIsSavingWorkspace(true)
+    setSaveErrorMessage('')
+    setSaveStatusMessage('')
+
+    try {
+      const response = await createRecoveryKey()
+      setRecoveryURL(response.recoveryUrl)
+      setSaveStatusMessage('Recovery link ready. Treat it like a password.')
+    } catch (error) {
+      setSaveErrorMessage(
+        error instanceof APIError ? error.message : 'Could not create a recovery link',
+      )
+    } finally {
+      setIsSavingWorkspace(false)
+    }
   }
 
   if (errorMessage) {
@@ -136,7 +187,8 @@ function AppLayout() {
     )
   }
 
-  const displayName = session.user.name || session.user.email
+  const displayName =
+    session.user?.name || session.user?.email || (session.kind === 'trial' ? 'Trial workspace' : 'Snaelda')
   const visibleSiteName = siteId ? currentSiteName : ''
   const initials = displayName
     .split(/\s+/)
@@ -144,6 +196,11 @@ function AppLayout() {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? '')
     .join('')
+  const isTrialWorkspace = Boolean(session.trialStartedAt && !session.subscriptionLive)
+  const isClaimed = Boolean(session.claimedByUserId)
+  const trialEndLabel = session.trialExpiresAt
+    ? new Date(session.trialExpiresAt).toLocaleDateString()
+    : ''
 
   return (
     <>
@@ -152,6 +209,7 @@ function AppLayout() {
           <div className="flex min-w-0 items-center gap-3">
             <Link
               to="/"
+              search={{ restore: '' }}
               className="flex size-10 items-center justify-center rounded-[12px] border border-border bg-[var(--surface-2)]"
               aria-label="Go to home"
             >
@@ -236,7 +294,7 @@ function AppLayout() {
                     {displayName}
                   </span>
                   <span className="truncate text-xs uppercase tracking-[0.08em] text-[var(--paper-muted)]">
-                    {session.user.workspaceRole}
+                    {session.user?.workspaceRole || session.workspaceRole}
                   </span>
                 </span>
                 <ChevronDown className="size-4 text-[var(--paper-muted)]" />
@@ -252,7 +310,7 @@ function AppLayout() {
                       {displayName}
                     </p>
                     <p className="mt-1 truncate text-xs text-[var(--paper-muted)]">
-                      {session.user.email}
+                      {session.user?.email || 'Cookie-bound builder session'}
                     </p>
                   </div>
                   <button
@@ -270,6 +328,85 @@ function AppLayout() {
           </div>
         </div>
       </header>
+
+      {isTrialWorkspace ? (
+        <section className="border-b border-border bg-[linear-gradient(90deg,color-mix(in_oklch,var(--thread-mauve)_18%,var(--surface-1)),color-mix(in_oklch,var(--thread-teal)_12%,var(--surface-1)))]">
+          <div className="mx-auto grid w-full max-w-[1760px] gap-4 px-5 py-4 max-sm:px-3.5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="grid gap-1">
+                <p className="inline-flex items-center gap-2 text-sm font-bold text-[var(--paper)]">
+                  <ShieldCheck className="size-4 text-[var(--thread-gold)]" />
+                  Trial workspace
+                </p>
+                <p className="text-sm text-[var(--paper-muted)]">
+                  {session.promptsUsed ?? 0}/{session.promptLimit ?? 25} prompts used
+                  {trialEndLabel ? `, edits pause after ${trialEndLabel}` : ''}.
+                  {!isClaimed ? ' Claim this workspace before you publish.' : ' Your workspace is now linked to email login.'}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-[var(--border)] bg-transparent hover:border-[var(--thread-gold)] hover:bg-transparent hover:text-[var(--thread-gold)]"
+                  onClick={() => setIsSavePanelOpen((value) => !value)}
+                >
+                  Save your workspace
+                </Button>
+                {!isClaimed ? (
+                  <Button type="button" variant="plain" onClick={handleCreateRecoveryKey} disabled={isSavingWorkspace}>
+                    <Link2 className="size-4" />
+                    Copy workspace link
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+
+            {isSavePanelOpen || recoveryURL ? (
+              <div className="grid gap-4 rounded-[14px] border border-border bg-[color-mix(in_oklch,var(--surface-1)_92%,black)] p-4">
+                {!isClaimed ? (
+                  <form className={cn(form.grid, 'gap-3')} onSubmit={handleClaimWorkspace}>
+                    <div className="grid gap-1">
+                      <p className={text.label}>Add an email</p>
+                      <p className="text-sm text-[var(--paper-muted)]">
+                        We’ll send a magic link so this workspace is recoverable from any browser.
+                      </p>
+                    </div>
+                    <Input
+                      type="email"
+                      value={claimEmail}
+                      onChange={(event) => setClaimEmail(event.target.value)}
+                      placeholder="you@example.com"
+                      required
+                    />
+                    <Input
+                      type="text"
+                      value={claimName}
+                      onChange={(event) => setClaimName(event.target.value)}
+                      placeholder="Your name"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="submit" disabled={isSavingWorkspace}>
+                        {isSavingWorkspace ? 'Sending magic link...' : 'Send magic link'}
+                      </Button>
+                    </div>
+                  </form>
+                ) : null}
+
+                {recoveryURL ? (
+                  <div className="grid gap-2">
+                    <p className={text.label}>Workspace link</p>
+                    <Input readOnly value={recoveryURL} />
+                  </div>
+                ) : null}
+
+                {saveErrorMessage ? <p className={text.error}>{saveErrorMessage}</p> : null}
+                {saveStatusMessage ? <p className={text.success}>{saveStatusMessage}</p> : null}
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       <main className={layout.appShell}>
         <section className={layout.appContent}>

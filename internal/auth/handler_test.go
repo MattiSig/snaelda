@@ -18,36 +18,69 @@ type fakeAuthStore struct {
 	sessionID              string
 	refreshHash            string
 	revoked                bool
+	guestSessionID         string
+	guestWorkspaceID       string
+	guestCookieHash        string
+	guestRecoveryHash      string
+	guestPromptsUsed       int
+	guestTrialStartedAt    time.Time
+	guestTrialExpiresAt    time.Time
+	guestHasRecoveryKey    bool
 }
 
 func (s *fakeAuthStore) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
 	switch {
 	case strings.Contains(sql, "insert into users"):
-		return fakeRow{values: []string{"user-1", args[0].(string), args[1].(string)}}
+		return fakeRow{values: []any{"user-1", args[0].(string), args[1].(string)}}
 	case strings.Contains(sql, "insert into auth_sessions"):
 		s.sessionID = "session-1"
 		s.refreshHash = args[1].(string)
-		return fakeRow{values: []string{s.sessionID}}
+		return fakeRow{values: []any{s.sessionID}}
 	case strings.Contains(sql, "from auth_sessions s"):
 		if !s.revoked && args[0].(string) == s.refreshHash {
-			return fakeRow{values: []string{s.sessionID, "user-1", "demo@snaelda.local", "Demo User", "workspace-1", "owner"}}
+			return fakeRow{values: []any{s.sessionID, "user-1", "demo@snaelda.local", "Demo User", "workspace-1", "owner"}}
 		}
 		return fakeRow{err: pgx.ErrNoRows}
 	case strings.Contains(sql, "from auth_sessions"):
 		if !s.revoked && args[0].(string) == s.sessionID && args[1].(string) == "user-1" {
-			return fakeRow{values: []string{s.sessionID}}
+			return fakeRow{values: []any{s.sessionID}}
 		}
 		return fakeRow{err: pgx.ErrNoRows}
 	case strings.Contains(sql, "from workspaces"):
 		return fakeRow{err: pgx.ErrNoRows}
 	case strings.Contains(sql, "insert into workspaces"):
-		return fakeRow{values: []string{"workspace-1"}}
+		return fakeRow{values: []any{"workspace-1"}}
+	case strings.Contains(sql, "from guest_sessions gs"):
+		hash := args[0].(string)
+		if hash != s.guestCookieHash && hash != s.guestRecoveryHash {
+			return fakeRow{err: pgx.ErrNoRows}
+		}
+		return fakeRow{values: []any{
+			s.guestSessionID,
+			s.guestWorkspaceID,
+			s.guestPromptsUsed,
+			s.guestTrialStartedAt,
+			s.guestTrialExpiresAt,
+			nil,
+			"",
+			s.guestHasRecoveryKey,
+			"",
+			"",
+			"",
+		}}
 	default:
 		return fakeRow{err: pgx.ErrNoRows}
 	}
 }
 
 func (s *fakeAuthStore) Exec(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	if strings.Contains(sql, "set cookie_token_hash") {
+		if args[1].(string) == s.guestSessionID {
+			s.guestCookieHash = args[0].(string)
+			return pgconn.NewCommandTag("UPDATE 1"), nil
+		}
+		return pgconn.NewCommandTag("UPDATE 0"), nil
+	}
 	if strings.Contains(sql, "set refresh_token_hash") {
 		if !s.revoked && args[1].(string) == s.sessionID && args[2].(string) == s.refreshHash {
 			s.refreshHash = args[0].(string)
@@ -72,7 +105,7 @@ func (s *fakeAuthStore) Exec(_ context.Context, sql string, args ...any) (pgconn
 }
 
 type fakeRow struct {
-	values []string
+	values []any
 	err    error
 }
 
@@ -81,8 +114,29 @@ func (r fakeRow) Scan(dest ...any) error {
 		return r.err
 	}
 	for index, value := range r.values {
-		target := dest[index].(*string)
-		*target = value
+		switch target := dest[index].(type) {
+		case *string:
+			if value == nil {
+				*target = ""
+				continue
+			}
+			*target = value.(string)
+		case *int:
+			*target = value.(int)
+		case *bool:
+			*target = value.(bool)
+		case *time.Time:
+			*target = value.(time.Time)
+		case **time.Time:
+			if value == nil {
+				*target = nil
+				continue
+			}
+			t := value.(time.Time)
+			*target = &t
+		default:
+			return pgx.ErrNoRows
+		}
 	}
 	return nil
 }
@@ -257,6 +311,60 @@ func TestRequireUserRejectsMissingCookie(t *testing.T) {
 
 	if res.Code != http.StatusUnauthorized {
 		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, res.Code)
+	}
+}
+
+func TestRestoreSessionRotatesGuestCookieAndAllowsSessionAccess(t *testing.T) {
+	trialStartedAt := time.Now().UTC().Add(-time.Hour)
+	store := &fakeAuthStore{
+		guestSessionID:      "guest-session-1",
+		guestWorkspaceID:    "workspace-guest-1",
+		guestRecoveryHash:   tokenHash("restore-key"),
+		guestPromptsUsed:    3,
+		guestTrialStartedAt: trialStartedAt,
+		guestTrialExpiresAt: trialStartedAt.Add(4 * 24 * time.Hour),
+		guestHasRecoveryKey: true,
+	}
+	handler := NewHandler(HandlerConfig{
+		Store:  store,
+		Tokens: newHandlerTestTokenManager(t),
+	})
+
+	restoreReq := httptest.NewRequest(http.MethodPost, "/api/sessions/restore", strings.NewReader(`{"key":"restore-key"}`))
+	restoreRes := httptest.NewRecorder()
+
+	handler.restoreSession(restoreRes, restoreReq)
+
+	if restoreRes.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, restoreRes.Code)
+	}
+	guestCookie := cookieNamed(t, restoreRes.Result().Cookies(), GuestSessionCookieName)
+	if guestCookie.Value == "restore-key" {
+		t.Fatal("expected restore flow to issue a fresh guest cookie token")
+	}
+	if tokenHash(guestCookie.Value) != store.guestCookieHash {
+		t.Fatal("expected restore flow to persist the rotated guest cookie token")
+	}
+
+	protected := handler.RequireSession(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		session, ok := SessionFromContext(r.Context())
+		if !ok {
+			t.Fatal("expected session in context")
+		}
+		if session.WorkspaceID != "workspace-guest-1" {
+			t.Fatalf("expected restored workspace, got %q", session.WorkspaceID)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	protectedReq := httptest.NewRequest(http.MethodGet, "/api/sessions/me", nil)
+	protectedReq.AddCookie(guestCookie)
+	protectedRes := httptest.NewRecorder()
+
+	protected.ServeHTTP(protectedRes, protectedReq)
+
+	if protectedRes.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, protectedRes.Code)
 	}
 }
 

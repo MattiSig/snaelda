@@ -92,16 +92,21 @@ func (h *Handler) createUploadURL(w http.ResponseWriter, r *http.Request) {
 		writeAuthorizationError(w, err)
 		return
 	}
-	user, ok := auth.UserFromContext(r.Context())
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
-		return
+	session, _ := auth.SessionFromContext(r.Context())
+	if session.User == nil {
+		if user, ok := auth.UserFromContext(r.Context()); ok {
+			session.User = &user
+		}
+	}
+	userID := ""
+	if session.User != nil {
+		userID = session.User.ID
 	}
 
 	result, err := h.service.CreateUpload(r.Context(), CreateUploadInput{
 		WorkspaceID: scope.WorkspaceID,
 		SiteID:      scope.SiteID,
-		UserID:      user.ID,
+		UserID:      userID,
 		Kind:        strings.TrimSpace(payload.Kind),
 		FileName:    strings.TrimSpace(payload.FileName),
 		ContentType: strings.TrimSpace(payload.ContentType),

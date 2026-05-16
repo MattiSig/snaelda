@@ -510,7 +510,9 @@ func validSnapshotWithContact() siteconfig.PublishedSnapshot {
 
 func TestWritePublishErrorFallsBackToInternalServerError(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	writePublishError(recorder, errors.New("boom"))
+	handler := &Handler{}
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/test/publish", nil)
+	handler.writePublishError(recorder, req, errors.New("boom"))
 	if recorder.Code != http.StatusInternalServerError {
 		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, recorder.Code)
 	}

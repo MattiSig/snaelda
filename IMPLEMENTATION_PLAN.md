@@ -1,6 +1,6 @@
 # Implementation Plan
 
-This file now tracks confirmed remaining work only. Items are sorted by implementation priority, and stale backlog entries that are already present in the codebase have been removed from the open list.
+This file tracks confirmed remaining work only, sorted by implementation priority. The MVP shape is: anonymous prompt → generated site → editable draft → published hosted subdomain, with optional account claim and Stripe billing. The trial→claim→billing tri-block is the current release blocker.
 
 ## Recently Confirmed Complete
 
@@ -11,60 +11,121 @@ This file now tracks confirmed remaining work only. Items are sorted by implemen
 - [x] Page-level SEO editing plus publish-time `sitemap.xml`, `robots.txt`, canonical metadata, and basic social metadata exist.
 - [x] Refresh-token rotation is server-side and hashed; publish/rollback cache invalidation already exists.
 - [x] Added [specs/16-runtime-lifecycles-and-analytics.md](./specs/16-runtime-lifecycles-and-analytics.md) to define public visibility rules, domain/runtime semantics, and MVP analytics scope that were previously only implied.
-- [x] Public page reads now resolve from stored published artifacts plus `manifest.json` metadata instead of rebuilding from `site_versions.snapshot`, and public `/public/{slug}` routes no longer carry internal publish framing.
-- [x] Publish now validates artifact completeness before promoting a version live, including page HTML, crawl files, theme CSS, and artifact manifest metadata.
-- [x] Hosted public URLs now use an explicit deployment contract via `PUBLIC_BASE_URL` and `PUBLIC_BASE_DOMAIN`, so publish-time hostnames, canonical URLs, sitemap entries, and builder live links no longer assume `{slug}.localhost` or `/public/{slug}` as the production shape.
-- [x] `internal/domains` is now a real authenticated module with a site-domain read API, exposing hosted-domain state from `site_domains` instead of remaining placeholder-only.
-- [x] The builder publish panel now surfaces the actual hosted live URL and opens the live hostname directly instead of treating the internal `/public/{slug}` route as the primary customer-facing address.
-- [x] Generation now supports a provider-backed structured-output planner through OpenAI when configured, while keeping deterministic fallback behavior for local and unconfigured environments.
-- [x] Generation metadata writes and generation-job completion are now mandatory success conditions rather than best-effort side effects.
-- [x] Theme regeneration is now a first-class authenticated API plus builder action via `POST /api/sites/:siteId/theme/regenerate`.
-- [x] Public form submission now resolves strictly against the active published version's snapshot; unpublished sites and draft-only blocks are rejected at the public submit endpoint.
-- [x] Public asset delivery now requires the asset to be referenced by the active published version, and supports both the `siteSlug` path and the hostname-based hosted-public resolution flow (`GET /api/public/assets/{assetId}`).
-- [x] Published public page resolution now records non-blocking views into `page_view_daily`, filtering empty/bot user agents and known health-check paths via `analytics.CountableRequest`.
-- [x] Added `GET /api/sites/{siteId}/analytics?window=7d|30d|all` returning total views, per-page views, and a gap-filled daily trend for authorized site members.
-- [x] Builder now has a dedicated site analytics view at `/app/sites/{siteId}/analytics` with a window selector, total counter, daily trend chart, and per-page breakdown.
-- [x] Navigation is now first-class editable canonical data. The mutator preserves user-edited labels across page renames, `PUT /api/sites/{siteId}/navigation` replaces the whole primary list (internal + external items, validated), and the builder gained a richer navigation editor that lets the user rename items, add external links, reorder, and remove items as a single saved unit.
-- [x] Backend-owned starter imagery via Pexels is live. `PEXELS_API_KEY` configures a new `internal/imagery` package with a Pexels client plus a per-run dedupe wrapper. Generation now derives 1–2 short search queries per empty image slot from page/block content, downloads the chosen Pexels photo, re-hosts the binary through `assets.Service.ImportExternal` as a normal `assets` row with `provenance` JSON, and falls back silently to the original blank-slot path on rate-limit, network failure, or empty results. Publish enriches the snapshot with `imageCredits` derived from asset provenance, and `SiteDraftRenderer` shows a "Imagery from Pexels · Photos by …" credit band on public pages whenever any Pexels asset is used. Builder asset picker and library now surface starter provenance ("Starter from Pexels · Photo by …").
-- [x] Durable spam handling for public forms. Public form submit now derives a deterministic spam score from a server-side honeypot (`hp_*` payload keys), excessive link counts, embedded `<script>`/`<a>` markup, all-caps long messages, repeated-character runs, mixed Cyrillic/Latin scripts, and a spam-keyword list. Scores ≥ 1.0 are stored as `status='spam'` with the signal list in `form_submissions.spam_signals`. Rate limiting moved from a process-local map to a durable `form_submission_attempts` table keyed on (site_id, block_id, client_ip_hash) so the 5-per-10-minute limit survives restarts and works across replicas. The public renderer now ships an off-screen honeypot field. Schema additions: `form_submissions.client_ip_hash`, `form_submissions.spam_signals`, the new `form_submission_attempts` table, and indexes; see `internal/platform/database/migrations/000006_form_spam_handling.sql`.
-- [x] Authoring-lifecycle audit events are now recorded alongside the existing publish/rollback events. The sites mutator records `site.create`, `site.delete`, `page.delete`, and `block.delete`; the generation service records `site.generate`, `site.reprompt`, and `page.reprompt`; the asset service records `asset.upload` (on successful complete) and `asset.delete`. The API server wires a shared `audit.Recorder` into the sites, generation, and assets modules, and audit recording failures are logged best-effort so they never block the underlying authoring operation.
+- [x] Public page reads now resolve from stored published artifacts plus `manifest.json` metadata; public `/public/{slug}` routes no longer carry internal publish framing.
+- [x] Publish validates artifact completeness before promoting a version live (page HTML, crawl files, theme CSS, manifest metadata).
+- [x] Hosted public URLs use an explicit deployment contract via `PUBLIC_BASE_URL` and `PUBLIC_BASE_DOMAIN`.
+- [x] `internal/domains` exposes a real read API for hosted-domain state from `site_domains`.
+- [x] Builder publish panel surfaces the actual hosted live URL.
+- [x] Generation supports a provider-backed structured-output planner through OpenAI with deterministic fallback, plus a separate theme regeneration model call.
+- [x] Generation metadata writes and job completion are mandatory success conditions.
+- [x] Theme regeneration shipped as `POST /api/sites/:siteId/theme/regenerate`.
+- [x] Public form submission resolves strictly against the active published version's snapshot.
+- [x] Public asset delivery requires the asset to be referenced by the active published version, with hostname-based resolution.
+- [x] Public page resolution records non-blocking views into `page_view_daily` via `analytics.CountableRequest`, filtering bots/health checks.
+- [x] `GET /api/sites/{siteId}/analytics?window=7d|30d|all` plus builder analytics view at `/app/sites/{siteId}/analytics` with totals, daily trend, per-page breakdown.
+- [x] Transactional email foundation exists in `internal/email/` with stdout, Mailpit SMTP, Resend HTTP, and memory transports; paired text/HTML templates; `email_send_attempts` migration; config/env validation; and Mailpit in local compose.
+- [x] Navigation is first-class editable canonical data. `PUT /api/sites/{siteId}/navigation` replaces the whole primary list; builder editor supports rename, external links, reorder, remove.
+- [x] Backend-owned starter imagery via Pexels in `internal/imagery`, re-hosted as `assets` rows with `provenance`, surfaced as credits on public pages and starter labels in the asset picker.
+- [x] Durable spam handling for public forms: honeypot, deterministic spam scoring, `form_submission_attempts` table for cross-replica rate limiting, see `internal/platform/database/migrations/000006_form_spam_handling.sql`.
+- [x] Authoring-lifecycle audit events for `site.create`, `site.delete`, `page.delete`, `block.delete`, `site.generate`, `site.reprompt`, `page.reprompt`, `asset.upload`, `asset.delete`.
+- [x] All 12 spec-required block types implemented in `internal/siteconfig/blocks.go` with registry contract test, per-block prop schemas, plain-text enforcement, URL allowlist, and form-field allowlist.
+- [x] Preview tokens (hashed, TTL, revocable) and public render via hostname or slug are implemented.
+- [x] Block CRUD (DnD + button reorder), page CRUD with SEO and nav inclusion, draft/preview/publish with versions/rollback, and site- and page-level reprompt with undo are all shipped.
+- [x] CSRF middleware, HttpOnly+Secure+SameSite=Lax cookies, durable per-IP rate limiting, URL allowlist, and plain-text-rejects-HTML are all in place.
 
 ## Priority Backlog
 
-- [ ] Reconcile the implemented API surface with the spec and remove placeholder module drift.
-  Confirmed gap: `workspaces`, `pages`, `blocks`, and `billing` are still mounted as placeholder modules even though some page/block behavior is implemented through `sites`; either the API/resource boundaries need to be implemented as separate modules or the specs need to be narrowed to the consolidated shape.
+- [x] Build the guest-trial / claim subsystem end to end (specs 17, 06, 10, 12). MVP release blocker.
+  - Shipped DB support for `guest_sessions`, `magic_links`, and guest-authored preview tokens in `internal/platform/database/migrations/000008_guest_sessions_magic_links.sql` and `000009_preview_tokens_guest_authors.sql`.
+  - Shipped unified session resolution in `internal/auth/` for authenticated and cookie-bound trial workspaces, including prompt-cap gating, post-expiry write blocking, publish-before-claim blocking, recovery-link issuance/restoration, and magic-link claim/login flows.
+  - Shipped `POST /api/sessions/anonymous`, `GET /api/sessions/me`, `POST /api/sessions/restore`, `POST|DELETE /api/sessions/recovery-key`, `POST /api/sessions/claim`, `POST /api/auth/magic-link`, and `GET /api/auth/magic`.
+  - Replaced the old dev-login flow with an anonymous homepage prompt, trial-state builder banner, save-workspace UI, login-by-email, and dedicated `/restore` recovery route in `apps/web/src/routes/`.
+  - Verified anonymous prompt → builder → preview, browser restore → `/app`, and direct endpoint restore + claim behavior.
 
-- [ ] Add a real `workspaces` module or explicitly reduce workspace scope in the product/API spec.
-  Confirmed gap: users get a default workspace, but there is no non-placeholder workspace API surface.
+- [ ] Finish the remaining transactional-email integrations from [specs/18-transactional-email.md](./specs/18-transactional-email.md) (cross-cutting blocker for specs 16 and 15).
+  - [x] Auth slice is shipped: `POST /api/auth/magic-link` and `GET /api/auth/magic`, `magic_links` persistence, `internal/email/` transport wiring, and generic anti-enumeration responses for login requests.
+  - [ ] Hook the existing `internal/email/` package into billing, Once-over, and form-forwarding call sites; enforce Spec 18 per-purpose send windows on those endpoints.
+  - [ ] Acceptance follow-up: magic-link login is wired through the shared mailer; remaining verification work is Mailpit/Resend round-trips for auth plus the non-auth email call sites above.
 
-- [ ] Decide whether `pages` and `blocks` should remain consolidated under `sites` or become first-class modules, then align the code and specs.
-  Confirmed gap: route shapes differ materially from the current API spec.
+- [ ] Implement the `billing` module against Stripe (spec 15). MVP release blocker.
+  - Replace the 8-line stub `internal/billing/module.go` mounted at `internal/api/server.go:215`; add Stripe Go SDK to `go.mod`.
+  - DB: add `billing_customers`, `billing_subscriptions`, `billing_entitlements`, `billing_events` migrations; add `plan`, `stripe_customer_id`, `trial_*` columns on `workspaces`; document in `specs/06-database-design.md`.
+  - Endpoints: `POST /api/billing/checkout`, `POST /api/billing/portal`, `GET /api/billing/entitlements`, `POST /api/billing/webhook` (with signature verification + idempotency keyed on `billing_events`).
+  - Wire env: read `STRIPE_*` and `BILLING_*` in `internal/platform/config/`; remove unused declarations in `.env.example` if not used.
+  - Gating: enforce entitlements in `internal/generation/handler.go`, `internal/publishing/handler.go`, `internal/assets/`, `internal/domains/`.
+  - Frontend: billing routes under `apps/web/src/routes/app.billing.*`, blocked-action UI in builder, plan badge in shell.
+  - Acceptance: claim → checkout → webhook → entitlement flip → publish unblocked; portal cancel → entitlement downgrade.
 
-- [ ] Harden rich-text and embed safety on every remaining content surface.
-  Confirmed gap: link validation exists, but the remaining sanitization/allowlist posture still needs explicit implementation verification for all editable text and future embed fields.
+- [ ] Custom-domain attach/verify/TLS (spec 13, spec 10).
+  - Backend: extend `internal/domains/` `DomainService` beyond `List` with create/verify/delete; write/read the existing `verification_token` column; integrate certmagic or autocert (decide in spec 13 update).
+  - Endpoints: `POST/PATCH/DELETE /api/sites/:siteId/domains` in `internal/api/server.go`.
+  - Frontend: domain attach UI under `apps/web/src/routes/app.sites.$siteId.settings.*` with DNS instructions and verification state.
+  - Gating: behind paid entitlement from the billing module.
+  - Acceptance: paid user attaches `example.com`, verifies via DNS TXT, TLS issues automatically, public render serves on that host.
 
-- [ ] Add production-style end-to-end coverage for create, generate, edit, preview, publish, public render, rollback, assets, preview-token sharing, and contact submissions.
-  Confirmed gap: there are strong unit/integration tests and manual Playwright verification notes, but not a consolidated automated end-to-end suite covering the main product loop.
+- [ ] Apply public + authenticated response-header policy (spec 12 extension).
+  - Backend: add a security-header middleware in `internal/api/server.go` setting `Content-Security-Policy`, `Strict-Transport-Security`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` on public render and authenticated routes; ensure authenticated responses set `Cache-Control: private, no-store` consistently.
+  - Update `specs/12-security-validation-and-caching.md` with the explicit header table.
+  - Verify CSP allows the `dangerouslySetInnerHTML` use at `apps/web/src/components/PublishedSitePage.tsx:42`.
+  - Acceptance: securityheaders.com / observatory passes; published pages still render including inline styles required by theme tokens.
 
-- [ ] Add regression coverage for invalid generation output, invalid publish artifacts, draft-only public form access, draft-only public asset access, broken navigation, missing homepage, duplicate slugs, and page-limit edges.
+- [ ] Productionize publish-artifact pipeline (spec 09, spec 16).
+  - Replace the `npm run --workspace @snaelda/web render:artifacts` shell-out at `internal/publishing/artifacts.go:80-89` with an in-process renderer or a long-lived render worker; document the chosen path.
+  - Move artifact storage from `internal/publishing/local_artifacts.go` to S3/SeaweedFS (assets already use this); update read path in public resolution.
+  - Fix `Cache-Control` on artifact responses so CDN caching works (replace `no-store` with versioned immutable caching + purge on publish).
+  - Fire cache invalidation on domain activate/deactivate and hostname change, not only on publish/rollback.
+  - Replace the in-memory render cache with a shared cache (Redis or per-artifact CDN purge) so replicas stay coherent.
+  - Acceptance: a multi-replica deploy serves published artifacts from object storage with correct cache semantics and invalidation.
 
-- [ ] Run a production-like smoke test against a real model-backed generation flow and a real hosted subdomain shape.
-  This should happen only after the artifact-serving and hosted-domain work above is complete.
+- [ ] End-to-end test coverage + CI workflow.
+  - Add `.github/workflows/ci.yml` running `make test`, `npm run web:lint`, `npm run web:build`, and a Playwright suite.
+  - Add Playwright suite under `apps/web/tests/e2e/` covering: anonymous prompt → generate → edit → preview → claim → publish → public render → rollback → assets upload → preview-token share → contact submission.
+  - Backfill Go tests for `internal/platform/database`, `cmd/api`, `cmd/db`.
+  - Backfill web tests for `apps/web/src/lib/api.ts`, `lib/assets.ts`, `lib/public-site.ts`, `lib/styles.ts`, `lib/utils.ts`, and `components/PuckBuilder.tsx`.
+  - Add a Stripe webhook test using `stripe fixtures` or a fake transport; add an OpenAI schema contract test in `internal/generation/`.
 
-- [ ] Finalize production deployment topology and configuration.
-  Remaining work includes the public base domain contract, wildcard subdomains, object storage for published artifacts, environment configuration, and the choice of public-site runtime.
+- [ ] Remove dead placeholders and prune unused env (specs 02, 10).
+  - Delete `internal/pages` and `internal/blocks` packages and their `mountAuthenticatedPlaceholderModule` lines in `internal/api/server.go`. (`internal/workspaces` stays as the intentional tenancy placeholder.)
+  - Remove unused env declarations from `.env.example`: `UNSPLASH_*`, `RAILWAY_API_TOKEN`, `API_BASE_URL` (and any `STRIPE_*`/`BILLING_*` not actually read after the billing module lands).
+  - Spec 10 update: document the in-code-but-spec-missing routes (`POST /api/sites`, navigation PUT/reorder, preview-token routes, public asset routes, public render/artifact routes).
 
-- [ ] Implement Stripe billing once the product loop above is stable.
-  Remaining work includes billing tables, config, Checkout, Customer Portal, webhooks, local entitlements, builder billing UI, blocked-action states, and enforcement before generation/publish/custom domains/assets.
+- [ ] Backfill spec 06 and fix schema drift.
+  - Add `auth_sessions`, `draft_revisions`, `site_preview_tokens`, `form_submission_attempts` table definitions to `specs/06-database-design.md`.
+  - Make `page_view_daily.page_id` nullable in a new migration to match spec semantics for site-wide totals; or update spec 06 to match the current NOT NULL, whichever is correct for the analytics UX.
+  - Add the new `guest_sessions`, `magic_links`, and `billing_*` tables once the corresponding modules ship.
+
+- [ ] Builder polish.
+  - Wire `updateAsset` / `deleteAsset` (already in `apps/web/src/lib/api.ts`) into the asset library UI with rename + delete affordances.
+  - Add a dedicated submissions route under `apps/web/src/routes/app.sites.$siteId.submissions.tsx` with a list/detail two-pane, delete endpoint + UI, and a CSV export action; backend additions in `internal/forms/`.
+  - Add "set homepage" UI under page settings, persisting via a sites mutator update; today the homepage is fixed at site creation.
+  - Add footer navigation: extend `NavigationConfig` in `internal/siteconfig/` beyond `Primary` to include `Footer`, surface in the navigation editor and renderer.
+  - Add external-link well-formedness validation on nav items.
+  - Preserve hidden-block ordering across hide/show + reorder (spec 08 expectation; today they always append at end).
+  - Add a standalone pre-publish validation panel that surfaces broken nav, missing homepage, draft-only references, etc. instead of waiting for publish-error responses.
+
+- [ ] Generation hardening (spec 07).
+  - Add per-user / per-workspace generation rate limit + cost guard in `internal/generation/handler.go` (share the durable rate-limit pattern from `form_submission_attempts`).
+  - Tighten per-block prop schemas in the strict-mode OpenAI schema at `internal/generation/openai.go:354` (currently `additionalProperties: true` on block props); add JSON-schema fragments per block type in `internal/siteconfig/blocks.go`.
+  - Invert page-reprompt behavior in `internal/generation/service.go:1158-1178` so the model is the primary path and template is the fallback (spec 07 intent).
+  - Make image `alt` required at the backend level in `internal/siteconfig/blocks.go:923` (currently only renderer-side fallback).
+  - Add a frontend URL safety pass in `apps/web/src/components/SiteDraftRenderer.tsx:1352-1397` rather than trusting backend allowlist alone.
+  - Add `preferredLanguage` / `optionalHints` plumbing through the generation input contract.
+  - Scaffold `migrateFromPrevious` per block type so future block versions can ship without breaking existing snapshots.
+
+- [ ] Align theme tokens with spec 11.
+  - Rename / extend CSS variables in `apps/web/src/lib/styles.ts` and themed renderer paths to expose `--color-mutedText`, `--color-primaryText`, `--font-*` weights, `--radius-buttonRadius`, `--space-sectionPaddingX`, `--space-sectionPaddingY` (currently using `--site-*` and a single `sectionSpacing`).
+  - Update theme regeneration output and `internal/siteconfig/themes.go` to emit the new vocabulary.
+  - Emit a per-site standalone `theme.css` artifact at publish so external embeds can consume it.
 
 ## Lower-Priority Product Follow-Ups
 
 - [ ] Add optional early blocks only if user testing shows real demand: logo cloud, map/location, stats/KPIs, article teaser, or allowlisted embeds.
 - [ ] Add safe placeholders or gradients for missing imagery if uploaded/starter assets are not present.
 - [ ] Add site-level SEO editing and richer metadata workflows if page-level SEO plus publish-generated metadata stop being enough.
-- [ ] Add basic asset-management controls for edit/delete in the builder now that upload/list/pick already exist.
-- [ ] Preserve hidden-block positions when users hide/show and reorder blocks.
+- [ ] Add form email forwarding once the transactional email subsystem is live.
 - [ ] Consider block-level prompting only after site-level and page-level prompting are stable in real usage.
+- [ ] Add an `archived` site state and an artifact-retention/pruning policy.
+- [ ] Split `site.generate` audit events into `generation.complete` / `generation.fail` once analytics needs it.
 
 ## Explicit Deferrals
 

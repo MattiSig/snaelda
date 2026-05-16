@@ -14,6 +14,7 @@ import (
 	"github.com/MattiSig/snaelda/internal/billing"
 	"github.com/MattiSig/snaelda/internal/blocks"
 	"github.com/MattiSig/snaelda/internal/domains"
+	"github.com/MattiSig/snaelda/internal/email"
 	"github.com/MattiSig/snaelda/internal/forms"
 	"github.com/MattiSig/snaelda/internal/generation"
 	"github.com/MattiSig/snaelda/internal/imagery"
@@ -66,6 +67,29 @@ func NewServer(cfg ServerConfig) *Server {
 		authStore = store
 	}
 
+	var mailer email.Mailer
+	if authStore != nil {
+		replyTo := strings.TrimSpace(cfg.Config.EmailReplyTo)
+		var replyToAddress *email.Address
+		if replyTo != "" {
+			replyToAddress = &email.Address{Email: replyTo}
+		}
+		mailer, err = email.NewMailer(email.Config{
+			Transport: cfg.Config.EmailTransport,
+			DefaultFrom: email.Address{
+				Email: cfg.Config.EmailFromAddress,
+				Name:  cfg.Config.EmailFromName,
+			},
+			ReplyTo:         replyToAddress,
+			ResendAPIKey:    cfg.Config.ResendAPIKey,
+			MailpitSMTPAddr: cfg.Config.MailpitSMTPAddr,
+			Logger:          logger,
+		})
+		if err != nil {
+			logger.Error("configure email transport", "error", err)
+		}
+	}
+
 	return &Server{
 		config:   cfg.Config,
 		logger:   logger,
@@ -75,6 +99,16 @@ func NewServer(cfg ServerConfig) *Server {
 			Tokens:          tokenManager,
 			RefreshTokenTTL: firstPositiveDuration(cfg.Config.AuthRefreshTokenTTL, 30*24*time.Hour),
 			CookieSecure:    cfg.Config.AuthCookieSecure,
+			AppBaseURL:      cfg.Config.AppBaseURL,
+			APIBaseURL:      cfg.Config.APIBaseURL,
+			EmailSender: email.Sender{
+				Mailer: mailer,
+				DefaultFrom: email.Address{
+					Email: cfg.Config.EmailFromAddress,
+					Name:  cfg.Config.EmailFromName,
+				},
+			},
+			EmailRateLimiter: email.NewRateLimiter(authStore),
 		}),
 	}
 }
@@ -154,19 +188,19 @@ func (s *Server) Handler() http.Handler {
 			PreviewTokenTTL: s.config.PreviewTokenTTL,
 			AuditRecorder:   auditRecorder,
 			Logger:          s.logger,
-		}).Mount(mux, s.auth.RequireUser)
+		}).Mount(mux, s.auth.RequireSession)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, sites.Module{})
 	}
 	mountAuthenticatedPlaceholderModule(mux, s.auth, pages.Module{})
 	mountAuthenticatedPlaceholderModule(mux, s.auth, blocks.Module{})
 	if store, ok := s.database.(themes.DB); ok {
-		themes.NewHandler(store, themeHandlerConfig).Mount(mux, s.auth.RequireUser)
+		themes.NewHandler(store, themeHandlerConfig).Mount(mux, s.auth.RequireSession)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, themes.Module{})
 	}
 	if store, ok := s.database.(generation.DB); ok {
-		generation.NewHandler(store, generationHandlerConfig).Mount(mux, s.auth.RequireUser)
+		generation.NewHandler(store, generationHandlerConfig).Mount(mux, s.auth.RequireSession)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, generation.Module{})
 	}
@@ -180,16 +214,16 @@ func (s *Server) Handler() http.Handler {
 		if assetService != nil {
 			publishConfig.AssetProvenance = assetService
 		}
-		publishHandler := publishing.NewHandlerWithConfig(store, publishConfig, s.config.AppBaseURL, s.config.PublicBaseURL)
+		publishHandler := publishing.NewHandlerWithConfig(store, publishConfig, s.config.AppBaseURL, s.config.PublicBaseURL).WithLogger(s.logger)
 		if analyticsStore, ok := s.database.(analytics.Store); ok {
 			publishHandler = publishHandler.WithViewRecorder(analytics.NewRecorder(analyticsStore, s.logger))
 		}
-		publishHandler.Mount(mux, s.auth.RequireUser)
+		publishHandler.Mount(mux, s.auth.RequireSession)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, publishing.Module{})
 	}
 	if store, ok := s.database.(analytics.DB); ok {
-		analytics.NewHandler(store).Mount(mux, s.auth.RequireUser)
+		analytics.NewHandler(store).Mount(mux, s.auth.RequireSession)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, analytics.Module{})
 	}
@@ -198,17 +232,17 @@ func (s *Server) Handler() http.Handler {
 			AppBaseURL:       s.config.AppBaseURL,
 			PublicBaseURL:    s.config.PublicBaseURL,
 			PublicBaseDomain: s.config.PublicBaseDomain,
-		}).Mount(mux, s.auth.RequireUser)
+		}).Mount(mux, s.auth.RequireSession)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, domains.Module{})
 	}
 	if store, ok := s.database.(assets.DB); ok && assetService != nil {
-		assets.NewHandlerWithService(store, assetService).Mount(mux, s.auth.RequireUser)
+		assets.NewHandlerWithService(store, assetService).Mount(mux, s.auth.RequireSession)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, assets.Module{})
 	}
 	if store, ok := s.database.(forms.DB); ok {
-		forms.NewHandler(store).Mount(mux, s.auth.RequireUser)
+		forms.NewHandler(store).Mount(mux, s.auth.RequireSession)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, forms.Module{})
 	}
@@ -376,7 +410,12 @@ func requiresCSRFMitigation(r *http.Request) bool {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
 		return false
 	}
-	return r.URL.Path != "/api/auth/login"
+	switch r.URL.Path {
+	case "/api/auth/login", "/api/auth/magic-link", "/api/sessions/anonymous", "/api/sessions/restore":
+		return false
+	default:
+		return true
+	}
 }
 
 func requestFailureCategory(r *http.Request) string {

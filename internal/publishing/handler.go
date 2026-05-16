@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -22,6 +23,7 @@ type Handler struct {
 	appBaseURL    string
 	publicBaseURL string
 	viewRecorder  PageViewRecorder
+	logger        *slog.Logger
 }
 
 // PageViewRecorder is implemented by analytics.Recorder. The interface lets the
@@ -66,7 +68,17 @@ func NewHandlerWithConfig(db DB, cfg ServiceConfig, appBaseURL string, publicBas
 		authorizer:    authorization.New(db),
 		appBaseURL:    strings.TrimRight(appBaseURL, "/"),
 		publicBaseURL: strings.TrimSpace(publicBaseURL),
+		logger:        slog.Default(),
 	}
+}
+
+// WithLogger sets the structured logger used for unmapped publish errors.
+func (h *Handler) WithLogger(logger *slog.Logger) *Handler {
+	if h == nil || logger == nil {
+		return h
+	}
+	h.logger = logger
+	return h
 }
 
 // WithViewRecorder attaches a non-blocking page view recorder used after each
@@ -99,10 +111,15 @@ func (h *Handler) publish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, ok := auth.UserFromContext(r.Context())
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
-		return
+	session, _ := auth.SessionFromContext(r.Context())
+	if session.User == nil {
+		if user, ok := auth.UserFromContext(r.Context()); ok {
+			session.User = &user
+		}
+	}
+	userID := ""
+	if session.User != nil {
+		userID = session.User.ID
 	}
 
 	var payload publishRequest
@@ -111,11 +128,11 @@ func (h *Handler) publish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.Publish(r.Context(), siteID, user.ID, PublishInput{
+	result, err := h.service.Publish(r.Context(), siteID, userID, PublishInput{
 		PublishNote: strings.TrimSpace(payload.PublishNote),
 	})
 	if err != nil {
-		writePublishError(w, err)
+		h.writePublishError(w, r, err)
 		return
 	}
 
@@ -165,15 +182,20 @@ func (h *Handler) rollback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, ok := auth.UserFromContext(r.Context())
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
-		return
+	session, _ := auth.SessionFromContext(r.Context())
+	if session.User == nil {
+		if user, ok := auth.UserFromContext(r.Context()); ok {
+			session.User = &user
+		}
+	}
+	userID := ""
+	if session.User != nil {
+		userID = session.User.ID
 	}
 
-	result, err := h.service.Rollback(r.Context(), siteID, versionID, user.ID)
+	result, err := h.service.Rollback(r.Context(), siteID, versionID, userID)
 	if err != nil {
-		writePublishError(w, err)
+		h.writePublishError(w, r, err)
 		return
 	}
 
@@ -194,7 +216,7 @@ func (h *Handler) getPublishedSite(w http.ResponseWriter, r *http.Request) {
 	pagePath := r.URL.Query().Get("path")
 	result, err := h.service.LoadPublishedSiteBySlug(r.Context(), siteSlug, pagePath)
 	if err != nil {
-		writePublishError(w, err)
+		h.writePublishError(w, r, err)
 		return
 	}
 
@@ -220,7 +242,7 @@ func (h *Handler) getPublishedSiteByHostname(w http.ResponseWriter, r *http.Requ
 	pagePath := r.URL.Query().Get("path")
 	result, err := h.service.LoadPublishedSiteByHostname(r.Context(), hostname, pagePath)
 	if err != nil {
-		writePublishError(w, err)
+		h.writePublishError(w, r, err)
 		return
 	}
 
@@ -277,7 +299,7 @@ func (h *Handler) getPublishedArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writePublishError(w, err)
+		h.writePublishError(w, r, err)
 		return
 	}
 
@@ -344,7 +366,7 @@ func publicHostnameFromRequest(r *http.Request) string {
 	return ""
 }
 
-func writePublishError(w http.ResponseWriter, err error) {
+func (h *Handler) writePublishError(w http.ResponseWriter, r *http.Request, err error) {
 	var validationErr siteconfig.ValidationError
 	switch {
 	case errors.Is(err, ErrNotFound):
@@ -364,6 +386,11 @@ func writePublishError(w http.ResponseWriter, err error) {
 			"issues": validationErr.Issues,
 		})
 	default:
+		logger := h.logger
+		if logger == nil {
+			logger = slog.Default()
+		}
+		logger.Error("publish site", "method", r.Method, "path", r.URL.Path, "error", err.Error())
 		writeError(w, http.StatusInternalServerError, "publish_failed", "could not publish site")
 	}
 }

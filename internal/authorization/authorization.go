@@ -53,16 +53,44 @@ func RequireUser(ctx context.Context) (auth.User, error) {
 	return user, nil
 }
 
+func RequireSession(ctx context.Context) (auth.Session, error) {
+	session, ok := auth.SessionFromContext(ctx)
+	if ok && session.WorkspaceID != "" {
+		return session, nil
+	}
+	user, ok := auth.UserFromContext(ctx)
+	if ok && user.WorkspaceID != "" {
+		return auth.Session{
+			Kind:          auth.SessionKindAuthenticated,
+			WorkspaceID:   user.WorkspaceID,
+			WorkspaceRole: user.WorkspaceRole,
+			User:          &user,
+		}, nil
+	}
+	return auth.Session{}, ErrUnauthenticated
+}
+
 func (a *Authorizer) RequireWorkspaceMember(ctx context.Context, workspaceID string, allowedRoles ...string) (Scope, error) {
 	workspaceID = strings.TrimSpace(workspaceID)
 	if workspaceID == "" {
 		return Scope{}, ErrInvalidResourceID
 	}
 
-	user, err := RequireUser(ctx)
+	session, err := RequireSession(ctx)
 	if err != nil {
 		return Scope{}, err
 	}
+	if session.IsTrial() {
+		if session.WorkspaceID != workspaceID {
+			return Scope{}, ErrForbidden
+		}
+		scope := Scope{WorkspaceID: workspaceID, Role: RoleOwner}
+		if !roleAllowed(scope.Role, allowedRoles) {
+			return Scope{}, ErrForbidden
+		}
+		return scope, nil
+	}
+	user := *session.User
 
 	return a.requireScope(ctx, "workspace", `
 		select wm.workspace_id::text,
@@ -84,10 +112,25 @@ func (a *Authorizer) RequireSite(ctx context.Context, siteID string, allowedRole
 		return Scope{}, ErrInvalidResourceID
 	}
 
-	user, err := RequireUser(ctx)
+	session, err := RequireSession(ctx)
 	if err != nil {
 		return Scope{}, err
 	}
+	if session.IsTrial() {
+		return a.requireScope(ctx, "site", `
+			select s.workspace_id::text,
+			       s.id::text as site_id,
+			       ''::text as page_id,
+			       ''::text as block_id,
+			       ''::text as asset_id,
+			       ''::text as submission_id,
+			       'owner'::text as role
+			from sites s
+			where s.id = $1
+			  and s.workspace_id = $2
+		`, allowedRoles, siteID, session.WorkspaceID)
+	}
+	user := *session.User
 
 	return a.requireScope(ctx, "site", `
 		select s.workspace_id::text,
@@ -110,10 +153,26 @@ func (a *Authorizer) RequirePage(ctx context.Context, pageID string, allowedRole
 		return Scope{}, ErrInvalidResourceID
 	}
 
-	user, err := RequireUser(ctx)
+	session, err := RequireSession(ctx)
 	if err != nil {
 		return Scope{}, err
 	}
+	if session.IsTrial() {
+		return a.requireScope(ctx, "page", `
+			select s.workspace_id::text,
+			       s.id::text as site_id,
+			       p.id::text as page_id,
+			       ''::text as block_id,
+			       ''::text as asset_id,
+			       ''::text as submission_id,
+			       'owner'::text as role
+			from pages p
+			join sites s on s.id = p.site_id
+			where p.id = $1
+			  and s.workspace_id = $2
+		`, allowedRoles, pageID, session.WorkspaceID)
+	}
+	user := *session.User
 
 	return a.requireScope(ctx, "page", `
 		select s.workspace_id::text,
@@ -137,10 +196,26 @@ func (a *Authorizer) RequireBlock(ctx context.Context, blockID string, allowedRo
 		return Scope{}, ErrInvalidResourceID
 	}
 
-	user, err := RequireUser(ctx)
+	session, err := RequireSession(ctx)
 	if err != nil {
 		return Scope{}, err
 	}
+	if session.IsTrial() {
+		return a.requireScope(ctx, "block", `
+			select s.workspace_id::text,
+			       s.id::text as site_id,
+			       b.page_id::text,
+			       b.id::text as block_id,
+			       ''::text as asset_id,
+			       ''::text as submission_id,
+			       'owner'::text as role
+			from block_instances b
+			join sites s on s.id = b.site_id
+			where b.id = $1
+			  and s.workspace_id = $2
+		`, allowedRoles, blockID, session.WorkspaceID)
+	}
+	user := *session.User
 
 	return a.requireScope(ctx, "block", `
 		select s.workspace_id::text,
@@ -164,10 +239,25 @@ func (a *Authorizer) RequireAsset(ctx context.Context, assetID string, allowedRo
 		return Scope{}, ErrInvalidResourceID
 	}
 
-	user, err := RequireUser(ctx)
+	session, err := RequireSession(ctx)
 	if err != nil {
 		return Scope{}, err
 	}
+	if session.IsTrial() {
+		return a.requireScope(ctx, "asset", `
+			select a.workspace_id::text,
+			       coalesce(a.site_id::text, '') as site_id,
+			       ''::text as page_id,
+			       ''::text as block_id,
+			       a.id::text as asset_id,
+			       ''::text as submission_id,
+			       'owner'::text as role
+			from assets a
+			where a.id = $1
+			  and a.workspace_id = $2
+		`, allowedRoles, assetID, session.WorkspaceID)
+	}
+	user := *session.User
 
 	return a.requireScope(ctx, "asset", `
 		select a.workspace_id::text,
@@ -190,10 +280,14 @@ func (a *Authorizer) RequireFormSubmission(ctx context.Context, submissionID str
 		return Scope{}, ErrInvalidResourceID
 	}
 
-	user, err := RequireUser(ctx)
+	session, err := RequireSession(ctx)
 	if err != nil {
 		return Scope{}, err
 	}
+	if session.User == nil || session.User.ID == "" {
+		return Scope{}, ErrForbidden
+	}
+	user := *session.User
 
 	return a.requireScope(ctx, "form submission", `
 		select s.workspace_id::text,

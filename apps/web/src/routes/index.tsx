@@ -1,9 +1,9 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import type { CSSProperties, FormEvent } from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Globe, Hourglass, PencilLine, Rocket, SlidersHorizontal, Sparkles } from 'lucide-react'
 import { PublishedSitePage } from '@/components/PublishedSitePage'
-import { getPublishedSiteByHostname } from '@/lib/api'
+import { APIError, getPublishedSiteByHostname, restoreWorkspace, startAnonymousSession } from '@/lib/api'
 import {
   buildPublishedPageHead,
   loadPublishedSitePageData,
@@ -13,6 +13,9 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/')({
+  validateSearch: (search: Record<string, unknown>) => ({
+    restore: typeof search.restore === 'string' ? search.restore : '',
+  }),
   loader: async () => {
     const hostedPublic = await getHostedPublicSiteContext()
     return {
@@ -85,7 +88,27 @@ const featureCards = [
 function Home() {
   const navigate = useNavigate()
   const { hostedPublic, published } = Route.useLoaderData()
+  const search = Route.useSearch()
   const [prompt, setPrompt] = useState('')
+  const [restoreKey, setRestoreKey] = useState('')
+  const [restoreMessage, setRestoreMessage] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  useEffect(() => {
+    const incomingRestoreKey = extractRecoveryKey(search.restore || '')
+    if (!incomingRestoreKey) {
+      return
+    }
+
+    restoreWorkspace(incomingRestoreKey)
+      .then(() => navigate({ to: '/app' }))
+      .catch((error) => {
+        setRestoreMessage(
+          error instanceof APIError ? error.message : 'Could not restore that workspace',
+        )
+        setIsSubmitting(false)
+      })
+  }, [navigate, search.restore])
 
   if (hostedPublic.isHostedPublic) {
     return (
@@ -123,13 +146,22 @@ function Home() {
 
           <form
             className="group relative mt-10 flex w-full max-w-2xl flex-col items-stretch gap-4 rounded-[18px] border border-[color-mix(in_oklch,var(--border)_60%,transparent)] bg-[color-mix(in_oklch,var(--surface-2)_92%,transparent)] p-4 shadow-[0_20px_60px_-15px_oklch(16%_0.05_336_/_0.55)] transition-colors duration-300 focus-within:border-[var(--thread-teal)] md:flex-row md:items-center"
-            onSubmit={(event: FormEvent) => {
+            onSubmit={async (event: FormEvent) => {
               event.preventDefault()
-              const params: Record<string, string> = { redirect: '/app' }
-              if (prompt.trim()) {
-                params.prompt = prompt.trim()
+              setIsSubmitting(true)
+              setRestoreMessage('')
+              try {
+                await startAnonymousSession()
+                await navigate({
+                  to: '/app',
+                  search: prompt.trim() ? { prompt: prompt.trim() } : {},
+                })
+              } catch (error) {
+                setRestoreMessage(
+                  error instanceof APIError ? error.message : 'Could not start a workspace',
+                )
+                setIsSubmitting(false)
               }
-              navigate({ to: '/login', search: params as { redirect: string; prompt?: string } })
             }}
           >
             <Sparkles className="pointer-events-none absolute left-6 top-6 size-5 text-[color-mix(in_oklch,var(--thread-violet)_65%,var(--paper))] md:top-1/2 md:-translate-y-1/2" />
@@ -143,12 +175,57 @@ function Home() {
               type="submit"
               size="lg"
               variant="plain"
+              disabled={isSubmitting}
               className="min-h-14 shrink-0 rounded-[14px] bg-[var(--thread-gold)] px-7 text-[var(--ink)] shadow-[0_4px_14px_0_oklch(78%_0.11_78_/_0.35)] transition-transform duration-200 hover:-translate-y-px hover:bg-[color-mix(in_oklch,var(--thread-gold)_84%,white)]"
             >
               <Globe className="size-4.5" />
-              Weave My Site
+              {isSubmitting ? 'Opening workspace...' : 'Weave My Site'}
             </Button>
           </form>
+
+          <div className="mt-4 grid w-full max-w-2xl gap-3 rounded-[18px] border border-[color-mix(in_oklch,var(--border)_54%,transparent)] bg-[color-mix(in_oklch,var(--surface-1)_72%,black)] p-4 text-left">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-[var(--paper)]">Restore workspace</p>
+                <p className="text-sm text-[var(--paper-muted)]">
+                  Paste a workspace link if you saved one earlier.
+                </p>
+              </div>
+              <Link to="/login" className="text-sm font-semibold text-[var(--thread-gold)] transition-colors hover:text-[var(--paper)]">
+                Log in by email
+              </Link>
+            </div>
+            <form
+              className="flex flex-col gap-3 md:flex-row"
+              onSubmit={async (event: FormEvent) => {
+                event.preventDefault()
+                setIsSubmitting(true)
+                setRestoreMessage('')
+                try {
+                  await restoreWorkspace(extractRecoveryKey(restoreKey))
+                  await navigate({ to: '/app' })
+                } catch (error) {
+                  setRestoreMessage(
+                    error instanceof APIError ? error.message : 'Could not restore that workspace',
+                  )
+                  setIsSubmitting(false)
+                }
+              }}
+            >
+              <input
+                value={restoreKey}
+                onChange={(event) => setRestoreKey(event.target.value)}
+                placeholder="Paste the full workspace link or recovery key"
+                className="min-h-12 flex-1 rounded-[14px] border border-transparent bg-[color-mix(in_oklch,var(--surface-2)_72%,var(--background))] px-4 text-sm text-[var(--paper)] outline-none placeholder:text-[color-mix(in_oklch,var(--paper-muted)_62%,transparent)]"
+              />
+              <Button type="submit" variant="outline" disabled={isSubmitting || restoreKey.trim() === ''}>
+                Restore
+              </Button>
+            </form>
+            {restoreMessage ? (
+              <p className="text-sm text-[var(--thread-gold)]">{restoreMessage}</p>
+            ) : null}
+          </div>
 
           <div className="relative mt-16 w-full max-w-5xl overflow-hidden rounded-[18px] border border-[color-mix(in_oklch,var(--border)_56%,transparent)] shadow-[0_30px_80px_-20px_oklch(16%_0.05_336_/_0.6)]">
             <img
@@ -201,7 +278,7 @@ function Home() {
             <Link to="/app" className="transition-colors hover:text-[var(--paper)]">
               Showcase
             </Link>
-            <Link to="/login" search={{ redirect: '/app' }} className="transition-colors hover:text-[var(--paper)]">
+            <Link to="/login" className="transition-colors hover:text-[var(--paper)]">
               Support
             </Link>
           </nav>
@@ -210,12 +287,25 @@ function Home() {
             variant="outline"
             className="min-h-11 rounded-[14px] border-[1.5px] border-[var(--border)] bg-transparent px-6 text-[var(--paper)] hover:border-[var(--thread-gold)] hover:bg-transparent hover:text-[var(--thread-gold)]"
           >
-            <Link to="/login" search={{ redirect: '/app' }}>
-              Start Weaving
+            <Link to="/login">
+              Log In
             </Link>
           </Button>
         </div>
       </footer>
     </main>
   )
+}
+
+function extractRecoveryKey(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return ''
+  }
+  try {
+    const parsed = new URL(trimmed)
+    return parsed.searchParams.get('restore') || parsed.searchParams.get('k') || trimmed
+  } catch {
+    return trimmed
+  }
 }

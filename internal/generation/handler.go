@@ -18,6 +18,7 @@ import (
 type Handler struct {
 	service    Generator
 	authorizer Authorizer
+	logger     *slog.Logger
 }
 
 type HandlerConfig struct {
@@ -64,9 +65,14 @@ func NewHandler(db DB, cfg HandlerConfig) *Handler {
 	if cfg.AuditRecorder != nil {
 		options = append(options, WithAuditRecorder(cfg.AuditRecorder))
 	}
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Handler{
 		service:    NewService(db, cfg.Planner, options...),
 		authorizer: authorization.New(db),
+		logger:     logger,
 	}
 }
 
@@ -78,12 +84,23 @@ func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.
 }
 
 func (h *Handler) generate(w http.ResponseWriter, r *http.Request) {
-	user, ok := auth.UserFromContext(r.Context())
+	session, ok := auth.SessionFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
+		if user, userOK := auth.UserFromContext(r.Context()); userOK {
+			session = auth.Session{
+				Kind:          auth.SessionKindAuthenticated,
+				WorkspaceID:   user.WorkspaceID,
+				WorkspaceRole: user.WorkspaceRole,
+				User:          &user,
+			}
+			ok = true
+		}
+	}
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "a session is required")
 		return
 	}
-	workspaceID := user.WorkspaceID
+	workspaceID := session.WorkspaceID
 	if workspaceID == "" {
 		writeError(w, http.StatusForbidden, "forbidden", "workspace access is required")
 		return
@@ -99,13 +116,17 @@ func (h *Handler) generate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.Generate(r.Context(), workspaceID, user.ID, GenerateInput{
+	userID := ""
+	if session.User != nil {
+		userID = session.User.ID
+	}
+	result, err := h.service.Generate(r.Context(), workspaceID, userID, GenerateInput{
 		Name:   strings.TrimSpace(payload.Name),
 		Slug:   strings.TrimSpace(payload.Slug),
 		Prompt: strings.TrimSpace(payload.Prompt),
 	})
 	if err != nil {
-		writeGenerationError(w, err)
+		h.writeGenerationError(w, r, err)
 		return
 	}
 
@@ -123,10 +144,11 @@ func (h *Handler) repromptSite(w http.ResponseWriter, r *http.Request) {
 		writeAuthorizationError(w, err)
 		return
 	}
-	user, ok := auth.UserFromContext(r.Context())
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
-		return
+	session, _ := auth.SessionFromContext(r.Context())
+	if session.User == nil {
+		if user, ok := auth.UserFromContext(r.Context()); ok {
+			session.User = &user
+		}
 	}
 
 	var payload repromptRequest
@@ -135,11 +157,15 @@ func (h *Handler) repromptSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.RepromptSite(r.Context(), scope.WorkspaceID, user.ID, siteID, RepromptInput{
+	userID := ""
+	if session.User != nil {
+		userID = session.User.ID
+	}
+	result, err := h.service.RepromptSite(r.Context(), scope.WorkspaceID, userID, siteID, RepromptInput{
 		Prompt: strings.TrimSpace(payload.Prompt),
 	})
 	if err != nil {
-		writeGenerationError(w, err)
+		h.writeGenerationError(w, r, err)
 		return
 	}
 
@@ -158,10 +184,11 @@ func (h *Handler) repromptPage(w http.ResponseWriter, r *http.Request) {
 		writeAuthorizationError(w, err)
 		return
 	}
-	user, ok := auth.UserFromContext(r.Context())
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
-		return
+	session, _ := auth.SessionFromContext(r.Context())
+	if session.User == nil {
+		if user, ok := auth.UserFromContext(r.Context()); ok {
+			session.User = &user
+		}
 	}
 
 	var payload repromptRequest
@@ -170,11 +197,15 @@ func (h *Handler) repromptPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.RepromptPage(r.Context(), scope.WorkspaceID, user.ID, siteID, pageID, RepromptInput{
+	userID := ""
+	if session.User != nil {
+		userID = session.User.ID
+	}
+	result, err := h.service.RepromptPage(r.Context(), scope.WorkspaceID, userID, siteID, pageID, RepromptInput{
 		Prompt: strings.TrimSpace(payload.Prompt),
 	})
 	if err != nil {
-		writeGenerationError(w, err)
+		h.writeGenerationError(w, r, err)
 		return
 	}
 
@@ -195,14 +226,14 @@ func (h *Handler) undoSite(w http.ResponseWriter, r *http.Request) {
 
 	draft, err := h.service.UndoLastDraftRevision(r.Context(), scope.WorkspaceID, siteID)
 	if err != nil {
-		writeGenerationError(w, err)
+		h.writeGenerationError(w, r, err)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"draft": draft})
 }
 
-func writeGenerationError(w http.ResponseWriter, err error) {
+func (h *Handler) writeGenerationError(w http.ResponseWriter, r *http.Request, err error) {
 	var validationErr siteconfig.ValidationError
 	switch {
 	case errors.Is(err, ErrPromptRequired):
@@ -224,6 +255,7 @@ func writeGenerationError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrNoDraftRevision):
 		writeError(w, http.StatusNotFound, "draft_revision_not_found", "there is no draft revision to restore")
 	default:
+		h.logger.Error("generate site draft", "method", r.Method, "path", r.URL.Path, "error", err.Error())
 		writeError(w, http.StatusInternalServerError, "generate_failed", "could not generate site draft")
 	}
 }

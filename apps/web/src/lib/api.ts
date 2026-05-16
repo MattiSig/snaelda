@@ -35,6 +35,23 @@ export type AuthUser = {
   workspaceRole: string;
 };
 
+export type BuilderSession = {
+  kind: "authenticated" | "trial";
+  workspaceId: string;
+  workspaceRole: string;
+  user?: AuthUser;
+  guestSessionId?: string;
+  promptsUsed?: number;
+  promptLimit?: number;
+  trialStartedAt?: string;
+  trialExpiresAt?: string;
+  trialExpired?: boolean;
+  claimedAt?: string;
+  claimedByUserId?: string;
+  hasRecoveryKey?: boolean;
+  subscriptionLive?: boolean;
+};
+
 export type AuthSession = {
   user: AuthUser;
   expiresAt?: number;
@@ -324,17 +341,25 @@ export type PreviewDraftResponse = {
   draft: SiteDraft;
 };
 
+export type SessionResponse = {
+  session: BuilderSession;
+};
+
 const defaultAPIBaseURL = "http://localhost:8080";
 
 export function getAPIBaseURL() {
-  return viteEnv("VITE_API_BASE_URL") ?? defaultAPIBaseURL;
-}
-
-function viteEnv(name: string) {
-  const meta = import.meta as ImportMeta & {
-    env?: Record<string, string | undefined>;
-  };
-  return meta.env?.[name];
+  try {
+    const value = (
+      import.meta as ImportMeta & { env: { VITE_API_BASE_URL?: string } }
+    ).env.VITE_API_BASE_URL;
+    if (value) return value;
+  } catch {
+    // tsx/Node artifact renderer: `import.meta.env` is undefined; fall through.
+  }
+  if (typeof process !== "undefined" && process.env?.VITE_API_BASE_URL) {
+    return process.env.VITE_API_BASE_URL;
+  }
+  return defaultAPIBaseURL;
 }
 
 export async function apiFetch<T>(
@@ -358,6 +383,7 @@ export async function apiFetch<T>(
       response.status === 401 &&
       retryOnUnauthorized &&
       path !== "/api/auth/login" &&
+      path !== "/api/auth/magic-link" &&
       path !== "/api/auth/refresh"
     ) {
       await refreshAuthSession();
@@ -432,7 +458,9 @@ async function publicAPIRequest<T>(
 }
 
 export async function getCurrentSession() {
-  return apiFetch<AuthSession>("/api/auth/me");
+  return apiFetch<SessionResponse>("/api/sessions/me").then(
+    (response) => response.session,
+  );
 }
 
 export async function refreshAuthSession() {
@@ -446,13 +474,54 @@ export async function refreshAuthSession() {
 }
 
 export async function login(email: string, name?: string) {
-  return apiFetch<AuthSession>("/api/auth/login", {
+  return apiFetch<{ status: string; message: string }>("/api/auth/magic-link", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ email, name }),
   });
+}
+
+export async function startAnonymousSession() {
+  return apiFetch<SessionResponse>("/api/sessions/anonymous", {
+    method: "POST",
+  }).then((response) => response.session);
+}
+
+export async function restoreWorkspace(key: string) {
+  return apiFetch<SessionResponse>("/api/sessions/restore", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ key }),
+  }).then((response) => response.session);
+}
+
+export async function createRecoveryKey() {
+  return apiFetch<{ recoveryUrl: string }>("/api/sessions/recovery-key", {
+    method: "POST",
+  });
+}
+
+export async function revokeRecoveryKey() {
+  return apiFetch<{ status: string }>("/api/sessions/recovery-key", {
+    method: "DELETE",
+  });
+}
+
+export async function claimWorkspace(email: string, name?: string) {
+  return apiFetch<{ session: BuilderSession; status: string }>(
+    "/api/sessions/claim",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email, name }),
+    },
+  );
 }
 
 export async function logout() {

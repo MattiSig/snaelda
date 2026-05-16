@@ -242,6 +242,38 @@ func TestListSitesReturnsAuthenticatedWorkspaceSites(t *testing.T) {
 	}
 }
 
+func TestListSitesReturnsEmptyArrayForWorkspaceWithoutSites(t *testing.T) {
+	handler := Handler{
+		reader:      fakeReader{},
+		authorizer:  fakeAuthorizer{},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/sites", nil).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	res := httptest.NewRecorder()
+
+	handler.list(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	var payload struct {
+		Sites []Summary `json:"sites"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Sites == nil {
+		t.Fatal("expected empty sites array, got nil")
+	}
+	if len(payload.Sites) != 0 {
+		t.Fatalf("expected no sites, got %#v", payload.Sites)
+	}
+}
+
 func TestGetSiteReturnsCanonicalDraft(t *testing.T) {
 	handler := Handler{
 		reader: fakeReader{

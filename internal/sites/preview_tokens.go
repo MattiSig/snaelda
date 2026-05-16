@@ -59,7 +59,7 @@ func NewPostgresPreviewTokenService(db DB, ttl time.Duration) *PostgresPreviewTo
 func (s *PostgresPreviewTokenService) Issue(ctx context.Context, siteID string, userID string) (PreviewToken, error) {
 	siteID = strings.TrimSpace(siteID)
 	userID = strings.TrimSpace(userID)
-	if siteID == "" || userID == "" {
+	if siteID == "" {
 		return PreviewToken{}, ErrPreviewTokenInvalid
 	}
 
@@ -82,7 +82,7 @@ func (s *PostgresPreviewTokenService) Issue(ctx context.Context, siteID string, 
 	if _, err := s.db.Exec(ctx, `
 		insert into site_preview_tokens (site_id, created_by, token_hash, expires_at)
 		values ($1, $2, $3, $4)
-	`, siteID, userID, s.hashToken(token), expiresAt); err != nil {
+	`, siteID, nullableUUID(userID), s.hashToken(token), expiresAt); err != nil {
 		return PreviewToken{}, fmt.Errorf("store preview token: %w", err)
 	}
 
@@ -90,6 +90,13 @@ func (s *PostgresPreviewTokenService) Issue(ctx context.Context, siteID string, 
 		Token:     token,
 		ExpiresAt: expiresAt,
 	}, nil
+}
+
+func nullableUUID(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func (s *PostgresPreviewTokenService) Revoke(ctx context.Context, siteID string) error {

@@ -176,6 +176,10 @@ func (s *Service) Generate(ctx context.Context, workspaceID string, userID strin
 		_ = s.failGenerationJob(ctx, jobID, persistErr)
 		return GenerateResult{}, persistErr
 	}
+	if err := s.incrementTrialPromptUsage(ctx, workspaceID); err != nil {
+		_ = s.failGenerationJob(ctx, jobID, err)
+		return GenerateResult{}, err
+	}
 
 	s.recordAudit(ctx, audit.Event{
 		WorkspaceID: workspaceID,
@@ -256,6 +260,10 @@ func (s *Service) RepromptSite(ctx context.Context, workspaceID string, userID s
 		return GenerateResult{}, err
 	}
 	if err := s.completeGenerationJob(ctx, jobID, siteID, plan); err != nil {
+		_ = s.failGenerationJob(ctx, jobID, err)
+		return GenerateResult{}, err
+	}
+	if err := s.incrementTrialPromptUsage(ctx, workspaceID); err != nil {
 		_ = s.failGenerationJob(ctx, jobID, err)
 		return GenerateResult{}, err
 	}
@@ -355,6 +363,10 @@ func (s *Service) RepromptPage(ctx context.Context, workspaceID string, userID s
 		_ = s.failGenerationJob(ctx, jobID, err)
 		return GenerateResult{}, err
 	}
+	if err := s.incrementTrialPromptUsage(ctx, workspaceID); err != nil {
+		_ = s.failGenerationJob(ctx, jobID, err)
+		return GenerateResult{}, err
+	}
 
 	savedDraft, err := s.reader.LoadDraft(ctx, siteID)
 	if err != nil {
@@ -377,6 +389,22 @@ func (s *Service) RepromptPage(ctx context.Context, workspaceID string, userID s
 		JobID: jobID,
 		Draft: savedDraft,
 	}, nil
+}
+
+func (s *Service) incrementTrialPromptUsage(ctx context.Context, workspaceID string) error {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return nil
+	}
+	if _, err := s.db.Exec(ctx, `
+		update guest_sessions
+		set prompts_used = prompts_used + 1,
+		    last_seen_at = now()
+		where workspace_id = $1
+	`, workspaceID); err != nil {
+		return fmt.Errorf("increment trial prompt usage: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) UndoLastDraftRevision(ctx context.Context, workspaceID string, siteID string) (siteconfig.SiteDraft, error) {

@@ -8,44 +8,29 @@ import { cn } from '@/lib/utils'
 import { form, layout, paddedPanel, text } from '@/lib/styles'
 
 export const Route = createFileRoute('/login')({
-  validateSearch: (search: Record<string, unknown>) => ({
-    redirect:
-      typeof search.redirect === 'string' &&
-      search.redirect.startsWith('/') &&
-      !search.redirect.startsWith('//')
-        ? search.redirect
-        : '/app',
-  }),
   component: Login,
 })
 
 function Login() {
-  const search = Route.useSearch()
-  const promptFromUrl = typeof window !== 'undefined'
-    ? new URLSearchParams(window.location.search).get('prompt') || ''
-    : ''
-  const [email, setEmail] = useState('demo@snaelda.local')
-  const [name, setName] = useState('Demo User')
+  const [email, setEmail] = useState('')
+  const [message, setMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setErrorMessage('')
+    setMessage('')
     setIsSubmitting(true)
 
     try {
-      await login(email, name)
-      const redirectTarget = promptFromUrl
-        ? `${search.redirect}?prompt=${encodeURIComponent(promptFromUrl)}`
-        : search.redirect
-      window.location.href = redirectTarget
+      const response = await login(email)
+      setMessage(response.message)
     } catch (error) {
-      if (error instanceof APIError) {
-        setErrorMessage(error.message)
-      } else {
-        setErrorMessage('Could not sign in')
-      }
+      setErrorMessage(
+        error instanceof APIError ? error.message : 'Could not send magic link',
+      )
+    } finally {
       setIsSubmitting(false)
     }
   }
@@ -60,7 +45,7 @@ function Login() {
         />
         <div className="mb-3">
           <p className={text.eyebrow}>Builder access</p>
-          <h1 className={cn(text.h1, 'max-w-[9ch]')}>Sign in</h1>
+          <h1 className={cn(text.h1, 'max-w-[11ch]')}>Log in by magic link</h1>
         </div>
         <label htmlFor="email" className={text.label}>Email</label>
         <Input
@@ -72,18 +57,13 @@ function Login() {
           onChange={(event) => setEmail(event.target.value)}
           required
         />
-        <label htmlFor="name" className={text.label}>Name</label>
-        <Input
-          id="name"
-          name="name"
-          type="text"
-          autoComplete="name"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
+        <p className="text-sm text-[var(--paper-muted)]">
+          If this email already owns a workspace, we’ll send a one-time sign-in link.
+        </p>
         {errorMessage ? <p className={text.error}>{errorMessage}</p> : null}
+        {message ? <p className={text.success}>{message}</p> : null}
         <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? 'Signing in...' : 'Sign in'}
+          {isSubmitting ? 'Sending link...' : 'Send magic link'}
         </Button>
       </form>
     </main>

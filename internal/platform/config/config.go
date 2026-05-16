@@ -13,6 +13,7 @@ type Config struct {
 	AppEnv                string
 	HTTPAddr              string
 	AppBaseURL            string
+	APIBaseURL            string
 	PublicBaseURL         string
 	PublicBaseDomain      string
 	EmailTransport        string
@@ -68,6 +69,7 @@ func Load() (Config, error) {
 		AppEnv:                appEnv,
 		HTTPAddr:              getEnv("HTTP_ADDR", ":8080"),
 		AppBaseURL:            getEnv("APP_BASE_URL", "http://localhost:3000"),
+		APIBaseURL:            getEnv("API_BASE_URL", "http://localhost:8080"),
 		PublicBaseURL:         getEnv("PUBLIC_BASE_URL", "http://localhost:3000"),
 		EmailTransport:        strings.ToLower(strings.TrimSpace(getEnv("EMAIL_TRANSPORT", "stdout"))),
 		EmailFromAddress:      strings.TrimSpace(getEnv("EMAIL_FROM_ADDRESS", "hi@snaelda.app")),
