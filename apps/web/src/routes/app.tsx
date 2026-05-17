@@ -13,7 +13,9 @@ import {
   APIError,
   claimWorkspace,
   createRecoveryKey,
+  getBillingState,
   type BuilderSession,
+  type BillingState,
   getCurrentSession,
   getSiteDraft,
   logout,
@@ -28,6 +30,7 @@ export const Route = createFileRoute('/app')({
 function AppLayout() {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const [session, setSession] = useState<BuilderSession | null>(null)
+  const [billingState, setBillingState] = useState<BillingState | null>(null)
   const [errorMessage, setErrorMessage] = useState('')
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false)
   const [currentSiteName, setCurrentSiteName] = useState('')
@@ -63,6 +66,26 @@ function AppLayout() {
         }
         if (isMounted) {
           setErrorMessage('Could not load your session')
+        }
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [pathname])
+
+  useEffect(() => {
+    let isMounted = true
+
+    getBillingState()
+      .then((nextState) => {
+        if (isMounted) {
+          setBillingState(nextState)
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setBillingState(null)
         }
       })
 
@@ -189,6 +212,8 @@ function AppLayout() {
 
   const displayName =
     session.user?.name || session.user?.email || (session.kind === 'trial' ? 'Trial workspace' : 'Snaelda')
+  const currentPlan = billingState?.entitlement.plan || (session.subscriptionLive ? 'basic' : 'trial')
+  const planBadgeLabel = currentPlan === 'pro' ? 'Pro' : currentPlan === 'basic' ? 'Basic' : 'Trial'
   const visibleSiteName = siteId ? currentSiteName : ''
   const initials = displayName
     .split(/\s+/)
@@ -225,6 +250,13 @@ function AppLayout() {
                 <Home className="size-4" />
                 Sites
               </Link>
+              <Link
+                to="/app/billing"
+                className="inline-flex min-h-10 items-center gap-2 rounded-full px-3 py-2 text-sm font-bold text-[var(--paper-muted)] transition-[background,color] hover:bg-[var(--surface-2)] hover:text-[var(--paper)]"
+                activeProps={{ className: 'bg-[var(--surface-2)] text-[var(--paper)]' }}
+              >
+                Billing
+              </Link>
             </nav>
 
             {visibleSiteName ? (
@@ -238,6 +270,12 @@ function AppLayout() {
           </div>
 
           <div className="flex items-center justify-end gap-2">
+            <Link
+              to="/app/billing"
+              className="hidden min-h-10 items-center rounded-full border border-border bg-[var(--surface-2)] px-3 py-2 text-sm font-bold text-[var(--paper)] transition-[border-color,background] hover:border-[var(--thread-gold)] hover:bg-[var(--surface-3)] md:inline-flex"
+            >
+              {planBadgeLabel}
+            </Link>
             {siteId ? (
               <>
                 <Link

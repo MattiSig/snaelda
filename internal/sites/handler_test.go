@@ -12,7 +12,9 @@ import (
 
 	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/authorization"
+	"github.com/MattiSig/snaelda/internal/billing"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
+	"github.com/jackc/pgx/v5"
 )
 
 type fakeReader struct {
@@ -244,8 +246,8 @@ func TestListSitesReturnsAuthenticatedWorkspaceSites(t *testing.T) {
 
 func TestListSitesReturnsEmptyArrayForWorkspaceWithoutSites(t *testing.T) {
 	handler := Handler{
-		reader:      fakeReader{},
-		authorizer:  fakeAuthorizer{},
+		reader:     fakeReader{},
+		authorizer: fakeAuthorizer{},
 	}
 	req := httptest.NewRequest(http.MethodGet, "/api/sites", nil).WithContext(auth.WithUser(context.Background(), auth.User{
 		ID:            "user-1",
@@ -344,6 +346,37 @@ func TestCreateSiteReturnsCreatedDraft(t *testing.T) {
 	}
 	if mutator.createInput.Name != "Nordic Studio" {
 		t.Fatalf("expected create name to reach mutator, got %#v", mutator.createInput)
+	}
+}
+
+func TestCreateSiteReturnsPlanLimitExceeded(t *testing.T) {
+	handler := Handler{
+		reader:     fakeReader{},
+		mutator:    &fakeMutator{},
+		authorizer: fakeAuthorizer{},
+		billingDB: billingAccessStoreStub{
+			entitlement: billing.Entitlement{
+				WorkspaceID:      "workspace-1",
+				Plan:             "basic",
+				Status:           "active",
+				SubscriptionLive: true,
+				ActiveSiteLimit:  intPtr(1),
+			},
+			activeSiteCount: 1,
+		},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/sites", strings.NewReader(`{"name":"Nordic Studio"}`)).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	res := httptest.NewRecorder()
+
+	handler.create(res, req)
+
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, res.Code)
 	}
 }
 
@@ -800,4 +833,81 @@ func validHandlerDraft() siteconfig.SiteDraft {
 			},
 		},
 	}
+}
+
+type billingAccessStoreStub struct {
+	entitlement     billing.Entitlement
+	activeSiteCount int
+	assetBytes      int64
+	promptCount     int
+	periodStart     *time.Time
+	periodEnd       *time.Time
+}
+
+func (s billingAccessStoreStub) QueryRow(_ context.Context, sql string, _ ...any) pgx.Row {
+	switch {
+	case strings.Contains(sql, "from billing_entitlements"):
+		return rowStub{values: []any{
+			s.entitlement.WorkspaceID,
+			s.entitlement.Plan,
+			s.entitlement.Status,
+			s.entitlement.SubscriptionLive,
+			s.entitlement.CustomDomainsEnabled,
+			s.entitlement.ActiveSiteLimit,
+			s.entitlement.MonthlyPromptLimit,
+			s.entitlement.AssetStorageLimitBytes,
+			time.Now().UTC(),
+		}}
+	case strings.Contains(sql, "select count(*)") && strings.Contains(sql, "from sites"):
+		return rowStub{values: []any{s.activeSiteCount}}
+	case strings.Contains(sql, "from assets"):
+		return rowStub{values: []any{s.assetBytes}}
+	case strings.Contains(sql, "from billing_subscriptions"):
+		if s.periodStart == nil || s.periodEnd == nil {
+			return rowStub{err: pgx.ErrNoRows}
+		}
+		return rowStub{values: []any{s.periodStart, s.periodEnd}}
+	case strings.Contains(sql, "from generation_jobs"):
+		return rowStub{values: []any{s.promptCount}}
+	default:
+		return rowStub{err: pgx.ErrNoRows}
+	}
+}
+
+type rowStub struct {
+	values []any
+	err    error
+}
+
+func (r rowStub) Scan(dest ...any) error {
+	if r.err != nil {
+		return r.err
+	}
+	for index := range dest {
+		switch target := dest[index].(type) {
+		case *string:
+			*target = r.values[index].(string)
+		case *bool:
+			*target = r.values[index].(bool)
+		case *int:
+			*target = r.values[index].(int)
+		case *int64:
+			*target = r.values[index].(int64)
+		case **int:
+			*target = r.values[index].(*int)
+		case **int64:
+			*target = r.values[index].(*int64)
+		case *time.Time:
+			*target = r.values[index].(time.Time)
+		case **time.Time:
+			*target = r.values[index].(*time.Time)
+		default:
+			return errors.New("unsupported scan target")
+		}
+	}
+	return nil
+}
+
+func intPtr(value int) *int {
+	return &value
 }

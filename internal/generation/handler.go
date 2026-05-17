@@ -10,12 +10,14 @@ import (
 
 	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/authorization"
+	"github.com/MattiSig/snaelda/internal/billing"
 	"github.com/MattiSig/snaelda/internal/platform/audit"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
 	"github.com/MattiSig/snaelda/internal/sites"
 )
 
 type Handler struct {
+	billingDB  billing.AccessStore
 	service    Generator
 	authorizer Authorizer
 	logger     *slog.Logger
@@ -70,6 +72,7 @@ func NewHandler(db DB, cfg HandlerConfig) *Handler {
 		logger = slog.Default()
 	}
 	return &Handler{
+		billingDB:  db,
 		service:    NewService(db, cfg.Planner, options...),
 		authorizer: authorization.New(db),
 		logger:     logger,
@@ -108,6 +111,16 @@ func (h *Handler) generate(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.authorizer.RequireWorkspaceMember(r.Context(), workspaceID, authorization.RoleOwner, authorization.RoleEditor); err != nil {
 		writeAuthorizationError(w, err)
 		return
+	}
+	if h.billingDB != nil {
+		if err := billing.EnforceSiteLimit(r.Context(), h.billingDB, workspaceID); err != nil {
+			h.writeGenerationError(w, r, err)
+			return
+		}
+		if err := billing.EnforcePromptLimit(r.Context(), h.billingDB, workspaceID); err != nil {
+			h.writeGenerationError(w, r, err)
+			return
+		}
 	}
 
 	var payload generateRequest
@@ -150,6 +163,12 @@ func (h *Handler) repromptSite(w http.ResponseWriter, r *http.Request) {
 			session.User = &user
 		}
 	}
+	if h.billingDB != nil {
+		if err := billing.EnforcePromptLimit(r.Context(), h.billingDB, scope.WorkspaceID); err != nil {
+			h.writeGenerationError(w, r, err)
+			return
+		}
+	}
 
 	var payload repromptRequest
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -188,6 +207,12 @@ func (h *Handler) repromptPage(w http.ResponseWriter, r *http.Request) {
 	if session.User == nil {
 		if user, ok := auth.UserFromContext(r.Context()); ok {
 			session.User = &user
+		}
+	}
+	if h.billingDB != nil {
+		if err := billing.EnforcePromptLimit(r.Context(), h.billingDB, scope.WorkspaceID); err != nil {
+			h.writeGenerationError(w, r, err)
+			return
 		}
 	}
 
@@ -254,6 +279,8 @@ func (h *Handler) writeGenerationError(w http.ResponseWriter, r *http.Request, e
 		writeError(w, http.StatusNotFound, "draft_scope_not_found", "the requested draft scope was not found")
 	case errors.Is(err, ErrNoDraftRevision):
 		writeError(w, http.StatusNotFound, "draft_revision_not_found", "there is no draft revision to restore")
+	case errors.Is(err, billing.ErrPlanLimitExceeded):
+		writeError(w, http.StatusForbidden, "plan_limit_exceeded", err.Error())
 	default:
 		h.logger.Error("generate site draft", "method", r.Method, "path", r.URL.Path, "error", err.Error())
 		writeError(w, http.StatusInternalServerError, "generate_failed", "could not generate site draft")

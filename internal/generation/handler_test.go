@@ -3,25 +3,29 @@ package generation
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/authorization"
+	"github.com/MattiSig/snaelda/internal/billing"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
+	"github.com/jackc/pgx/v5"
 )
 
 type fakeGenerator struct {
-	input         GenerateInput
-	siteReprompt  RepromptInput
-	pageReprompt  RepromptInput
-	siteID        string
-	pageID        string
-	result        GenerateResult
-	undoResult    siteconfig.SiteDraft
-	err           error
+	input        GenerateInput
+	siteReprompt RepromptInput
+	pageReprompt RepromptInput
+	siteID       string
+	pageID       string
+	result       GenerateResult
+	undoResult   siteconfig.SiteDraft
+	err          error
 }
 
 func (g *fakeGenerator) Generate(_ context.Context, _ string, _ string, input GenerateInput) (GenerateResult, error) {
@@ -160,6 +164,40 @@ func TestGenerateReturnsValidationProblem(t *testing.T) {
 	}
 }
 
+func TestGenerateReturnsPlanLimitExceeded(t *testing.T) {
+	service := &fakeGenerator{}
+	handler := Handler{
+		billingDB: billingAccessStoreStub{
+			entitlement: billing.Entitlement{
+				WorkspaceID:        "workspace-1",
+				Plan:               "basic",
+				Status:             "active",
+				SubscriptionLive:   true,
+				MonthlyPromptLimit: intPtr(1),
+			},
+			periodStart: timePtr(time.Now().UTC().Add(-time.Hour)),
+			periodEnd:   timePtr(time.Now().UTC().Add(time.Hour)),
+			promptCount: 1,
+		},
+		service:    service,
+		authorizer: fakeWorkspaceAuthorizer{},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/generate", strings.NewReader(`{"prompt":"test"}`)).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	res := httptest.NewRecorder()
+
+	handler.generate(res, req)
+
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, res.Code)
+	}
+}
+
 func TestRepromptSiteReturnsCreatedDraft(t *testing.T) {
 	service := &fakeGenerator{
 		result: GenerateResult{
@@ -289,4 +327,85 @@ func validGenerationDraft() siteconfig.SiteDraft {
 			},
 		},
 	}
+}
+
+type billingAccessStoreStub struct {
+	entitlement     billing.Entitlement
+	activeSiteCount int
+	assetBytes      int64
+	promptCount     int
+	periodStart     *time.Time
+	periodEnd       *time.Time
+}
+
+func (s billingAccessStoreStub) QueryRow(_ context.Context, sql string, _ ...any) pgx.Row {
+	switch {
+	case strings.Contains(sql, "from billing_entitlements"):
+		return generationRowStub{values: []any{
+			s.entitlement.WorkspaceID,
+			s.entitlement.Plan,
+			s.entitlement.Status,
+			s.entitlement.SubscriptionLive,
+			s.entitlement.CustomDomainsEnabled,
+			s.entitlement.ActiveSiteLimit,
+			s.entitlement.MonthlyPromptLimit,
+			s.entitlement.AssetStorageLimitBytes,
+			time.Now().UTC(),
+		}}
+	case strings.Contains(sql, "from sites"):
+		return generationRowStub{values: []any{s.activeSiteCount}}
+	case strings.Contains(sql, "from assets"):
+		return generationRowStub{values: []any{s.assetBytes}}
+	case strings.Contains(sql, "from billing_subscriptions"):
+		if s.periodStart == nil || s.periodEnd == nil {
+			return generationRowStub{err: pgx.ErrNoRows}
+		}
+		return generationRowStub{values: []any{s.periodStart, s.periodEnd}}
+	case strings.Contains(sql, "from generation_jobs"):
+		return generationRowStub{values: []any{s.promptCount}}
+	default:
+		return generationRowStub{err: pgx.ErrNoRows}
+	}
+}
+
+type generationRowStub struct {
+	values []any
+	err    error
+}
+
+func (r generationRowStub) Scan(dest ...any) error {
+	if r.err != nil {
+		return r.err
+	}
+	for index := range dest {
+		switch target := dest[index].(type) {
+		case *string:
+			*target = r.values[index].(string)
+		case *bool:
+			*target = r.values[index].(bool)
+		case *int:
+			*target = r.values[index].(int)
+		case *int64:
+			*target = r.values[index].(int64)
+		case **int:
+			*target = r.values[index].(*int)
+		case **int64:
+			*target = r.values[index].(*int64)
+		case *time.Time:
+			*target = r.values[index].(time.Time)
+		case **time.Time:
+			*target = r.values[index].(*time.Time)
+		default:
+			return errors.New("unsupported scan target")
+		}
+	}
+	return nil
+}
+
+func intPtr(value int) *int {
+	return &value
+}
+
+func timePtr(value time.Time) *time.Time {
+	return &value
 }

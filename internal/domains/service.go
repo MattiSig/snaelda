@@ -26,12 +26,13 @@ type Service struct {
 }
 
 type SiteDomainsResult struct {
-	SiteID         string        `json:"siteId"`
-	SiteSlug       string        `json:"siteSlug"`
-	Published      bool          `json:"published"`
-	HostedHostname string        `json:"hostedHostname"`
-	PublicURL      string        `json:"publicUrl,omitempty"`
-	Domains        []DomainEntry `json:"domains"`
+	SiteID               string        `json:"siteId"`
+	SiteSlug             string        `json:"siteSlug"`
+	Published            bool          `json:"published"`
+	HostedHostname       string        `json:"hostedHostname"`
+	PublicURL            string        `json:"publicUrl,omitempty"`
+	CustomDomainsEnabled bool          `json:"customDomainsEnabled"`
+	Domains              []DomainEntry `json:"domains"`
 }
 
 type DomainEntry struct {
@@ -80,6 +81,15 @@ func (s *Service) List(ctx context.Context, siteID string) (SiteDomainsResult, e
 	if result.Published {
 		result.PublicURL = buildPublicURL(s.appBaseURL, s.publicBaseURL, result.HostedHostname)
 	}
+	_ = s.db.QueryRow(ctx, `
+		select custom_domains_enabled
+		from billing_entitlements
+		where workspace_id = (
+			select workspace_id
+			from sites
+			where id = $1
+		)
+	`, siteID).Scan(&result.CustomDomainsEnabled)
 
 	rows, err := s.db.Query(ctx, `
 		select id::text,

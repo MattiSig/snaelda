@@ -314,7 +314,33 @@ export type SiteDomainsResponse = {
   published: boolean;
   hostedHostname: string;
   publicUrl?: string;
+  customDomainsEnabled: boolean;
   domains: SiteDomain[];
+};
+
+export type BillingEntitlement = {
+  workspaceId: string;
+  plan: string;
+  status: string;
+  subscriptionLive: boolean;
+  customDomainsEnabled: boolean;
+  activeSiteLimit?: number;
+  monthlyPromptLimit?: number;
+  assetStorageLimitBytes?: number;
+  updatedAt: string;
+};
+
+export type BillingUsage = {
+  activeSiteCount: number;
+  periodPromptCount: number;
+  uploadedAssetBytes: number;
+  currentPeriodStart?: string;
+  currentPeriodEnd?: string;
+};
+
+export type BillingState = {
+  entitlement: BillingEntitlement;
+  usage: BillingUsage;
 };
 
 export type PublishedSiteResponse = {
@@ -461,6 +487,26 @@ export async function getCurrentSession() {
   return apiFetch<SessionResponse>("/api/sessions/me").then(
     (response) => response.session,
   );
+}
+
+export async function getBillingState() {
+  return apiFetch<BillingState>("/api/billing/entitlements");
+}
+
+export async function createBillingCheckout(plan: "basic" | "pro") {
+  return apiFetch<{ url: string }>("/api/billing/checkout", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ plan }),
+  });
+}
+
+export async function createBillingPortal() {
+  return apiFetch<{ url: string }>("/api/billing/portal", {
+    method: "POST",
+  });
 }
 
 export async function refreshAuthSession() {

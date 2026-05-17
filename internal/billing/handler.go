@@ -106,12 +106,12 @@ func (h *Handler) entitlements(w http.ResponseWriter, r *http.Request) {
 		writeBillingError(w, http.StatusUnauthorized, "unauthenticated", "a session is required")
 		return
 	}
-	entitlement, err := h.service.GetEntitlement(r.Context(), session.WorkspaceID)
+	state, err := LoadWorkspaceState(r.Context(), h.service.store, session.WorkspaceID)
 	if err != nil {
 		writeBillingError(w, http.StatusInternalServerError, "billing_entitlements_failed", err.Error())
 		return
 	}
-	writeBillingJSON(w, http.StatusOK, map[string]Entitlement{"entitlement": entitlement})
+	writeBillingJSON(w, http.StatusOK, state)
 }
 
 func (h *Handler) webhook(w http.ResponseWriter, r *http.Request) {

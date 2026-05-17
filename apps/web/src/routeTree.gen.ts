@@ -19,11 +19,15 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as PublicSiteSlugRouteImport } from './routes/public.$siteSlug'
 import { Route as PreviewTokenRouteImport } from './routes/preview.$token'
+import { Route as AppBillingRouteImport } from './routes/app.billing'
 import { Route as PublicSiteSlugIndexRouteImport } from './routes/public.$siteSlug.index'
+import { Route as AppBillingIndexRouteImport } from './routes/app.billing.index'
 import { Route as PublicSiteSlugSitemapDotxmlRouteImport } from './routes/public.$siteSlug.sitemap[.]xml'
 import { Route as PublicSiteSlugRobotsDottxtRouteImport } from './routes/public.$siteSlug.robots[.]txt'
 import { Route as PublicSiteSlugSplatRouteImport } from './routes/public.$siteSlug.$'
 import { Route as AppSitesSiteIdRouteImport } from './routes/app.sites.$siteId'
+import { Route as AppBillingSuccessRouteImport } from './routes/app.billing.success'
+import { Route as AppBillingCancelRouteImport } from './routes/app.billing.cancel'
 import { Route as AppSitesSiteIdIndexRouteImport } from './routes/app.sites.$siteId.index'
 import { Route as AppSitesSiteIdPreviewRouteImport } from './routes/app.sites.$siteId.preview'
 import { Route as AppSitesSiteIdAnalyticsRouteImport } from './routes/app.sites.$siteId.analytics'
@@ -78,10 +82,20 @@ const PreviewTokenRoute = PreviewTokenRouteImport.update({
   path: '/preview/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppBillingRoute = AppBillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
+  getParentRoute: () => AppRoute,
+} as any)
 const PublicSiteSlugIndexRoute = PublicSiteSlugIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => PublicSiteSlugRoute,
+} as any)
+const AppBillingIndexRoute = AppBillingIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppBillingRoute,
 } as any)
 const PublicSiteSlugSitemapDotxmlRoute =
   PublicSiteSlugSitemapDotxmlRouteImport.update({
@@ -104,6 +118,16 @@ const AppSitesSiteIdRoute = AppSitesSiteIdRouteImport.update({
   id: '/sites/$siteId',
   path: '/sites/$siteId',
   getParentRoute: () => AppRoute,
+} as any)
+const AppBillingSuccessRoute = AppBillingSuccessRouteImport.update({
+  id: '/success',
+  path: '/success',
+  getParentRoute: () => AppBillingRoute,
+} as any)
+const AppBillingCancelRoute = AppBillingCancelRouteImport.update({
+  id: '/cancel',
+  path: '/cancel',
+  getParentRoute: () => AppBillingRoute,
 } as any)
 const AppSitesSiteIdIndexRoute = AppSitesSiteIdIndexRouteImport.update({
   id: '/',
@@ -129,13 +153,17 @@ export interface FileRoutesByFullPath {
   '/restore': typeof RestoreRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/app/billing': typeof AppBillingRouteWithChildren
   '/preview/$token': typeof PreviewTokenRoute
   '/public/$siteSlug': typeof PublicSiteSlugRouteWithChildren
   '/app/': typeof AppIndexRoute
+  '/app/billing/cancel': typeof AppBillingCancelRoute
+  '/app/billing/success': typeof AppBillingSuccessRoute
   '/app/sites/$siteId': typeof AppSitesSiteIdRouteWithChildren
   '/public/$siteSlug/$': typeof PublicSiteSlugSplatRoute
   '/public/$siteSlug/robots.txt': typeof PublicSiteSlugRobotsDottxtRoute
   '/public/$siteSlug/sitemap.xml': typeof PublicSiteSlugSitemapDotxmlRoute
+  '/app/billing/': typeof AppBillingIndexRoute
   '/public/$siteSlug/': typeof PublicSiteSlugIndexRoute
   '/app/sites/$siteId/analytics': typeof AppSitesSiteIdAnalyticsRoute
   '/app/sites/$siteId/preview': typeof AppSitesSiteIdPreviewRoute
@@ -150,9 +178,12 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/preview/$token': typeof PreviewTokenRoute
   '/app': typeof AppIndexRoute
+  '/app/billing/cancel': typeof AppBillingCancelRoute
+  '/app/billing/success': typeof AppBillingSuccessRoute
   '/public/$siteSlug/$': typeof PublicSiteSlugSplatRoute
   '/public/$siteSlug/robots.txt': typeof PublicSiteSlugRobotsDottxtRoute
   '/public/$siteSlug/sitemap.xml': typeof PublicSiteSlugSitemapDotxmlRoute
+  '/app/billing': typeof AppBillingIndexRoute
   '/public/$siteSlug': typeof PublicSiteSlugIndexRoute
   '/app/sites/$siteId/analytics': typeof AppSitesSiteIdAnalyticsRoute
   '/app/sites/$siteId/preview': typeof AppSitesSiteIdPreviewRoute
@@ -167,13 +198,17 @@ export interface FileRoutesById {
   '/restore': typeof RestoreRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/app/billing': typeof AppBillingRouteWithChildren
   '/preview/$token': typeof PreviewTokenRoute
   '/public/$siteSlug': typeof PublicSiteSlugRouteWithChildren
   '/app/': typeof AppIndexRoute
+  '/app/billing/cancel': typeof AppBillingCancelRoute
+  '/app/billing/success': typeof AppBillingSuccessRoute
   '/app/sites/$siteId': typeof AppSitesSiteIdRouteWithChildren
   '/public/$siteSlug/$': typeof PublicSiteSlugSplatRoute
   '/public/$siteSlug/robots.txt': typeof PublicSiteSlugRobotsDottxtRoute
   '/public/$siteSlug/sitemap.xml': typeof PublicSiteSlugSitemapDotxmlRoute
+  '/app/billing/': typeof AppBillingIndexRoute
   '/public/$siteSlug/': typeof PublicSiteSlugIndexRoute
   '/app/sites/$siteId/analytics': typeof AppSitesSiteIdAnalyticsRoute
   '/app/sites/$siteId/preview': typeof AppSitesSiteIdPreviewRoute
@@ -189,13 +224,17 @@ export interface FileRouteTypes {
     | '/restore'
     | '/robots.txt'
     | '/sitemap.xml'
+    | '/app/billing'
     | '/preview/$token'
     | '/public/$siteSlug'
     | '/app/'
+    | '/app/billing/cancel'
+    | '/app/billing/success'
     | '/app/sites/$siteId'
     | '/public/$siteSlug/$'
     | '/public/$siteSlug/robots.txt'
     | '/public/$siteSlug/sitemap.xml'
+    | '/app/billing/'
     | '/public/$siteSlug/'
     | '/app/sites/$siteId/analytics'
     | '/app/sites/$siteId/preview'
@@ -210,9 +249,12 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/preview/$token'
     | '/app'
+    | '/app/billing/cancel'
+    | '/app/billing/success'
     | '/public/$siteSlug/$'
     | '/public/$siteSlug/robots.txt'
     | '/public/$siteSlug/sitemap.xml'
+    | '/app/billing'
     | '/public/$siteSlug'
     | '/app/sites/$siteId/analytics'
     | '/app/sites/$siteId/preview'
@@ -226,13 +268,17 @@ export interface FileRouteTypes {
     | '/restore'
     | '/robots.txt'
     | '/sitemap.xml'
+    | '/app/billing'
     | '/preview/$token'
     | '/public/$siteSlug'
     | '/app/'
+    | '/app/billing/cancel'
+    | '/app/billing/success'
     | '/app/sites/$siteId'
     | '/public/$siteSlug/$'
     | '/public/$siteSlug/robots.txt'
     | '/public/$siteSlug/sitemap.xml'
+    | '/app/billing/'
     | '/public/$siteSlug/'
     | '/app/sites/$siteId/analytics'
     | '/app/sites/$siteId/preview'
@@ -323,12 +369,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PreviewTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/app/billing': {
+      id: '/app/billing'
+      path: '/billing'
+      fullPath: '/app/billing'
+      preLoaderRoute: typeof AppBillingRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/public/$siteSlug/': {
       id: '/public/$siteSlug/'
       path: '/'
       fullPath: '/public/$siteSlug/'
       preLoaderRoute: typeof PublicSiteSlugIndexRouteImport
       parentRoute: typeof PublicSiteSlugRoute
+    }
+    '/app/billing/': {
+      id: '/app/billing/'
+      path: '/'
+      fullPath: '/app/billing/'
+      preLoaderRoute: typeof AppBillingIndexRouteImport
+      parentRoute: typeof AppBillingRoute
     }
     '/public/$siteSlug/sitemap.xml': {
       id: '/public/$siteSlug/sitemap.xml'
@@ -358,6 +418,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSitesSiteIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/billing/success': {
+      id: '/app/billing/success'
+      path: '/success'
+      fullPath: '/app/billing/success'
+      preLoaderRoute: typeof AppBillingSuccessRouteImport
+      parentRoute: typeof AppBillingRoute
+    }
+    '/app/billing/cancel': {
+      id: '/app/billing/cancel'
+      path: '/cancel'
+      fullPath: '/app/billing/cancel'
+      preLoaderRoute: typeof AppBillingCancelRouteImport
+      parentRoute: typeof AppBillingRoute
+    }
     '/app/sites/$siteId/': {
       id: '/app/sites/$siteId/'
       path: '/'
@@ -382,6 +456,22 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AppBillingRouteChildren {
+  AppBillingCancelRoute: typeof AppBillingCancelRoute
+  AppBillingSuccessRoute: typeof AppBillingSuccessRoute
+  AppBillingIndexRoute: typeof AppBillingIndexRoute
+}
+
+const AppBillingRouteChildren: AppBillingRouteChildren = {
+  AppBillingCancelRoute: AppBillingCancelRoute,
+  AppBillingSuccessRoute: AppBillingSuccessRoute,
+  AppBillingIndexRoute: AppBillingIndexRoute,
+}
+
+const AppBillingRouteWithChildren = AppBillingRoute._addFileChildren(
+  AppBillingRouteChildren,
+)
+
 interface AppSitesSiteIdRouteChildren {
   AppSitesSiteIdAnalyticsRoute: typeof AppSitesSiteIdAnalyticsRoute
   AppSitesSiteIdPreviewRoute: typeof AppSitesSiteIdPreviewRoute
@@ -399,11 +489,13 @@ const AppSitesSiteIdRouteWithChildren = AppSitesSiteIdRoute._addFileChildren(
 )
 
 interface AppRouteChildren {
+  AppBillingRoute: typeof AppBillingRouteWithChildren
   AppIndexRoute: typeof AppIndexRoute
   AppSitesSiteIdRoute: typeof AppSitesSiteIdRouteWithChildren
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppBillingRoute: AppBillingRouteWithChildren,
   AppIndexRoute: AppIndexRoute,
   AppSitesSiteIdRoute: AppSitesSiteIdRouteWithChildren,
 }

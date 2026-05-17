@@ -10,6 +10,7 @@ import (
 
 	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/authorization"
+	"github.com/MattiSig/snaelda/internal/billing"
 )
 
 type AssetService interface {
@@ -29,6 +30,7 @@ type Authorizer interface {
 }
 
 type Handler struct {
+	billingDB  billing.AccessStore
 	service    AssetService
 	authorizer Authorizer
 }
@@ -55,6 +57,7 @@ type updateAssetRequest struct {
 
 func NewHandler(db DB, storage Storage) *Handler {
 	return &Handler{
+		billingDB:  db,
 		service:    NewService(db, storage),
 		authorizer: authorization.New(db),
 	}
@@ -64,6 +67,7 @@ func NewHandler(db DB, storage Storage) *Handler {
 // back both the public handler and the generation flow's asset import path.
 func NewHandlerWithService(db DB, service AssetService) *Handler {
 	return &Handler{
+		billingDB:  db,
 		service:    service,
 		authorizer: authorization.New(db),
 	}
@@ -91,6 +95,12 @@ func (h *Handler) createUploadURL(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeAuthorizationError(w, err)
 		return
+	}
+	if h.billingDB != nil {
+		if err := billing.EnforceAssetStorageLimit(r.Context(), h.billingDB, scope.WorkspaceID, payload.SizeBytes); err != nil {
+			writeAssetError(w, err)
+			return
+		}
 	}
 	session, _ := auth.SessionFromContext(r.Context())
 	if session.User == nil {
@@ -301,6 +311,8 @@ func writeAssetError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "asset_upload_incomplete", "uploaded file is not ready yet")
 	case errors.Is(err, ErrAssetUploadMismatch):
 		writeError(w, http.StatusBadRequest, "asset_upload_mismatch", "uploaded file did not match the requested file")
+	case errors.Is(err, billing.ErrPlanLimitExceeded):
+		writeError(w, http.StatusForbidden, "plan_limit_exceeded", err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "asset_write_failed", "could not process asset")
 	}

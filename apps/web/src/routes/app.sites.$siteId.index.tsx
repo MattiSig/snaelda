@@ -18,11 +18,13 @@ import {
   completeAssetUpload,
   createBlock,
   createAssetUploadURL,
+  createBillingCheckout,
   createPage,
   deleteBlock,
   deletePage,
   deleteSite,
   duplicateBlock,
+  getBillingState,
   getSiteDomains,
   getSiteDraft,
   getSiteTheme,
@@ -39,6 +41,7 @@ import {
   updateSiteNavigation,
   type NavigationItemInput,
   type AssetRecord,
+  type BillingState,
   type BlockDefinition,
   type FormSubmissionRecord,
   type FormSubmissionStatus,
@@ -86,6 +89,7 @@ function SiteDetail() {
   const [selectedPageId, setSelectedPageId] = useState("");
   const [selectedBlockId, setSelectedBlockId] = useState("");
   const [versions, setVersions] = useState<SiteVersion[]>([]);
+  const [billingState, setBillingState] = useState<BillingState | null>(null);
   const [domainState, setDomainState] = useState<SiteDomainsResponse | null>(
     null,
   );
@@ -158,6 +162,9 @@ function SiteDetail() {
   const [submissionStatusMessage, setSubmissionStatusMessage] = useState("");
   const [repromptErrorMessage, setRepromptErrorMessage] = useState("");
   const [repromptStatusMessage, setRepromptStatusMessage] = useState("");
+  const [blockedActionMessage, setBlockedActionMessage] = useState("");
+  const [blockedActionMode, setBlockedActionMode] = useState<"billing" | "claim" | "">("");
+  const [isStartingUpgrade, setIsStartingUpgrade] = useState(false);
 
   function syncSelectedPageFields(
     nextDraft: SiteDraft,
@@ -215,6 +222,7 @@ function SiteDetail() {
       getSiteDraft(siteId),
       listSiteVersions(siteId),
       getSiteDomains(siteId),
+      getBillingState(),
       getSiteTheme(siteId),
       listSiteAssets(siteId),
       listSiteFormSubmissions(siteId),
@@ -224,6 +232,7 @@ function SiteDetail() {
           draftResponse,
           versionResponse,
           domainResponse,
+          billingResponse,
           themeResponse,
           assetResponse,
           submissionResponse,
@@ -238,6 +247,7 @@ function SiteDetail() {
           );
           setVersions(versionResponse.versions);
           setDomainState(domainResponse);
+          setBillingState(billingResponse);
           setThemeSelection(themeResponse.selection);
           setThemeOptions(themeResponse.options);
           setSiteAssets(assetResponse.assets);
@@ -287,6 +297,30 @@ function SiteDetail() {
     ? blockDefinitions.get(`${selectedBlock.type}@${selectedBlock.version}`)
     : undefined;
 
+  function clearBlockedAction() {
+    setBlockedActionMessage("");
+    setBlockedActionMode("");
+  }
+
+  function setBlockedActionFromError(error: unknown) {
+    if (!(error instanceof APIError)) {
+      return;
+    }
+    const code =
+      typeof error.payload?.error === "object"
+        ? error.payload.error.code
+        : error.payload?.code;
+    if (code === "claim_required") {
+      setBlockedActionMode("claim");
+      setBlockedActionMessage(error.message);
+      return;
+    }
+    if (code === "subscription_required" || code === "plan_limit_exceeded") {
+      setBlockedActionMode("billing");
+      setBlockedActionMessage(error.message);
+    }
+  }
+
   async function refreshDraftState(
     preferredPageID?: string,
     preferredBlockID?: string,
@@ -302,11 +336,26 @@ function SiteDetail() {
     return response;
   }
 
+  async function handleStartUpgrade() {
+    setIsStartingUpgrade(true);
+    try {
+      const response = await createBillingCheckout("basic");
+      window.location.href = response.url;
+    } catch (error) {
+      setBlockedActionMessage(
+        error instanceof APIError ? error.message : "Could not open checkout",
+      );
+    } finally {
+      setIsStartingUpgrade(false);
+    }
+  }
+
   async function handleSaveSite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsSavingSite(true);
     setSiteErrorMessage("");
     setSiteStatusMessage("");
+    clearBlockedAction();
 
     try {
       const response = await updateSite(siteId, { name, slug });
@@ -328,6 +377,7 @@ function SiteDetail() {
     setIsCreatingPage(true);
     setPageErrorMessage("");
     setPageStatusMessage("");
+    clearBlockedAction();
 
     try {
       const response = await createPage(siteId, {
@@ -363,6 +413,7 @@ function SiteDetail() {
     setIsSavingPage(true);
     setPageErrorMessage("");
     setPageStatusMessage("");
+    clearBlockedAction();
 
     try {
       const response = await updatePage(siteId, selectedPage.id, {
@@ -399,6 +450,7 @@ function SiteDetail() {
     setIsDeletingPage(true);
     setPageErrorMessage("");
     setPageStatusMessage("");
+    clearBlockedAction();
 
     try {
       const response = await deletePage(siteId, selectedPage.id);
@@ -508,6 +560,7 @@ function SiteDetail() {
     setIsSavingNavigation(true);
     setNavigationErrorMessage("");
     setNavigationStatusMessage("");
+    clearBlockedAction();
 
     const sanitized = navigationDraft.map((item) => ({
       label: item.label.trim(),
@@ -548,6 +601,7 @@ function SiteDetail() {
     setIsSavingBlock(true);
     setBlockErrorMessage("");
     setBlockStatusMessage("");
+    clearBlockedAction();
 
     try {
       const response = await updateBlock(
@@ -581,6 +635,7 @@ function SiteDetail() {
     setIsUploadingAsset(true);
     setAssetErrorMessage("");
     setAssetStatusMessage("");
+    clearBlockedAction();
 
     try {
       const ticket = await createAssetUploadURL({
@@ -623,6 +678,7 @@ function SiteDetail() {
       setAssetInputKey((current) => current + 1);
       setAssetStatusMessage("Asset uploaded and ready for block fields.");
     } catch (error) {
+      setBlockedActionFromError(error);
       setAssetErrorMessage(
         error instanceof APIError
           ? error.message
@@ -687,6 +743,7 @@ function SiteDetail() {
     setIsRegeneratingTheme(true);
     setThemeErrorMessage("");
     setThemeStatusMessage("");
+    clearBlockedAction();
 
     try {
       const response = await regenerateSiteTheme(siteId);
@@ -956,6 +1013,7 @@ function SiteDetail() {
     setIsRepromptingSite(true);
     setRepromptErrorMessage("");
     setRepromptStatusMessage("");
+    clearBlockedAction();
 
     try {
       await repromptSite(siteId, { prompt: siteReprompt });
@@ -966,6 +1024,7 @@ function SiteDetail() {
         "Site regenerated. The previous draft is available through undo.",
       );
     } catch (error) {
+      setBlockedActionFromError(error);
       setRepromptErrorMessage(
         error instanceof APIError ? error.message : "Could not re-prompt site",
       );
@@ -983,6 +1042,7 @@ function SiteDetail() {
     setIsRepromptingPage(true);
     setRepromptErrorMessage("");
     setRepromptStatusMessage("");
+    clearBlockedAction();
 
     try {
       const response = await repromptPage(siteId, selectedPage.id, {
@@ -994,6 +1054,7 @@ function SiteDetail() {
         `${selectedPage.title} was regenerated. The previous draft is available through undo.`,
       );
     } catch (error) {
+      setBlockedActionFromError(error);
       setRepromptErrorMessage(
         error instanceof APIError ? error.message : "Could not re-prompt page",
       );
@@ -1068,17 +1129,21 @@ function SiteDetail() {
     setIsPublishing(true);
     setPublishErrorMessage("");
     setPublishStatusMessage("");
+    clearBlockedAction();
 
     try {
       const response = await publishSite(siteId, { publishNote });
       const versionResponse = await listSiteVersions(siteId);
       const domainResponse = await getSiteDomains(siteId);
+      const nextBillingState = await getBillingState();
       setVersions(versionResponse.versions);
       setDomainState(domainResponse);
+      setBillingState(nextBillingState);
       setPublishStatusMessage(
         `Published version ${response.version.versionNumber} live at ${response.publicUrl}`,
       );
     } catch (error) {
+      setBlockedActionFromError(error);
       setPublishErrorMessage(
         error instanceof APIError ? error.message : "Could not publish site",
       );
@@ -1101,6 +1166,7 @@ function SiteDetail() {
     setActiveRollbackVersionId(version.id);
     setPublishErrorMessage("");
     setPublishStatusMessage("");
+    clearBlockedAction();
 
     try {
       const response = await rollbackSiteVersion(siteId, version.id);
@@ -1143,6 +1209,12 @@ function SiteDetail() {
       ? `https://${domainState.hostedHostname}/`
       : "");
   const liveHostname = domainState?.hostedHostname ?? "";
+  const billingPlanLabel =
+    billingState?.entitlement.plan === "pro"
+      ? "Pro"
+      : billingState?.entitlement.plan === "basic"
+        ? "Basic"
+        : "Trial";
   const uploadedSiteAssets = siteAssets.filter(
     (asset) => asset.metadata.uploadStatus === "uploaded",
   );
@@ -1172,9 +1244,37 @@ function SiteDetail() {
     "flex items-center justify-between gap-3 rounded-[10px] border border-border bg-[color-mix(in_oklch,var(--surface-1)_42%,transparent)] px-4 py-3";
   const workspaceInset =
     "rounded-[10px] border border-border bg-[color-mix(in_oklch,var(--surface-1)_42%,transparent)] p-4";
+  const billingPromptNotice = blockedActionMessage ? (
+    <div className="rounded-[14px] border border-[color-mix(in_oklch,var(--thread-gold)_65%,var(--border))] bg-[color-mix(in_oklch,var(--thread-gold)_10%,var(--surface-1))] p-4">
+      <p className="text-sm font-bold text-[var(--paper)]">Action blocked</p>
+      <p className="mt-2 text-sm text-[var(--paper-muted)]">{blockedActionMessage}</p>
+      <div className="mt-4 flex flex-wrap gap-3">
+        {blockedActionMode === "billing" ? (
+          <>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleStartUpgrade}
+              disabled={isStartingUpgrade}
+            >
+              {isStartingUpgrade ? "Opening checkout..." : "Upgrade in Stripe"}
+            </Button>
+            <Button asChild type="button" size="sm" variant="outline">
+              <Link to="/app/billing">See billing details</Link>
+            </Button>
+          </>
+        ) : (
+          <p className="text-sm font-semibold text-[var(--paper)]">
+            Save your workspace in the trial banner above, then retry.
+          </p>
+        )}
+      </div>
+    </div>
+  ) : null;
 
   const sitePanelContent = (
     <div className="grid gap-4 2xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+      {billingPromptNotice ? <div className="2xl:col-span-2">{billingPromptNotice}</div> : null}
       <section className={workspaceSection}>
         <div>
           <p className={text.eyebrow}>Generation brief</p>
@@ -2104,6 +2204,7 @@ function SiteDetail() {
 
   const publishPanelContent = (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+      {billingPromptNotice ? <div className="xl:col-span-2">{billingPromptNotice}</div> : null}
       <section className={workspaceSection}>
         <div>
           <p className={text.eyebrow}>Draft to live</p>
@@ -2130,9 +2231,9 @@ function SiteDetail() {
             </p>
           </div>
           <div className="rounded-[12px] border border-border bg-[var(--surface-2)] p-4">
-            <p className={text.label}>Release history</p>
+            <p className={text.label}>Workspace plan</p>
             <p className="mt-2 text-2xl font-black text-[var(--paper)]">
-              {versions.length}
+              {billingPlanLabel}
             </p>
           </div>
         </div>
@@ -2150,6 +2251,11 @@ function SiteDetail() {
             Hosted sites resolve through the published domain record, not the
             internal preview route.
           </p>
+          {!domainState?.customDomainsEnabled ? (
+            <p className={cn(form.hint, "mt-2")}>
+              Custom domains stay locked until the workspace is on a paid plan.
+            </p>
+          ) : null}
         </div>
 
         <div className={form.field}>

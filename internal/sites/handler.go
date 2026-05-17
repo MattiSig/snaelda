@@ -11,6 +11,7 @@ import (
 
 	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/authorization"
+	"github.com/MattiSig/snaelda/internal/billing"
 	"github.com/MattiSig/snaelda/internal/platform/audit"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
 )
@@ -20,6 +21,7 @@ type Handler struct {
 	mutator    Mutator
 	authorizer Authorizer
 	previews   PreviewTokenService
+	billingDB  billing.AccessStore
 }
 
 type Authorizer interface {
@@ -55,6 +57,7 @@ func NewHandlerWithConfig(db DB, cfg HandlerConfig) *Handler {
 		mutator:    NewPostgresMutator(db, mutatorOptions...),
 		authorizer: authorization.New(db),
 		previews:   NewPostgresPreviewTokenService(db, cfg.PreviewTokenTTL),
+		billingDB:  db,
 	}
 }
 
@@ -236,6 +239,12 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.authorizer.RequireWorkspaceMember(r.Context(), workspaceID, authorization.RoleOwner, authorization.RoleEditor); err != nil {
 		writeAuthorizationError(w, err)
 		return
+	}
+	if h.billingDB != nil {
+		if err := billing.EnforceSiteLimit(r.Context(), h.billingDB, workspaceID); err != nil {
+			writeSiteError(w, err)
+			return
+		}
 	}
 
 	var payload createSiteRequest
@@ -754,6 +763,8 @@ func writeSiteError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "invalid_navigation_item", "navigation item references a page that does not exist")
 	case errors.Is(err, ErrNavigationHrefInvalid):
 		writeError(w, http.StatusBadRequest, "invalid_navigation_href", "navigation item href is invalid")
+	case errors.Is(err, billing.ErrPlanLimitExceeded):
+		writeError(w, http.StatusForbidden, "plan_limit_exceeded", err.Error())
 	case errors.Is(err, ErrPreviewTokenNotFound):
 		writeError(w, http.StatusNotFound, "preview_token_not_found", "preview link is invalid or expired")
 	case errors.Is(err, ErrPreviewTokenInvalid):

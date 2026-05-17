@@ -57,7 +57,9 @@ This file tracks confirmed remaining work only, sorted by implementation priorit
   - [x] Env wiring shipped in `internal/platform/config/` for `STRIPE_*` and `BILLING_*`.
   - [x] Auth/session resolution now reads `billing_entitlements.subscription_live`, so trial gating lifts immediately once Stripe-backed entitlements flip live.
   - [ ] Gating: enforce entitlements in `internal/generation/handler.go`, `internal/publishing/handler.go`, `internal/assets/`, `internal/domains/`.
-  - [ ] Frontend: billing routes under `apps/web/src/routes/app.billing.*`, blocked-action UI in builder, plan badge in shell.
+    - Paid plan limits now gate new site creation (`internal/sites/handler.go`), paid prompt allowance (`internal/generation/handler.go`), asset storage (`internal/assets/handler.go`), and domain read responses expose `customDomainsEnabled` for builder gating.
+    - Hosted-subdomain publish remains available to trials by spec 17; custom-domain write enforcement still belongs to the spec 13 domain-attach endpoints that are not built yet.
+  - [x] Frontend: billing routes under `apps/web/src/routes/app.billing.*`, blocked-action UI in builder, plan badge in shell.
   - [ ] Add-on / Once-over follow-up: persist one-time purchases and wire the intake workflow once the product surface exists.
   - [ ] Acceptance: claim → checkout → webhook → entitlement flip → publish unblocked; portal cancel → entitlement downgrade.
 
