@@ -575,6 +575,7 @@ func (h *Handler) resolveAuthenticatedSession(r *http.Request) (Session, error) 
 		User:          &user,
 	}
 	h.attachWorkspaceTrialState(r.Context(), &session)
+	session.SubscriptionLive = h.lookupSubscriptionLive(r.Context(), user.WorkspaceID)
 	return session, nil
 }
 
@@ -691,13 +692,13 @@ func (h *Handler) loadTrialSession(ctx context.Context, column string, hash stri
 	`, column)
 
 	var (
-		session         Session
-		claimedAt       *time.Time
-		userID          string
-		userEmail       string
-		userName        string
-		trialStartedAt  time.Time
-		trialExpiresAt  time.Time
+		session        Session
+		claimedAt      *time.Time
+		userID         string
+		userEmail      string
+		userName       string
+		trialStartedAt time.Time
+		trialExpiresAt time.Time
 	)
 	err := h.store.QueryRow(ctx, query, hash).Scan(
 		&session.GuestSessionID,
@@ -723,6 +724,7 @@ func (h *Handler) loadTrialSession(ctx context.Context, column string, hash stri
 	session.TrialExpiresAt = &trialExpiresAt
 	session.TrialExpired = time.Now().UTC().After(trialExpiresAt)
 	session.ClaimedAt = claimedAt
+	session.SubscriptionLive = h.lookupSubscriptionLive(ctx, session.WorkspaceID)
 	if userID != "" {
 		user := User{
 			ID:            userID,
@@ -790,6 +792,22 @@ func (h *Handler) attachWorkspaceTrialState(ctx context.Context, session *Sessio
 	session.ClaimedAt = claimedAt
 	session.ClaimedByUserID = claimedByUserID
 	session.HasRecoveryKey = hasRecoveryKey
+	session.SubscriptionLive = h.lookupSubscriptionLive(ctx, session.WorkspaceID)
+}
+
+func (h *Handler) lookupSubscriptionLive(ctx context.Context, workspaceID string) bool {
+	if h.store == nil || strings.TrimSpace(workspaceID) == "" {
+		return false
+	}
+	var subscriptionLive bool
+	if err := h.store.QueryRow(ctx, `
+		select subscription_live
+		from billing_entitlements
+		where workspace_id = $1
+	`, workspaceID).Scan(&subscriptionLive); err != nil {
+		return false
+	}
+	return subscriptionLive
 }
 
 func (h *Handler) claimTrialSession(ctx context.Context, session Session, emailAddress string, name string) (User, Session, error) {

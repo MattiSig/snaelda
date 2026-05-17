@@ -37,6 +37,38 @@ func (s Sender) SendMagicLinkVerify(ctx context.Context, to Address, data MagicL
 	})
 }
 
+func (s Sender) SendBillingReceipt(ctx context.Context, to Address, data BillingReceiptTemplateData, idempotencyKey string) (SendResult, error) {
+	subject, textBody, htmlBody, err := RenderBillingReceipt(data)
+	if err != nil {
+		return SendResult{}, err
+	}
+	return s.Mailer.Send(ctx, Message{
+		To:             []Address{to},
+		From:           s.DefaultFrom,
+		Subject:        subject,
+		TextBody:       textBody,
+		HTMLBody:       htmlBody,
+		Tags:           map[string]string{"template": "billing_receipt"},
+		IdempotencyKey: idempotencyKey,
+	})
+}
+
+func (s Sender) SendBillingPaymentFailed(ctx context.Context, to Address, data BillingPaymentFailedTemplateData, idempotencyKey string) (SendResult, error) {
+	subject, textBody, htmlBody, err := RenderBillingPaymentFailed(data)
+	if err != nil {
+		return SendResult{}, err
+	}
+	return s.Mailer.Send(ctx, Message{
+		To:             []Address{to},
+		From:           s.DefaultFrom,
+		Subject:        subject,
+		TextBody:       textBody,
+		HTMLBody:       htmlBody,
+		Tags:           map[string]string{"template": "billing_payment_failed"},
+		IdempotencyKey: idempotencyKey,
+	})
+}
+
 func (s Sender) SendOnceOverIntakeReady(ctx context.Context, to Address, data OnceOverIntakeReadyTemplateData) (SendResult, error) {
 	subject, textBody, htmlBody, err := RenderOnceOverIntakeReady(data)
 	if err != nil {

@@ -59,6 +59,15 @@ func TestLoadUsesLocalStorageDefaults(t *testing.T) {
 	if cfg.PublicBaseDomain != "localhost" {
 		t.Fatalf("expected derived localhost public base domain, got %q", cfg.PublicBaseDomain)
 	}
+	if cfg.BillingSuccessURL != "http://localhost:3000/app/billing/success" {
+		t.Fatalf("expected default billing success url, got %q", cfg.BillingSuccessURL)
+	}
+	if cfg.BillingCancelURL != "http://localhost:3000/app/billing/cancel" {
+		t.Fatalf("expected default billing cancel url, got %q", cfg.BillingCancelURL)
+	}
+	if cfg.BillingPortalReturnURL != "http://localhost:3000/app/billing" {
+		t.Fatalf("expected default billing portal return url, got %q", cfg.BillingPortalReturnURL)
+	}
 	if cfg.EmailTransport != "stdout" {
 		t.Fatalf("expected default email transport, got %q", cfg.EmailTransport)
 	}
@@ -85,6 +94,9 @@ func TestLoadAllowsStorageOverrides(t *testing.T) {
 	t.Setenv("PREVIEW_TOKEN_TTL", "96h")
 	t.Setenv("PUBLIC_BASE_URL", "https://sites.snaelda.test")
 	t.Setenv("PUBLIC_BASE_DOMAIN", "sites.snaelda.test")
+	t.Setenv("BILLING_SUCCESS_URL", "https://app.snaelda.test/billing/success")
+	t.Setenv("BILLING_CANCEL_URL", "https://app.snaelda.test/billing/cancel")
+	t.Setenv("BILLING_PORTAL_RETURN_URL", "https://app.snaelda.test/billing")
 
 	cfg, err := Load()
 	if err != nil {
@@ -120,6 +132,15 @@ func TestLoadAllowsStorageOverrides(t *testing.T) {
 	}
 	if cfg.PublicBaseDomain != "sites.snaelda.test" {
 		t.Fatalf("expected overridden public base domain, got %q", cfg.PublicBaseDomain)
+	}
+	if cfg.BillingSuccessURL != "https://app.snaelda.test/billing/success" {
+		t.Fatalf("expected overridden billing success url, got %q", cfg.BillingSuccessURL)
+	}
+	if cfg.BillingCancelURL != "https://app.snaelda.test/billing/cancel" {
+		t.Fatalf("expected overridden billing cancel url, got %q", cfg.BillingCancelURL)
+	}
+	if cfg.BillingPortalReturnURL != "https://app.snaelda.test/billing" {
+		t.Fatalf("expected overridden billing portal return url, got %q", cfg.BillingPortalReturnURL)
 	}
 }
 
@@ -212,6 +233,28 @@ func TestLoadRequiresOpenAIModelWhenAPIKeyIsSet(t *testing.T) {
 
 	if _, err := Load(); err == nil {
 		t.Fatal("expected openai model error")
+	}
+}
+
+func TestLoadRequiresStripePriceWhenStripeSecretIsSet(t *testing.T) {
+	t.Setenv("APP_ENV", "test")
+	unsetStorageEnv(t)
+	t.Setenv("STRIPE_SECRET_KEY", "sk_test_123")
+	t.Setenv("STRIPE_PRICE_BASIC", "")
+	t.Setenv("STRIPE_PRICE_PRO", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected stripe price error")
+	}
+}
+
+func TestLoadRequiresStripeSecretWhenWebhookSecretIsSet(t *testing.T) {
+	t.Setenv("APP_ENV", "test")
+	unsetStorageEnv(t)
+	t.Setenv("STRIPE_WEBHOOK_SECRET", "whsec_123")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected stripe secret error")
 	}
 }
 

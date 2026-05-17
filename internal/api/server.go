@@ -259,7 +259,27 @@ func (s *Server) Handler() http.Handler {
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, forms.Module{})
 	}
-	mountAuthenticatedPlaceholderModule(mux, s.auth, billing.Module{})
+	if store, ok := s.database.(billing.DB); ok {
+		billing.NewHandler(store, billing.HandlerConfig{
+			StripeSecretKey:        s.config.StripeSecretKey,
+			StripeWebhookSecret:    s.config.StripeWebhookSecret,
+			BasicPriceID:           s.config.StripePriceBasic,
+			ProPriceID:             s.config.StripePricePro,
+			BillingSuccessURL:      s.config.BillingSuccessURL,
+			BillingCancelURL:       s.config.BillingCancelURL,
+			BillingPortalReturnURL: s.config.BillingPortalReturnURL,
+			ProductName:            "Snaelda",
+			EmailSender: email.Sender{
+				Mailer: s.mailer,
+				DefaultFrom: email.Address{
+					Email: s.config.EmailFromAddress,
+					Name:  s.config.EmailFromName,
+				},
+			},
+		}).Mount(mux, s.auth.RequireSession)
+	} else {
+		mountAuthenticatedPlaceholderModule(mux, s.auth, billing.Module{})
+	}
 
 	return s.cors(s.recover(s.logRequests(s.securityHeaders(s.noCache(s.csrf(mux))))))
 }

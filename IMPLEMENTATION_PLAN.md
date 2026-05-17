@@ -46,17 +46,20 @@ This file tracks confirmed remaining work only, sorted by implementation priorit
 - [ ] Finish the remaining transactional-email integrations from [specs/18-transactional-email.md](./specs/18-transactional-email.md) (cross-cutting blocker for specs 16 and 15).
   - [x] Auth slice is shipped: `POST /api/auth/magic-link` and `GET /api/auth/magic`, `magic_links` persistence, `internal/email/` transport wiring, and generic anti-enumeration responses for login requests.
   - [x] Public contact-form forwarding is now wired through the shared mailer with `form_submission_forwarded`, durable destination-address rate limiting (`30/hour`), idempotency keyed on submission ID, and non-blocking failure handling so stored submissions still succeed if email delivery fails.
-  - [ ] Hook the existing `internal/email/` package into billing and Once-over call sites; enforce Spec 18 send windows on those endpoints.
-  - [ ] Acceptance follow-up: magic-link login and form forwarding are wired through the shared mailer; remaining verification work is Mailpit/Resend round-trips plus the future billing / Once-over call sites above.
+  - [x] Billing receipt and payment-failure notices now send through the shared `internal/email/` package from Stripe webhook handling in `internal/billing/`, with idempotency keyed on Stripe event ID.
+  - [ ] Hook the existing `internal/email/` package into Once-over call sites; enforce Spec 18 send windows on any Once-over send endpoints when that workflow ships.
+  - [ ] Acceptance follow-up: magic-link login, form forwarding, and billing notices are wired through the shared mailer; remaining verification work is Mailpit/Resend round-trips plus the future Once-over call sites above.
 
 - [ ] Implement the `billing` module against Stripe (spec 15). MVP release blocker.
-  - Replace the 8-line stub `internal/billing/module.go` mounted at `internal/api/server.go:215`; add Stripe Go SDK to `go.mod`.
-  - DB: add `billing_customers`, `billing_subscriptions`, `billing_entitlements`, `billing_events` migrations; add `plan`, `stripe_customer_id`, `trial_*` columns on `workspaces`; document in `specs/06-database-design.md`.
-  - Endpoints: `POST /api/billing/checkout`, `POST /api/billing/portal`, `GET /api/billing/entitlements`, `POST /api/billing/webhook` (with signature verification + idempotency keyed on `billing_events`).
-  - Wire env: read `STRIPE_*` and `BILLING_*` in `internal/platform/config/`; remove unused declarations in `.env.example` if not used.
-  - Gating: enforce entitlements in `internal/generation/handler.go`, `internal/publishing/handler.go`, `internal/assets/`, `internal/domains/`.
-  - Frontend: billing routes under `apps/web/src/routes/app.billing.*`, blocked-action UI in builder, plan badge in shell.
-  - Acceptance: claim → checkout → webhook → entitlement flip → publish unblocked; portal cancel → entitlement downgrade.
+  - [x] Replaced the stub `internal/billing/module.go` with a real backend module mounted from `internal/api/server.go`, backed by Stripe's Go SDK in `go.mod`.
+  - [x] DB foundation shipped in `internal/platform/database/migrations/000010_billing_foundation.sql`: `billing_customers`, `billing_subscriptions`, `billing_entitlements`, `billing_events`, plus `workspaces.plan` and `workspaces.stripe_customer_id`.
+  - [x] Endpoints shipped: `POST /api/billing/checkout`, `POST /api/billing/portal`, `GET /api/billing/entitlements`, `POST /api/billing/webhook`, including Stripe signature verification and webhook idempotency on `billing_events`.
+  - [x] Env wiring shipped in `internal/platform/config/` for `STRIPE_*` and `BILLING_*`.
+  - [x] Auth/session resolution now reads `billing_entitlements.subscription_live`, so trial gating lifts immediately once Stripe-backed entitlements flip live.
+  - [ ] Gating: enforce entitlements in `internal/generation/handler.go`, `internal/publishing/handler.go`, `internal/assets/`, `internal/domains/`.
+  - [ ] Frontend: billing routes under `apps/web/src/routes/app.billing.*`, blocked-action UI in builder, plan badge in shell.
+  - [ ] Add-on / Once-over follow-up: persist one-time purchases and wire the intake workflow once the product surface exists.
+  - [ ] Acceptance: claim → checkout → webhook → entitlement flip → publish unblocked; portal cancel → entitlement downgrade.
 
 - [ ] Custom-domain attach/verify/TLS (spec 13, spec 10).
   - Backend: extend `internal/domains/` `DomainService` beyond `List` with create/verify/delete; write/read the existing `verification_token` column; integrate certmagic or autocert (decide in spec 13 update).
