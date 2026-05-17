@@ -53,6 +53,50 @@ func TestCreateCheckoutSessionPersistsCustomerMapping(t *testing.T) {
 	}
 }
 
+func TestCreateCheckoutSessionForOnceOverUsesPaymentMode(t *testing.T) {
+	store := newFakeBillingStore()
+	store.workspaces["workspace-1"] = fakeWorkspace{
+		id:   "workspace-1",
+		name: "Wool Shop",
+	}
+
+	stripe := &fakeStripeClient{
+		checkoutResult: CheckoutSessionResult{
+			URL:        "https://checkout.stripe.test/session",
+			CustomerID: "cus_123",
+		},
+	}
+
+	service := NewService(store, ServiceConfig{
+		Stripe:          stripe,
+		SuccessURL:      "https://app.test/success",
+		CancelURL:       "https://app.test/cancel",
+		PortalReturnURL: "https://app.test/billing",
+		OnceOverPriceID: "price_once_over",
+		AppBaseURL:      "https://app.test",
+	})
+
+	url, err := service.CreateCheckoutSession(context.Background(), CheckoutInput{
+		Session:      authSession("workspace-1"),
+		PurchaseType: "once_over",
+	})
+	if err != nil {
+		t.Fatalf("create checkout session: %v", err)
+	}
+	if url != "https://checkout.stripe.test/session" {
+		t.Fatalf("expected checkout url, got %q", url)
+	}
+	if stripe.lastCheckout.Mode != checkoutModePayment {
+		t.Fatalf("expected payment mode, got %q", stripe.lastCheckout.Mode)
+	}
+	if stripe.lastCheckout.PriceID != "price_once_over" {
+		t.Fatalf("expected once-over price id, got %q", stripe.lastCheckout.PriceID)
+	}
+	if stripe.lastCheckout.PurchaseType != onceOverPurchaseType {
+		t.Fatalf("expected once-over purchase type, got %q", stripe.lastCheckout.PurchaseType)
+	}
+}
+
 func TestHandleWebhookUpdatesEntitlements(t *testing.T) {
 	store := newFakeBillingStore()
 	store.workspaces["workspace-1"] = fakeWorkspace{id: "workspace-1", name: "Wool Shop"}
@@ -134,6 +178,106 @@ func TestHandleWebhookSendsBillingReceipt(t *testing.T) {
 	}
 }
 
+func TestHandleWebhookCreatesOnceOverRequestAndSendsIntakeEmail(t *testing.T) {
+	store := newFakeBillingStore()
+	store.workspaces["workspace-1"] = fakeWorkspace{
+		id:              "workspace-1",
+		name:            "Wool Shop",
+		createdByUserID: "user-1",
+	}
+	store.users["user-1"] = fakeUser{id: "user-1", email: "owner@example.com", name: "Owner"}
+
+	mailer := email.NewMemoryMailer()
+	service := NewService(store, ServiceConfig{
+		Stripe: &fakeStripeClient{event: WebhookEvent{
+			ID:   "evt_3",
+			Type: "checkout.session.completed",
+			CheckoutSession: CheckoutCompletedData{
+				SessionID:       "cs_123",
+				WorkspaceID:     "workspace-1",
+				CustomerID:      "cus_123",
+				CustomerEmail:   "owner@example.com",
+				PurchaseType:    onceOverPurchaseType,
+				Mode:            checkoutModePayment,
+				PaymentIntentID: "pi_123",
+				CompletedAt:     time.Now().UTC(),
+			},
+		}},
+		SuccessURL:      "https://app.test/success",
+		CancelURL:       "https://app.test/cancel",
+		PortalReturnURL: "https://app.test/billing",
+		OnceOverPriceID: "price_once_over",
+		AppBaseURL:      "https://app.test",
+		EmailSender: email.Sender{
+			Mailer:      mailer,
+			DefaultFrom: email.Address{Email: "hi@snaelda.app", Name: "Snaelda"},
+		},
+	})
+
+	if err := service.HandleWebhook(context.Background(), []byte(`{}`), "sig"); err != nil {
+		t.Fatalf("handle webhook: %v", err)
+	}
+
+	if store.workspaces["workspace-1"].onceOverStatus != onceOverStatusAwaitingIntake {
+		t.Fatalf("expected awaiting intake status, got %q", store.workspaces["workspace-1"].onceOverStatus)
+	}
+	if len(store.onceOverRequests["workspace-1"]) != 1 {
+		t.Fatalf("expected one once-over request, got %d", len(store.onceOverRequests["workspace-1"]))
+	}
+	if len(mailer.Messages) != 1 {
+		t.Fatalf("expected one email, got %d", len(mailer.Messages))
+	}
+	msg := mailer.Messages[0]
+	if msg.To[0].Email != "owner@example.com" {
+		t.Fatalf("expected owner email, got %q", msg.To[0].Email)
+	}
+	if !strings.Contains(msg.Subject, "once-over intake is ready") {
+		t.Fatalf("expected once-over intake subject, got %q", msg.Subject)
+	}
+	if !strings.Contains(msg.TextBody, "https://app.test/app/billing") {
+		t.Fatalf("expected intake url in email body, got %q", msg.TextBody)
+	}
+}
+
+func TestUpdateOnceOverMarksRequestPending(t *testing.T) {
+	store := newFakeBillingStore()
+	now := time.Now().UTC().Add(-time.Hour)
+	store.workspaces["workspace-1"] = fakeWorkspace{
+		id:             "workspace-1",
+		name:           "Wool Shop",
+		onceOverStatus: onceOverStatusAwaitingIntake,
+	}
+	store.onceOverRequests["workspace-1"] = []fakeOnceOverRequest{{
+		id:              "request-1",
+		stripePaymentID: "pi_123",
+		paidAt:          now,
+		createdAt:       now,
+	}}
+
+	service := NewService(store, ServiceConfig{})
+
+	state, err := service.UpdateOnceOver(context.Background(), UpdateOnceOverInput{
+		WorkspaceID:    "workspace-1",
+		IntakeBusiness: "Hand-dyed yarn for knitters who want richer color.",
+		IntakeVisitor:  "A knitter deciding whether to try a new indie dyer.",
+		IntakeOutcome:  "Order a first skein.",
+		IntakeStuckOn:  "The hero still feels generic.",
+		ReadyForReview: true,
+	})
+	if err != nil {
+		t.Fatalf("update once-over: %v", err)
+	}
+	if state.Status != onceOverStatusPending {
+		t.Fatalf("expected pending status, got %q", state.Status)
+	}
+	if state.Request == nil || state.Request.IntakeSubmittedAt == nil {
+		t.Fatalf("expected submitted intake timestamp, got %+v", state.Request)
+	}
+	if got := store.workspaces["workspace-1"].onceOverStatus; got != onceOverStatusPending {
+		t.Fatalf("expected persisted pending status, got %q", got)
+	}
+}
+
 type fakeStripeClient struct {
 	checkoutResult CheckoutSessionResult
 	portalResult   PortalSessionResult
@@ -168,6 +312,7 @@ type fakeBillingStore struct {
 	entitlements         map[string]Entitlement
 	processedEvents      map[string]string
 	subscriptions        map[string]SubscriptionEventData
+	onceOverRequests     map[string][]fakeOnceOverRequest
 }
 
 type fakeWorkspace struct {
@@ -176,6 +321,7 @@ type fakeWorkspace struct {
 	createdByUserID  string
 	stripeCustomerID string
 	plan             string
+	onceOverStatus   string
 }
 
 type fakeUser struct {
@@ -189,6 +335,21 @@ type fakeCustomer struct {
 	email      string
 }
 
+type fakeOnceOverRequest struct {
+	id                string
+	stripePaymentID   string
+	checkoutSessionID string
+	paidAt            time.Time
+	intakeBusiness    string
+	intakeVisitor     string
+	intakeOutcome     string
+	intakeStuckOn     string
+	intakeSubmittedAt *time.Time
+	videoURL          string
+	deliveredAt       *time.Time
+	createdAt         time.Time
+}
+
 func newFakeBillingStore() *fakeBillingStore {
 	return &fakeBillingStore{
 		workspaces:           map[string]fakeWorkspace{},
@@ -198,6 +359,7 @@ func newFakeBillingStore() *fakeBillingStore {
 		entitlements:         map[string]Entitlement{},
 		processedEvents:      map[string]string{},
 		subscriptions:        map[string]SubscriptionEventData{},
+		onceOverRequests:     map[string][]fakeOnceOverRequest{},
 	}
 }
 
@@ -215,6 +377,16 @@ func (s *fakeBillingStore) Exec(_ context.Context, sql string, args ...any) (pgc
 
 func (s *fakeBillingStore) queryRow(sql string, args ...any) pgx.Row {
 	switch {
+	case strings.Contains(sql, "insert into users") && strings.Contains(sql, "returning id::text"):
+		emailAddress := strings.ToLower(strings.TrimSpace(args[0].(string)))
+		for _, user := range s.users {
+			if user.email == emailAddress {
+				return fakeRow{values: []any{user.id, user.name}}
+			}
+		}
+		user := fakeUser{id: "user-claimed", email: emailAddress}
+		s.users[user.id] = user
+		return fakeRow{values: []any{user.id, user.name}}
 	case strings.Contains(sql, "from workspaces w"):
 		workspace := s.workspaces[args[0].(string)]
 		user := s.users[workspace.createdByUserID]
@@ -244,6 +416,36 @@ func (s *fakeBillingStore) queryRow(sql string, args ...any) pgx.Row {
 	case strings.Contains(sql, "select exists(select 1 from billing_events"):
 		_, ok := s.processedEvents[args[0].(string)]
 		return fakeRow{values: []any{ok}}
+	case strings.Contains(sql, "select coalesce(once_over_status, 'none')"):
+		workspace := s.workspaces[args[0].(string)]
+		status := workspace.onceOverStatus
+		if status == "" {
+			status = onceOverStatusNone
+		}
+		return fakeRow{values: []any{status}}
+	case strings.Contains(sql, "from once_over_requests"):
+		requests := s.onceOverRequests[args[0].(string)]
+		if len(requests) == 0 {
+			return fakeRow{err: pgx.ErrNoRows}
+		}
+		request := requests[len(requests)-1]
+		return fakeRow{values: []any{
+			request.id,
+			request.paidAt,
+			request.intakeBusiness,
+			request.intakeVisitor,
+			request.intakeOutcome,
+			request.intakeStuckOn,
+			request.intakeSubmittedAt,
+			stringPointer(request.videoURL),
+			request.deliveredAt,
+		}}
+	case strings.Contains(sql, "select id::text") && strings.Contains(sql, "from once_over_requests"):
+		requests := s.onceOverRequests[args[0].(string)]
+		if len(requests) == 0 {
+			return fakeRow{err: pgx.ErrNoRows}
+		}
+		return fakeRow{values: []any{requests[len(requests)-1].id}}
 	case strings.Contains(sql, "from billing_customers") && strings.Contains(sql, "where stripe_customer_id = $1"):
 		workspaceID := s.workspaceByCustomer[args[0].(string)]
 		if workspaceID == "" {
@@ -269,6 +471,22 @@ func (s *fakeBillingStore) exec(sql string, args ...any) (pgconn.CommandTag, err
 		s.workspaces[workspace.id] = workspace
 	case strings.Contains(sql, "insert into billing_events"):
 		s.processedEvents[args[0].(string)] = args[1].(string)
+	case strings.Contains(sql, "insert into once_over_requests"):
+		workspaceID := args[0].(string)
+		paymentID := args[1].(string)
+		for _, request := range s.onceOverRequests[workspaceID] {
+			if request.stripePaymentID == paymentID {
+				return pgconn.CommandTag{}, nil
+			}
+		}
+		createdAt := args[3].(time.Time)
+		s.onceOverRequests[workspaceID] = append(s.onceOverRequests[workspaceID], fakeOnceOverRequest{
+			id:                "once-over-" + paymentID,
+			stripePaymentID:   paymentID,
+			checkoutSessionID: args[2].(string),
+			paidAt:            createdAt,
+			createdAt:         createdAt,
+		})
 	case strings.Contains(sql, "insert into billing_subscriptions"):
 		subscription := SubscriptionEventData{
 			WorkspaceID:       args[0].(string),
@@ -301,6 +519,28 @@ func (s *fakeBillingStore) exec(sql string, args ...any) (pgconn.CommandTag, err
 		workspace.plan = args[1].(string)
 		workspace.stripeCustomerID = args[2].(string)
 		s.workspaces[workspace.id] = workspace
+	case strings.Contains(sql, "update workspaces") && strings.Contains(sql, "once_over_status = $2"):
+		workspace := s.workspaces[args[0].(string)]
+		workspace.onceOverStatus = args[1].(string)
+		s.workspaces[workspace.id] = workspace
+	case strings.Contains(sql, "update once_over_requests"):
+		requestID := args[0].(string)
+		for workspaceID, requests := range s.onceOverRequests {
+			for i := range requests {
+				if requests[i].id != requestID {
+					continue
+				}
+				requests[i].intakeBusiness = args[1].(string)
+				requests[i].intakeVisitor = args[2].(string)
+				requests[i].intakeOutcome = args[3].(string)
+				requests[i].intakeStuckOn = args[4].(string)
+				if submittedAt, ok := args[5].(*time.Time); ok && submittedAt != nil && requests[i].intakeSubmittedAt == nil {
+					requests[i].intakeSubmittedAt = submittedAt
+				}
+				s.onceOverRequests[workspaceID] = requests
+				return pgconn.CommandTag{}, nil
+			}
+		}
 	case strings.Contains(sql, "insert into users"):
 		emailAddress := strings.ToLower(strings.TrimSpace(args[0].(string)))
 		for _, user := range s.users {
@@ -386,11 +626,32 @@ func (r fakeRow) Scan(dest ...any) error {
 			}
 		case *int:
 			*target = r.values[i].(int)
+		case **time.Time:
+			if r.values[i] == nil {
+				*target = nil
+			} else {
+				value := r.values[i].(*time.Time)
+				*target = value
+			}
+		case **string:
+			if r.values[i] == nil {
+				*target = nil
+			} else {
+				value := r.values[i].(*string)
+				*target = value
+			}
 		default:
 			return errors.New("unsupported scan target")
 		}
 	}
 	return nil
+}
+
+func stringPointer(value string) *string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return &value
 }
 
 func authSession(workspaceID string) auth.Session {

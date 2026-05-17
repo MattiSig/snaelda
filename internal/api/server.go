@@ -261,10 +261,12 @@ func (s *Server) Handler() http.Handler {
 	}
 	if store, ok := s.database.(billing.DB); ok {
 		billing.NewHandler(store, billing.HandlerConfig{
+			AppBaseURL:             s.config.AppBaseURL,
 			StripeSecretKey:        s.config.StripeSecretKey,
 			StripeWebhookSecret:    s.config.StripeWebhookSecret,
 			BasicPriceID:           s.config.StripePriceBasic,
 			ProPriceID:             s.config.StripePricePro,
+			OnceOverPriceID:        s.config.StripePriceOnceOver,
 			BillingSuccessURL:      s.config.BillingSuccessURL,
 			BillingCancelURL:       s.config.BillingCancelURL,
 			BillingPortalReturnURL: s.config.BillingPortalReturnURL,

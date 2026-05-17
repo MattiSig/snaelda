@@ -2,16 +2,18 @@ import { createFileRoute } from '@tanstack/react-router'
 import { ArrowUpRight, CreditCard, Sparkles } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 import {
   APIError,
   createBillingCheckout,
   createBillingPortal,
   getBillingState,
   getCurrentSession,
+  updateOnceOver,
   type BillingState,
   type BuilderSession,
 } from '@/lib/api'
-import { emptyState, paddedPanel, text } from '@/lib/styles'
+import { emptyState, form, paddedPanel, text } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/app/billing/')({
@@ -25,7 +27,22 @@ function BillingPage() {
   const [statusMessage, setStatusMessage] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [isStartingCheckout, setIsStartingCheckout] = useState<'basic' | 'pro' | ''>('')
+  const [isStartingOnceOverCheckout, setIsStartingOnceOverCheckout] = useState(false)
   const [isOpeningPortal, setIsOpeningPortal] = useState(false)
+  const [onceOverBusiness, setOnceOverBusiness] = useState('')
+  const [onceOverVisitor, setOnceOverVisitor] = useState('')
+  const [onceOverOutcome, setOnceOverOutcome] = useState('')
+  const [onceOverStuckOn, setOnceOverStuckOn] = useState('')
+  const [onceOverErrorMessage, setOnceOverErrorMessage] = useState('')
+  const [onceOverStatusMessage, setOnceOverStatusMessage] = useState('')
+  const [isSavingOnceOver, setIsSavingOnceOver] = useState(false)
+
+  function applyOnceOverForm(nextBillingState: BillingState) {
+    setOnceOverBusiness(nextBillingState.onceOver.request?.intakeBusiness ?? '')
+    setOnceOverVisitor(nextBillingState.onceOver.request?.intakeVisitor ?? '')
+    setOnceOverOutcome(nextBillingState.onceOver.request?.intakeOutcome ?? '')
+    setOnceOverStuckOn(nextBillingState.onceOver.request?.intakeStuckOn ?? '')
+  }
 
   useEffect(() => {
     let isMounted = true
@@ -37,6 +54,7 @@ function BillingPage() {
         }
         setSession(nextSession)
         setBillingState(nextBillingState)
+        applyOnceOverForm(nextBillingState)
         setIsLoading(false)
       })
       .catch((error) => {
@@ -58,7 +76,7 @@ function BillingPage() {
     setStatusMessage('')
 
     try {
-      const response = await createBillingCheckout(plan)
+      const response = await createBillingCheckout({ plan })
       window.location.href = response.url
     } catch (error) {
       setErrorMessage(error instanceof APIError ? error.message : 'Could not start checkout')
@@ -80,6 +98,55 @@ function BillingPage() {
     }
   }
 
+  async function handleOnceOverCheckout() {
+    setIsStartingOnceOverCheckout(true)
+    setOnceOverErrorMessage('')
+    setOnceOverStatusMessage('')
+
+    try {
+      const response = await createBillingCheckout({ purchaseType: 'once_over' })
+      window.location.href = response.url
+    } catch (error) {
+      setOnceOverErrorMessage(error instanceof APIError ? error.message : 'Could not start the once-over checkout')
+      setIsStartingOnceOverCheckout(false)
+    }
+  }
+
+  async function handleSaveOnceOver(readyForReview: boolean) {
+    setIsSavingOnceOver(true)
+    setOnceOverErrorMessage('')
+    setOnceOverStatusMessage('')
+
+    try {
+      const response = await updateOnceOver({
+        intakeBusiness: onceOverBusiness,
+        intakeVisitor: onceOverVisitor,
+        intakeOutcome: onceOverOutcome,
+        intakeStuckOn: onceOverStuckOn,
+        readyForReview,
+      })
+      setBillingState((currentState) =>
+        currentState
+          ? {
+              ...currentState,
+              onceOver: response.onceOver,
+            }
+          : currentState,
+      )
+      if (billingState) {
+        applyOnceOverForm({
+          ...billingState,
+          onceOver: response.onceOver,
+        })
+      }
+      setOnceOverStatusMessage(readyForReview ? 'Once-over request marked ready for review.' : 'Once-over intake saved.')
+    } catch (error) {
+      setOnceOverErrorMessage(error instanceof APIError ? error.message : 'Could not save the once-over intake')
+    } finally {
+      setIsSavingOnceOver(false)
+    }
+  }
+
   if (isLoading) {
     return (
       <section className={cn(paddedPanel, 'rounded-[14px]')}>
@@ -97,6 +164,7 @@ function BillingPage() {
   }
 
   const { entitlement, usage } = billingState
+  const onceOver = billingState.onceOver
   const trialEndsLabel = session.trialExpiresAt
     ? new Date(session.trialExpiresAt).toLocaleDateString()
     : ''
@@ -111,6 +179,13 @@ function BillingPage() {
   const storageLabel = entitlement.assetStorageLimitBytes
     ? `${formatBytes(usage.uploadedAssetBytes)} of ${formatBytes(entitlement.assetStorageLimitBytes)} used`
     : `${formatBytes(usage.uploadedAssetBytes)} uploaded`
+  const onceOverRequest = onceOver.request
+  const onceOverPaidLabel = onceOverRequest?.paidAt
+    ? new Date(onceOverRequest.paidAt).toLocaleDateString()
+    : ''
+  const onceOverSubmittedLabel = onceOverRequest?.intakeSubmittedAt
+    ? new Date(onceOverRequest.intakeSubmittedAt).toLocaleDateString()
+    : ''
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
@@ -194,6 +269,177 @@ function BillingPage() {
           )}
         </div>
       </section>
+
+      <section className={cn(paddedPanel, 'rounded-[14px] xl:col-span-2')}>
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,0.92fr)_minmax(340px,1.08fr)]">
+          <div className="grid gap-4">
+            <div>
+              <p className={text.eyebrow}>Once-over</p>
+              <h2 className={text.sectionTitle}>Bring in a human pass when the draft is close</h2>
+              <p className={text.p}>
+                A one-time review adds a short walkthrough plus a few builder edits from the
+                maker. Buy it when you want an outside eye on the first live version.
+              </p>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-3">
+              <StatusTile
+                label="Status"
+                value={humanOnceOverStatus(onceOver.status)}
+                hint={
+                  onceOverSubmittedLabel
+                    ? `Ready since ${onceOverSubmittedLabel}`
+                    : onceOverPaidLabel
+                      ? `Purchased ${onceOverPaidLabel}`
+                      : 'No request yet'
+                }
+              />
+              <StatusTile
+                label="Scope"
+                value="One pass"
+                hint="A recorded walkthrough plus 3 to 5 builder edits."
+              />
+              <StatusTile
+                label="Turnaround"
+                value="3 business days"
+                hint="Starts once the intake is marked ready for review."
+              />
+            </div>
+
+            {onceOver.status === 'none' || onceOver.status === 'delivered' ? (
+              <div className={emptyState}>
+                <p className={text.p}>
+                  {onceOver.status === 'delivered'
+                    ? 'This workspace already has a delivered pass. You can buy another if you want a fresh review after new edits.'
+                    : 'No once-over is attached to this workspace yet.'}
+                </p>
+                <div className="mt-4">
+                  <Button
+                    type="button"
+                    onClick={handleOnceOverCheckout}
+                    disabled={isStartingOnceOverCheckout}
+                  >
+                    {isStartingOnceOverCheckout ? 'Opening checkout…' : onceOver.status === 'delivered' ? 'Buy another once-over' : 'Buy a once-over'}
+                    <ArrowUpRight className="size-4" />
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            {onceOver.status === 'pending' && onceOverRequest?.videoUrl ? (
+              <div className="rounded-[14px] border border-border bg-[var(--surface-2)] p-4">
+                <p className={text.label}>Current delivery link</p>
+                <a
+                  className="mt-2 inline-flex text-sm font-semibold text-[var(--thread-gold)] underline underline-offset-4"
+                  href={onceOverRequest.videoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open walkthrough
+                </a>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="grid gap-3 rounded-[16px] border border-border bg-[var(--surface-2)] p-5">
+            <div>
+              <p className={text.label}>Intake</p>
+              <p className="mt-2 text-sm text-[var(--paper-muted)]">
+                Tell the reviewer what the business does, who the visitor is, and what one
+                outcome matters most.
+              </p>
+            </div>
+
+            <div className={form.field}>
+              <label htmlFor="once-over-business" className={text.label}>
+                What does the business do?
+              </label>
+              <Textarea
+                id="once-over-business"
+                rows={3}
+                value={onceOverBusiness}
+                onChange={(event) => setOnceOverBusiness(event.target.value)}
+                placeholder="Hand-dyed yarn for knitters who want richer color in their projects."
+                disabled={onceOver.status === 'none' || onceOver.status === 'delivered'}
+              />
+            </div>
+
+            <div className={form.field}>
+              <label htmlFor="once-over-visitor" className={text.label}>
+                Who is the visitor?
+              </label>
+              <Textarea
+                id="once-over-visitor"
+                rows={3}
+                value={onceOverVisitor}
+                onChange={(event) => setOnceOverVisitor(event.target.value)}
+                placeholder="A knitter deciding whether this is the right indie dye studio to trust."
+                disabled={onceOver.status === 'none' || onceOver.status === 'delivered'}
+              />
+            </div>
+
+            <div className={form.field}>
+              <label htmlFor="once-over-outcome" className={text.label}>
+                What is the main outcome?
+              </label>
+              <Textarea
+                id="once-over-outcome"
+                rows={2}
+                value={onceOverOutcome}
+                onChange={(event) => setOnceOverOutcome(event.target.value)}
+                placeholder="Get the first yarn order."
+                disabled={onceOver.status === 'none' || onceOver.status === 'delivered'}
+              />
+            </div>
+
+            <div className={form.field}>
+              <label htmlFor="once-over-stuck" className={text.label}>
+                What still feels stuck?
+              </label>
+              <Textarea
+                id="once-over-stuck"
+                rows={3}
+                value={onceOverStuckOn}
+                onChange={(event) => setOnceOverStuckOn(event.target.value)}
+                placeholder="The proof is buried and the homepage still feels generic."
+                disabled={onceOver.status === 'none' || onceOver.status === 'delivered'}
+              />
+            </div>
+
+            {onceOverErrorMessage ? <p className={text.error}>{onceOverErrorMessage}</p> : null}
+            {onceOverStatusMessage ? <p className={text.success}>{onceOverStatusMessage}</p> : null}
+
+            <div className="flex flex-wrap gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleSaveOnceOver(false)}
+                disabled={isSavingOnceOver || onceOver.status === 'none' || onceOver.status === 'delivered'}
+              >
+                {isSavingOnceOver ? 'Saving intake…' : 'Save intake'}
+              </Button>
+              <Button
+                type="button"
+                onClick={() => handleSaveOnceOver(true)}
+                disabled={isSavingOnceOver || onceOver.status === 'none' || onceOver.status === 'delivered'}
+              >
+                {isSavingOnceOver ? 'Saving intake…' : onceOver.status === 'pending' ? 'Update ready request' : 'Ready for review'}
+              </Button>
+            </div>
+
+            {onceOver.status === 'awaiting_intake' ? (
+              <p className={cn(form.hint, 'mt-1')}>
+                Buying the once-over reserves the pass. The review clock starts after you mark the intake ready.
+              </p>
+            ) : null}
+            {onceOver.status === 'pending' ? (
+              <p className={cn(form.hint, 'mt-1')}>
+                The request is in the review queue. You can still refine the draft while you wait.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </section>
     </div>
   )
 }
@@ -244,6 +490,16 @@ function UsageRow({ label, value }: { label: string; value: string }) {
   )
 }
 
+function StatusTile({ label, value, hint }: { label: string; value: string; hint: string }) {
+  return (
+    <div className="rounded-[12px] border border-border bg-[var(--surface-2)] p-4">
+      <p className={text.label}>{label}</p>
+      <p className="mt-2 text-2xl font-black text-[var(--paper)]">{value}</p>
+      <p className="mt-2 text-sm text-[var(--paper-muted)]">{hint}</p>
+    </div>
+  )
+}
+
 function humanPlan(plan: string) {
   switch (plan) {
     case 'pro':
@@ -268,4 +524,17 @@ function formatBytes(value: number) {
   }
   const precision = size >= 10 || index === 0 ? 0 : 1
   return `${size.toFixed(precision)} ${units[index]}`
+}
+
+function humanOnceOverStatus(status: BillingState['onceOver']['status']) {
+  switch (status) {
+    case 'awaiting_intake':
+      return 'Awaiting intake'
+    case 'pending':
+      return 'Pending'
+    case 'delivered':
+      return 'Delivered'
+    default:
+      return 'Not purchased'
+  }
 }

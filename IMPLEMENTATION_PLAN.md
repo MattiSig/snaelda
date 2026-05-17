@@ -47,8 +47,9 @@ This file tracks confirmed remaining work only, sorted by implementation priorit
   - [x] Auth slice is shipped: `POST /api/auth/magic-link` and `GET /api/auth/magic`, `magic_links` persistence, `internal/email/` transport wiring, and generic anti-enumeration responses for login requests.
   - [x] Public contact-form forwarding is now wired through the shared mailer with `form_submission_forwarded`, durable destination-address rate limiting (`30/hour`), idempotency keyed on submission ID, and non-blocking failure handling so stored submissions still succeed if email delivery fails.
   - [x] Billing receipt and payment-failure notices now send through the shared `internal/email/` package from Stripe webhook handling in `internal/billing/`, with idempotency keyed on Stripe event ID.
-  - [ ] Hook the existing `internal/email/` package into Once-over call sites; enforce Spec 18 send windows on any Once-over send endpoints when that workflow ships.
-  - [ ] Acceptance follow-up: magic-link login, form forwarding, and billing notices are wired through the shared mailer; remaining verification work is Mailpit/Resend round-trips plus the future Once-over call sites above.
+  - [x] Once-over purchase flow now persists `once_over_requests`, updates `workspaces.once_over_status`, and sends the `once_over_intake_ready` transactional email from the Stripe checkout webhook.
+  - [ ] Hook the existing `internal/email/` package into the remaining Once-over delivery/admin call sites and enforce Spec 18 send windows when the operator delivery workflow ships.
+  - [ ] Acceptance follow-up: magic-link login, form forwarding, billing notices, and Once-over intake-ready emails are wired through the shared mailer; remaining verification work is Mailpit/Resend round-trips plus the future Once-over delivery/admin call sites above.
 
 - [ ] Implement the `billing` module against Stripe (spec 15). MVP release blocker.
   - [x] Replaced the stub `internal/billing/module.go` with a real backend module mounted from `internal/api/server.go`, backed by Stripe's Go SDK in `go.mod`.
@@ -60,7 +61,7 @@ This file tracks confirmed remaining work only, sorted by implementation priorit
     - Paid plan limits now gate new site creation (`internal/sites/handler.go`), paid prompt allowance (`internal/generation/handler.go`), asset storage (`internal/assets/handler.go`), and domain read responses expose `customDomainsEnabled` for builder gating.
     - Hosted-subdomain publish remains available to trials by spec 17; custom-domain write enforcement still belongs to the spec 13 domain-attach endpoints that are not built yet.
   - [x] Frontend: billing routes under `apps/web/src/routes/app.billing.*`, blocked-action UI in builder, plan badge in shell.
-  - [ ] Add-on / Once-over follow-up: persist one-time purchases and wire the intake workflow once the product surface exists.
+  - [x] Add-on / Once-over follow-up shipped: `STRIPE_PRICE_ONCE_OVER`, payment-mode Checkout, webhook persistence in `once_over_requests`, workspace status tracking, and billing-page intake UI/API.
   - [ ] Acceptance: claim → checkout → webhook → entitlement flip → publish unblocked; portal cancel → entitlement downgrade.
 
 - [ ] Custom-domain attach/verify/TLS (spec 13, spec 10).

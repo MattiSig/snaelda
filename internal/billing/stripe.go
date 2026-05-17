@@ -15,6 +15,8 @@ type CheckoutSessionRequest struct {
 	WorkspaceID   string
 	WorkspaceName string
 	Plan          string
+	PurchaseType  string
+	Mode          string
 	PriceID       string
 	CustomerID    string
 	CustomerEmail string
@@ -45,10 +47,21 @@ type WebhookEvent struct {
 }
 
 type CheckoutCompletedData struct {
-	WorkspaceID   string
-	CustomerID    string
-	CustomerEmail string
+	SessionID       string
+	WorkspaceID     string
+	CustomerID      string
+	CustomerEmail   string
+	Plan            string
+	PurchaseType    string
+	Mode            string
+	PaymentIntentID string
+	CompletedAt     time.Time
 }
+
+const (
+	checkoutModeSubscription = "subscription"
+	checkoutModePayment      = "payment"
+)
 
 type SubscriptionEventData struct {
 	WorkspaceID        string
@@ -112,8 +125,12 @@ func NewStripeClient(secret string, webhookSecret string) stripeClient {
 }
 
 func (s *stripeWrapper) CreateCheckoutSession(ctx context.Context, req CheckoutSessionRequest) (CheckoutSessionResult, error) {
+	mode := strings.TrimSpace(req.Mode)
+	if mode == "" {
+		mode = checkoutModeSubscription
+	}
 	params := &stripe.CheckoutSessionCreateParams{
-		Mode:              stripe.String(string(stripe.CheckoutSessionModeSubscription)),
+		Mode:              stripe.String(mode),
 		SuccessURL:        stripe.String(req.SuccessURL),
 		CancelURL:         stripe.String(req.CancelURL),
 		ClientReferenceID: stripe.String(req.WorkspaceID),
@@ -124,8 +141,9 @@ func (s *stripeWrapper) CreateCheckoutSession(ctx context.Context, req CheckoutS
 			},
 		},
 		Metadata: map[string]string{
-			"workspace_id": req.WorkspaceID,
-			"plan":         normalizePlan(req.Plan),
+			"workspace_id":  req.WorkspaceID,
+			"plan":          normalizePlan(req.Plan),
+			"purchase_type": normalizePurchaseType(req.PurchaseType),
 		},
 	}
 	if strings.TrimSpace(req.CustomerID) != "" {
@@ -182,6 +200,9 @@ func (s *stripeWrapper) ConstructWebhookEvent(payload []byte, header string) (We
 			ID                string `json:"id"`
 			ClientReferenceID string `json:"client_reference_id"`
 			Customer          string `json:"customer"`
+			PaymentIntent     string `json:"payment_intent"`
+			Mode              string `json:"mode"`
+			Created           int64  `json:"created"`
 			CustomerDetails   struct {
 				Email string `json:"email"`
 			} `json:"customer_details"`
@@ -192,9 +213,17 @@ func (s *stripeWrapper) ConstructWebhookEvent(payload []byte, header string) (We
 			return WebhookEvent{}, err
 		}
 		result.CheckoutSession = CheckoutCompletedData{
-			WorkspaceID:   firstNonEmpty(data.Metadata["workspace_id"], data.ClientReferenceID),
-			CustomerID:    strings.TrimSpace(data.Customer),
-			CustomerEmail: firstNonEmpty(data.CustomerDetails.Email, data.CustomerEmail),
+			SessionID:       strings.TrimSpace(data.ID),
+			WorkspaceID:     firstNonEmpty(data.Metadata["workspace_id"], data.ClientReferenceID),
+			CustomerID:      strings.TrimSpace(data.Customer),
+			CustomerEmail:   firstNonEmpty(data.CustomerDetails.Email, data.CustomerEmail),
+			Plan:            strings.TrimSpace(data.Metadata["plan"]),
+			PurchaseType:    normalizePurchaseType(data.Metadata["purchase_type"]),
+			Mode:            strings.TrimSpace(data.Mode),
+			PaymentIntentID: strings.TrimSpace(data.PaymentIntent),
+		}
+		if data.Created > 0 {
+			result.CheckoutSession.CompletedAt = time.Unix(data.Created, 0).UTC()
 		}
 	case "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted":
 		var data struct {

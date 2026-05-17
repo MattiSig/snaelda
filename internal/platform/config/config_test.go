@@ -242,6 +242,7 @@ func TestLoadRequiresStripePriceWhenStripeSecretIsSet(t *testing.T) {
 	t.Setenv("STRIPE_SECRET_KEY", "sk_test_123")
 	t.Setenv("STRIPE_PRICE_BASIC", "")
 	t.Setenv("STRIPE_PRICE_PRO", "")
+	t.Setenv("STRIPE_PRICE_ONCE_OVER", "")
 
 	if _, err := Load(); err == nil {
 		t.Fatal("expected stripe price error")

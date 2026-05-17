@@ -338,9 +338,33 @@ export type BillingUsage = {
   currentPeriodEnd?: string;
 };
 
+export type OnceOverStatus =
+  | "none"
+  | "awaiting_intake"
+  | "pending"
+  | "delivered";
+
+export type OnceOverRequest = {
+  id: string;
+  paidAt: string;
+  intakeBusiness?: string;
+  intakeVisitor?: string;
+  intakeOutcome?: string;
+  intakeStuckOn?: string;
+  intakeSubmittedAt?: string;
+  videoUrl?: string;
+  deliveredAt?: string;
+};
+
+export type OnceOverState = {
+  status: OnceOverStatus;
+  request?: OnceOverRequest;
+};
+
 export type BillingState = {
   entitlement: BillingEntitlement;
   usage: BillingUsage;
+  onceOver: OnceOverState;
 };
 
 export type PublishedSiteResponse = {
@@ -493,19 +517,38 @@ export async function getBillingState() {
   return apiFetch<BillingState>("/api/billing/entitlements");
 }
 
-export async function createBillingCheckout(plan: "basic" | "pro") {
+export async function createBillingCheckout(input: {
+  plan?: "basic" | "pro";
+  purchaseType?: "subscription" | "once_over";
+}) {
   return apiFetch<{ url: string }>("/api/billing/checkout", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ plan }),
+    body: JSON.stringify(input),
   });
 }
 
 export async function createBillingPortal() {
   return apiFetch<{ url: string }>("/api/billing/portal", {
     method: "POST",
+  });
+}
+
+export async function updateOnceOver(input: {
+  intakeBusiness: string;
+  intakeVisitor: string;
+  intakeOutcome: string;
+  intakeStuckOn: string;
+  readyForReview?: boolean;
+}) {
+  return apiFetch<{ onceOver: OnceOverState }>("/api/billing/once-over", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
   });
 }
 

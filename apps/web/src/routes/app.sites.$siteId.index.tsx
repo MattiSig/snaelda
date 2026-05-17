@@ -339,7 +339,7 @@ function SiteDetail() {
   async function handleStartUpgrade() {
     setIsStartingUpgrade(true);
     try {
-      const response = await createBillingCheckout("basic");
+      const response = await createBillingCheckout({ plan: "basic" });
       window.location.href = response.url;
     } catch (error) {
       setBlockedActionMessage(

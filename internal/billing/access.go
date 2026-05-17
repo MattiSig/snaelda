@@ -15,8 +15,9 @@ type AccessStore interface {
 }
 
 type WorkspaceState struct {
-	Entitlement Entitlement `json:"entitlement"`
-	Usage       Usage       `json:"usage"`
+	Entitlement Entitlement   `json:"entitlement"`
+	Usage       Usage         `json:"usage"`
+	OnceOver    OnceOverState `json:"onceOver"`
 }
 
 type Usage struct {
@@ -69,10 +70,15 @@ func LoadWorkspaceState(ctx context.Context, store AccessStore, workspaceID stri
 	if err != nil {
 		return WorkspaceState{}, err
 	}
+	onceOver, err := loadOnceOverState(ctx, store, workspaceID)
+	if err != nil {
+		return WorkspaceState{}, err
+	}
 
 	return WorkspaceState{
 		Entitlement: entitlement,
 		Usage:       usage,
+		OnceOver:    onceOver,
 	}, nil
 }
 

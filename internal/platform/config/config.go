@@ -20,6 +20,7 @@ type Config struct {
 	StripeWebhookSecret    string
 	StripePriceBasic       string
 	StripePricePro         string
+	StripePriceOnceOver    string
 	BillingSuccessURL      string
 	BillingCancelURL       string
 	BillingPortalReturnURL string
@@ -82,6 +83,7 @@ func Load() (Config, error) {
 		StripeWebhookSecret:    strings.TrimSpace(os.Getenv("STRIPE_WEBHOOK_SECRET")),
 		StripePriceBasic:       strings.TrimSpace(os.Getenv("STRIPE_PRICE_BASIC")),
 		StripePricePro:         strings.TrimSpace(os.Getenv("STRIPE_PRICE_PRO")),
+		StripePriceOnceOver:    strings.TrimSpace(os.Getenv("STRIPE_PRICE_ONCE_OVER")),
 		BillingSuccessURL:      strings.TrimSpace(getEnv("BILLING_SUCCESS_URL", "http://localhost:3000/app/billing/success")),
 		BillingCancelURL:       strings.TrimSpace(getEnv("BILLING_CANCEL_URL", "http://localhost:3000/app/billing/cancel")),
 		BillingPortalReturnURL: strings.TrimSpace(getEnv("BILLING_PORTAL_RETURN_URL", "http://localhost:3000/app/billing")),
@@ -152,14 +154,14 @@ func Load() (Config, error) {
 	if cfg.PublicBaseDomain == "" {
 		return Config{}, fmt.Errorf("PUBLIC_BASE_DOMAIN is required")
 	}
-	if (cfg.StripeSecretKey != "" || cfg.StripeWebhookSecret != "" || cfg.StripePriceBasic != "" || cfg.StripePricePro != "") &&
+	if (cfg.StripeSecretKey != "" || cfg.StripeWebhookSecret != "" || cfg.StripePriceBasic != "" || cfg.StripePricePro != "" || cfg.StripePriceOnceOver != "") &&
 		(cfg.BillingSuccessURL == "" || cfg.BillingCancelURL == "" || cfg.BillingPortalReturnURL == "") {
 		return Config{}, fmt.Errorf("billing urls are required when Stripe billing is configured")
 	}
 	if cfg.StripeWebhookSecret != "" && cfg.StripeSecretKey == "" {
 		return Config{}, fmt.Errorf("STRIPE_SECRET_KEY is required when STRIPE_WEBHOOK_SECRET is set")
 	}
-	if cfg.StripeSecretKey != "" && cfg.StripePriceBasic == "" && cfg.StripePricePro == "" {
+	if cfg.StripeSecretKey != "" && cfg.StripePriceBasic == "" && cfg.StripePricePro == "" && cfg.StripePriceOnceOver == "" {
 		return Config{}, fmt.Errorf("at least one Stripe price id is required when STRIPE_SECRET_KEY is set")
 	}
 	switch cfg.EmailTransport {

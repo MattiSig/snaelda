@@ -12,10 +12,12 @@ import (
 )
 
 type HandlerConfig struct {
+	AppBaseURL             string
 	StripeSecretKey        string
 	StripeWebhookSecret    string
 	BasicPriceID           string
 	ProPriceID             string
+	OnceOverPriceID        string
 	BillingSuccessURL      string
 	BillingCancelURL       string
 	BillingPortalReturnURL string
@@ -34,8 +36,10 @@ func NewHandler(store DB, cfg HandlerConfig) *Handler {
 			SuccessURL:         cfg.BillingSuccessURL,
 			CancelURL:          cfg.BillingCancelURL,
 			PortalReturnURL:    cfg.BillingPortalReturnURL,
+			AppBaseURL:         cfg.AppBaseURL,
 			BasicPriceID:       cfg.BasicPriceID,
 			ProPriceID:         cfg.ProPriceID,
+			OnceOverPriceID:    cfg.OnceOverPriceID,
 			ProductName:        cfg.ProductName,
 			EmailSender:        cfg.EmailSender,
 			DefaultSiteLimit:   3,
@@ -52,12 +56,22 @@ func NewHandlerWithService(service *Service) *Handler {
 func (h *Handler) Mount(mux *http.ServeMux, requireSession func(http.Handler) http.Handler) {
 	mux.Handle("GET /api/billing/entitlements", requireSession(http.HandlerFunc(h.entitlements)))
 	mux.Handle("POST /api/billing/checkout", requireSession(http.HandlerFunc(h.checkout)))
+	mux.Handle("PUT /api/billing/once-over", requireSession(http.HandlerFunc(h.updateOnceOver)))
 	mux.Handle("POST /api/billing/portal", requireSession(http.HandlerFunc(h.portal)))
 	mux.HandleFunc("POST /api/billing/webhook", h.webhook)
 }
 
 type checkoutRequest struct {
-	Plan string `json:"plan"`
+	Plan         string `json:"plan"`
+	PurchaseType string `json:"purchaseType"`
+}
+
+type onceOverUpdateRequest struct {
+	IntakeBusiness string `json:"intakeBusiness"`
+	IntakeVisitor  string `json:"intakeVisitor"`
+	IntakeOutcome  string `json:"intakeOutcome"`
+	IntakeStuckOn  string `json:"intakeStuckOn"`
+	ReadyForReview bool   `json:"readyForReview"`
 }
 
 func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
@@ -70,8 +84,9 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 	var payload checkoutRequest
 	_ = json.NewDecoder(r.Body).Decode(&payload)
 	url, err := h.service.CreateCheckoutSession(r.Context(), CheckoutInput{
-		Session: session,
-		Plan:    payload.Plan,
+		Session:      session,
+		Plan:         payload.Plan,
+		PurchaseType: payload.PurchaseType,
 	})
 	if err != nil {
 		writeBillingError(w, http.StatusBadRequest, "billing_checkout_failed", err.Error())
@@ -112,6 +127,42 @@ func (h *Handler) entitlements(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeBillingJSON(w, http.StatusOK, state)
+}
+
+func (h *Handler) updateOnceOver(w http.ResponseWriter, r *http.Request) {
+	session, ok := auth.SessionFromContext(r.Context())
+	if !ok {
+		writeBillingError(w, http.StatusUnauthorized, "unauthenticated", "a session is required")
+		return
+	}
+
+	var payload onceOverUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil && !errors.Is(err, io.EOF) {
+		writeBillingError(w, http.StatusBadRequest, "invalid_request", "request body must be valid JSON")
+		return
+	}
+
+	state, err := h.service.UpdateOnceOver(r.Context(), UpdateOnceOverInput{
+		WorkspaceID:    session.WorkspaceID,
+		IntakeBusiness: payload.IntakeBusiness,
+		IntakeVisitor:  payload.IntakeVisitor,
+		IntakeOutcome:  payload.IntakeOutcome,
+		IntakeStuckOn:  payload.IntakeStuckOn,
+		ReadyForReview: payload.ReadyForReview,
+	})
+	if err != nil {
+		status := http.StatusBadRequest
+		code := "once_over_update_failed"
+		switch {
+		case errors.Is(err, ErrOnceOverUnavailable):
+			status = http.StatusConflict
+			code = "once_over_unavailable"
+		}
+		writeBillingError(w, status, code, err.Error())
+		return
+	}
+
+	writeBillingJSON(w, http.StatusOK, map[string]OnceOverState{"onceOver": state})
 }
 
 func (h *Handler) webhook(w http.ResponseWriter, r *http.Request) {

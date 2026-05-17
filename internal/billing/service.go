@@ -39,8 +39,10 @@ type ServiceConfig struct {
 	SuccessURL         string
 	CancelURL          string
 	PortalReturnURL    string
+	AppBaseURL         string
 	BasicPriceID       string
 	ProPriceID         string
+	OnceOverPriceID    string
 	ProductName        string
 	EmailSender        email.Sender
 	DefaultSiteLimit   int
@@ -54,7 +56,9 @@ type Service struct {
 	successURL         string
 	cancelURL          string
 	portalReturnURL    string
+	appBaseURL         string
 	priceByPlan        map[string]string
+	onceOverPriceID    string
 	productName        string
 	emailSender        email.Sender
 	defaultSiteLimit   int
@@ -75,8 +79,9 @@ type Entitlement struct {
 }
 
 type CheckoutInput struct {
-	Session auth.Session
-	Plan    string
+	Session      auth.Session
+	Plan         string
+	PurchaseType string
 }
 
 type BillingContact struct {
@@ -116,7 +121,9 @@ func NewService(store DB, cfg ServiceConfig) *Service {
 		successURL:         strings.TrimSpace(cfg.SuccessURL),
 		cancelURL:          strings.TrimSpace(cfg.CancelURL),
 		portalReturnURL:    strings.TrimSpace(cfg.PortalReturnURL),
+		appBaseURL:         strings.TrimSpace(cfg.AppBaseURL),
 		priceByPlan:        priceByPlan,
+		onceOverPriceID:    strings.TrimSpace(cfg.OnceOverPriceID),
 		productName:        cfg.ProductName,
 		emailSender:        cfg.EmailSender,
 		defaultSiteLimit:   cfg.DefaultSiteLimit,
@@ -130,10 +137,31 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, input CheckoutInput
 		return "", fmt.Errorf("billing is not configured")
 	}
 
+	purchaseType := normalizePurchaseType(input.PurchaseType)
 	plan := normalizePlan(input.Plan)
-	priceID, ok := s.priceByPlan[plan]
-	if !ok {
-		return "", fmt.Errorf("unknown billing plan %q", plan)
+	priceID := ""
+	mode := checkoutModeSubscription
+
+	switch purchaseType {
+	case onceOverPurchaseType:
+		mode = checkoutModePayment
+		priceID = strings.TrimSpace(s.onceOverPriceID)
+		if priceID == "" {
+			return "", fmt.Errorf("once-over checkout is not configured")
+		}
+		state, err := s.GetOnceOverState(ctx, input.Session.WorkspaceID)
+		if err != nil {
+			return "", err
+		}
+		if state.Status == onceOverStatusAwaitingIntake || state.Status == onceOverStatusPending {
+			return "", fmt.Errorf("finish the current once-over request before buying another")
+		}
+	default:
+		var ok bool
+		priceID, ok = s.priceByPlan[plan]
+		if !ok {
+			return "", fmt.Errorf("unknown billing plan %q", plan)
+		}
 	}
 
 	contact, err := s.lookupBillingContact(ctx, input.Session.WorkspaceID)
@@ -150,6 +178,8 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, input CheckoutInput
 		WorkspaceID:   input.Session.WorkspaceID,
 		WorkspaceName: contact.WorkspaceName,
 		Plan:          plan,
+		PurchaseType:  purchaseType,
+		Mode:          mode,
 		PriceID:       priceID,
 		CustomerID:    customerID,
 		CustomerEmail: contact.UserEmail,
@@ -274,6 +304,12 @@ func (s *Service) HandleWebhook(ctx context.Context, payload []byte, signature s
 
 	switch event.Type {
 	case "checkout.session.completed":
+		if event.CheckoutSession.Mode == checkoutModePayment || event.CheckoutSession.PurchaseType == onceOverPurchaseType {
+			if err := s.handleOnceOverCheckoutCompleted(ctx, tx, event); err != nil {
+				return err
+			}
+			break
+		}
 		if err := s.handleCheckoutCompleted(ctx, tx, event); err != nil {
 			return err
 		}
@@ -292,6 +328,17 @@ func (s *Service) HandleWebhook(ctx context.Context, payload []byte, signature s
 	}
 
 	return tx.Commit(ctx)
+}
+
+func normalizePurchaseType(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", subscriptionPurchaseType:
+		return subscriptionPurchaseType
+	case onceOverPurchaseType:
+		return onceOverPurchaseType
+	default:
+		return strings.ToLower(strings.TrimSpace(value))
+	}
 }
 
 func (s *Service) handleCheckoutCompleted(ctx context.Context, tx pgx.Tx, event WebhookEvent) error {
