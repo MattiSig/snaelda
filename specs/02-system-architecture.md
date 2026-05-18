@@ -45,22 +45,23 @@ A single backend service owns:
 - contact form submission handling
 - versioning and rollback
 
-Recommended internal modules:
+Internal modules:
 
-- `auth`
-- `workspaces`
-- `sites`
-- `pages`
-- `blocks`
-- `themes`
-- `assets`
-- `generation`
-- `publishing`
-- `domains`
-- `forms`
-- `billing` with Stripe after the core create/edit/publish loop is stable
+- `auth` — sessions, magic links, CSRF, user store.
+- `sites` — the authoring root. Owns sites, pages, blocks, navigation, draft revisions, and preview tokens. Pages and blocks are nested resources under a site rather than standalone modules, because they have no lifecycle outside their parent site.
+- `themes` — theme tokens and regeneration.
+- `generation` — prompt-to-site planner, site/page reprompt, starter imagery.
+- `publishing` — snapshot validation, artifact production, public render, rollback, versions.
+- `analytics` — page-view aggregation and the site analytics endpoint.
+- `domains` — hosted-domain state and custom-domain attachment.
+- `assets` — uploads, library, public asset delivery.
+- `forms` — public form submission, spam handling, builder-side submission management.
+- `imagery` — Pexels client used by generation for starter imagery.
+- `billing` — Stripe Checkout, Customer Portal, webhooks, workspace entitlements, and gating for paid actions (generation, publish, custom domains, asset uploads). Required for MVP; see [Spec 15](./15-billing-and-stripe.md).
 
-This should start as a modular monolith.
+Workspaces exist in the database as the tenancy boundary that every authoring resource is scoped to, but there is no `workspaces` module in MVP — a default workspace is provisioned during login and authorization derives the workspace from the session. A dedicated module is only introduced once multi-workspace UX (switching, invites) is actually shipped. Billing entitlements still attach to the workspace row directly.
+
+This is a modular monolith.
 
 ### Postgres Database
 
@@ -86,7 +87,7 @@ Use `jsonb` for:
 
 ### Builder / Editor
 
-The authenticated builder lets users:
+The builder lets users:
 
 - create a site from a prompt
 - inspect generated draft pages
@@ -96,7 +97,9 @@ The authenticated builder lets users:
 - edit theme values
 - manage pages and navigation
 - preview the draft
-- publish the site
+- publish the site (authenticated only)
+
+The same builder serves both authenticated users and unauthenticated visitors using a browser-bound guest session, with publish and other paid actions gated to authenticated accounts. See [Spec 17](./17-guest-authoring-and-claim.md) for the guest identity, quota, and claim model.
 
 The builder can use a CMS-style tool such as Puck, but Puck should be treated as the editing layer rather than the canonical website model.
 

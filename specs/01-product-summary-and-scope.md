@@ -23,6 +23,7 @@ The MVP does not generate arbitrary custom code per website. Instead, it generat
 
 ## MVP Should Support
 
+- Guest authoring from the homepage prompt without signup, with a small free-prompt budget and a claim-on-signup flow, per [Spec 17](./17-guest-authoring-and-claim.md)
 - User account and workspace/team model
 - Website creation from prompt
 - Up to 10 pages per website

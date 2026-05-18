@@ -20,6 +20,8 @@ Postgres is the canonical system of record.
 - `form_submissions`
 - `page_view_daily`
 - `audit_events`
+- `guest_sessions`
+- `magic_links`
 
 ## Draft vs Published State
 
@@ -259,3 +261,51 @@ create table audit_events (
   created_at timestamptz not null default now()
 );
 ```
+
+Guest-initiated rows leave `user_id` NULL and place the originating session id in `metadata.guest_session_id`.
+
+### `guest_sessions`
+
+```sql
+create table guest_sessions (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references workspaces(id) on delete cascade,
+  cookie_token_hash text not null unique,
+  recovery_key_hash text unique,
+  prompts_used int not null default 0,
+  trial_started_at timestamptz not null default now(),
+  claimed_by_user_id uuid references users(id),
+  claimed_at timestamptz,
+  created_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now()
+);
+
+create index guest_sessions_workspace_idx on guest_sessions(workspace_id);
+```
+
+Binds a browser-held cookie token to a workspace so an unauthenticated visitor can create, edit, and publish a site before signup. See [Spec 17](./17-guest-authoring-and-claim.md). Key columns:
+
+- `recovery_key_hash` — hash of the user-facing workspace recovery link (Spec 17 L1). NULL when the session is cookie-only or after the session has been promoted to L2.
+- `trial_started_at` — start of the 4-day trial window. The trial enforcement layer reads `now() - trial_started_at` and compares to the 4-day cap.
+- `prompts_used` — counter against the 25-prompt lifetime cap.
+- `claimed_by_user_id` — set when the session is promoted to L2 (email attached) or when subscription Checkout creates the owning user. Both paths also add a `workspace_members` row.
+
+`workspaces.created_by`, `assets.created_by`, `site_versions.created_by`, `generation_jobs.created_by`, and `audit_events.user_id` are all nullable to accommodate trial-authored rows. No further schema changes are required.
+
+### `magic_links`
+
+```sql
+create table magic_links (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  token_hash text not null unique,
+  purpose text not null check (purpose in ('login', 'verify_email')),
+  expires_at timestamptz not null,
+  consumed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index magic_links_user_idx on magic_links(user_id);
+```
+
+One-time tokens for magic-link login and L2 email verification. Tokens are single-use, expire after 15 minutes, and store only a hash; the plaintext is delivered by email and never persisted.

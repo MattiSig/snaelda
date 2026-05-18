@@ -1,0 +1,11 @@
+132. [POST] http://localhost:8080/api/sessions/anonymous => [201] Created
+137. [GET] http://localhost:8080/api/sessions/me => [200] OK
+138. [GET] http://localhost:8080/api/sessions/me => [200] OK
+139. [GET] http://localhost:8080/api/sites => [200] OK
+140. [GET] http://localhost:8080/api/sites => [200] OK
+141. [POST] http://localhost:8080/api/sites/generate => [201] Created
+144. [GET] http://localhost:8080/api/sites/1c4088ac-a644-4cf5-8df5-3b04674acdcb => [200] OK
+149. [GET] http://localhost:8080/api/sites/1c4088ac-a644-4cf5-8df5-3b04674acdcb => [200] OK
+150. [GET] http://localhost:8080/api/sites/1c4088ac-a644-4cf5-8df5-3b04674acdcb => [200] OK
+
+Note: 143 static requests not shown, run with "static" option to see them.

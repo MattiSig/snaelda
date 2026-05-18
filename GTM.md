@@ -60,24 +60,23 @@ They can:
 - enter a prompt
 - generate a website draft
 - preview it
-- make a few light edits
-- use up to 5 free prompts or re-prompts
+- edit, re-prompt, and publish to a hosted subdomain
+- use up to 25 prompts during the trial
 
-No signup should be required before they see value.
+No signup is required before they see value. Identity is cookie-bound by default; users can optionally copy a recovery link to their workspace or attach an email at any time to make the workspace recoverable from other browsers.
 
-### 2. Re-prompt loop
+### 2. Trial roaming
 
-After the first draft, users will usually want to steer the result.
+After the first draft, users get 4 days and 25 prompts to roam the system freely.
 
-That is a feature, not a problem.
+That window is enough to:
 
-So the free experience should allow:
+- iterate the draft until it feels right
+- edit, reorder, and rewrite blocks
+- publish to the hosted subdomain and share the link
+- decide whether to subscribe
 
-- first draft generation
-- up to 5 total prompt actions
-- prompt-based iteration from inside the builder
-
-Examples:
+Examples of in-trial prompting:
 
 - make it warmer
 - add pricing
@@ -85,24 +84,23 @@ Examples:
 - change the tone
 - swap the hero image direction
 
-There is no hard time cutoff for now. The main free boundary is prompt count plus locked publishing.
+The main free boundaries are 4 days, 25 prompts, and no custom domain. Publishing to the hosted subdomain is part of the trial.
 
 ### 3. Paid conversion
 
-To publish, connect a domain, and continue prompting freely, the user subscribes.
+To keep editing after the 4-day window, prompt past 25, or connect a custom domain, the user subscribes. Stripe Checkout collects an email if the user has not already attached one.
 
 ## Pricing
 
 Keep launch pricing extremely simple.
 
-### Free
+### Free trial
 
-- generate a draft
-- preview it
-- light editing
-- up to 5 prompts
-- no publish
+- 4 days of full builder access from first prompt
+- generate, edit, re-prompt, and publish to a hosted subdomain
+- up to 25 prompts during the trial
 - no custom domain
+- after 4 days or 25 prompts, editing and prompting require a subscription; an already-published subdomain stays live
 
 ### Founding 50
 
@@ -118,12 +116,12 @@ That means:
 
 Includes:
 
-- publish live
+- editing and publishing without the 4-day or 25-prompt caps
 - custom domain connection
 - forms
 - SEO defaults
 - lightweight analytics
-- ongoing prompting
+- ongoing prompting per plan allowance
 - 1 site
 - up to 10 pages
 
@@ -166,7 +164,7 @@ Keep the tone simple and direct.
 
 Good framing:
 
-- `Try it free with 5 prompts.`
+- `Try it free for 4 days. 25 prompts, full builder, publish to the web.`
 - `Founding 50 is open.`
 - `First 20 get 50% off the first year.`
 - `Once the 50 spots are gone, new signups close for now.`
@@ -184,8 +182,9 @@ Good framing:
 Launch with:
 
 - homepage prompt
-- free draft generation
-- 5 free prompts
+- free draft generation, edit, and publish to a hosted subdomain
+- 4-day trial window
+- 25 prompts during the trial
 - one paid plan
 - first 20 get 50% off the first year
 - Founding 50 cap

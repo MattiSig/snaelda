@@ -1,5 +1,7 @@
 # API Surface
 
+A site is the only top-level authoring resource. Pages and blocks are aggregates of a site — they have no independent lifecycle, cannot be addressed without their parent, and share the site's transactional boundary. They are therefore exposed as nested routes under `/api/sites/:siteId`, not as separate top-level resources.
+
 ## Sites
 
 ```http
@@ -16,20 +18,20 @@ DELETE /api/sites/:siteId
 
 ```http
 POST /api/sites/:siteId/pages
-POST /api/pages/:pageId/reprompt
-PATCH /api/pages/:pageId
-DELETE /api/pages/:pageId
+PATCH /api/sites/:siteId/pages/:pageId
+DELETE /api/sites/:siteId/pages/:pageId
 POST /api/sites/:siteId/pages/reorder
+POST /api/sites/:siteId/pages/:pageId/reprompt
 ```
 
 ## Blocks
 
 ```http
-POST /api/pages/:pageId/blocks
-PATCH /api/blocks/:blockId
-DELETE /api/blocks/:blockId
-POST /api/pages/:pageId/blocks/reorder
-POST /api/blocks/:blockId/duplicate
+POST /api/sites/:siteId/pages/:pageId/blocks
+PATCH /api/sites/:siteId/pages/:pageId/blocks/:blockId
+DELETE /api/sites/:siteId/pages/:pageId/blocks/:blockId
+POST /api/sites/:siteId/pages/:pageId/blocks/reorder
+POST /api/sites/:siteId/pages/:pageId/blocks/:blockId/duplicate
 ```
 
 ## Theme
@@ -59,6 +61,16 @@ GET /api/sites/:siteId/versions
 POST /api/sites/:siteId/rollback/:versionId
 ```
 
+## Domains
+
+```http
+POST   /api/sites/:siteId/domains
+PATCH  /api/sites/:siteId/domains/:id
+DELETE /api/sites/:siteId/domains/:id
+```
+
+Custom domain routes require an active subscription on the workspace.
+
 ## Forms
 
 ```http
@@ -70,12 +82,36 @@ PATCH /api/form-submissions/:submissionId
 ## Analytics
 
 ```http
-GET /api/sites/:siteId/analytics/views
-GET /api/sites/:siteId/analytics/views/pages
+GET /api/sites/:siteId/analytics?window=7d|30d|all
 ```
+
+A single endpoint returns total views, per-page views, and a gap-filled daily trend for the requested window.
+
+## Sessions And Recovery
+
+```http
+GET    /api/sessions/current               # current session state: layer, prompts_used, trial_ends_at, subscribed flag
+POST   /api/sessions/restore               # consume a recovery key, set a fresh cookie
+POST   /api/sessions/recovery-key          # mint or regenerate the workspace recovery link
+DELETE /api/sessions/recovery-key          # revoke the current recovery link
+POST   /api/sessions/attach-email          # promote session to L2; creates users row, sends verify magic link
+```
+
+## Authentication
+
+```http
+POST /api/auth/magic-link                  # request a login magic link by email
+GET  /api/auth/magic                       # consume a magic-link token, set session cookie
+POST /api/auth/logout
+```
+
+See [Spec 17](./17-guest-authoring-and-claim.md) for the trial session model, identity layers (L0/L1/L2), and the subscribe flow.
 
 ## API Notes
 
-- Authenticated routes must verify workspace membership and resource ownership
-- Public form submission routes must be rate-limited and validated
-- Publish and rollback routes must always operate on fully validated snapshots
+- The standard builder authoring routes accept either a trial-session cookie or an authenticated user session. Authorization in both cases verifies the session's workspace owns the target resource.
+- Trial sessions must additionally pass the 4-day window check and, on generation routes, the 25-prompt budget check, per Spec 17.
+- Custom-domain routes are paid-only and must reject trial sessions even within the 4-day window.
+- Form-submission management remains workspace-member only and is unreachable from cookie-only sessions that have not attached an email.
+- Public form submission routes must be rate-limited and validated.
+- Publish and rollback routes always operate on fully validated snapshots.

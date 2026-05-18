@@ -21,11 +21,55 @@ For draft editing, maintain lightweight undo support for destructive regeneratio
 
 ### Create Site
 
-1. User clicks `Create website`
-2. User enters a prompt
-3. Backend creates a generation job
-4. Generation engine creates a valid site draft
-5. User lands in the editor with a preview
+The default entry point is the homepage prompt. No signup is required. The session model is defined in [Spec 17](./17-guest-authoring-and-claim.md).
+
+1. Visitor enters a prompt on the homepage
+2. Backend resolves the caller into one of three cases:
+   - **No cookie:** mint a trial session, create a new workspace, run generation, return the first site
+   - **Existing trial cookie:** reuse the session and workspace, run generation, create a new `sites` row in that workspace
+   - **Authenticated user:** use the user's workspace, run generation, create a new `sites` row in that workspace
+3. Generation engine creates a valid site draft
+4. User lands in the editor with a preview
+
+Authenticated users who start from `Create website` inside the builder follow case three above.
+
+### Log In
+
+Login is for users who have already attached an email to their workspace (Spec 17, L2 or paid).
+
+1. User clicks `Log in` on the landing page
+2. User enters their email
+3. Backend creates a magic-link token, hashes it, and emails the plaintext as a one-time URL
+4. User opens the link, backend validates the token, sets a session cookie, and lands the user in their most recently active workspace
+
+If the email is unknown, the response is identical to the success case but no mail is sent.
+
+### Restore Workspace
+
+For users on L1 who have a workspace recovery link.
+
+1. User pastes the recovery URL on the landing page or opens it directly
+2. Backend looks up the session by hashed recovery key
+3. Backend sets a fresh cookie bound to that session and lands the user in the builder
+
+### Save Your Workspace
+
+Trial users can secure their workspace without paying. Optional at any time.
+
+1. User clicks `Save your workspace` in the builder chrome
+2. User picks `Copy workspace link`, `Add an email`, or both
+3. If `Copy workspace link`: backend mints and displays a recovery URL once; the hash is stored on the session
+4. If `Add an email`: backend creates a `users` row, attaches it as workspace owner, sends a verify magic link, and from then on the user can also log in via magic link from any browser. Adding an email invalidates any existing recovery link.
+
+### Subscribe
+
+Subscription lifts the 4-day trial and 25-prompt caps and unlocks custom domains.
+
+1. User triggers a paid action (custom domain, prompt past 25, or any write after the 4-day trial expires)
+2. Builder opens Stripe Checkout for the workspace
+3. Stripe collects email if no email is yet attached to the workspace
+4. Webhook fires; backend writes `billing_subscriptions`, refreshes `billing_entitlements`, and (if needed) creates the `users` row from the Checkout email and claims the workspace
+5. User returns to the builder; previously blocked actions now succeed
 
 ### Edit Site
 
@@ -133,7 +177,9 @@ Reasons:
 
 ### Phase 1: Foundation
 
-- auth and workspaces
+- workspaces
+- trial sessions, recovery links, email attach, and magic-link login per [Spec 17](./17-guest-authoring-and-claim.md)
+- 4-day trial window and 25-prompt cap enforcement
 - site CRUD
 - page CRUD
 - block instance CRUD
@@ -143,7 +189,8 @@ Reasons:
 
 ### Phase 2: Generation
 
-- prompt intake
+- prompt intake from both trial and authenticated sessions
+- trial budget and trial-window enforcement on prompt routes
 - structured generation output
 - validation and repair
 - save generated draft

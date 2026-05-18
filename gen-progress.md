@@ -1,0 +1,34 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e58]:
+    - generic [ref=e59]:
+      - generic [ref=e60]:
+        - link "Go to home" [ref=e61] [cursor=pointer]:
+          - /url: /
+        - navigation "App navigation" [ref=e62]:
+          - link "Sites" [ref=e63] [cursor=pointer]:
+            - /url: /app
+            - img [ref=e64]
+            - text: Sites
+      - button "TW Trial workspace owner" [ref=e69]:
+        - generic [ref=e70]: TW
+        - generic [ref=e71]:
+          - generic [ref=e72]: Trial workspace
+          - generic [ref=e73]: owner
+        - img [ref=e74]
+  - generic [ref=e78]:
+    - generic [ref=e79]:
+      - paragraph [ref=e80]:
+        - img [ref=e81]
+        - text: Trial workspace
+      - paragraph [ref=e84]: 0/25 prompts used, edits pause after 5/20/2026. Claim this workspace before you publish.
+    - generic [ref=e85]:
+      - button "Save your workspace" [ref=e86]
+      - button "Copy workspace link" [ref=e87]:
+        - img
+        - text: Copy workspace link
+  - main [ref=e88]:
+    - generic [ref=e91]:
+      - paragraph [ref=e92]: New site
+      - heading "Weaving your draft..." [level=1] [ref=e93]
+      - paragraph [ref=e94]: Snaelda is generating your first draft. This usually takes about a minute.
+      - paragraph [ref=e95]: "\"A calm pottery studio with classes, a gallery, and contact form.\""
