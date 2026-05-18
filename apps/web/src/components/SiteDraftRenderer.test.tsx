@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SiteDraft } from '@/lib/api'
 import { SiteDraftRenderer } from './SiteDraftRenderer'
@@ -11,7 +17,9 @@ describe('SiteDraftRenderer', () => {
   it('renders visible blocks and resolves draft-page links to anchors', () => {
     render(<SiteDraftRenderer site={buildDraft()} />)
 
-    const navLinks = screen.getAllByRole('link')
+    const navLinks = within(
+      screen.getByRole('navigation', { name: 'Site navigation' }),
+    ).getAllByRole('link')
     expect(navLinks[0]?.getAttribute('href')).toBe('#page-home')
     expect(navLinks[1]?.getAttribute('href')).toBe('#page-contact')
     expect(
@@ -39,7 +47,9 @@ describe('SiteDraftRenderer', () => {
       />,
     )
 
-    const navLinks = screen.getAllByRole('link')
+    const navLinks = within(
+      screen.getByRole('navigation', { name: 'Site navigation' }),
+    ).getAllByRole('link')
     expect(navLinks[0]?.getAttribute('href')).toBe('/public/loom-light')
     expect(navLinks[1]?.getAttribute('href')).toBe('/public/loom-light/contact')
     expect(screen.queryByText('Home')).toBeNull()
@@ -56,7 +66,9 @@ describe('SiteDraftRenderer', () => {
       />,
     )
 
-    const navLinks = screen.getAllByRole('link')
+    const navLinks = within(
+      screen.getByRole('navigation', { name: 'Site navigation' }),
+    ).getAllByRole('link')
     expect(navLinks[0]?.getAttribute('href')).toBe('/')
     expect(navLinks[1]?.getAttribute('href')).toBe('/contact')
     expect(

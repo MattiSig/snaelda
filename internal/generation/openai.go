@@ -96,7 +96,7 @@ func NewOpenAIPlanner(cfg OpenAIPlannerConfig) (*OpenAIPlanner, error) {
 
 	httpClient := cfg.HTTPClient
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 45 * time.Second}
+		httpClient = &http.Client{Timeout: 180 * time.Second}
 	}
 
 	baseURL := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
@@ -180,6 +180,7 @@ func (p *OpenAIPlanner) RegenerateThemeSelection(ctx context.Context, prompt str
 		Schema: themeSelectionSchema(),
 		System: themeRegenerationSystemPrompt,
 		User:   string(userJSON),
+		Strict: true,
 	}, &responsePayload); err != nil {
 		return siteconfig.ThemeSelection{}, err
 	}
@@ -192,6 +193,7 @@ type structuredCompletionRequest struct {
 	Schema map[string]any
 	System string
 	User   string
+	Strict bool
 }
 
 func (p *OpenAIPlanner) createStructuredCompletion(ctx context.Context, input structuredCompletionRequest, output any) error {
@@ -205,7 +207,7 @@ func (p *OpenAIPlanner) createStructuredCompletion(ctx context.Context, input st
 			Type: "json_schema",
 			JSONSchema: openAIJSONSchemaPayload{
 				Name:   input.Name,
-				Strict: true,
+				Strict: input.Strict,
 				Schema: input.Schema,
 			},
 		},
