@@ -1,3 +1,0 @@
-[     275ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ http://localhost:3000/favicon.ico:0
-[     673ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3000/node_modules/.vite/deps/react-dom_client.js?v=0c70573c:14336
-[    6438ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3000/node_modules/.vite/deps/react-dom_client.js?v=0c70573c:14336
