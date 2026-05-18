@@ -1,36 +1,30 @@
-DATABASE_URL ?= postgres://user:password@localhost:5432/snaelda?sslmode=disable
-POSTGRES_PORT ?= 5432
-S3_ENDPOINT ?= http://localhost:8333
-S3_BUCKET ?= snaelda-local
-S3_REGION ?= us-east-1
-S3_ACCESS_KEY_ID ?= snaelda
-S3_SECRET_ACCESS_KEY ?= snaelda-secret
+COMPOSE_ENV_FILES := $(if $(wildcard .env.local),--env-file .env.local,) $(if $(wildcard .env),--env-file .env,)
 
 .PHONY: api db-up db-down db-migrate db-seed dev-up storage-up storage-down test
 
 api:
-	DATABASE_URL="$(DATABASE_URL)" S3_ENDPOINT="$(S3_ENDPOINT)" S3_BUCKET="$(S3_BUCKET)" S3_REGION="$(S3_REGION)" S3_ACCESS_KEY_ID="$(S3_ACCESS_KEY_ID)" S3_SECRET_ACCESS_KEY="$(S3_SECRET_ACCESS_KEY)" go run ./cmd/api
+	go run ./cmd/api
 
 dev-up:
-	POSTGRES_PORT="$(POSTGRES_PORT)" S3_BUCKET="$(S3_BUCKET)" S3_ACCESS_KEY_ID="$(S3_ACCESS_KEY_ID)" S3_SECRET_ACCESS_KEY="$(S3_SECRET_ACCESS_KEY)" docker compose up -d postgres seaweedfs
+	docker compose $(COMPOSE_ENV_FILES) up -d postgres seaweedfs
 
 db-up:
-	POSTGRES_PORT="$(POSTGRES_PORT)" docker compose up -d postgres
+	docker compose $(COMPOSE_ENV_FILES) up -d postgres
 
 db-down:
-	docker compose down
+	docker compose $(COMPOSE_ENV_FILES) down
 
 storage-up:
-	S3_BUCKET="$(S3_BUCKET)" S3_ACCESS_KEY_ID="$(S3_ACCESS_KEY_ID)" S3_SECRET_ACCESS_KEY="$(S3_SECRET_ACCESS_KEY)" docker compose up -d seaweedfs
+	docker compose $(COMPOSE_ENV_FILES) up -d seaweedfs
 
 storage-down:
-	docker compose stop seaweedfs
+	docker compose $(COMPOSE_ENV_FILES) stop seaweedfs
 
 db-migrate:
-	DATABASE_URL="$(DATABASE_URL)" go run ./cmd/db migrate up
+	go run ./cmd/db migrate up
 
 db-seed:
-	DATABASE_URL="$(DATABASE_URL)" go run ./cmd/db seed
+	go run ./cmd/db seed
 
 test:
 	go test ./...

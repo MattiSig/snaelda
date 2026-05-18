@@ -19,6 +19,7 @@ dist/
 coverage.out
 *.test
 *.prof
+/api
 vendor/
 
 # Node / frontend
@@ -43,8 +44,10 @@ tmp/
 # Local storage / uploads / artifacts
 uploads/
 artifacts/
+var/
 .playwright-mcp/*.yml
-/snaelda-*.png
+/*.png
+!/logo.png
 
 # Python
 __pycache__/

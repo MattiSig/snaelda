@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -51,65 +53,70 @@ type Config struct {
 }
 
 func Load() (Config, error) {
-	appEnv := getEnv("APP_ENV", "development")
-	forcePathStyle, err := getEnvBool("S3_FORCE_PATH_STYLE", true)
+	env, err := loadEnvironment()
 	if err != nil {
 		return Config{}, err
 	}
-	accessTokenTTL, err := getEnvDuration("AUTH_ACCESS_TOKEN_TTL", 15*time.Minute)
+
+	appEnv := env.get("APP_ENV", "development")
+	forcePathStyle, err := env.getBool("S3_FORCE_PATH_STYLE", true)
 	if err != nil {
 		return Config{}, err
 	}
-	refreshTokenTTL, err := getEnvDuration("AUTH_REFRESH_TOKEN_TTL", 30*24*time.Hour)
+	accessTokenTTL, err := env.getDuration("AUTH_ACCESS_TOKEN_TTL", 15*time.Minute)
 	if err != nil {
 		return Config{}, err
 	}
-	previewTokenTTL, err := getEnvDuration("PREVIEW_TOKEN_TTL", 7*24*time.Hour)
+	refreshTokenTTL, err := env.getDuration("AUTH_REFRESH_TOKEN_TTL", 30*24*time.Hour)
 	if err != nil {
 		return Config{}, err
 	}
-	cookieSecure, err := getEnvBool("AUTH_COOKIE_SECURE", appEnv != "development" && appEnv != "test")
+	previewTokenTTL, err := env.getDuration("PREVIEW_TOKEN_TTL", 7*24*time.Hour)
+	if err != nil {
+		return Config{}, err
+	}
+	cookieSecure, err := env.getBool("AUTH_COOKIE_SECURE", appEnv != "development" && appEnv != "test")
 	if err != nil {
 		return Config{}, err
 	}
 
 	cfg := Config{
 		AppEnv:                 appEnv,
-		HTTPAddr:               getEnv("HTTP_ADDR", ":8080"),
-		AppBaseURL:             getEnv("APP_BASE_URL", "http://localhost:3000"),
-		APIBaseURL:             getEnv("API_BASE_URL", "http://localhost:8080"),
-		PublicBaseURL:          getEnv("PUBLIC_BASE_URL", "http://localhost:3000"),
-		StripeSecretKey:        strings.TrimSpace(os.Getenv("STRIPE_SECRET_KEY")),
-		StripeWebhookSecret:    strings.TrimSpace(os.Getenv("STRIPE_WEBHOOK_SECRET")),
-		StripePriceBasic:       strings.TrimSpace(os.Getenv("STRIPE_PRICE_BASIC")),
-		StripePricePro:         strings.TrimSpace(os.Getenv("STRIPE_PRICE_PRO")),
-		StripePriceOnceOver:    strings.TrimSpace(os.Getenv("STRIPE_PRICE_ONCE_OVER")),
-		BillingSuccessURL:      strings.TrimSpace(getEnv("BILLING_SUCCESS_URL", "http://localhost:3000/app/billing/success")),
-		BillingCancelURL:       strings.TrimSpace(getEnv("BILLING_CANCEL_URL", "http://localhost:3000/app/billing/cancel")),
-		BillingPortalReturnURL: strings.TrimSpace(getEnv("BILLING_PORTAL_RETURN_URL", "http://localhost:3000/app/billing")),
-		EmailTransport:         strings.ToLower(strings.TrimSpace(getEnv("EMAIL_TRANSPORT", "stdout"))),
-		EmailFromAddress:       strings.TrimSpace(getEnv("EMAIL_FROM_ADDRESS", "hi@snaelda.app")),
-		EmailFromName:          strings.TrimSpace(getEnv("EMAIL_FROM_NAME", "Snaelda")),
-		EmailReplyTo:           strings.TrimSpace(os.Getenv("EMAIL_REPLY_TO")),
-		ResendAPIKey:           strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
-		MailpitSMTPAddr:        strings.TrimSpace(getEnv("MAILPIT_SMTP_ADDR", "localhost:1025")),
-		OpenAIAPIKey:           strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
-		OpenAIModel:            getEnv("OPENAI_MODEL", "gpt-5-mini"),
-		PexelsAPIKey:           strings.TrimSpace(os.Getenv("PEXELS_API_KEY")),
-		DatabaseURL:            os.Getenv("DATABASE_URL"),
-		AuthJWTSecret:          getEnv("AUTH_JWT_SECRET", "development-auth-secret-change-me"),
-		AuthIssuer:             getEnv("AUTH_ISSUER", "snaelda-api"),
-		AuthAudience:           getEnv("AUTH_AUDIENCE", "snaelda-web"),
+		HTTPAddr:               env.get("HTTP_ADDR", ":8080"),
+		AppBaseURL:             env.get("APP_BASE_URL", "http://localhost:3000"),
+		APIBaseURL:             env.get("API_BASE_URL", "http://localhost:8080"),
+		PublicBaseURL:          env.get("PUBLIC_BASE_URL", "http://localhost:3000"),
+		StripeSecretKey:        strings.TrimSpace(env.lookup("STRIPE_SECRET_KEY")),
+		StripeWebhookSecret:    strings.TrimSpace(env.lookup("STRIPE_WEBHOOK_SECRET")),
+		StripePriceBasic:       strings.TrimSpace(env.lookup("STRIPE_PRICE_BASIC")),
+		StripePricePro:         strings.TrimSpace(env.lookup("STRIPE_PRICE_PRO")),
+		StripePriceOnceOver:    strings.TrimSpace(env.lookup("STRIPE_PRICE_ONCE_OVER")),
+		BillingSuccessURL:      strings.TrimSpace(env.get("BILLING_SUCCESS_URL", "http://localhost:3000/app/billing/success")),
+		BillingCancelURL:       strings.TrimSpace(env.get("BILLING_CANCEL_URL", "http://localhost:3000/app/billing/cancel")),
+		BillingPortalReturnURL: strings.TrimSpace(env.get("BILLING_PORTAL_RETURN_URL", "http://localhost:3000/app/billing")),
+		EmailTransport:         strings.ToLower(strings.TrimSpace(env.get("EMAIL_TRANSPORT", "stdout"))),
+		EmailFromAddress:       strings.TrimSpace(env.get("EMAIL_FROM_ADDRESS", "hi@snaelda.app")),
+		EmailFromName:          strings.TrimSpace(env.get("EMAIL_FROM_NAME", "Snaelda")),
+		EmailReplyTo:           strings.TrimSpace(env.lookup("EMAIL_REPLY_TO")),
+		ResendAPIKey:           strings.TrimSpace(env.lookup("RESEND_API_KEY")),
+		MailpitSMTPAddr:        strings.TrimSpace(env.get("MAILPIT_SMTP_ADDR", "localhost:1025")),
+		OpenAIAPIKey:           strings.TrimSpace(env.lookup("OPENAI_API_KEY")),
+		OpenAIModel:            env.get("OPENAI_MODEL", "gpt-5-mini"),
+		PexelsAPIKey:           strings.TrimSpace(env.lookup("PEXELS_API_KEY")),
+		DatabaseURL:            env.lookup("DATABASE_URL"),
+		AuthJWTSecret:          env.get("AUTH_JWT_SECRET", "development-auth-secret-change-me"),
+		AuthIssuer:             env.get("AUTH_ISSUER", "snaelda-api"),
+		AuthAudience:           env.get("AUTH_AUDIENCE", "snaelda-web"),
 		AuthAccessTokenTTL:     accessTokenTTL,
 		AuthRefreshTokenTTL:    refreshTokenTTL,
 		AuthCookieSecure:       cookieSecure,
 		PreviewTokenTTL:        previewTokenTTL,
-		PublishedArtifactsDir:  getEnv("PUBLISHED_ARTIFACTS_DIR", "var/published-artifacts"),
-		S3Endpoint:             getEnv("S3_ENDPOINT", "http://localhost:8333"),
-		S3Bucket:               getEnv("S3_BUCKET", "snaelda-local"),
-		S3Region:               getEnv("S3_REGION", "us-east-1"),
-		S3AccessKeyID:          getEnv("S3_ACCESS_KEY_ID", "snaelda"),
-		S3SecretAccessKey:      getEnv("S3_SECRET_ACCESS_KEY", "snaelda-secret"),
+		PublishedArtifactsDir:  env.get("PUBLISHED_ARTIFACTS_DIR", "var/published-artifacts"),
+		S3Endpoint:             env.get("S3_ENDPOINT", "http://localhost:8333"),
+		S3Bucket:               env.get("S3_BUCKET", "snaelda-local"),
+		S3Region:               env.get("S3_REGION", "us-east-1"),
+		S3AccessKeyID:          env.get("S3_ACCESS_KEY_ID", "snaelda"),
+		S3SecretAccessKey:      env.get("S3_SECRET_ACCESS_KEY", "snaelda-secret"),
 		S3ForcePathStyle:       forcePathStyle,
 	}
 
@@ -122,7 +129,7 @@ func Load() (Config, error) {
 	if cfg.AppEnv != "test" && cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
 	}
-	publicBaseDomain, err := resolvePublicBaseDomain(cfg.PublicBaseURL, os.Getenv("PUBLIC_BASE_DOMAIN"))
+	publicBaseDomain, err := resolvePublicBaseDomain(cfg.PublicBaseURL, env.lookup("PUBLIC_BASE_DOMAIN"))
 	if err != nil {
 		return Config{}, err
 	}
@@ -184,6 +191,47 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
+type environment struct {
+	values map[string]string
+}
+
+func loadEnvironment() (environment, error) {
+	values := map[string]string{}
+
+	if err := mergeDotEnvFile(values, ".env.local"); err != nil {
+		return environment{}, err
+	}
+	if err := mergeDotEnvFile(values, ".env"); err != nil {
+		return environment{}, err
+	}
+
+	for _, pair := range os.Environ() {
+		key, value, found := strings.Cut(pair, "=")
+		if !found {
+			continue
+		}
+		values[key] = value
+	}
+
+	return environment{values: values}, nil
+}
+
+func mergeDotEnvFile(values map[string]string, path string) error {
+	fileValues, err := godotenv.Read(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+
+	for key, value := range fileValues {
+		values[key] = value
+	}
+
+	return nil
+}
+
 func resolvePublicBaseDomain(publicBaseURL string, override string) (string, error) {
 	if trimmed := normalizeHostname(override); trimmed != "" {
 		return trimmed, nil
@@ -204,16 +252,20 @@ func normalizeHostname(value string) string {
 	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(value)), ".")
 }
 
-func getEnv(key string, fallback string) string {
-	value := os.Getenv(key)
+func (e environment) lookup(key string) string {
+	return e.values[key]
+}
+
+func (e environment) get(key string, fallback string) string {
+	value := e.lookup(key)
 	if value == "" {
 		return fallback
 	}
 	return value
 }
 
-func getEnvBool(key string, fallback bool) (bool, error) {
-	value := os.Getenv(key)
+func (e environment) getBool(key string, fallback bool) (bool, error) {
+	value := e.lookup(key)
 	if value == "" {
 		return fallback, nil
 	}
@@ -226,8 +278,8 @@ func getEnvBool(key string, fallback bool) (bool, error) {
 	return parsed, nil
 }
 
-func getEnvDuration(key string, fallback time.Duration) (time.Duration, error) {
-	value := os.Getenv(key)
+func (e environment) getDuration(key string, fallback time.Duration) (time.Duration, error) {
+	value := e.lookup(key)
 	if value == "" {
 		return fallback, nil
 	}

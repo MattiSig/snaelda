@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -144,6 +146,49 @@ func TestLoadAllowsStorageOverrides(t *testing.T) {
 	}
 }
 
+func TestLoadPrefersProcessEnvThenDotEnvThenDotEnvLocal(t *testing.T) {
+	unsetEnv(t, "APP_ENV", "S3_BUCKET", "S3_REGION", "PUBLIC_BASE_URL", "PUBLIC_BASE_DOMAIN")
+	t.Setenv("S3_BUCKET", "process-bucket")
+
+	tempDir := t.TempDir()
+	writeEnvFile(t, filepath.Join(tempDir, ".env.local"), "APP_ENV=test\nS3_BUCKET=local-bucket\nS3_REGION=local-region\nPUBLIC_BASE_URL=http://local.test\nPUBLIC_BASE_DOMAIN=local.test\n")
+	writeEnvFile(t, filepath.Join(tempDir, ".env"), "APP_ENV=test\nS3_BUCKET=dotenv-bucket\nS3_REGION=dotenv-region\nPUBLIC_BASE_URL=http://dotenv.test\nPUBLIC_BASE_DOMAIN=dotenv.test\n")
+
+	previousWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working dir: %v", err)
+	}
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("chdir temp dir: %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(previousWD); err != nil {
+			t.Fatalf("restore working dir: %v", err)
+		}
+	}()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	if cfg.AppEnv != "test" {
+		t.Fatalf("expected APP_ENV from dotenv files, got %q", cfg.AppEnv)
+	}
+	if cfg.S3Bucket != "process-bucket" {
+		t.Fatalf("expected process env to win for S3 bucket, got %q", cfg.S3Bucket)
+	}
+	if cfg.S3Region != "dotenv-region" {
+		t.Fatalf("expected .env to override .env.local for S3 region, got %q", cfg.S3Region)
+	}
+	if cfg.PublicBaseURL != "http://dotenv.test" {
+		t.Fatalf("expected .env to override .env.local for public base url, got %q", cfg.PublicBaseURL)
+	}
+	if cfg.PublicBaseDomain != "dotenv.test" {
+		t.Fatalf("expected .env to override .env.local for public base domain, got %q", cfg.PublicBaseDomain)
+	}
+}
+
 func TestLoadRejectsInvalidStorageBool(t *testing.T) {
 	t.Setenv("APP_ENV", "test")
 	unsetStorageEnv(t)
@@ -272,4 +317,34 @@ func unsetStorageEnv(t *testing.T) {
 	t.Setenv("PREVIEW_TOKEN_TTL", "")
 	t.Setenv("PUBLIC_BASE_URL", "")
 	t.Setenv("PUBLIC_BASE_DOMAIN", "")
+}
+
+func writeEnvFile(t *testing.T, path string, contents string) {
+	t.Helper()
+
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("write env file %s: %v", path, err)
+	}
+}
+
+func unsetEnv(t *testing.T, keys ...string) {
+	t.Helper()
+
+	for _, key := range keys {
+		previousValue, existed := os.LookupEnv(key)
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatalf("unset env %s: %v", key, err)
+		}
+		t.Cleanup(func() {
+			var err error
+			if existed {
+				err = os.Setenv(key, previousValue)
+			} else {
+				err = os.Unsetenv(key)
+			}
+			if err != nil {
+				t.Fatalf("restore env %s: %v", key, err)
+			}
+		})
+	}
 }
