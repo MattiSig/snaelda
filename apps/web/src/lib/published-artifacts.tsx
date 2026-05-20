@@ -1,5 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import type { PublishedSnapshot, SiteVersion } from "@/lib/api";
+import type {
+  BlockBinding,
+  Collection,
+  CollectionEntry,
+  PublishedSnapshot,
+  SiteVersion,
+} from "@/lib/api";
 import { SiteDraftRenderer } from "@/components/SiteDraftRenderer";
 import { normalizePagePath } from "@/lib/public-site";
 import { buildSiteThemeStyle } from "@/lib/site-theme";
@@ -23,6 +29,9 @@ export type PublishedArtifactBundle = {
   files: PublishedArtifactFile[];
 };
 
+type SnapshotPage = PublishedSnapshot["pages"][number];
+type SnapshotBlock = SnapshotPage["blocks"][number];
+
 type PublishedArtifactManifest = {
   schemaVersion: "published_artifacts.v1";
   siteSlug: string;
@@ -39,44 +48,54 @@ type PublishedArtifactManifest = {
   files: string[];
 };
 
+type RenderedRoute = {
+  pageId: string;
+  pagePath: string;
+  filePath: string;
+  title: string;
+  description: string;
+  canonicalUrl: string;
+  html: string;
+};
+
 export function buildPublishedArtifactBundle(
   input: PublishedArtifactRenderInput,
 ): PublishedArtifactBundle {
-  const pages = input.snapshot.pages.map((page) => {
-    const filePath = buildPageArtifactPath(page.slug);
-    const title =
-      page.seo?.title || input.snapshot.site.seo?.title || page.title;
-    const description =
-      page.seo?.description ||
-      input.snapshot.site.seo?.description ||
-      `Visit ${input.snapshot.site.name}.`;
-    const canonicalUrl = buildCanonicalURL(input, page.slug);
+  const collectionsById = new Map<string, Collection>();
+  for (const collection of input.snapshot.collections ?? []) {
+    collectionsById.set(collection.id, collection);
+  }
 
-    return {
-      pageId: page.id,
-      pagePath: normalizePagePath(page.slug),
-      filePath,
-      title,
-      description,
-      canonicalUrl,
-      html: renderToStaticMarkup(
-        <SiteDraftRenderer
-          site={input.snapshot}
-          eyebrow=""
-          showPageMeta={false}
-          selectedPageId={page.id}
-          linkMode="published"
-          siteSlug={input.siteSlug}
-          publishedBasePath=""
-        />,
-      ),
-    };
-  });
+  const renderedRoutes: RenderedRoute[] = [];
 
-  const files: PublishedArtifactFile[] = pages.map(({ filePath, html }) => ({
-    path: filePath,
+  for (const page of input.snapshot.pages) {
+    if (page.type === "collection_detail") {
+      const collection = page.collectionId
+        ? collectionsById.get(page.collectionId)
+        : undefined;
+      if (!collection) {
+        // ValidatePublishedSnapshot rejects orphan templates upstream. If we
+        // somehow reach here, emit nothing; the manifest validator will then
+        // surface the missing pages clearly.
+        continue;
+      }
+      const publishedEntries = (collection.entries ?? []).filter(
+        (entry) => !entry.status || entry.status === "published",
+      );
+      for (const entry of publishedEntries) {
+        renderedRoutes.push(
+          renderCollectionEntry(input, page, collection, entry),
+        );
+      }
+      continue;
+    }
+    renderedRoutes.push(renderStaticOrIndexPage(input, page));
+  }
+
+  const files: PublishedArtifactFile[] = renderedRoutes.map((route) => ({
+    path: route.filePath,
     contentType: "text/html; charset=utf-8",
-    body: html,
+    body: route.html,
   }));
 
   files.push({
@@ -90,7 +109,7 @@ export function buildPublishedArtifactBundle(
     siteSlug: input.siteSlug,
     hostname: input.hostname || undefined,
     version: input.version,
-    pages: pages.map(
+    pages: renderedRoutes.map(
       ({ pageId, pagePath, filePath, title, description, canonicalUrl }) => ({
         pageId,
         pagePath,
@@ -128,6 +147,111 @@ export function buildPublishedArtifactBundle(
     schemaVersion: "published_artifacts.v1",
     files,
   };
+}
+
+function renderStaticOrIndexPage(
+  input: PublishedArtifactRenderInput,
+  page: SnapshotPage,
+): RenderedRoute {
+  const filePath = buildPageArtifactPath(page.slug);
+  const title = page.seo?.title || input.snapshot.site.seo?.title || page.title;
+  const description =
+    page.seo?.description ||
+    input.snapshot.site.seo?.description ||
+    `Visit ${input.snapshot.site.name}.`;
+  const canonicalUrl = buildCanonicalURL(input, page.slug);
+
+  return {
+    pageId: page.id,
+    pagePath: normalizePagePath(page.slug),
+    filePath,
+    title,
+    description,
+    canonicalUrl,
+    html: renderToStaticMarkup(
+      <SiteDraftRenderer
+        site={input.snapshot}
+        eyebrow=""
+        showPageMeta={false}
+        selectedPageId={page.id}
+        linkMode="published"
+        siteSlug={input.siteSlug}
+        publishedBasePath=""
+      />,
+    ),
+  };
+}
+
+function renderCollectionEntry(
+  input: PublishedArtifactRenderInput,
+  templatePage: SnapshotPage,
+  collection: Collection,
+  entry: CollectionEntry,
+): RenderedRoute {
+  const entryPath = buildEntryPagePath(collection, entry);
+  const filePath = buildPageArtifactPath(entryPath);
+  const title = resolveEntryTitle(input, collection, entry, templatePage);
+  const description = resolveEntryDescription(input, entry);
+  const canonicalUrl = buildCanonicalURL(input, entryPath);
+
+  const transformedPage: SnapshotPage = {
+    ...templatePage,
+    slug: entryPath,
+    blocks: templatePage.blocks.map((block) =>
+      applyBindings(block, entry),
+    ),
+  };
+
+  const transformedSnapshot: PublishedSnapshot = {
+    ...input.snapshot,
+    pages: input.snapshot.pages.map((candidate) =>
+      candidate.id === templatePage.id ? transformedPage : candidate,
+    ),
+  };
+
+  return {
+    pageId: templatePage.id,
+    pagePath: normalizePagePath(entryPath),
+    filePath,
+    title,
+    description,
+    canonicalUrl,
+    html: renderToStaticMarkup(
+      <SiteDraftRenderer
+        site={transformedSnapshot}
+        eyebrow=""
+        showPageMeta={false}
+        selectedPageId={templatePage.id}
+        linkMode="published"
+        siteSlug={input.siteSlug}
+        publishedBasePath=""
+        activeEntry={entry}
+        activeCollection={collection}
+      />,
+    ),
+  };
+}
+
+function applyBindings(block: SnapshotBlock, entry: CollectionEntry): SnapshotBlock {
+  if (!block.bindings || Object.keys(block.bindings).length === 0) {
+    return block;
+  }
+  const nextProps: Record<string, unknown> = { ...block.props };
+  for (const [propKey, bindingValue] of Object.entries(block.bindings)) {
+    const binding = bindingValue as BlockBinding;
+    if (binding.source !== "entry") {
+      continue;
+    }
+    const value = entry.fields[binding.field];
+    if (value !== undefined && value !== null) {
+      nextProps[propKey] = value;
+    }
+  }
+  return { ...block, props: nextProps };
+}
+
+function buildEntryPagePath(collection: Collection, entry: CollectionEntry) {
+  return `/${collection.slug}/${entry.slug}`;
 }
 
 function buildPageArtifactPath(pagePath: string) {
@@ -186,6 +310,55 @@ function buildCanonicalURL(
   url.search = "";
   url.hash = "";
   return url.toString();
+}
+
+function resolveEntryTitle(
+  input: PublishedArtifactRenderInput,
+  collection: Collection,
+  entry: CollectionEntry,
+  templatePage: SnapshotPage,
+) {
+  const entrySeoTitle = entry.seo?.title?.trim();
+  if (entrySeoTitle) return entrySeoTitle;
+
+  const entryTitle = typeof entry.fields.title === "string"
+    ? entry.fields.title.trim()
+    : "";
+  const siteName = input.snapshot.site.name;
+  if (entryTitle) {
+    return `${entryTitle} | ${siteName}`;
+  }
+
+  const fallback =
+    templatePage.seo?.title?.trim() ||
+    input.snapshot.site.seo?.title?.trim() ||
+    `${collection.singularLabel} | ${siteName}`;
+  return fallback;
+}
+
+function resolveEntryDescription(
+  input: PublishedArtifactRenderInput,
+  entry: CollectionEntry,
+) {
+  const seo = entry.seo?.description?.trim();
+  if (seo) return seo;
+
+  const summary = typeof entry.fields.summary === "string"
+    ? entry.fields.summary.trim()
+    : "";
+  if (summary) return summary;
+
+  const details = typeof entry.fields.details === "string"
+    ? entry.fields.details.trim()
+    : "";
+  if (details) {
+    return details.length > 180 ? `${details.slice(0, 177)}...` : details;
+  }
+
+  return (
+    input.snapshot.site.seo?.description ||
+    `Discover more from ${input.snapshot.site.name}.`
+  );
 }
 
 function escapeXML(value: string) {

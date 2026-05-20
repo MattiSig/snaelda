@@ -122,7 +122,7 @@ func (v Validator) validatePages(path string, pages []PageDraft, requireSEO bool
 			}
 			slugsSeen[page.Slug] = true
 		}
-		validatePageType(pagePath, page, collectionsByID, c)
+		validatePageType(pagePath, page, collectionsByID, requireSEO, c)
 		validateSEO(child(pagePath, "seo"), page.SEO, requireSEO, c)
 		v.validateBlocks(child(pagePath, "blocks"), page, collectionsByID, c)
 	}
@@ -134,7 +134,7 @@ func (v Validator) validatePages(path string, pages []PageDraft, requireSEO bool
 	return pageIDs
 }
 
-func validatePageType(path string, page PageDraft, collectionsByID map[string]Collection, c *collector) {
+func validatePageType(path string, page PageDraft, collectionsByID map[string]Collection, requirePublishedEntry bool, c *collector) {
 	pageType := page.Type
 	if pageType == "" {
 		pageType = PageTypeStatic
@@ -150,8 +150,22 @@ func validatePageType(path string, page PageDraft, collectionsByID map[string]Co
 			return
 		}
 		if collectionsByID != nil {
-			if _, ok := collectionsByID[page.CollectionID]; !ok {
+			collection, ok := collectionsByID[page.CollectionID]
+			if !ok {
 				c.add(child(path, "collectionId"), "unresolved_reference", "page references a collection that does not exist")
+				return
+			}
+			if requirePublishedEntry && pageType == PageTypeCollectionDetail {
+				hasPublished := false
+				for _, entry := range collection.Entries {
+					if entry.Status == "" || entry.Status == EntryStatusPublished {
+						hasPublished = true
+						break
+					}
+				}
+				if !hasPublished {
+					c.add(child(path, "collectionId"), "no_published_entries", "collection_detail templates require at least one published entry before publish")
+				}
 			}
 		}
 	default:

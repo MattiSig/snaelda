@@ -72,6 +72,171 @@ func TestEnrichSnapshotCreditsSkipsWhenNoAssets(t *testing.T) {
 	}
 }
 
+func TestExpectedPagePathsExpandsCollectionDetailTemplates(t *testing.T) {
+	collection := siteconfig.Collection{
+		ID:            "col_services",
+		Slug:          "services",
+		SingularLabel: "Service",
+		PluralLabel:   "Services",
+		Entries: []siteconfig.CollectionEntry{
+			{ID: "entry_scaffolding", Slug: "scaffolding", Status: siteconfig.EntryStatusPublished, SortOrder: 0},
+			{ID: "entry_painting", Slug: "painting", Status: siteconfig.EntryStatusPublished, SortOrder: 1},
+		},
+	}
+	snapshot := siteconfig.PublishedSnapshot{
+		Pages: []siteconfig.PageDraft{
+			{ID: "page_home", Slug: "/", Type: siteconfig.PageTypeStatic},
+			{ID: "page_services_index", Slug: "/services-index", Type: siteconfig.PageTypeCollectionIndex, CollectionID: "col_services"},
+			{ID: "page_services_detail", Slug: "/services-template", Type: siteconfig.PageTypeCollectionDetail, CollectionID: "col_services"},
+		},
+		Collections: []siteconfig.Collection{collection},
+	}
+	collectionsByID := map[string]siteconfig.Collection{collection.ID: collection}
+
+	paths := expectedPagePaths(snapshot, collectionsByID)
+	got := make([]string, 0, len(paths))
+	for _, item := range paths {
+		got = append(got, item.pagePath)
+	}
+	want := []string{"/", "/services-index", "/services/scaffolding", "/services/painting"}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d paths, got %d (%v)", len(want), len(got), got)
+	}
+	for i, wantPath := range want {
+		if got[i] != wantPath {
+			t.Fatalf("path %d: want %q, got %q (all: %v)", i, wantPath, got[i], got)
+		}
+	}
+}
+
+func TestExpectedPagePathsSkipsDraftEntries(t *testing.T) {
+	collection := siteconfig.Collection{
+		ID:   "col_services",
+		Slug: "services",
+		Entries: []siteconfig.CollectionEntry{
+			{ID: "entry_published", Slug: "published", Status: siteconfig.EntryStatusPublished},
+			{ID: "entry_draft", Slug: "draft", Status: siteconfig.EntryStatusDraft},
+		},
+	}
+	snapshot := siteconfig.PublishedSnapshot{
+		Pages: []siteconfig.PageDraft{
+			{ID: "page_detail", Slug: "/services-template", Type: siteconfig.PageTypeCollectionDetail, CollectionID: "col_services"},
+		},
+		Collections: []siteconfig.Collection{collection},
+	}
+	collectionsByID := map[string]siteconfig.Collection{collection.ID: collection}
+
+	paths := expectedPagePaths(snapshot, collectionsByID)
+	if len(paths) != 1 {
+		t.Fatalf("expected only the published entry, got %d paths", len(paths))
+	}
+	if paths[0].pagePath != "/services/published" {
+		t.Fatalf("expected /services/published, got %q", paths[0].pagePath)
+	}
+}
+
+func TestValidateArtifactBundleRequiresCollectionEntryArtifacts(t *testing.T) {
+	collection := siteconfig.Collection{
+		ID:   "col_services",
+		Slug: "services",
+		Entries: []siteconfig.CollectionEntry{
+			{ID: "entry_a", Slug: "scaffolding", Status: siteconfig.EntryStatusPublished},
+		},
+	}
+	snapshot := siteconfig.PublishedSnapshot{
+		SchemaVersion: siteconfig.SiteConfigVersionV1,
+		Pages: []siteconfig.PageDraft{
+			{ID: "page_home", Slug: "/", Type: siteconfig.PageTypeStatic},
+			{ID: "page_detail", Slug: "/services-template", Type: siteconfig.PageTypeCollectionDetail, CollectionID: "col_services"},
+		},
+		Collections: []siteconfig.Collection{collection},
+	}
+	version := VersionSummary{ID: "v1", SiteID: "s1", VersionNumber: 1}
+	manifest := ArtifactManifest{
+		SchemaVersion: "published_artifacts.v1",
+		SiteSlug:      "demo",
+		Version:       version,
+		Pages: []ArtifactManifestPage{
+			{PageID: "page_home", PagePath: "/", FilePath: "pages/index.html", Title: "Home", Description: "Welcome", CanonicalURL: "https://demo.localhost/"},
+			// Intentionally missing the collection_detail entry artifact at /services/scaffolding.
+		},
+	}
+	manifestJSON, _ := json.Marshal(manifest)
+	bundle := ArtifactBundle{
+		SchemaVersion: "published_artifacts.v1",
+		Files: []ArtifactFile{
+			{Path: "pages/index.html", Body: "<div>home</div>"},
+			{Path: "manifest.json", Body: string(manifestJSON)},
+			{Path: "robots.txt", Body: "User-agent: *"},
+			{Path: "sitemap.xml", Body: "<?xml version=\"1.0\"?>"},
+			{Path: "assets/theme.css", Body: ":root {}"},
+		},
+	}
+
+	err := validateArtifactBundle(bundle, snapshot, "demo", "", version)
+	if err == nil {
+		t.Fatal("expected missing-entry artifact validation error")
+	}
+	var validationErr siteconfig.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected siteconfig validation error, got %v", err)
+	}
+	foundMissingEntry := false
+	for _, issue := range validationErr.Issues {
+		if issue.Code == "missing_artifact" && strings.Contains(issue.Path, "/services/scaffolding") {
+			foundMissingEntry = true
+			break
+		}
+	}
+	if !foundMissingEntry {
+		t.Fatalf("expected a missing_artifact issue for the entry URL, got %#v", validationErr.Issues)
+	}
+}
+
+func TestValidateArtifactBundleAcceptsExpandedCollectionDetailTemplate(t *testing.T) {
+	collection := siteconfig.Collection{
+		ID:   "col_services",
+		Slug: "services",
+		Entries: []siteconfig.CollectionEntry{
+			{ID: "entry_a", Slug: "scaffolding", Status: siteconfig.EntryStatusPublished},
+		},
+	}
+	snapshot := siteconfig.PublishedSnapshot{
+		SchemaVersion: siteconfig.SiteConfigVersionV1,
+		Pages: []siteconfig.PageDraft{
+			{ID: "page_home", Slug: "/", Type: siteconfig.PageTypeStatic},
+			{ID: "page_detail", Slug: "/services-template", Type: siteconfig.PageTypeCollectionDetail, CollectionID: "col_services"},
+		},
+		Collections: []siteconfig.Collection{collection},
+	}
+	version := VersionSummary{ID: "v1", SiteID: "s1", VersionNumber: 1}
+	manifest := ArtifactManifest{
+		SchemaVersion: "published_artifacts.v1",
+		SiteSlug:      "demo",
+		Version:       version,
+		Pages: []ArtifactManifestPage{
+			{PageID: "page_home", PagePath: "/", FilePath: "pages/index.html", Title: "Home", Description: "Welcome", CanonicalURL: "https://demo.localhost/"},
+			{PageID: "page_detail", PagePath: "/services/scaffolding", FilePath: "pages/services/scaffolding/index.html", Title: "Scaffolding | Demo", Description: "Entry description", CanonicalURL: "https://demo.localhost/services/scaffolding"},
+		},
+	}
+	manifestJSON, _ := json.Marshal(manifest)
+	bundle := ArtifactBundle{
+		SchemaVersion: "published_artifacts.v1",
+		Files: []ArtifactFile{
+			{Path: "pages/index.html", Body: "<div>home</div>"},
+			{Path: "pages/services/scaffolding/index.html", Body: "<div>scaffolding</div>"},
+			{Path: "manifest.json", Body: string(manifestJSON)},
+			{Path: "robots.txt", Body: "User-agent: *"},
+			{Path: "sitemap.xml", Body: "<?xml version=\"1.0\"?>"},
+			{Path: "assets/theme.css", Body: ":root {}"},
+		},
+	}
+
+	if err := validateArtifactBundle(bundle, snapshot, "demo", "", version); err != nil {
+		t.Fatalf("expected expanded collection_detail manifest to pass validation, got %v", err)
+	}
+}
+
 func TestBuildPublishedSnapshotAddsSEOFallbacks(t *testing.T) {
 	draft := siteconfig.SiteDraft{
 		Site: siteconfig.DraftSite{

@@ -760,12 +760,17 @@ func validateArtifactBundle(bundle ArtifactBundle, snapshot siteconfig.Published
 		}
 	}
 
-	for _, page := range snapshot.Pages {
-		pagePath := normalizePublishedPagePath(page.Slug)
-		manifestPage, ok := manifestPages[pagePath]
+	collectionsByID := map[string]siteconfig.Collection{}
+	for _, collection := range snapshot.Collections {
+		collectionsByID[collection.ID] = collection
+	}
+
+	requiredPagePaths := expectedPagePaths(snapshot, collectionsByID)
+	for _, expected := range requiredPagePaths {
+		manifestPage, ok := manifestPages[expected.pagePath]
 		if !ok {
 			issues = append(issues, siteconfig.Issue{
-				Path:    "publish.artifacts.pages." + pagePath,
+				Path:    "publish.artifacts.pages." + expected.pagePath,
 				Code:    "missing_artifact",
 				Message: "publish artifact manifest is missing a rendered page",
 			})
@@ -773,7 +778,7 @@ func validateArtifactBundle(bundle ArtifactBundle, snapshot siteconfig.Published
 		}
 		if strings.TrimSpace(manifestPage.Title) == "" || strings.TrimSpace(manifestPage.Description) == "" || strings.TrimSpace(manifestPage.CanonicalURL) == "" {
 			issues = append(issues, siteconfig.Issue{
-				Path:    "publish.artifacts.pages." + pagePath,
+				Path:    "publish.artifacts.pages." + expected.pagePath,
 				Code:    "invalid_artifact_manifest",
 				Message: "publish artifact manifest page metadata is incomplete",
 			})
@@ -797,6 +802,48 @@ func validateArtifactBundle(bundle ArtifactBundle, snapshot siteconfig.Published
 		return siteconfig.ValidationError{Issues: issues}
 	}
 	return nil
+}
+
+// expectedPagePath captures one URL the publish artifact bundle must render.
+// collection_detail templates contribute one entry per published entry rather
+// than a single rendered URL for the template itself.
+type expectedPagePath struct {
+	pagePath string
+	source   string
+}
+
+func expectedPagePaths(snapshot siteconfig.PublishedSnapshot, collectionsByID map[string]siteconfig.Collection) []expectedPagePath {
+	out := make([]expectedPagePath, 0, len(snapshot.Pages))
+	for _, page := range snapshot.Pages {
+		if page.Type == siteconfig.PageTypeCollectionDetail {
+			collection, ok := collectionsByID[page.CollectionID]
+			if !ok {
+				continue
+			}
+			for _, entry := range collection.Entries {
+				if entry.Status != "" && entry.Status != siteconfig.EntryStatusPublished {
+					continue
+				}
+				out = append(out, expectedPagePath{
+					pagePath: collectionEntryPagePath(collection, entry),
+					source:   "collection_detail:" + page.ID + ":" + entry.ID,
+				})
+			}
+			continue
+		}
+		out = append(out, expectedPagePath{
+			pagePath: normalizePublishedPagePath(page.Slug),
+			source:   "page:" + page.ID,
+		})
+	}
+	return out
+}
+
+// collectionEntryPagePath is the canonical URL for a single collection entry.
+// Per spec 19 the default URL pattern is /{collection.slug}/{entry.slug}; we
+// emit one rendered HTML page per published entry under that path.
+func collectionEntryPagePath(collection siteconfig.Collection, entry siteconfig.CollectionEntry) string {
+	return normalizePublishedPagePath("/" + collection.Slug + "/" + entry.Slug)
 }
 
 // htmlBodyIncompleteReason returns a non-empty reason string when a rendered
@@ -1095,7 +1142,7 @@ func (s *Service) enrichSnapshotCredits(ctx context.Context, snapshot *siteconfi
 		return nil
 	}
 
-	references := siteconfig.CollectAssetIDs(snapshot.Pages)
+	references := siteconfig.CollectSnapshotAssetIDs(snapshot.Pages, snapshot.Collections)
 	if len(references) == 0 {
 		snapshot.ImageCredits = nil
 		return nil

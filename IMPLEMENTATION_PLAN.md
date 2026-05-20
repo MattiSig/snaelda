@@ -4,6 +4,7 @@ Refreshed 2026-05-21 from 16 spec-vs-code audits plus the newly-authored `specs/
 
 ## Recently Confirmed Complete
 
+- [x] Collections module Phase 2 (spec 19): `collection_detail` templates now expand at publish time into one rendered HTML page per published entry under `/{collection.slug}/{entry.slug}`, with `block.bindings` substituting entry field values into the template's bound props before SSR. `collection_list` and `collection_index` blocks resolve their entry list from the snapshot at render time, link to the per-entry URLs, and the `stats` block ships its missing renderer alongside. Publish validation expands each template into expected entry paths, refuses templates whose collection has no published entries, and the manifest + sitemap include the per-entry URLs.
 - [x] Asset upload and image-library UI exist in the builder, including uploaded-asset selection in block editors.
 - [x] Contact-form submission storage and the chosen MVP moderation flow exist; email forwarding remains optional follow-up work, not unfinished core behavior.
 - [x] The 10-page limit is already enforced in validation, generation repair, the database, and publish preflight.
@@ -52,8 +53,6 @@ Refreshed 2026-05-21 from 16 spec-vs-code audits plus the newly-authored `specs/
   - `validateArtifactBundle` now asserts each rendered page's HTML body via balanced-tag and closing-tag structural checks, rejecting truncated or empty renders before they ship.
 
 ## Core Spec Gaps
-
-- [ ] Finish collections module phase 2 (spec 19): per-entry public URL rendering with binding substitution. The Phase 1 foundation has shipped (see Recently Confirmed Complete below); what remains is the React renderer change so `collection_detail` templates emit one rendered HTML per published entry with `block.bindings` substituting the entry's field values into the template's bound props, plus sitemap inclusion of those entry URLs. The `collection_list` block also needs runtime resolution of `props.collection` to the entry list when published.
 
 - [ ] Custom-domain attach/verify/TLS (specs 13, 10).
   - Extend `internal/domains/` `DomainService` beyond `List` with create/verify/delete; populate the existing `verification_token` column; integrate certmagic or autocert.

@@ -213,6 +213,118 @@ func TestValidatePublishedSnapshotRejectsHTMLInSEO(t *testing.T) {
 	}
 }
 
+func TestValidatePublishedSnapshotRejectsCollectionDetailWithoutPublishedEntries(t *testing.T) {
+	draft := validDraft()
+	snapshot := PublishedSnapshot{
+		SchemaVersion: SiteConfigVersionV1,
+		Site: PublishedSite{
+			ID:            draft.Site.ID,
+			Name:          draft.Site.Name,
+			DefaultLocale: draft.Site.DefaultLocale,
+			SEO: SEOConfig{
+				Title:       draft.Site.Name,
+				Description: "Calm design systems for focused teams.",
+			},
+		},
+		Theme:      draft.Theme,
+		Navigation: NavigationConfig{Primary: []NavigationItem{{Label: "Home", PageID: "page_home"}}},
+		Pages: []PageDraft{
+			{
+				ID:    "page_home",
+				Title: "Home",
+				Slug:  "/",
+				SEO:   SEOConfig{Title: "Home", Description: "Welcome to the studio."},
+				Blocks: draft.Pages[0].Blocks,
+			},
+			{
+				ID:           "page_service_detail",
+				Title:        "Service detail",
+				Slug:         "/services-template",
+				Type:         PageTypeCollectionDetail,
+				CollectionID: "col_services",
+				SEO:          SEOConfig{Title: "Detail", Description: "Per-entry detail page template."},
+				Blocks:       []BlockInstance{},
+			},
+		},
+		Collections: []Collection{{
+			ID:            "col_services",
+			Slug:          "services",
+			SingularLabel: "Service",
+			PluralLabel:   "Services",
+			Schema: []FieldDefinition{{
+				Key:   "title",
+				Label: "Title",
+				Type:  FieldTypeText,
+			}},
+			// No entries -> publish must fail.
+		}},
+	}
+
+	err := ValidatePublishedSnapshot(snapshot)
+	if !hasIssue(t, err, "no_published_entries") {
+		t.Fatalf("expected no_published_entries issue, got %v", err)
+	}
+}
+
+func TestValidatePublishedSnapshotAcceptsCollectionDetailWithPublishedEntry(t *testing.T) {
+	draft := validDraft()
+	snapshot := PublishedSnapshot{
+		SchemaVersion: SiteConfigVersionV1,
+		Site: PublishedSite{
+			ID:            draft.Site.ID,
+			Name:          draft.Site.Name,
+			DefaultLocale: draft.Site.DefaultLocale,
+			SEO: SEOConfig{
+				Title:       draft.Site.Name,
+				Description: "Calm design systems for focused teams.",
+			},
+		},
+		Theme:      draft.Theme,
+		Navigation: NavigationConfig{Primary: []NavigationItem{{Label: "Home", PageID: "page_home"}}},
+		Pages: []PageDraft{
+			{
+				ID:     "page_home",
+				Title:  "Home",
+				Slug:   "/",
+				SEO:    SEOConfig{Title: "Home", Description: "Welcome to the studio."},
+				Blocks: draft.Pages[0].Blocks,
+			},
+			{
+				ID:           "page_service_detail",
+				Title:        "Service detail",
+				Slug:         "/services-template",
+				Type:         PageTypeCollectionDetail,
+				CollectionID: "col_services",
+				SEO:          SEOConfig{Title: "Detail", Description: "Per-entry detail page template."},
+				Blocks:       []BlockInstance{},
+			},
+		},
+		Collections: []Collection{{
+			ID:            "col_services",
+			Slug:          "services",
+			SingularLabel: "Service",
+			PluralLabel:   "Services",
+			Schema: []FieldDefinition{{
+				Key:   "title",
+				Label: "Title",
+				Type:  FieldTypeText,
+			}},
+			Entries: []CollectionEntry{
+				{
+					ID:     "entry_a",
+					Slug:   "scaffolding",
+					Status: EntryStatusPublished,
+					Fields: map[string]any{"title": "Scaffolding"},
+				},
+			},
+		}},
+	}
+
+	if err := ValidatePublishedSnapshot(snapshot); err != nil {
+		t.Fatalf("expected snapshot with published entry to validate, got %v", err)
+	}
+}
+
 func TestValidateFormDefinitionRejectsUnsupportedFields(t *testing.T) {
 	err := ValidateFormDefinition(FormDefinition{
 		Fields: []FormField{

@@ -3,6 +3,8 @@ import { useState } from 'react'
 import {
   APIError,
   submitPublicForm,
+  type Collection,
+  type CollectionEntry,
   type ImageCredit,
   type PublishedSnapshot,
   type SiteDraft,
@@ -24,6 +26,7 @@ type RenderableSite = Pick<SiteDraft, 'theme' | 'navigation' | 'pages'> & {
       description?: string
     }
   }
+  collections?: Collection[]
   imageCredits?: ImageCredit[]
 }
 
@@ -42,6 +45,12 @@ export type SiteDraftRendererBlockSlot = {
   children: ReactNode
 }
 
+type CollectionContext = {
+  collectionsById: Map<string, Collection>
+  activeCollection?: Collection
+  activeEntry?: CollectionEntry
+}
+
 export function SiteDraftRenderer({
   site,
   eyebrow = 'Site render',
@@ -52,6 +61,8 @@ export function SiteDraftRenderer({
   publishedBasePath,
   mode: _mode = 'default',
   renderBlock,
+  activeEntry,
+  activeCollection,
 }: {
   site: SiteDraft | PublishedSnapshot | RenderableSite
   eyebrow?: string
@@ -62,6 +73,8 @@ export function SiteDraftRenderer({
   publishedBasePath?: string
   mode?: 'default' | 'builder'
   renderBlock?: (slot: SiteDraftRendererBlockSlot) => React.ReactNode
+  activeEntry?: CollectionEntry
+  activeCollection?: Collection
 }) {
   const renderedPages = selectedPageId
     ? site.pages.filter((page) => page.id === selectedPageId)
@@ -84,6 +97,14 @@ export function SiteDraftRenderer({
         publishedBasePath,
       )
     : '#'
+
+  const siteCollections =
+    'collections' in site && Array.isArray(site.collections)
+      ? (site.collections as Collection[])
+      : []
+  const collectionsById = new Map<string, Collection>(
+    siteCollections.map((collection) => [collection.id, collection] as const),
+  )
 
   return (
     <div className={preview.shell} style={buildSiteThemeStyle(site.theme)}>
@@ -115,49 +136,67 @@ export function SiteDraftRenderer({
       </header>
 
       <main className={preview.page}>
-        {renderedPages.map((page) => (
-          <article
-            key={page.id}
-            id={pageAnchor(page.slug, page.id)}
-            className="w-full"
-          >
-            {showPageMeta ? (
-              <div className={preview.pageMeta}>
-                <span>{eyebrow ? `${eyebrow} · ` : ''}{page.title}</span>
-                <small className="text-[color-mix(in_oklch,var(--site-foreground)_55%,var(--site-background))]">
-                  {page.slug}
-                </small>
+        {renderedPages.map((page) => {
+          const pageCollection =
+            page.collectionId !== undefined
+              ? collectionsById.get(page.collectionId)
+              : undefined
+          const pageActiveCollection =
+            activeCollection ??
+            (page.type === 'collection_detail' || page.type === 'collection_index'
+              ? pageCollection
+              : undefined)
+          const collectionCtx: CollectionContext = {
+            collectionsById,
+            activeCollection: pageActiveCollection,
+            activeEntry: page.type === 'collection_detail' ? activeEntry : undefined,
+          }
+
+          return (
+            <article
+              key={page.id}
+              id={pageAnchor(page.slug, page.id)}
+              className="w-full"
+            >
+              {showPageMeta ? (
+                <div className={preview.pageMeta}>
+                  <span>{eyebrow ? `${eyebrow} · ` : ''}{page.title}</span>
+                  <small className="text-[color-mix(in_oklch,var(--site-foreground)_55%,var(--site-background))]">
+                    {page.slug}
+                  </small>
+                </div>
+              ) : null}
+              <div className={preview.pageStack}>
+                {page.blocks
+                  .filter((block) => !block.settings?.hidden)
+                  .map((block, blockIndex) => {
+                    const renderedBlock = renderSiteBlock({
+                      block,
+                      page,
+                      blockIndex,
+                      siteID: site.site.id,
+                      slugToPage,
+                      linkMode,
+                      siteSlug,
+                      publishedBasePath,
+                      collectionCtx,
+                    })
+
+                    if (!renderBlock) {
+                      return renderedBlock
+                    }
+
+                    return renderBlock({
+                      block,
+                      page,
+                      blockIndex,
+                      children: renderedBlock,
+                    })
+                  })}
               </div>
-            ) : null}
-            <div className={preview.pageStack}>
-              {page.blocks
-                .filter((block) => !block.settings?.hidden)
-                .map((block, blockIndex) => {
-                  const renderedBlock = renderSiteBlock({
-                    block,
-                    page,
-                    blockIndex,
-                    siteID: site.site.id,
-                    slugToPage,
-                    linkMode,
-                    siteSlug,
-                    publishedBasePath,
-                  })
-
-                  if (!renderBlock) {
-                    return renderedBlock
-                  }
-
-                  return renderBlock({
-                    block,
-                    page,
-                    blockIndex,
-                    children: renderedBlock,
-                  })
-                })}
-            </div>
-          </article>
-        ))}
+            </article>
+          )
+        })}
       </main>
       <ImageCreditsBand credits={'imageCredits' in site ? site.imageCredits : undefined} />
     </div>
@@ -227,6 +266,7 @@ function renderSiteBlock({
   linkMode,
   siteSlug,
   publishedBasePath,
+  collectionCtx,
 }: {
   block: RenderedBlock
   page: RenderedPage
@@ -236,6 +276,7 @@ function renderSiteBlock({
   linkMode: 'anchors' | 'published'
   siteSlug?: string
   publishedBasePath?: string
+  collectionCtx: CollectionContext
 }) {
   switch (block.type) {
     case 'hero':
@@ -340,6 +381,8 @@ function renderSiteBlock({
       )
     case 'faq':
       return <FAQBlock key={block.id} props={block.props} />
+    case 'stats':
+      return <StatsBlock key={block.id} props={block.props} />
     case 'team_profile_cards':
       return (
         <TeamProfileCardsBlock
@@ -354,6 +397,44 @@ function renderSiteBlock({
               publishedBasePath,
             )
           }
+          linkMode={linkMode}
+          siteSlug={siteSlug}
+        />
+      )
+    case 'collection_list': {
+      const collectionId = asText(block.props.collection)
+      const resolved = collectionId
+        ? collectionCtx.collectionsById.get(collectionId)
+        : undefined
+      return (
+        <CollectionListBlock
+          key={block.id}
+          props={block.props}
+          collection={resolved}
+          linkMode={linkMode}
+          siteSlug={siteSlug}
+          publishedBasePath={publishedBasePath}
+        />
+      )
+    }
+    case 'collection_index':
+      return (
+        <CollectionIndexBlock
+          key={block.id}
+          props={block.props}
+          collection={collectionCtx.activeCollection}
+          linkMode={linkMode}
+          siteSlug={siteSlug}
+          publishedBasePath={publishedBasePath}
+        />
+      )
+    case 'collection_detail':
+      return (
+        <CollectionDetailBlock
+          key={block.id}
+          props={block.props}
+          collection={collectionCtx.activeCollection}
+          entry={collectionCtx.activeEntry}
           linkMode={linkMode}
           siteSlug={siteSlug}
         />
@@ -1072,6 +1153,48 @@ function FAQBlock({ props }: { props: Record<string, unknown> }) {
   )
 }
 
+function StatsBlock({ props }: { props: Record<string, unknown> }) {
+  const items = asArray(props.items)
+  const columnsClass =
+    items.length >= 4
+      ? 'md:grid-cols-2 xl:grid-cols-4'
+      : items.length === 3
+        ? 'md:grid-cols-3'
+        : 'md:grid-cols-2'
+  return (
+    <section className={preview.panel}>
+      <div className={preview.panelInner}>
+        <div className={preview.sectionHeading}>
+          <h3 className={headingClass}>{asText(props.heading)}</h3>
+          {asText(props.intro) ? (
+            <p className={bodyClass}>{asText(props.intro)}</p>
+          ) : null}
+        </div>
+        <div className={cn('grid gap-x-10 gap-y-12', columnsClass)}>
+          {items.map((item, index) => {
+            const value = asObject(item)
+            return (
+              <div key={index} className="grid gap-2">
+                <p className="m-0 font-serif text-[clamp(2rem,4vw,3rem)] font-bold leading-[1.05] text-[var(--site-foreground)]">
+                  {asText(value?.value)}
+                </p>
+                <p className={cn(text.eyebrow, 'm-0')}>
+                  {asText(value?.label)}
+                </p>
+                {asText(value?.description) ? (
+                  <p className="m-0 text-sm leading-[1.55] text-[color-mix(in_oklch,var(--site-foreground)_78%,var(--site-background))]">
+                    {asText(value?.description)}
+                  </p>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function TeamProfileCardsBlock({
   props,
   resolveHref,
@@ -1221,6 +1344,334 @@ function FooterBlock({
       ) : null}
     </footer>
   )
+}
+
+function CollectionListBlock({
+  props,
+  collection,
+  linkMode,
+  siteSlug,
+  publishedBasePath,
+}: {
+  props: Record<string, unknown>
+  collection?: Collection
+  linkMode: 'anchors' | 'published'
+  siteSlug?: string
+  publishedBasePath?: string
+}) {
+  const layout = asText(props.layout) || 'grid'
+  const limit = asInt(props.limit) ?? 6
+  const cta = asObject(props.cta)
+  const entries = filterPublishedEntries(collection?.entries)
+  const visible = entries.slice(0, Math.max(1, limit))
+  return (
+    <section className={preview.panel}>
+      <div className={preview.panelInner}>
+        <div className={preview.sectionHeading}>
+          {asText(props.heading) ? (
+            <h3 className={headingClass}>{asText(props.heading)}</h3>
+          ) : null}
+          {asText(props.intro) ? (
+            <p className={bodyClass}>{asText(props.intro)}</p>
+          ) : null}
+        </div>
+        {visible.length === 0 ? (
+          <p className={cn(bodyClass, 'm-0')}>
+            No entries to show yet.
+          </p>
+        ) : (
+          <div className={collectionGridClassName(layout)}>
+            {visible.map((entry) => (
+              <CollectionEntryCard
+                key={entry.id}
+                entry={entry}
+                collection={collection!}
+                linkMode={linkMode}
+                siteSlug={siteSlug}
+                publishedBasePath={publishedBasePath}
+              />
+            ))}
+          </div>
+        )}
+        {cta ? (
+          <div className={cn(preview.actionRow, 'mt-10')}>
+            <Button asChild variant="plain" className={preview.button}>
+              <a
+                href={resolveCollectionListCtaHref(
+                  asText(cta.href),
+                  collection,
+                  linkMode,
+                  siteSlug,
+                  publishedBasePath,
+                )}
+              >
+                {asText(cta.label) ?? 'Browse all'}
+              </a>
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+function CollectionIndexBlock({
+  props,
+  collection,
+  linkMode,
+  siteSlug,
+  publishedBasePath,
+}: {
+  props: Record<string, unknown>
+  collection?: Collection
+  linkMode: 'anchors' | 'published'
+  siteSlug?: string
+  publishedBasePath?: string
+}) {
+  const layout = asText(props.layout) || 'grid'
+  const sort = asText(props.sort) || 'manual'
+  const entries = sortEntries(filterPublishedEntries(collection?.entries), sort)
+  return (
+    <section className={preview.panel}>
+      <div className={preview.panelInner}>
+        <div className={preview.sectionHeading}>
+          <h3 className={headingClass}>
+            {asText(props.heading) || collection?.pluralLabel || 'All entries'}
+          </h3>
+          {asText(props.intro) ? (
+            <p className={bodyClass}>{asText(props.intro)}</p>
+          ) : null}
+        </div>
+        {entries.length === 0 ? (
+          <p className={cn(bodyClass, 'm-0')}>No entries to show yet.</p>
+        ) : (
+          <div className={collectionGridClassName(layout)}>
+            {entries.map((entry) => (
+              <CollectionEntryCard
+                key={entry.id}
+                entry={entry}
+                collection={collection!}
+                linkMode={linkMode}
+                siteSlug={siteSlug}
+                publishedBasePath={publishedBasePath}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function CollectionDetailBlock({
+  props,
+  collection,
+  entry,
+  linkMode,
+  siteSlug,
+}: {
+  props: Record<string, unknown>
+  collection?: Collection
+  entry?: CollectionEntry
+  linkMode: 'anchors' | 'published'
+  siteSlug?: string
+}) {
+  if (!entry) {
+    return (
+      <section className={preview.panel}>
+        <div className={preview.panelInner}>
+          <div className={preview.sectionHeading}>
+            <p className={text.eyebrow}>
+              {collection?.singularLabel ?? 'Collection'} template
+            </p>
+            <h3 className={headingClass}>
+              {asText(props.heading) || 'Detail template'}
+            </h3>
+            <p className={bodyClass}>
+              This template renders one page per published entry at publish time.
+            </p>
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  const layout = asText(props.layout) || 'default'
+  const cover = asImageRef(entry.fields.cover) || asImageRef(entry.fields.image)
+  const title = asText(props.heading) || asText(entry.fields.title) || ''
+  const summary = asText(entry.fields.summary)
+  const details = asText(entry.fields.details)
+  const widthClass =
+    layout === 'narrow'
+      ? 'max-w-[60ch]'
+      : layout === 'wide'
+        ? 'max-w-[1180px]'
+        : 'max-w-[80ch]'
+
+  return (
+    <section className={preview.panel}>
+      <div className={preview.panelInner}>
+        <div className={cn('grid gap-10', widthClass)}>
+          <div className="grid gap-4">
+            {collection ? (
+              <p className={text.eyebrow}>{collection.singularLabel}</p>
+            ) : null}
+            {title ? (
+              <h2 className="font-serif text-[clamp(2rem,4vw,3.4rem)] font-bold leading-[1.05] tracking-tight text-[var(--site-foreground)]">
+                {title}
+              </h2>
+            ) : null}
+            {summary ? (
+              <p className="text-[1.15rem] leading-[1.6] text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
+                {summary}
+              </p>
+            ) : null}
+          </div>
+          {cover ? (
+            <AssetImage
+              image={cover}
+              linkMode={linkMode}
+              siteSlug={siteSlug}
+              altFallback={title || 'Detail image'}
+              className="w-full rounded-[var(--site-radius-inner)] object-cover aspect-[16/9]"
+            />
+          ) : null}
+          {details ? (
+            <div className="grid gap-4 text-[1.05rem] leading-[1.7] text-[color-mix(in_oklch,var(--site-foreground)_85%,var(--site-background))]">
+              {details
+                .split(/\n{2,}/)
+                .map((paragraph, index) => (
+                  <p key={index}>{paragraph}</p>
+                ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function CollectionEntryCard({
+  entry,
+  collection,
+  linkMode,
+  siteSlug,
+  publishedBasePath,
+}: {
+  entry: CollectionEntry
+  collection: Collection
+  linkMode: 'anchors' | 'published'
+  siteSlug?: string
+  publishedBasePath?: string
+}) {
+  const title = asText(entry.fields.title) || entry.slug
+  const summary = asText(entry.fields.summary)
+  const cover = asImageRef(entry.fields.cover) || asImageRef(entry.fields.image)
+  const href = buildCollectionEntryHref(
+    collection,
+    entry,
+    linkMode,
+    siteSlug,
+    publishedBasePath,
+  )
+  return (
+    <a
+      href={href}
+      className="group grid gap-4 rounded-[var(--site-radius-inner)] border border-[color-mix(in_oklch,var(--site-border)_45%,transparent)] bg-[var(--site-surface)] p-5 transition-transform hover:-translate-y-px"
+    >
+      {cover ? (
+        <AssetImage
+          image={cover}
+          linkMode={linkMode}
+          siteSlug={siteSlug}
+          altFallback={title}
+          className="aspect-[4/3] w-full rounded-[var(--site-radius-inner)] object-cover"
+        />
+      ) : (
+        <div className={cn(preview.imagePlaceholder, 'aspect-[4/3] min-h-0')}>
+          <span className="text-sm">{title}</span>
+        </div>
+      )}
+      <div className="grid gap-2">
+        <h4 className="m-0 font-serif text-[1.2rem] font-bold leading-[1.2] text-[var(--site-foreground)]">
+          {title}
+        </h4>
+        {summary ? (
+          <p className="m-0 text-sm leading-[1.55] text-[color-mix(in_oklch,var(--site-foreground)_78%,var(--site-background))]">
+            {summary}
+          </p>
+        ) : null}
+      </div>
+    </a>
+  )
+}
+
+function buildCollectionEntryHref(
+  collection: Collection,
+  entry: CollectionEntry,
+  linkMode: 'anchors' | 'published',
+  siteSlug?: string,
+  publishedBasePath?: string,
+) {
+  const entryPath = `/${collection.slug}/${entry.slug}`
+  if (linkMode === 'published') {
+    const basePath = resolvePublishedBasePath(siteSlug, publishedBasePath)
+    return `${basePath}${entryPath}`
+  }
+  return entryPath
+}
+
+function resolveCollectionListCtaHref(
+  href: string,
+  collection: Collection | undefined,
+  linkMode: 'anchors' | 'published',
+  siteSlug?: string,
+  publishedBasePath?: string,
+) {
+  if (href) {
+    if (href.startsWith('/') && linkMode === 'published') {
+      const basePath = resolvePublishedBasePath(siteSlug, publishedBasePath)
+      return `${basePath}${href}`
+    }
+    return href
+  }
+  if (collection) {
+    if (linkMode === 'published') {
+      const basePath = resolvePublishedBasePath(siteSlug, publishedBasePath)
+      return `${basePath}/${collection.slug}`
+    }
+    return `/${collection.slug}`
+  }
+  return '#'
+}
+
+function filterPublishedEntries(entries?: CollectionEntry[]) {
+  return (entries ?? []).filter(
+    (entry) => !entry.status || entry.status === 'published',
+  )
+}
+
+function sortEntries(entries: CollectionEntry[], sort: string) {
+  if (sort === 'title') {
+    return [...entries].sort((a, b) =>
+      asText(a.fields.title).localeCompare(asText(b.fields.title)),
+    )
+  }
+  // Manual / newest / oldest fall back to entry.sortOrder since entries
+  // don't carry publishedAt in the snapshot.
+  return [...entries].sort((a, b) => {
+    const left = a.sortOrder ?? 0
+    const right = b.sortOrder ?? 0
+    if (sort === 'oldest') return right - left
+    return left - right
+  })
+}
+
+function collectionGridClassName(layout: string) {
+  if (layout === 'list') {
+    return 'grid gap-5'
+  }
+  return 'grid gap-6 md:grid-cols-2 xl:grid-cols-3'
 }
 
 function asText(value: unknown) {
