@@ -107,16 +107,10 @@ func TestBlockRegistryDefinitionsAreSorted(t *testing.T) {
 	registry := DefaultBlockRegistry()
 
 	definitions := registry.Definitions()
-	if len(definitions) != 12 {
-		t.Fatalf("expected twelve definitions, got %d", len(definitions))
-	}
-
-	got := make([]string, 0, len(definitions))
-	for _, definition := range definitions {
-		got = append(got, definition.Type+"@"+definition.Version)
-	}
-
 	want := []string{
+		"collection_detail@1.0.0",
+		"collection_index@1.0.0",
+		"collection_list@1.0.0",
 		"contact_form@1.0.0",
 		"cta_band@1.0.0",
 		"faq@1.0.0",
@@ -126,10 +120,20 @@ func TestBlockRegistryDefinitionsAreSorted(t *testing.T) {
 		"hero@1.0.0",
 		"image_text@1.0.0",
 		"pricing_packages@1.0.0",
+		"stats@1.0.0",
 		"team_profile_cards@1.0.0",
 		"testimonials@1.0.0",
 		"text_section@1.0.0",
 	}
+	if len(definitions) != len(want) {
+		t.Fatalf("expected %d definitions, got %d", len(want), len(definitions))
+	}
+
+	got := make([]string, 0, len(definitions))
+	for _, definition := range definitions {
+		got = append(got, definition.Type+"@"+definition.Version)
+	}
+
 	for index := range want {
 		if got[index] != want[index] {
 			t.Fatalf("expected sorted definitions %v, got %v", want, got)

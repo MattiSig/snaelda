@@ -13,6 +13,7 @@ import (
 	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/billing"
 	"github.com/MattiSig/snaelda/internal/blocks"
+	"github.com/MattiSig/snaelda/internal/collections"
 	"github.com/MattiSig/snaelda/internal/domains"
 	"github.com/MattiSig/snaelda/internal/email"
 	"github.com/MattiSig/snaelda/internal/forms"
@@ -196,8 +197,10 @@ func (s *Server) Handler() http.Handler {
 			AuditRecorder:   auditRecorder,
 			Logger:          s.logger,
 		}).Mount(mux, s.auth.RequireSession)
+		collections.NewHandler(store).Mount(mux, s.auth.RequireSession)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, sites.Module{})
+		mountAuthenticatedPlaceholderModule(mux, s.auth, collections.Module{})
 	}
 	mountAuthenticatedPlaceholderModule(mux, s.auth, pages.Module{})
 	mountAuthenticatedPlaceholderModule(mux, s.auth, blocks.Module{})

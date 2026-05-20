@@ -43,6 +43,12 @@ var (
 	ErrNavigationPageUnknown   = errors.New("navigation item references a page that does not exist")
 	ErrNavigationHrefInvalid   = errors.New("navigation item href is invalid")
 	ErrNavigationLabelTooLong  = errors.New("navigation item label is too long")
+
+	ErrPageTypeUnsupported       = errors.New("page type is not supported")
+	ErrPageCollectionRequired    = errors.New("collection page must reference a collection")
+	ErrPageCollectionUnsupported = errors.New("static pages cannot reference a collection")
+	ErrPageCollectionNotFound    = errors.New("page references a collection that does not exist")
+	ErrPageTypeChangeForbidden   = errors.New("page type cannot be changed after creation")
 )
 
 const navigationLabelMaxLength = 60
@@ -83,12 +89,16 @@ type UpdateSiteInput struct {
 type CreatePageInput struct {
 	Title               string
 	Slug                string
+	Type                string
+	CollectionID        string
 	IncludeInNavigation *bool
 }
 
 type UpdatePageInput struct {
 	Title               *string
 	Slug                *string
+	Type                *string
+	CollectionID        *string
 	SEO                 *siteconfig.SEOConfig
 	IncludeInNavigation *bool
 }
@@ -273,6 +283,26 @@ func (m *PostgresMutator) CreatePage(ctx context.Context, workspaceID string, si
 		return siteconfig.SiteDraft{}, err
 	}
 
+	pageType := strings.TrimSpace(input.Type)
+	if pageType == "" {
+		pageType = siteconfig.PageTypeStatic
+	}
+	switch pageType {
+	case siteconfig.PageTypeStatic:
+		if strings.TrimSpace(input.CollectionID) != "" {
+			return siteconfig.SiteDraft{}, ErrPageCollectionUnsupported
+		}
+	case siteconfig.PageTypeCollectionIndex, siteconfig.PageTypeCollectionDetail:
+		if strings.TrimSpace(input.CollectionID) == "" {
+			return siteconfig.SiteDraft{}, ErrPageCollectionRequired
+		}
+		if !collectionExists(draft.Collections, input.CollectionID) {
+			return siteconfig.SiteDraft{}, ErrPageCollectionNotFound
+		}
+	default:
+		return siteconfig.SiteDraft{}, ErrPageTypeUnsupported
+	}
+
 	page := siteconfig.PageDraft{
 		ID:    pageID,
 		Title: title,
@@ -284,6 +314,10 @@ func (m *PostgresMutator) CreatePage(ctx context.Context, workspaceID string, si
 		Blocks:   []siteconfig.BlockInstance{},
 		Settings: pageSettingsValue(input.IncludeInNavigation),
 	}
+	if pageType != siteconfig.PageTypeStatic {
+		page.Type = pageType
+		page.CollectionID = strings.TrimSpace(input.CollectionID)
+	}
 	draft.Pages = append(draft.Pages, page)
 	draft.Navigation = syncNavigationWithPages(draft.Navigation, draft.Pages)
 
@@ -294,7 +328,7 @@ func (m *PostgresMutator) CreatePage(ctx context.Context, workspaceID string, si
 }
 
 func (m *PostgresMutator) UpdatePage(ctx context.Context, workspaceID string, siteID string, pageID string, input UpdatePageInput) (siteconfig.SiteDraft, error) {
-	if input.Title == nil && input.Slug == nil && input.SEO == nil && input.IncludeInNavigation == nil {
+	if input.Title == nil && input.Slug == nil && input.SEO == nil && input.IncludeInNavigation == nil && input.Type == nil && input.CollectionID == nil {
 		return siteconfig.SiteDraft{}, ErrNoPageChanges
 	}
 
@@ -331,6 +365,36 @@ func (m *PostgresMutator) UpdatePage(ctx context.Context, workspaceID string, si
 	if input.SEO != nil {
 		page.SEO = *input.SEO
 	}
+	if input.Type != nil {
+		requestedType := strings.TrimSpace(*input.Type)
+		if requestedType == "" {
+			requestedType = siteconfig.PageTypeStatic
+		}
+		currentType := page.Type
+		if currentType == "" {
+			currentType = siteconfig.PageTypeStatic
+		}
+		if requestedType != currentType {
+			return siteconfig.SiteDraft{}, ErrPageTypeChangeForbidden
+		}
+	}
+	if input.CollectionID != nil {
+		desired := strings.TrimSpace(*input.CollectionID)
+		switch page.Type {
+		case "", siteconfig.PageTypeStatic:
+			if desired != "" {
+				return siteconfig.SiteDraft{}, ErrPageCollectionUnsupported
+			}
+		case siteconfig.PageTypeCollectionIndex, siteconfig.PageTypeCollectionDetail:
+			if desired == "" {
+				return siteconfig.SiteDraft{}, ErrPageCollectionRequired
+			}
+			if !collectionExists(draft.Collections, desired) {
+				return siteconfig.SiteDraft{}, ErrPageCollectionNotFound
+			}
+			page.CollectionID = desired
+		}
+	}
 	page.Settings = pageSettingsValue(input.IncludeInNavigation, page.Settings)
 
 	draft.Pages[pageIndex] = page
@@ -339,6 +403,15 @@ func (m *PostgresMutator) UpdatePage(ctx context.Context, workspaceID string, si
 		return siteconfig.SiteDraft{}, err
 	}
 	return m.reader.LoadDraft(ctx, siteID)
+}
+
+func collectionExists(collections []siteconfig.Collection, id string) bool {
+	for _, collection := range collections {
+		if collection.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *PostgresMutator) DeletePage(ctx context.Context, workspaceID string, siteID string, pageID string) (siteconfig.SiteDraft, error) {

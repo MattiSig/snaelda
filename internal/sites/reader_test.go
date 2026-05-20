@@ -230,21 +230,27 @@ func TestSaveDraftPersistsCanonicalDraftInTransaction(t *testing.T) {
 	if !tx.committed {
 		t.Fatal("expected transaction to commit")
 	}
-	if len(tx.execs) != 7 {
-		t.Fatalf("expected site, theme, delete blocks, delete pages, page, and two block writes; got %d", len(tx.execs))
+	if len(tx.execs) != 9 {
+		t.Fatalf("expected site, theme, delete entries, delete collections, delete blocks, delete pages, page, and two block writes; got %d", len(tx.execs))
 	}
 	if !strings.Contains(tx.execs[0].sql, "insert into sites") {
 		t.Fatalf("expected first write to save site, got %s", tx.execs[0].sql)
 	}
-	if !strings.Contains(tx.execs[3].sql, "delete from pages") {
-		t.Fatalf("expected removed pages cleanup, got %s", tx.execs[3].sql)
+	if !strings.Contains(tx.execs[2].sql, "delete from collection_entries") {
+		t.Fatalf("expected entries cleanup before pages, got %s", tx.execs[2].sql)
 	}
-	pageIDs, ok := tx.execs[3].args[1].([]string)
+	if !strings.Contains(tx.execs[3].sql, "delete from collections") {
+		t.Fatalf("expected collections cleanup before pages, got %s", tx.execs[3].sql)
+	}
+	if !strings.Contains(tx.execs[5].sql, "delete from pages") {
+		t.Fatalf("expected removed pages cleanup, got %s", tx.execs[5].sql)
+	}
+	pageIDs, ok := tx.execs[5].args[1].([]string)
 	if !ok || len(pageIDs) != 1 || pageIDs[0] != "00000000-0000-4000-8000-000000000501" {
-		t.Fatalf("expected canonical page IDs in cleanup, got %#v", tx.execs[3].args[1])
+		t.Fatalf("expected canonical page IDs in cleanup, got %#v", tx.execs[5].args[1])
 	}
-	if hidden, ok := tx.execs[6].args[8].(bool); !ok || !hidden {
-		t.Fatalf("expected hidden block flag in is_hidden argument, got %#v", tx.execs[6].args[8])
+	if hidden, ok := tx.execs[8].args[8].(bool); !ok || !hidden {
+		t.Fatalf("expected hidden block flag in is_hidden argument, got %#v", tx.execs[8].args[8])
 	}
 	siteSettingsJSON, ok := tx.execs[0].args[6].([]byte)
 	if !ok {

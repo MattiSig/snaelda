@@ -1,6 +1,152 @@
 {
   "blockRegistry": [
     {
+      "type": "collection_detail",
+      "version": "1.0.0",
+      "displayName": "Collection detail",
+      "category": "content",
+      "defaultProps": {
+        "layout": "default"
+      },
+      "editorSchema": [
+        {
+          "name": "heading",
+          "label": "Heading",
+          "control": "text",
+          "description": "Optional override; defaults to the entry title"
+        },
+        {
+          "name": "layout",
+          "label": "Layout",
+          "control": "select",
+          "options": [
+            "default",
+            "narrow",
+            "wide"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "collection_index",
+      "version": "1.0.0",
+      "displayName": "Collection index",
+      "category": "content",
+      "defaultProps": {
+        "heading": "All entries",
+        "showSort": false,
+        "sort": "manual"
+      },
+      "editorSchema": [
+        {
+          "name": "heading",
+          "label": "Heading",
+          "control": "text"
+        },
+        {
+          "name": "intro",
+          "label": "Intro",
+          "control": "textarea"
+        },
+        {
+          "name": "sort",
+          "label": "Default sort",
+          "control": "select",
+          "options": [
+            "manual",
+            "newest",
+            "oldest",
+            "title"
+          ]
+        },
+        {
+          "name": "layout",
+          "label": "Layout",
+          "control": "select",
+          "options": [
+            "grid",
+            "list"
+          ]
+        },
+        {
+          "name": "showSort",
+          "label": "Allow visitors to sort",
+          "control": "boolean"
+        },
+        {
+          "name": "showFilters",
+          "label": "Show filter chips",
+          "control": "boolean"
+        }
+      ]
+    },
+    {
+      "type": "collection_list",
+      "version": "1.0.0",
+      "displayName": "Collection list",
+      "category": "content",
+      "defaultProps": {
+        "collection": "",
+        "heading": "Featured",
+        "limit": 6,
+        "showFilters": false
+      },
+      "editorSchema": [
+        {
+          "name": "heading",
+          "label": "Heading",
+          "control": "text"
+        },
+        {
+          "name": "intro",
+          "label": "Intro",
+          "control": "textarea"
+        },
+        {
+          "name": "collection",
+          "label": "Collection",
+          "control": "collection-picker"
+        },
+        {
+          "name": "limit",
+          "label": "Items to show",
+          "control": "number"
+        },
+        {
+          "name": "layout",
+          "label": "Layout",
+          "control": "select",
+          "options": [
+            "grid",
+            "list"
+          ]
+        },
+        {
+          "name": "showFilters",
+          "label": "Show filter chips",
+          "control": "boolean"
+        },
+        {
+          "name": "cta",
+          "label": "CTA",
+          "control": "link",
+          "fields": [
+            {
+              "name": "label",
+              "label": "Label",
+              "control": "text"
+            },
+            {
+              "name": "href",
+              "label": "Link",
+              "control": "text",
+              "placeholder": "/services"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "type": "contact_form",
       "version": "1.0.0",
       "displayName": "Contact form",
@@ -616,6 +762,63 @@
       ]
     },
     {
+      "type": "stats",
+      "version": "1.0.0",
+      "displayName": "Stats",
+      "category": "content",
+      "defaultProps": {
+        "heading": "By the numbers",
+        "items": [
+          {
+            "label": "Projects delivered",
+            "value": "120+"
+          },
+          {
+            "label": "Client satisfaction",
+            "value": "98%"
+          },
+          {
+            "label": "Support available",
+            "value": "24/7"
+          }
+        ]
+      },
+      "editorSchema": [
+        {
+          "name": "heading",
+          "label": "Heading",
+          "control": "text"
+        },
+        {
+          "name": "intro",
+          "label": "Intro",
+          "control": "textarea"
+        },
+        {
+          "name": "items",
+          "label": "Stats",
+          "control": "repeater",
+          "itemFields": [
+            {
+              "name": "value",
+              "label": "Value",
+              "control": "text"
+            },
+            {
+              "name": "label",
+              "label": "Label",
+              "control": "text"
+            },
+            {
+              "name": "description",
+              "label": "Description",
+              "control": "textarea"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "type": "team_profile_cards",
       "version": "1.0.0",
       "displayName": "Team profile cards",
@@ -853,7 +1056,39 @@
         },
         "blocks": [
           {
-            "id": "block_01_contact_form",
+            "id": "block_01_collection_detail",
+            "type": "collection_detail",
+            "version": "1.0.0",
+            "props": {
+              "layout": "default"
+            },
+            "settings": {}
+          },
+          {
+            "id": "block_02_collection_index",
+            "type": "collection_index",
+            "version": "1.0.0",
+            "props": {
+              "heading": "All entries",
+              "showSort": false,
+              "sort": "manual"
+            },
+            "settings": {}
+          },
+          {
+            "id": "block_03_collection_list",
+            "type": "collection_list",
+            "version": "1.0.0",
+            "props": {
+              "collection": "",
+              "heading": "Featured",
+              "limit": 6,
+              "showFilters": false
+            },
+            "settings": {}
+          },
+          {
+            "id": "block_04_contact_form",
             "type": "contact_form",
             "version": "1.0.0",
             "props": {
@@ -885,7 +1120,7 @@
             "settings": {}
           },
           {
-            "id": "block_02_cta_band",
+            "id": "block_05_cta_band",
             "type": "cta_band",
             "version": "1.0.0",
             "props": {
@@ -896,7 +1131,7 @@
             "settings": {}
           },
           {
-            "id": "block_03_faq",
+            "id": "block_06_faq",
             "type": "faq",
             "version": "1.0.0",
             "props": {
@@ -911,7 +1146,7 @@
             "settings": {}
           },
           {
-            "id": "block_04_features_grid",
+            "id": "block_07_features_grid",
             "type": "features_grid",
             "version": "1.0.0",
             "props": {
@@ -927,7 +1162,7 @@
             "settings": {}
           },
           {
-            "id": "block_05_footer",
+            "id": "block_08_footer",
             "type": "footer",
             "version": "1.0.0",
             "props": {
@@ -944,7 +1179,7 @@
             "settings": {}
           },
           {
-            "id": "block_06_gallery",
+            "id": "block_09_gallery",
             "type": "gallery",
             "version": "1.0.0",
             "props": {
@@ -960,7 +1195,7 @@
             "settings": {}
           },
           {
-            "id": "block_07_hero",
+            "id": "block_10_hero",
             "type": "hero",
             "version": "1.0.0",
             "props": {
@@ -970,7 +1205,7 @@
             "settings": {}
           },
           {
-            "id": "block_08_image_text",
+            "id": "block_11_image_text",
             "type": "image_text",
             "version": "1.0.0",
             "props": {
@@ -981,7 +1216,7 @@
             "settings": {}
           },
           {
-            "id": "block_09_pricing_packages",
+            "id": "block_12_pricing_packages",
             "type": "pricing_packages",
             "version": "1.0.0",
             "props": {
@@ -1005,7 +1240,30 @@
             "settings": {}
           },
           {
-            "id": "block_10_team_profile_cards",
+            "id": "block_13_stats",
+            "type": "stats",
+            "version": "1.0.0",
+            "props": {
+              "heading": "By the numbers",
+              "items": [
+                {
+                  "label": "Projects delivered",
+                  "value": "120+"
+                },
+                {
+                  "label": "Client satisfaction",
+                  "value": "98%"
+                },
+                {
+                  "label": "Support available",
+                  "value": "24/7"
+                }
+              ]
+            },
+            "settings": {}
+          },
+          {
+            "id": "block_14_team_profile_cards",
             "type": "team_profile_cards",
             "version": "1.0.0",
             "props": {
@@ -1027,7 +1285,7 @@
             "settings": {}
           },
           {
-            "id": "block_11_testimonials",
+            "id": "block_15_testimonials",
             "type": "testimonials",
             "version": "1.0.0",
             "props": {
@@ -1043,7 +1301,7 @@
             "settings": {}
           },
           {
-            "id": "block_12_text_section",
+            "id": "block_16_text_section",
             "type": "text_section",
             "version": "1.0.0",
             "props": {

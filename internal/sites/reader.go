@@ -68,12 +68,14 @@ type themeRow struct {
 }
 
 type pageRow struct {
-	ID       string
-	Title    string
-	Slug     string
-	Sort     int
-	SEO      siteconfig.SEOConfig
-	Settings map[string]any
+	ID           string
+	Title        string
+	Slug         string
+	Sort         int
+	Type         string
+	CollectionID string
+	SEO          siteconfig.SEOConfig
+	Settings     map[string]any
 }
 
 type blockRow struct {
@@ -85,13 +87,36 @@ type blockRow struct {
 	Props    map[string]any
 	Settings siteconfig.BlockSettings
 	Hidden   bool
+	Bindings map[string]siteconfig.BlockBinding
+}
+
+type collectionRow struct {
+	ID            string
+	Slug          string
+	SingularLabel string
+	PluralLabel   string
+	Schema        []siteconfig.FieldDefinition
+	Settings      siteconfig.CollectionSettings
+	SortOrder     int
+}
+
+type collectionEntryRow struct {
+	ID           string
+	CollectionID string
+	Slug         string
+	Fields       map[string]any
+	SEO          siteconfig.SEOConfig
+	Status       string
+	SortOrder    int
 }
 
 type NormalizedDraftRows struct {
-	Site   siteRow
-	Theme  themeRow
-	Pages  []pageRow
-	Blocks []blockRow
+	Site        siteRow
+	Theme       themeRow
+	Pages       []pageRow
+	Blocks      []blockRow
+	Collections []collectionRow
+	Entries     []collectionEntryRow
 }
 
 func NewPostgresReader(db DB) *PostgresReader {
@@ -234,18 +259,35 @@ func (r *PostgresReader) loadNormalizedDraft(ctx context.Context, siteID string)
 	if err != nil {
 		return NormalizedDraftRows{}, err
 	}
+	collections, err := r.loadCollections(ctx, siteID)
+	if err != nil {
+		return NormalizedDraftRows{}, err
+	}
+	entries, err := r.loadCollectionEntries(ctx, siteID)
+	if err != nil {
+		return NormalizedDraftRows{}, err
+	}
 
 	return NormalizedDraftRows{
-		Site:   site,
-		Theme:  theme,
-		Pages:  pages,
-		Blocks: blocks,
+		Site:        site,
+		Theme:       theme,
+		Pages:       pages,
+		Blocks:      blocks,
+		Collections: collections,
+		Entries:     entries,
 	}, nil
 }
 
 func (r *PostgresReader) loadPages(ctx context.Context, siteID string) ([]pageRow, error) {
 	rows, err := r.db.Query(ctx, `
-		select id::text, title, slug, sort_order, seo, settings
+		select id::text,
+		       title,
+		       slug,
+		       sort_order,
+		       coalesce(type, 'static'),
+		       coalesce(collection_id::text, ''),
+		       seo,
+		       settings
 		from pages
 		where site_id = $1
 		order by sort_order asc, created_at asc
@@ -260,7 +302,16 @@ func (r *PostgresReader) loadPages(ctx context.Context, siteID string) ([]pageRo
 		var page pageRow
 		var seoJSON []byte
 		var settingsJSON []byte
-		if err := rows.Scan(&page.ID, &page.Title, &page.Slug, &page.Sort, &seoJSON, &settingsJSON); err != nil {
+		if err := rows.Scan(
+			&page.ID,
+			&page.Title,
+			&page.Slug,
+			&page.Sort,
+			&page.Type,
+			&page.CollectionID,
+			&seoJSON,
+			&settingsJSON,
+		); err != nil {
 			return nil, fmt.Errorf("scan page: %w", err)
 		}
 		if err := decodeJSON(seoJSON, &page.SEO); err != nil {
@@ -279,7 +330,15 @@ func (r *PostgresReader) loadPages(ctx context.Context, siteID string) ([]pageRo
 
 func (r *PostgresReader) loadBlocks(ctx context.Context, siteID string) ([]blockRow, error) {
 	rows, err := r.db.Query(ctx, `
-		select id::text, page_id::text, type, version, sort_order, props, settings, is_hidden
+		select id::text,
+		       page_id::text,
+		       type,
+		       version,
+		       sort_order,
+		       props,
+		       settings,
+		       is_hidden,
+		       coalesce(bindings, '{}'::jsonb)
 		from block_instances
 		where site_id = $1
 		order by page_id asc, sort_order asc, created_at asc
@@ -294,6 +353,7 @@ func (r *PostgresReader) loadBlocks(ctx context.Context, siteID string) ([]block
 		var block blockRow
 		var propsJSON []byte
 		var settingsJSON []byte
+		var bindingsJSON []byte
 		if err := rows.Scan(
 			&block.ID,
 			&block.PageID,
@@ -303,6 +363,7 @@ func (r *PostgresReader) loadBlocks(ctx context.Context, siteID string) ([]block
 			&propsJSON,
 			&settingsJSON,
 			&block.Hidden,
+			&bindingsJSON,
 		); err != nil {
 			return nil, fmt.Errorf("scan block: %w", err)
 		}
@@ -312,12 +373,116 @@ func (r *PostgresReader) loadBlocks(ctx context.Context, siteID string) ([]block
 		if err := decodeJSON(settingsJSON, &block.Settings); err != nil {
 			return nil, fmt.Errorf("decode block settings: %w", err)
 		}
+		block.Bindings = map[string]siteconfig.BlockBinding{}
+		if err := decodeJSON(bindingsJSON, &block.Bindings); err != nil {
+			return nil, fmt.Errorf("decode block bindings: %w", err)
+		}
 		blocks = append(blocks, block)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate blocks: %w", err)
 	}
 	return blocks, nil
+}
+
+func (r *PostgresReader) loadCollections(ctx context.Context, siteID string) ([]collectionRow, error) {
+	rows, err := r.db.Query(ctx, `
+		select id::text,
+		       slug,
+		       singular_label,
+		       plural_label,
+		       schema,
+		       settings,
+		       sort_order
+		from collections
+		where site_id = $1
+		order by sort_order asc, created_at asc
+	`, siteID)
+	if err != nil {
+		return nil, fmt.Errorf("load collections: %w", err)
+	}
+	defer rows.Close()
+
+	var collections []collectionRow
+	for rows.Next() {
+		var collection collectionRow
+		var schemaJSON []byte
+		var settingsJSON []byte
+		if err := rows.Scan(
+			&collection.ID,
+			&collection.Slug,
+			&collection.SingularLabel,
+			&collection.PluralLabel,
+			&schemaJSON,
+			&settingsJSON,
+			&collection.SortOrder,
+		); err != nil {
+			return nil, fmt.Errorf("scan collection: %w", err)
+		}
+		collection.Schema = []siteconfig.FieldDefinition{}
+		if len(schemaJSON) > 0 {
+			if err := decodeJSON(schemaJSON, &collection.Schema); err != nil {
+				return nil, fmt.Errorf("decode collection schema: %w", err)
+			}
+		}
+		if err := decodeJSON(settingsJSON, &collection.Settings); err != nil {
+			return nil, fmt.Errorf("decode collection settings: %w", err)
+		}
+		collections = append(collections, collection)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate collections: %w", err)
+	}
+	return collections, nil
+}
+
+func (r *PostgresReader) loadCollectionEntries(ctx context.Context, siteID string) ([]collectionEntryRow, error) {
+	rows, err := r.db.Query(ctx, `
+		select id::text,
+		       collection_id::text,
+		       slug,
+		       fields,
+		       seo,
+		       status,
+		       sort_order
+		from collection_entries
+		where site_id = $1
+		order by collection_id asc, sort_order asc, created_at asc
+	`, siteID)
+	if err != nil {
+		return nil, fmt.Errorf("load collection entries: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []collectionEntryRow
+	for rows.Next() {
+		var entry collectionEntryRow
+		var fieldsJSON []byte
+		var seoJSON []byte
+		if err := rows.Scan(
+			&entry.ID,
+			&entry.CollectionID,
+			&entry.Slug,
+			&fieldsJSON,
+			&seoJSON,
+			&entry.Status,
+			&entry.SortOrder,
+		); err != nil {
+			return nil, fmt.Errorf("scan collection entry: %w", err)
+		}
+		entry.Fields = map[string]any{}
+		if err := decodeJSON(fieldsJSON, &entry.Fields); err != nil {
+			return nil, fmt.Errorf("decode collection entry fields: %w", err)
+		}
+		if err := decodeJSON(seoJSON, &entry.SEO); err != nil {
+			return nil, fmt.Errorf("decode collection entry seo: %w", err)
+		}
+		entries = append(entries, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate collection entries: %w", err)
+	}
+	return entries, nil
 }
 
 func AssembleDraft(rows NormalizedDraftRows) siteconfig.SiteDraft {
@@ -344,27 +509,67 @@ func AssembleDraft(rows NormalizedDraftRows) siteconfig.SiteDraft {
 			if block.Hidden {
 				settings.Hidden = true
 			}
-			draftBlocks = append(draftBlocks, siteconfig.BlockInstance{
+			instance := siteconfig.BlockInstance{
 				ID:       block.ID,
 				Type:     block.Type,
 				Version:  block.Version,
 				Props:    block.Props,
 				Settings: settings,
-			})
+			}
+			if len(block.Bindings) > 0 {
+				instance.Bindings = block.Bindings
+			}
+			draftBlocks = append(draftBlocks, instance)
 		}
-		draftPages = append(draftPages, siteconfig.PageDraft{
+		pageType := page.Type
+		if pageType == "" {
+			pageType = siteconfig.PageTypeStatic
+		}
+		draft := siteconfig.PageDraft{
 			ID:       page.ID,
 			Title:    page.Title,
 			Slug:     page.Slug,
 			SEO:      page.SEO,
 			Blocks:   draftBlocks,
 			Settings: page.Settings,
-		})
+		}
+		if pageType != siteconfig.PageTypeStatic {
+			draft.Type = pageType
+			draft.CollectionID = page.CollectionID
+		} else if page.CollectionID != "" {
+			draft.CollectionID = page.CollectionID
+		}
+		draftPages = append(draftPages, draft)
 	}
 
 	navigation := rows.Site.Navigation
 	if !rows.Site.HasNavigation {
 		navigation = navigationFromPageRows(pages)
+	}
+
+	entriesByCollection := map[string][]siteconfig.CollectionEntry{}
+	for _, entry := range rows.Entries {
+		entriesByCollection[entry.CollectionID] = append(entriesByCollection[entry.CollectionID], siteconfig.CollectionEntry{
+			ID:        entry.ID,
+			Slug:      entry.Slug,
+			Fields:    entry.Fields,
+			SEO:       entry.SEO,
+			Status:    entry.Status,
+			SortOrder: entry.SortOrder,
+		})
+	}
+	collections := make([]siteconfig.Collection, 0, len(rows.Collections))
+	for _, row := range rows.Collections {
+		collections = append(collections, siteconfig.Collection{
+			ID:            row.ID,
+			Slug:          row.Slug,
+			SingularLabel: row.SingularLabel,
+			PluralLabel:   row.PluralLabel,
+			Schema:        row.Schema,
+			Settings:      row.Settings,
+			SortOrder:     row.SortOrder,
+			Entries:       entriesByCollection[row.ID],
+		})
 	}
 
 	return siteconfig.SiteDraft{
@@ -376,9 +581,10 @@ func AssembleDraft(rows NormalizedDraftRows) siteconfig.SiteDraft {
 			DefaultLocale: rows.Site.DefaultLocale,
 			SEO:           rows.Site.SEO,
 		},
-		Theme:      siteconfig.ThemeConfig{Version: rows.Theme.Version, Tokens: rows.Theme.Tokens},
-		Navigation: navigation,
-		Pages:      draftPages,
+		Theme:       siteconfig.ThemeConfig{Version: rows.Theme.Version, Tokens: rows.Theme.Tokens},
+		Navigation:  navigation,
+		Pages:       draftPages,
+		Collections: collections,
 	}
 }
 

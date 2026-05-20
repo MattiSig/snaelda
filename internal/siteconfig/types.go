@@ -1,10 +1,11 @@
 package siteconfig
 
 type SiteDraft struct {
-	Site       DraftSite        `json:"site"`
-	Theme      ThemeConfig      `json:"theme"`
-	Navigation NavigationConfig `json:"navigation"`
-	Pages      []PageDraft      `json:"pages"`
+	Site        DraftSite        `json:"site"`
+	Theme       ThemeConfig      `json:"theme"`
+	Navigation  NavigationConfig `json:"navigation"`
+	Pages       []PageDraft      `json:"pages"`
+	Collections []Collection     `json:"collections,omitempty"`
 }
 
 type DraftSite struct {
@@ -22,6 +23,7 @@ type PublishedSnapshot struct {
 	Theme         ThemeConfig      `json:"theme"`
 	Navigation    NavigationConfig `json:"navigation"`
 	Pages         []PageDraft      `json:"pages"`
+	Collections   []Collection     `json:"collections,omitempty"`
 	ImageCredits  []ImageCredit    `json:"imageCredits,omitempty"`
 }
 
@@ -44,13 +46,21 @@ type PublishedSite struct {
 }
 
 type PageDraft struct {
-	ID       string          `json:"id"`
-	Title    string          `json:"title"`
-	Slug     string          `json:"slug"`
-	SEO      SEOConfig       `json:"seo,omitempty"`
-	Blocks   []BlockInstance `json:"blocks"`
-	Settings map[string]any  `json:"settings,omitempty"`
+	ID           string          `json:"id"`
+	Title        string          `json:"title"`
+	Slug         string          `json:"slug"`
+	Type         string          `json:"type,omitempty"`
+	CollectionID string          `json:"collectionId,omitempty"`
+	SEO          SEOConfig       `json:"seo,omitempty"`
+	Blocks       []BlockInstance `json:"blocks"`
+	Settings     map[string]any  `json:"settings,omitempty"`
 }
+
+const (
+	PageTypeStatic           = "static"
+	PageTypeCollectionIndex  = "collection_index"
+	PageTypeCollectionDetail = "collection_detail"
+)
 
 type SEOConfig struct {
 	Title       string `json:"title,omitempty"`
@@ -58,12 +68,23 @@ type SEOConfig struct {
 }
 
 type BlockInstance struct {
-	ID       string         `json:"id"`
-	Type     string         `json:"type"`
-	Version  string         `json:"version"`
-	Props    map[string]any `json:"props"`
-	Settings BlockSettings  `json:"settings,omitempty"`
+	ID       string                  `json:"id"`
+	Type     string                  `json:"type"`
+	Version  string                  `json:"version"`
+	Props    map[string]any          `json:"props"`
+	Settings BlockSettings           `json:"settings,omitempty"`
+	Bindings map[string]BlockBinding `json:"bindings,omitempty"`
 }
+
+// BlockBinding pulls the bound block prop value from the active collection
+// entry at render time, replacing the literal value in Props. Bindings are
+// only valid inside collection_detail page templates.
+type BlockBinding struct {
+	Source string `json:"source"`
+	Field  string `json:"field"`
+}
+
+const BlockBindingSourceEntry = "entry"
 
 type BlockSettings struct {
 	Hidden   bool   `json:"hidden,omitempty"`

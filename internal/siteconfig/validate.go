@@ -53,7 +53,8 @@ func (v Validator) ValidateDraft(draft SiteDraft) error {
 	var c collector
 	v.validateDraftSite("site", draft.Site, &c)
 	v.validateTheme("theme", draft.Theme, &c)
-	pageIDs := v.validatePages("pages", draft.Pages, false, &c)
+	collectionsByID := validateCollections("collections", draft.Collections, &c)
+	pageIDs := v.validatePages("pages", draft.Pages, false, collectionsByID, &c)
 	v.validateNavigation("navigation", draft.Navigation, pageIDs, &c)
 	return c.err()
 }
@@ -68,7 +69,8 @@ func (v Validator) ValidatePublishedSnapshot(snapshot PublishedSnapshot) error {
 	v.validateLocale("site.defaultLocale", snapshot.Site.DefaultLocale, true, &c)
 	validateSEO("site.seo", snapshot.Site.SEO, true, &c)
 	v.validateTheme("theme", snapshot.Theme, &c)
-	pageIDs := v.validatePages("pages", snapshot.Pages, true, &c)
+	collectionsByID := validateCollections("collections", snapshot.Collections, &c)
+	pageIDs := v.validatePages("pages", snapshot.Pages, true, collectionsByID, &c)
 	v.validateNavigation("navigation", snapshot.Navigation, pageIDs, &c)
 	return c.err()
 }
@@ -86,7 +88,7 @@ func (v Validator) validateDraftSite(path string, site DraftSite, c *collector) 
 	validateSEO(child(path, "seo"), site.SEO, false, c)
 }
 
-func (v Validator) validatePages(path string, pages []PageDraft, requireSEO bool, c *collector) map[string]bool {
+func (v Validator) validatePages(path string, pages []PageDraft, requireSEO bool, collectionsByID map[string]Collection, c *collector) map[string]bool {
 	pageIDs := map[string]bool{}
 	slugsSeen := map[string]bool{}
 	hasHomepage := false
@@ -120,8 +122,9 @@ func (v Validator) validatePages(path string, pages []PageDraft, requireSEO bool
 			}
 			slugsSeen[page.Slug] = true
 		}
+		validatePageType(pagePath, page, collectionsByID, c)
 		validateSEO(child(pagePath, "seo"), page.SEO, requireSEO, c)
-		v.validateBlocks(child(pagePath, "blocks"), page.Blocks, c)
+		v.validateBlocks(child(pagePath, "blocks"), page, collectionsByID, c)
 	}
 
 	if len(pages) > 0 && !hasHomepage {
@@ -131,12 +134,37 @@ func (v Validator) validatePages(path string, pages []PageDraft, requireSEO bool
 	return pageIDs
 }
 
-func (v Validator) validateBlocks(path string, blocks []BlockInstance, c *collector) {
+func validatePageType(path string, page PageDraft, collectionsByID map[string]Collection, c *collector) {
+	pageType := page.Type
+	if pageType == "" {
+		pageType = PageTypeStatic
+	}
+	switch pageType {
+	case PageTypeStatic:
+		if page.CollectionID != "" {
+			c.add(child(path, "collectionId"), "invalid_value", "static pages cannot reference a collection")
+		}
+	case PageTypeCollectionIndex, PageTypeCollectionDetail:
+		if page.CollectionID == "" {
+			c.add(child(path, "collectionId"), "required", "collection page must reference a collection")
+			return
+		}
+		if collectionsByID != nil {
+			if _, ok := collectionsByID[page.CollectionID]; !ok {
+				c.add(child(path, "collectionId"), "unresolved_reference", "page references a collection that does not exist")
+			}
+		}
+	default:
+		c.add(child(path, "type"), "invalid_value", "page type is not supported")
+	}
+}
+
+func (v Validator) validateBlocks(path string, page PageDraft, collectionsByID map[string]Collection, c *collector) {
 	blockIDs := map[string]bool{}
 	if v.Blocks == nil {
 		v.Blocks = DefaultBlockRegistry()
 	}
-	for index, block := range blocks {
+	for index, block := range page.Blocks {
 		blockPath := fmt.Sprintf("%s[%d]", path, index)
 		validateStableID(child(blockPath, "id"), block.ID, c)
 		if block.ID != "" {
@@ -168,6 +196,7 @@ func (v Validator) validateBlocks(path string, blocks []BlockInstance, c *collec
 		if block.Settings.AnchorID != "" && !anchorPattern.MatchString(block.Settings.AnchorID) {
 			c.add(child(blockPath, "settings.anchorId"), "invalid_anchor", "anchorId must start with a letter and contain only letters, numbers, underscores, or hyphens")
 		}
+		validateBindings(blockPath, block, page, collectionsByID, c)
 	}
 }
 

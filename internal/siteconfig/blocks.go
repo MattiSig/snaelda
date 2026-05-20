@@ -441,6 +441,111 @@ func teamProfileCardsBlockDefinition() BlockDefinition {
 	}
 }
 
+func statsBlockDefinition() BlockDefinition {
+	return BlockDefinition{
+		Type:        "stats",
+		Version:     BlockVersionV1,
+		DisplayName: "Stats",
+		Category:    BlockCategoryContent,
+		DefaultProps: map[string]any{
+			"heading": "By the numbers",
+			"items": []any{
+				map[string]any{"value": "120+", "label": "Projects delivered"},
+				map[string]any{"value": "98%", "label": "Client satisfaction"},
+				map[string]any{"value": "24/7", "label": "Support available"},
+			},
+		},
+		EditorSchema: []EditorField{
+			{Name: "heading", Label: "Heading", Control: "text"},
+			{Name: "intro", Label: "Intro", Control: "textarea"},
+			{
+				Name:    "items",
+				Label:   "Stats",
+				Control: "repeater",
+				ItemFields: []EditorField{
+					{Name: "value", Label: "Value", Control: "text"},
+					{Name: "label", Label: "Label", Control: "text"},
+					{Name: "description", Label: "Description", Control: "textarea"},
+				},
+			},
+		},
+		ValidateProps: validateStatsProps,
+	}
+}
+
+func collectionListBlockDefinition() BlockDefinition {
+	return BlockDefinition{
+		Type:        "collection_list",
+		Version:     BlockVersionV1,
+		DisplayName: "Collection list",
+		Category:    BlockCategoryContent,
+		DefaultProps: map[string]any{
+			"heading":     "Featured",
+			"collection":  "",
+			"limit":       6,
+			"showFilters": false,
+		},
+		EditorSchema: []EditorField{
+			{Name: "heading", Label: "Heading", Control: "text"},
+			{Name: "intro", Label: "Intro", Control: "textarea"},
+			{Name: "collection", Label: "Collection", Control: "collection-picker"},
+			{Name: "limit", Label: "Items to show", Control: "number"},
+			{Name: "layout", Label: "Layout", Control: "select", Options: []string{"grid", "list"}},
+			{Name: "showFilters", Label: "Show filter chips", Control: "boolean"},
+			{
+				Name:    "cta",
+				Label:   "CTA",
+				Control: "link",
+				Fields: []EditorField{
+					{Name: "label", Label: "Label", Control: "text"},
+					{Name: "href", Label: "Link", Control: "text", Placeholder: "/services"},
+				},
+			},
+		},
+		ValidateProps: validateCollectionListProps,
+	}
+}
+
+func collectionIndexBlockDefinition() BlockDefinition {
+	return BlockDefinition{
+		Type:        "collection_index",
+		Version:     BlockVersionV1,
+		DisplayName: "Collection index",
+		Category:    BlockCategoryContent,
+		DefaultProps: map[string]any{
+			"heading":  "All entries",
+			"sort":     "manual",
+			"showSort": false,
+		},
+		EditorSchema: []EditorField{
+			{Name: "heading", Label: "Heading", Control: "text"},
+			{Name: "intro", Label: "Intro", Control: "textarea"},
+			{Name: "sort", Label: "Default sort", Control: "select", Options: []string{"manual", "newest", "oldest", "title"}},
+			{Name: "layout", Label: "Layout", Control: "select", Options: []string{"grid", "list"}},
+			{Name: "showSort", Label: "Allow visitors to sort", Control: "boolean"},
+			{Name: "showFilters", Label: "Show filter chips", Control: "boolean"},
+		},
+		ValidateProps: validateCollectionIndexProps,
+	}
+}
+
+func collectionDetailBlockDefinition() BlockDefinition {
+	return BlockDefinition{
+		Type:        "collection_detail",
+		Version:     BlockVersionV1,
+		DisplayName: "Collection detail",
+		Category:    BlockCategoryContent,
+		DefaultProps: map[string]any{
+			"layout": "default",
+		},
+		EditorSchema: []EditorField{
+			{Name: "heading", Label: "Heading", Control: "text", Description: "Optional override; defaults to the entry title"},
+			{Name: "layout", Label: "Layout", Control: "select", Options: []string{"default", "narrow", "wide"}},
+		},
+		ValidateProps: validateCollectionDetailProps,
+	}
+}
+
 func footerBlockDefinition() BlockDefinition {
 	return BlockDefinition{
 		Type:        "footer",
@@ -955,6 +1060,88 @@ func optionalLinkList(path string, props map[string]any, key string, minItems in
 			c.add(child(itemPath, "href"), "unsafe_url", err.Error())
 		}
 	}
+}
+
+func validateStatsProps(path string, props map[string]any, c *collector) {
+	requireKnownProps(path, props, c, "heading", "intro", "items")
+	requireString(path, props, "heading", 1, 120, c)
+	optionalString(path, props, "intro", 500, c)
+
+	itemsPath := child(path, "items")
+	items, ok := props["items"]
+	if !ok {
+		c.add(itemsPath, "required", "items is required")
+		return
+	}
+	values, ok := asSlice(items)
+	if !ok {
+		c.add(itemsPath, "invalid_type", "items must be an array")
+		return
+	}
+	if len(values) < 2 || len(values) > 8 {
+		c.add(itemsPath, "invalid_length", "items must include between 2 and 8 entries")
+	}
+	for index, value := range values {
+		itemPath := fmt.Sprintf("%s[%d]", itemsPath, index)
+		item, ok := asObject(value)
+		if !ok {
+			c.add(itemPath, "invalid_type", "stat item must be an object")
+			continue
+		}
+		requireKnownProps(itemPath, item, c, "value", "label", "description")
+		requireString(itemPath, item, "value", 1, 32, c)
+		requireString(itemPath, item, "label", 1, 80, c)
+		optionalString(itemPath, item, "description", 200, c)
+	}
+}
+
+func validateCollectionListProps(path string, props map[string]any, c *collector) {
+	requireKnownProps(path, props, c, "heading", "intro", "collection", "limit", "layout", "showFilters", "cta")
+	optionalString(path, props, "heading", 120, c)
+	optionalString(path, props, "intro", 500, c)
+	if collection, ok := props["collection"].(string); ok {
+		if strings.TrimSpace(collection) != "" {
+			validateStableID(child(path, "collection"), collection, c)
+		}
+	} else if value, exists := props["collection"]; exists && value != nil {
+		c.add(child(path, "collection"), "invalid_type", "collection must be a string")
+	}
+	if limit, exists := props["limit"]; exists && limit != nil {
+		number, ok := asInt(limit)
+		if !ok {
+			c.add(child(path, "limit"), "invalid_type", "limit must be an integer")
+		} else if number < 1 || number > 50 {
+			c.add(child(path, "limit"), "invalid_value", "limit must be between 1 and 50")
+		}
+	}
+	optionalEnum(path, props, "layout", c, "grid", "list")
+	if showFilters, exists := props["showFilters"]; exists && showFilters != nil {
+		if _, ok := showFilters.(bool); !ok {
+			c.add(child(path, "showFilters"), "invalid_type", "showFilters must be true or false")
+		}
+	}
+	optionalCTA(path, props, "cta", c)
+}
+
+func validateCollectionIndexProps(path string, props map[string]any, c *collector) {
+	requireKnownProps(path, props, c, "heading", "intro", "sort", "layout", "showSort", "showFilters")
+	optionalString(path, props, "heading", 120, c)
+	optionalString(path, props, "intro", 500, c)
+	optionalEnum(path, props, "sort", c, "manual", "newest", "oldest", "title")
+	optionalEnum(path, props, "layout", c, "grid", "list")
+	for _, key := range []string{"showSort", "showFilters"} {
+		if value, exists := props[key]; exists && value != nil {
+			if _, ok := value.(bool); !ok {
+				c.add(child(path, key), "invalid_type", key+" must be true or false")
+			}
+		}
+	}
+}
+
+func validateCollectionDetailProps(path string, props map[string]any, c *collector) {
+	requireKnownProps(path, props, c, "heading", "layout")
+	optionalString(path, props, "heading", 120, c)
+	optionalEnum(path, props, "layout", c, "default", "narrow", "wide")
 }
 
 func asObject(value any) (map[string]any, bool) {

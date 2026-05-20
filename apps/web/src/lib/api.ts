@@ -101,6 +101,8 @@ export type SiteDraft = {
     id: string;
     title: string;
     slug: string;
+    type?: PageType;
+    collectionId?: string;
     seo?: {
       title?: string;
       description?: string;
@@ -115,8 +117,78 @@ export type SiteDraft = {
         hidden?: boolean;
         anchorId?: string;
       };
+      bindings?: Record<string, BlockBinding>;
     }>;
   }>;
+  collections?: Collection[];
+};
+
+export type PageType = 'static' | 'collection_index' | 'collection_detail';
+
+export type BlockBinding = {
+  source: 'entry';
+  field: string;
+};
+
+export type CollectionFieldType =
+  | 'text'
+  | 'long_text'
+  | 'rich_text'
+  | 'number'
+  | 'boolean'
+  | 'date'
+  | 'url'
+  | 'email'
+  | 'phone'
+  | 'location'
+  | 'enum'
+  | 'enum_multi'
+  | 'asset'
+  | 'asset_list'
+  | 'reference';
+
+export type FieldDefinition = {
+  key: string;
+  label: string;
+  type: CollectionFieldType;
+  required?: boolean;
+  description?: string;
+  options?: string[];
+  defaultValue?: unknown;
+  validation?: {
+    minLength?: number;
+    maxLength?: number;
+    min?: number;
+    max?: number;
+  };
+};
+
+export type CollectionSettings = {
+  defaultSort?: string;
+  exposeDetailUrls?: boolean;
+};
+
+export type CollectionEntry = {
+  id: string;
+  slug: string;
+  fields: Record<string, unknown>;
+  seo?: {
+    title?: string;
+    description?: string;
+  };
+  status?: 'draft' | 'published';
+  sortOrder: number;
+};
+
+export type Collection = {
+  id: string;
+  slug: string;
+  singularLabel: string;
+  pluralLabel: string;
+  schema: FieldDefinition[];
+  settings?: CollectionSettings;
+  sortOrder: number;
+  entries?: CollectionEntry[];
 };
 
 export type ImageCredit = {
@@ -141,6 +213,7 @@ export type PublishedSnapshot = {
   theme: SiteDraft["theme"];
   navigation: SiteDraft["navigation"];
   pages: SiteDraft["pages"];
+  collections?: Collection[];
   imageCredits?: ImageCredit[];
 };
 
@@ -831,6 +904,8 @@ export async function createPage(
   input: {
     title: string;
     slug?: string;
+    type?: PageType;
+    collectionId?: string;
     includeInNavigation?: boolean;
   },
 ) {
@@ -849,6 +924,8 @@ export async function updatePage(
   input: {
     title?: string;
     slug?: string;
+    type?: PageType;
+    collectionId?: string;
     seo?: {
       title?: string;
       description?: string;
@@ -1145,6 +1222,159 @@ export async function submitPublicForm(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ payload }),
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Collections API
+// ---------------------------------------------------------------------------
+
+export async function listCollections(siteId: string) {
+  return apiFetch<{ collections: Collection[] }>(
+    `/api/sites/${siteId}/collections`,
+    { method: "GET" },
+  );
+}
+
+export async function getCollection(siteId: string, collectionId: string) {
+  return apiFetch<{ collection: Collection }>(
+    `/api/sites/${siteId}/collections/${collectionId}`,
+    { method: "GET" },
+  );
+}
+
+export async function createCollection(
+  siteId: string,
+  input: {
+    slug?: string;
+    singularLabel: string;
+    pluralLabel: string;
+    schema?: FieldDefinition[];
+    settings?: CollectionSettings;
+  },
+) {
+  return apiFetch<{ collection: Collection }>(
+    `/api/sites/${siteId}/collections`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export async function updateCollection(
+  siteId: string,
+  collectionId: string,
+  input: {
+    slug?: string;
+    singularLabel?: string;
+    pluralLabel?: string;
+    schema?: FieldDefinition[];
+    settings?: CollectionSettings;
+  },
+) {
+  return apiFetch<{ collection: Collection }>(
+    `/api/sites/${siteId}/collections/${collectionId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export async function deleteCollection(siteId: string, collectionId: string) {
+  return apiFetch<null>(`/api/sites/${siteId}/collections/${collectionId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function listCollectionEntries(
+  siteId: string,
+  collectionId: string,
+) {
+  return apiFetch<{ entries: CollectionEntry[] }>(
+    `/api/sites/${siteId}/collections/${collectionId}/entries`,
+    { method: "GET" },
+  );
+}
+
+export async function getCollectionEntry(
+  siteId: string,
+  collectionId: string,
+  entryId: string,
+) {
+  return apiFetch<{ entry: CollectionEntry }>(
+    `/api/sites/${siteId}/collections/${collectionId}/entries/${entryId}`,
+    { method: "GET" },
+  );
+}
+
+export async function createCollectionEntry(
+  siteId: string,
+  collectionId: string,
+  input: {
+    slug?: string;
+    fields?: Record<string, unknown>;
+    seo?: { title?: string; description?: string };
+    status?: "draft" | "published";
+  },
+) {
+  return apiFetch<{ entry: CollectionEntry }>(
+    `/api/sites/${siteId}/collections/${collectionId}/entries`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export async function updateCollectionEntry(
+  siteId: string,
+  collectionId: string,
+  entryId: string,
+  input: {
+    slug?: string;
+    fields?: Record<string, unknown>;
+    seo?: { title?: string; description?: string };
+    status?: "draft" | "published";
+  },
+) {
+  return apiFetch<{ entry: CollectionEntry }>(
+    `/api/sites/${siteId}/collections/${collectionId}/entries/${entryId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export async function deleteCollectionEntry(
+  siteId: string,
+  collectionId: string,
+  entryId: string,
+) {
+  return apiFetch<null>(
+    `/api/sites/${siteId}/collections/${collectionId}/entries/${entryId}`,
+    { method: "DELETE" },
+  );
+}
+
+export async function reorderCollectionEntries(
+  siteId: string,
+  collectionId: string,
+  entryIds: string[],
+) {
+  return apiFetch<{ entries: CollectionEntry[] }>(
+    `/api/sites/${siteId}/collections/${collectionId}/entries/reorder`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entryIds }),
     },
   );
 }

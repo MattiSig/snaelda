@@ -1165,12 +1165,14 @@ func buildPublishedSnapshot(draft siteconfig.SiteDraft) siteconfig.PublishedSnap
 		pageSEO.Description = clampText(pageSEO.Description, 180)
 
 		pages = append(pages, siteconfig.PageDraft{
-			ID:       page.ID,
-			Title:    page.Title,
-			Slug:     page.Slug,
-			SEO:      pageSEO,
-			Blocks:   page.Blocks,
-			Settings: page.Settings,
+			ID:           page.ID,
+			Title:        page.Title,
+			Slug:         page.Slug,
+			Type:         page.Type,
+			CollectionID: page.CollectionID,
+			SEO:          pageSEO,
+			Blocks:       page.Blocks,
+			Settings:     page.Settings,
 		})
 	}
 
@@ -1178,6 +1180,8 @@ func buildPublishedSnapshot(draft siteconfig.SiteDraft) siteconfig.PublishedSnap
 	if defaultLocale == "" {
 		defaultLocale = "en"
 	}
+
+	collections := publishedCollections(draft.Collections)
 
 	return siteconfig.PublishedSnapshot{
 		SchemaVersion: siteconfig.SiteConfigVersionV1,
@@ -1187,10 +1191,41 @@ func buildPublishedSnapshot(draft siteconfig.SiteDraft) siteconfig.PublishedSnap
 			DefaultLocale: defaultLocale,
 			SEO:           siteSEO,
 		},
-		Theme:      draft.Theme,
-		Navigation: draft.Navigation,
-		Pages:      pages,
+		Theme:       draft.Theme,
+		Navigation:  draft.Navigation,
+		Pages:       pages,
+		Collections: collections,
 	}
+}
+
+// publishedCollections drops draft entries from the snapshot so only
+// published entries are publicly routable. Empty collections survive so the
+// schema is preserved.
+func publishedCollections(collections []siteconfig.Collection) []siteconfig.Collection {
+	if len(collections) == 0 {
+		return nil
+	}
+	out := make([]siteconfig.Collection, 0, len(collections))
+	for _, collection := range collections {
+		published := make([]siteconfig.CollectionEntry, 0, len(collection.Entries))
+		for _, entry := range collection.Entries {
+			if entry.Status != siteconfig.EntryStatusPublished {
+				continue
+			}
+			published = append(published, entry)
+		}
+		out = append(out, siteconfig.Collection{
+			ID:            collection.ID,
+			Slug:          collection.Slug,
+			SingularLabel: collection.SingularLabel,
+			PluralLabel:   collection.PluralLabel,
+			Schema:        collection.Schema,
+			Settings:      collection.Settings,
+			SortOrder:     collection.SortOrder,
+			Entries:       published,
+		})
+	}
+	return out
 }
 
 func firstPageBySlug(pages []siteconfig.PageDraft, slug string) siteconfig.PageDraft {

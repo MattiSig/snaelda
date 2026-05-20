@@ -42,6 +42,7 @@ Refreshed 2026-05-21 from 16 spec-vs-code audits plus the newly-authored `specs/
 - [x] Publish and rollback gate on `billing.EnforceSiteLimit` (mirroring `internal/sites/handler.go`) and surface `plan_limit_exceeded` to the builder publish panel.
 - [x] Per-IP rate limiting on auth endpoints (`magic-link request`, `magic-link verify`, `recovery-restore`, `recovery-issue`) via durable `auth_rate_limit_attempts` table; verify path tightened to spec-18 3/hour.
 - [x] Public artifact serving now requires manifest membership: `loadPublishedArtifact` validates the requested path against `manifest.Files` (with legacy fallback to known well-known artifacts) and the bundle builder emits the explicit allowlist.
+- [x] Collections module Phase 1 foundation (spec 19): `000013_collections.sql` adds `collections` + `collection_entries` tables plus `pages.type`, `pages.collection_id`, and `block_instances.bindings`; new `internal/collections/` module with CRUD handlers mounted at `/api/sites/:siteId/collections{,/:id}{,/entries}{,/:entryId}{,/reorder}`; `siteconfig` adds the closed `FieldDefinition` registry (15 field types), `Collection`, `CollectionEntry`, `Page.Type`, `Page.CollectionID`, `BlockInstance.Bindings`, and snapshot-time validation that bindings only appear in `collection_detail` templates and target compatible field types; new `collection_list`, `collection_index`, `collection_detail`, and `stats` blocks; sites mutator surfaces `Type` and `CollectionID` on page create/update; SiteDraft load/save persists collections + entries atomically; published snapshots include collections with only `status=published` entries; frontend gets `Collection`, `CollectionEntry`, `FieldDefinition` types, full API client, and a builder route at `/app/sites/:siteId/collections` with collection list, schema editor, and entry editor (create / publish / delete). Per-entry URL rendering moves to the spec-19 Phase 2 line item above.
 - [x] Productionize publish-artifact pipeline (specs 09, 16):
   - Replaced the `npm run` per-publish shell-out with a long-lived Node render worker (newline-delimited JSON over stdin/stdout) in `internal/publishing/worker_renderer.go`, restarting on crash.
   - Added `internal/publishing/s3_artifacts.go` plus a `PUBLISHED_ARTIFACTS_BACKEND=s3` toggle so published artifacts are persisted to the S3/SeaweedFS bucket already in compose.
@@ -52,12 +53,7 @@ Refreshed 2026-05-21 from 16 spec-vs-code audits plus the newly-authored `specs/
 
 ## Core Spec Gaps
 
-- [ ] Build the collections module end to end (spec 19; touches 3/5/6/7/8/9/10). Largest unfinished surface.
-  - DB: add `collections` and `collection_entries` tables, plus `block_instances.bindings` for collection_detail prop binding.
-  - Backend: new `internal/collections/` module, integration with `internal/siteconfig/`, `internal/generation/`, `internal/publishing/`.
-  - Blocks: register `collection_list`, `collection_index`, `collection_detail` in `internal/siteconfig/blocks.go`.
-  - Page model: add `Page.type` (`static`/`collection_index`/`collection_detail`) and `Page.collection_reference` across DB / Go / TS.
-  - API + UI: collection CRUD, entry CRUD, builder routes under `apps/web/src/routes/app.sites.$siteId.collections.*`.
+- [ ] Finish collections module phase 2 (spec 19): per-entry public URL rendering with binding substitution. The Phase 1 foundation has shipped (see Recently Confirmed Complete below); what remains is the React renderer change so `collection_detail` templates emit one rendered HTML per published entry with `block.bindings` substituting the entry's field values into the template's bound props, plus sitemap inclusion of those entry URLs. The `collection_list` block also needs runtime resolution of `props.collection` to the entry list when published.
 
 - [ ] Custom-domain attach/verify/TLS (specs 13, 10).
   - Extend `internal/domains/` `DomainService` beyond `List` with create/verify/delete; populate the existing `verification_token` column; integrate certmagic or autocert.
@@ -79,9 +75,7 @@ Refreshed 2026-05-21 from 16 spec-vs-code audits plus the newly-authored `specs/
   - Extend `NavigationConfig` in `internal/siteconfig/` beyond `Primary` to include `Footer`; surface in the navigation editor and renderer; thread through validation.
   - Replace `validateFooterProps` (knows only `siteName`/`tagline`/`contactLine`) with structured `contact.{address,phone,email,hours}` + `showBrand` so LocalBusiness JSON-LD is generatable.
 
-- [ ] Register the missing first-class blocks (spec 4).
-  - Add `stats` and `collection_list` block types to `internal/siteconfig/blocks.go`.
-  - Make the registry contract test cover every spec-required type by name, not just fixtures.
+- [ ] Make the block registry contract test cover every spec-required type by name, not just fixtures (the `stats`, `collection_list`, `collection_index`, and `collection_detail` blocks now exist but the contract test still asserts only sorted order, not spec coverage by name).
 
 - [ ] Make image `alt` required end-to-end (specs 4, 7).
   - `optionalImage` in `internal/siteconfig/blocks.go:923` allows missing alt; spec requires it at every layer including backend repair. Renderer must not silently fall back to `altFallback`.

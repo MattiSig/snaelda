@@ -58,6 +58,9 @@ func (w *PostgresWriter) SaveDraft(ctx context.Context, workspaceID string, draf
 	if err := saveTheme(ctx, tx, rows.Site.ID, rows.Theme); err != nil {
 		return err
 	}
+	if err := replaceCollectionsAndEntries(ctx, tx, rows.Site.ID, rows.Collections, rows.Entries); err != nil {
+		return err
+	}
 	if err := replacePagesAndBlocks(ctx, tx, rows.Site.ID, rows.Pages, rows.Blocks); err != nil {
 		return err
 	}
@@ -89,13 +92,19 @@ func normalizeDraft(draft siteconfig.SiteDraft) (NormalizedDraftRows, error) {
 		if settings == nil {
 			settings = map[string]any{}
 		}
+		pageType := page.Type
+		if pageType == "" {
+			pageType = siteconfig.PageTypeStatic
+		}
 		pages = append(pages, pageRow{
-			ID:       page.ID,
-			Title:    page.Title,
-			Slug:     page.Slug,
-			Sort:     pageIndex,
-			SEO:      page.SEO,
-			Settings: settings,
+			ID:           page.ID,
+			Title:        page.Title,
+			Slug:         page.Slug,
+			Sort:         pageIndex,
+			Type:         pageType,
+			CollectionID: page.CollectionID,
+			SEO:          page.SEO,
+			Settings:     settings,
 		})
 		for blockIndex, block := range page.Blocks {
 			props := block.Props
@@ -112,7 +121,53 @@ func normalizeDraft(draft siteconfig.SiteDraft) (NormalizedDraftRows, error) {
 				Settings: siteconfig.BlockSettings{
 					AnchorID: block.Settings.AnchorID,
 				},
-				Hidden: block.Settings.Hidden,
+				Hidden:   block.Settings.Hidden,
+				Bindings: block.Bindings,
+			})
+		}
+	}
+
+	collections := make([]collectionRow, 0, len(draft.Collections))
+	entries := make([]collectionEntryRow, 0)
+	for index, collection := range draft.Collections {
+		schema := collection.Schema
+		if schema == nil {
+			schema = []siteconfig.FieldDefinition{}
+		}
+		sortOrder := collection.SortOrder
+		if sortOrder == 0 {
+			sortOrder = index
+		}
+		collections = append(collections, collectionRow{
+			ID:            collection.ID,
+			Slug:          collection.Slug,
+			SingularLabel: collection.SingularLabel,
+			PluralLabel:   collection.PluralLabel,
+			Schema:        schema,
+			Settings:      collection.Settings,
+			SortOrder:     sortOrder,
+		})
+		for entryIndex, entry := range collection.Entries {
+			status := entry.Status
+			if status == "" {
+				status = siteconfig.EntryStatusDraft
+			}
+			fields := entry.Fields
+			if fields == nil {
+				fields = map[string]any{}
+			}
+			entrySort := entry.SortOrder
+			if entrySort == 0 {
+				entrySort = entryIndex
+			}
+			entries = append(entries, collectionEntryRow{
+				ID:           entry.ID,
+				CollectionID: collection.ID,
+				Slug:         entry.Slug,
+				Fields:       fields,
+				SEO:          entry.SEO,
+				Status:       status,
+				SortOrder:    entrySort,
 			})
 		}
 	}
@@ -132,8 +187,10 @@ func normalizeDraft(draft siteconfig.SiteDraft) (NormalizedDraftRows, error) {
 			Version: draft.Theme.Version,
 			Tokens:  draft.Theme.Tokens,
 		},
-		Pages:  pages,
-		Blocks: blocks,
+		Pages:       pages,
+		Blocks:      blocks,
+		Collections: collections,
+		Entries:     entries,
 	}, nil
 }
 
@@ -222,19 +279,29 @@ func replacePagesAndBlocks(ctx context.Context, tx pgx.Tx, siteID string, pages 
 		if err != nil {
 			return fmt.Errorf("encode page settings %s: %w", page.ID, err)
 		}
+		pageType := page.Type
+		if pageType == "" {
+			pageType = siteconfig.PageTypeStatic
+		}
+		var collectionID any
+		if page.CollectionID != "" {
+			collectionID = page.CollectionID
+		}
 		tag, err := tx.Exec(ctx, `
-			insert into pages (id, site_id, title, slug, sort_order, status, seo, settings)
-			values ($1, $2, $3, $4, $5, 'draft', $6, $7)
+			insert into pages (id, site_id, title, slug, sort_order, status, type, collection_id, seo, settings)
+			values ($1, $2, $3, $4, $5, 'draft', $6, $7, $8, $9)
 			on conflict (id) do update
 			set title = excluded.title,
 			    slug = excluded.slug,
 			    sort_order = excluded.sort_order,
 			    status = excluded.status,
+			    type = excluded.type,
+			    collection_id = excluded.collection_id,
 			    seo = excluded.seo,
 			    settings = excluded.settings,
 			    updated_at = now()
 			where pages.site_id = excluded.site_id
-		`, page.ID, siteID, page.Title, page.Slug, page.Sort, seoJSON, settingsJSON)
+		`, page.ID, siteID, page.Title, page.Slug, page.Sort, pageType, collectionID, seoJSON, settingsJSON)
 		if err != nil {
 			return fmt.Errorf("save page row %s: %w", page.ID, err)
 		}
@@ -252,14 +319,88 @@ func replacePagesAndBlocks(ctx context.Context, tx pgx.Tx, siteID string, pages 
 		if err != nil {
 			return fmt.Errorf("encode block settings %s: %w", block.ID, err)
 		}
+		bindingsJSON, err := marshalJSON(block.Bindings)
+		if err != nil {
+			return fmt.Errorf("encode block bindings %s: %w", block.ID, err)
+		}
 		tag, err := tx.Exec(ctx, `
-			insert into block_instances (id, page_id, site_id, type, version, sort_order, props, settings, is_hidden)
-			values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		`, block.ID, block.PageID, siteID, block.Type, block.Version, block.Sort, propsJSON, settingsJSON, block.Hidden)
+			insert into block_instances (id, page_id, site_id, type, version, sort_order, props, settings, is_hidden, bindings)
+			values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		`, block.ID, block.PageID, siteID, block.Type, block.Version, block.Sort, propsJSON, settingsJSON, block.Hidden, bindingsJSON)
 		if err != nil {
 			return fmt.Errorf("save block row %s: %w", block.ID, err)
 		}
 		if err := requireRowsAffected(tag, "save block row "+block.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func replaceCollectionsAndEntries(ctx context.Context, tx pgx.Tx, siteID string, collections []collectionRow, entries []collectionEntryRow) error {
+	if _, err := tx.Exec(ctx, `delete from collection_entries where site_id = $1`, siteID); err != nil {
+		return fmt.Errorf("delete existing collection entry rows: %w", err)
+	}
+
+	collectionIDs := make([]string, 0, len(collections))
+	for _, collection := range collections {
+		collectionIDs = append(collectionIDs, collection.ID)
+	}
+	if _, err := tx.Exec(ctx, `
+		delete from collections
+		where site_id = $1
+		  and not (id::text = any($2))
+	`, siteID, collectionIDs); err != nil {
+		return fmt.Errorf("delete removed collection rows: %w", err)
+	}
+
+	for _, collection := range collections {
+		schemaJSON, err := marshalJSON(collection.Schema)
+		if err != nil {
+			return fmt.Errorf("encode collection schema %s: %w", collection.ID, err)
+		}
+		settingsJSON, err := marshalJSON(collection.Settings)
+		if err != nil {
+			return fmt.Errorf("encode collection settings %s: %w", collection.ID, err)
+		}
+		tag, err := tx.Exec(ctx, `
+			insert into collections (id, site_id, slug, singular_label, plural_label, schema, settings, sort_order)
+			values ($1, $2, $3, $4, $5, $6, $7, $8)
+			on conflict (id) do update
+			set slug = excluded.slug,
+			    singular_label = excluded.singular_label,
+			    plural_label = excluded.plural_label,
+			    schema = excluded.schema,
+			    settings = excluded.settings,
+			    sort_order = excluded.sort_order,
+			    updated_at = now()
+			where collections.site_id = excluded.site_id
+		`, collection.ID, siteID, collection.Slug, collection.SingularLabel, collection.PluralLabel, schemaJSON, settingsJSON, collection.SortOrder)
+		if err != nil {
+			return fmt.Errorf("save collection row %s: %w", collection.ID, err)
+		}
+		if err := requireRowsAffected(tag, "save collection row "+collection.ID); err != nil {
+			return err
+		}
+	}
+
+	for _, entry := range entries {
+		fieldsJSON, err := marshalJSON(entry.Fields)
+		if err != nil {
+			return fmt.Errorf("encode collection entry fields %s: %w", entry.ID, err)
+		}
+		seoJSON, err := marshalJSON(entry.SEO)
+		if err != nil {
+			return fmt.Errorf("encode collection entry seo %s: %w", entry.ID, err)
+		}
+		tag, err := tx.Exec(ctx, `
+			insert into collection_entries (id, collection_id, site_id, slug, fields, seo, status, sort_order)
+			values ($1, $2, $3, $4, $5, $6, $7, $8)
+		`, entry.ID, entry.CollectionID, siteID, entry.Slug, fieldsJSON, seoJSON, entry.Status, entry.SortOrder)
+		if err != nil {
+			return fmt.Errorf("save collection entry row %s: %w", entry.ID, err)
+		}
+		if err := requireRowsAffected(tag, "save collection entry row "+entry.ID); err != nil {
 			return err
 		}
 	}

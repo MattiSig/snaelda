@@ -30,6 +30,7 @@ import { Route as AppBillingSuccessRouteImport } from './routes/app.billing.succ
 import { Route as AppBillingCancelRouteImport } from './routes/app.billing.cancel'
 import { Route as AppSitesSiteIdIndexRouteImport } from './routes/app.sites.$siteId.index'
 import { Route as AppSitesSiteIdPreviewRouteImport } from './routes/app.sites.$siteId.preview'
+import { Route as AppSitesSiteIdCollectionsRouteImport } from './routes/app.sites.$siteId.collections'
 import { Route as AppSitesSiteIdAnalyticsRouteImport } from './routes/app.sites.$siteId.analytics'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
@@ -139,6 +140,12 @@ const AppSitesSiteIdPreviewRoute = AppSitesSiteIdPreviewRouteImport.update({
   path: '/preview',
   getParentRoute: () => AppSitesSiteIdRoute,
 } as any)
+const AppSitesSiteIdCollectionsRoute =
+  AppSitesSiteIdCollectionsRouteImport.update({
+    id: '/collections',
+    path: '/collections',
+    getParentRoute: () => AppSitesSiteIdRoute,
+  } as any)
 const AppSitesSiteIdAnalyticsRoute = AppSitesSiteIdAnalyticsRouteImport.update({
   id: '/analytics',
   path: '/analytics',
@@ -166,6 +173,7 @@ export interface FileRoutesByFullPath {
   '/app/billing/': typeof AppBillingIndexRoute
   '/public/$siteSlug/': typeof PublicSiteSlugIndexRoute
   '/app/sites/$siteId/analytics': typeof AppSitesSiteIdAnalyticsRoute
+  '/app/sites/$siteId/collections': typeof AppSitesSiteIdCollectionsRoute
   '/app/sites/$siteId/preview': typeof AppSitesSiteIdPreviewRoute
   '/app/sites/$siteId/': typeof AppSitesSiteIdIndexRoute
 }
@@ -186,6 +194,7 @@ export interface FileRoutesByTo {
   '/app/billing': typeof AppBillingIndexRoute
   '/public/$siteSlug': typeof PublicSiteSlugIndexRoute
   '/app/sites/$siteId/analytics': typeof AppSitesSiteIdAnalyticsRoute
+  '/app/sites/$siteId/collections': typeof AppSitesSiteIdCollectionsRoute
   '/app/sites/$siteId/preview': typeof AppSitesSiteIdPreviewRoute
   '/app/sites/$siteId': typeof AppSitesSiteIdIndexRoute
 }
@@ -211,6 +220,7 @@ export interface FileRoutesById {
   '/app/billing/': typeof AppBillingIndexRoute
   '/public/$siteSlug/': typeof PublicSiteSlugIndexRoute
   '/app/sites/$siteId/analytics': typeof AppSitesSiteIdAnalyticsRoute
+  '/app/sites/$siteId/collections': typeof AppSitesSiteIdCollectionsRoute
   '/app/sites/$siteId/preview': typeof AppSitesSiteIdPreviewRoute
   '/app/sites/$siteId/': typeof AppSitesSiteIdIndexRoute
 }
@@ -237,6 +247,7 @@ export interface FileRouteTypes {
     | '/app/billing/'
     | '/public/$siteSlug/'
     | '/app/sites/$siteId/analytics'
+    | '/app/sites/$siteId/collections'
     | '/app/sites/$siteId/preview'
     | '/app/sites/$siteId/'
   fileRoutesByTo: FileRoutesByTo
@@ -257,6 +268,7 @@ export interface FileRouteTypes {
     | '/app/billing'
     | '/public/$siteSlug'
     | '/app/sites/$siteId/analytics'
+    | '/app/sites/$siteId/collections'
     | '/app/sites/$siteId/preview'
     | '/app/sites/$siteId'
   id:
@@ -281,6 +293,7 @@ export interface FileRouteTypes {
     | '/app/billing/'
     | '/public/$siteSlug/'
     | '/app/sites/$siteId/analytics'
+    | '/app/sites/$siteId/collections'
     | '/app/sites/$siteId/preview'
     | '/app/sites/$siteId/'
   fileRoutesById: FileRoutesById
@@ -446,6 +459,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSitesSiteIdPreviewRouteImport
       parentRoute: typeof AppSitesSiteIdRoute
     }
+    '/app/sites/$siteId/collections': {
+      id: '/app/sites/$siteId/collections'
+      path: '/collections'
+      fullPath: '/app/sites/$siteId/collections'
+      preLoaderRoute: typeof AppSitesSiteIdCollectionsRouteImport
+      parentRoute: typeof AppSitesSiteIdRoute
+    }
     '/app/sites/$siteId/analytics': {
       id: '/app/sites/$siteId/analytics'
       path: '/analytics'
@@ -474,12 +494,14 @@ const AppBillingRouteWithChildren = AppBillingRoute._addFileChildren(
 
 interface AppSitesSiteIdRouteChildren {
   AppSitesSiteIdAnalyticsRoute: typeof AppSitesSiteIdAnalyticsRoute
+  AppSitesSiteIdCollectionsRoute: typeof AppSitesSiteIdCollectionsRoute
   AppSitesSiteIdPreviewRoute: typeof AppSitesSiteIdPreviewRoute
   AppSitesSiteIdIndexRoute: typeof AppSitesSiteIdIndexRoute
 }
 
 const AppSitesSiteIdRouteChildren: AppSitesSiteIdRouteChildren = {
   AppSitesSiteIdAnalyticsRoute: AppSitesSiteIdAnalyticsRoute,
+  AppSitesSiteIdCollectionsRoute: AppSitesSiteIdCollectionsRoute,
   AppSitesSiteIdPreviewRoute: AppSitesSiteIdPreviewRoute,
   AppSitesSiteIdIndexRoute: AppSitesSiteIdIndexRoute,
 }

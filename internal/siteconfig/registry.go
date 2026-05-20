@@ -71,6 +71,9 @@ func NewBlockRegistry(definitions ...BlockDefinition) (*BlockRegistry, error) {
 
 func DefaultBlockRegistry() *BlockRegistry {
 	registry, err := NewBlockRegistry(
+		collectionDetailBlockDefinition(),
+		collectionIndexBlockDefinition(),
+		collectionListBlockDefinition(),
 		contactFormBlockDefinition(),
 		ctaBandBlockDefinition(),
 		faqBlockDefinition(),
@@ -80,6 +83,7 @@ func DefaultBlockRegistry() *BlockRegistry {
 		heroBlockDefinition(),
 		imageTextBlockDefinition(),
 		pricingPackagesBlockDefinition(),
+		statsBlockDefinition(),
 		teamProfileCardsBlockDefinition(),
 		testimonialsBlockDefinition(),
 		textSectionBlockDefinition(),

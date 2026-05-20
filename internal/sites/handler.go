@@ -97,12 +97,16 @@ type updateSiteRequest struct {
 type createPageRequest struct {
 	Title               string `json:"title"`
 	Slug                string `json:"slug,omitempty"`
+	Type                string `json:"type,omitempty"`
+	CollectionID        string `json:"collectionId,omitempty"`
 	IncludeInNavigation *bool  `json:"includeInNavigation,omitempty"`
 }
 
 type updatePageRequest struct {
 	Title               *string               `json:"title,omitempty"`
 	Slug                *string               `json:"slug,omitempty"`
+	Type                *string               `json:"type,omitempty"`
+	CollectionID        *string               `json:"collectionId,omitempty"`
 	SEO                 *siteconfig.SEOConfig `json:"seo,omitempty"`
 	IncludeInNavigation *bool                 `json:"includeInNavigation,omitempty"`
 }
@@ -317,6 +321,8 @@ func (h *Handler) createPage(w http.ResponseWriter, r *http.Request) {
 	draft, err := h.mutator.CreatePage(r.Context(), scope.WorkspaceID, siteID, CreatePageInput{
 		Title:               strings.TrimSpace(payload.Title),
 		Slug:                strings.TrimSpace(payload.Slug),
+		Type:                strings.TrimSpace(payload.Type),
+		CollectionID:        strings.TrimSpace(payload.CollectionID),
 		IncludeInNavigation: payload.IncludeInNavigation,
 	})
 	if err != nil {
@@ -349,6 +355,8 @@ func (h *Handler) updatePage(w http.ResponseWriter, r *http.Request) {
 	draft, err := h.mutator.UpdatePage(r.Context(), scope.WorkspaceID, siteID, pageID, UpdatePageInput{
 		Title:               payload.Title,
 		Slug:                payload.Slug,
+		Type:                payload.Type,
+		CollectionID:        payload.CollectionID,
 		SEO:                 payload.SEO,
 		IncludeInNavigation: payload.IncludeInNavigation,
 	})
@@ -743,6 +751,16 @@ func writeSiteError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "homepage_slug_locked", "homepage slug cannot be changed")
 	case errors.Is(err, ErrHomepageDeleteForbidden):
 		writeError(w, http.StatusBadRequest, "homepage_delete_forbidden", "homepage cannot be deleted")
+	case errors.Is(err, ErrPageTypeUnsupported):
+		writeError(w, http.StatusBadRequest, "invalid_page_type", "page type is not supported")
+	case errors.Is(err, ErrPageTypeChangeForbidden):
+		writeError(w, http.StatusBadRequest, "page_type_change_forbidden", "page type cannot be changed after creation")
+	case errors.Is(err, ErrPageCollectionRequired):
+		writeError(w, http.StatusBadRequest, "page_collection_required", "collection page must reference a collection")
+	case errors.Is(err, ErrPageCollectionUnsupported):
+		writeError(w, http.StatusBadRequest, "page_collection_unsupported", "static pages cannot reference a collection")
+	case errors.Is(err, ErrPageCollectionNotFound):
+		writeError(w, http.StatusBadRequest, "page_collection_not_found", "page references a collection that does not exist")
 	case errors.Is(err, ErrMinimumPagesRequired):
 		writeError(w, http.StatusBadRequest, "minimum_pages_required", "site must keep at least one page")
 	case errors.Is(err, ErrBlockTypeRequired):
