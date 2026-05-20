@@ -33,10 +33,11 @@ The website-as-data layer: entities, the block registry that generation and rend
 
 | #  | Spec | What it owns |
 |----|------|--------------|
-| 03 | [Domain Model](./03-domain-model.md) | Core entities — workspaces, sites, pages, blocks, versions, themes — and the relationships between them. |
+| 03 | [Domain Model](./03-domain-model.md) | Core entities — workspaces, sites, pages, blocks, collections, entries, versions, themes — and the relationships between them. |
 | 04 | [Block Registry](./04-block-registry.md) | The closed, typed set of blocks the platform supports, with prop schemas and the contract shared by generation and the renderer. |
 | 05 | [Site Configuration Model](./05-site-configuration-model.md) | The on-disk and in-memory shape of a site as structured data, never as generated code. |
 | 06 | [Database Design](./06-database-design.md) | The Postgres schema for every table the platform owns and how it lines up with the domain model. |
+| 19 | [Collections and Content Types](./19-collections-and-content-types.md) | Site-scoped typed collections, the field-type registry, collection-bound page templates, block bindings, and the AI maintenance actions that produce entries. |
 
 ### 3. Authoring Loop
 
@@ -78,9 +79,10 @@ If you are new to the project, start with the foundation and data clusters befor
 2. [System Architecture](./02-system-architecture.md)
 3. [Domain Model](./03-domain-model.md)
 4. [Site Configuration Model](./05-site-configuration-model.md)
-5. [Database Design](./06-database-design.md)
-6. [Generation Engine](./07-generation-engine.md)
-7. [Preview, Publish, and Rendering](./09-preview-publish-and-rendering.md)
+5. [Collections and Content Types](./19-collections-and-content-types.md)
+6. [Database Design](./06-database-design.md)
+7. [Generation Engine](./07-generation-engine.md)
+8. [Preview, Publish, and Rendering](./09-preview-publish-and-rendering.md)
 
 The remaining specs cover editing, APIs, theming, security, deployment, runtime, billing, identity, and email.
 

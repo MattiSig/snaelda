@@ -26,10 +26,12 @@ The MVP does not generate arbitrary custom code per website. Instead, it generat
 - Guest authoring from the homepage prompt without signup, with a small free-prompt budget and a claim-on-signup flow, per [Spec 17](./17-guest-authoring-and-claim.md)
 - User account and workspace/team model
 - Website creation from prompt
-- Up to 10 pages per website
+- Up to 10 editor-visible pages per website (static pages plus collection templates; URLs produced by collection templates are gated separately by plan entitlements — see [Spec 19](./19-collections-and-content-types.md))
 - Block-based page composition
-- Approximately 12 core block types
+- Approximately 14 core block types
 - Site-wide theme system
+- First-class brand identity (`businessName`, `logo`, `primaryColor`) that feeds theme generation and is resolved by Header/Footer blocks at render time
+- Custom collections with typed entries, plus collection-bound page templates that render many URLs from one schema (services, projects, properties, menu items, etc.), per [Spec 19](./19-collections-and-content-types.md)
 - Draft editing
 - Preview mode
 - Publish mode
@@ -47,7 +49,6 @@ Basic custom domain mapping is planned, but it does not need to be fully built i
 - Full drag-and-drop layout freedom
 - Marketplace of third-party blocks
 - E-commerce checkout inside generated customer websites
-- Complex CMS collections
 - Multi-language sites
 - Advanced permissions
 - Full visual design editor comparable to Webflow

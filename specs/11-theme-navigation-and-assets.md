@@ -1,5 +1,34 @@
 # Theme, Navigation, and Assets
 
+## Brand
+
+Brand identity is a site-level object that the theme system and a small set of blocks read from. It carries the minimum a real business needs to look like itself:
+
+```json
+{
+  "businessName": "Example Business",
+  "logo": {
+    "assetId": "asset_logo_primary",
+    "alt": "Example Business logo"
+  },
+  "primaryColor": "#1E5B4F"
+}
+```
+
+Brand lives next to theme in the site config (see [Spec 05](./05-site-configuration-model.md)), not inside it. The split matters because brand is user-provided business identity, while theme is the platform's derived rendering layer.
+
+### Theme Tokens Derive From Brand
+
+`brand.primaryColor` is the source of the theme palette. The platform produces secondary, accent, surface, and contrast tokens deterministically from the primary color rather than letting AI invent each one. The model still picks typography pairing, spacing, shape, and mood; it does not invent colors.
+
+When `brand.primaryColor` changes (via the brand editor), the theme palette regenerates without manual theme editing.
+
+### Blocks Resolve Brand From Site Context
+
+Header and Footer blocks do not carry their own `logo` or `businessName` props. They read these from `brand` at render time. That keeps brand consistent across every page and removes the failure mode where re-uploading the logo in one place leaves stale copies elsewhere.
+
+Other blocks that need a brand value (rare; mostly the Hero in some layouts) follow the same pattern: resolve from site context, do not duplicate as a prop.
+
 ## Theme System
 
 ### Theme Tokens

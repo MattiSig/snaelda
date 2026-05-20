@@ -20,6 +20,7 @@ Users should be able to:
 - add approved blocks
 - edit theme settings
 - manage pages and navigation
+- manage collections, schemas, and entries
 - preview drafts
 - publish the site
 
@@ -63,13 +64,36 @@ Allow users to:
 
 Allow users to:
 
-- add a page unless the site already has 10 pages
+- add a page unless the site already has 10 editor-visible pages (templates count; URLs produced by templates do not)
+- choose the page type at creation time: `static`, `collection_index`, or `collection_detail`
+- bind a collection-typed page to the right collection
 - rename a page
-- edit the slug
-- set SEO title and description
+- edit the slug (where the page type uses one)
+- set SEO title and description (entry-level SEO lives on the entry, not on the template; see [Spec 19](./19-collections-and-content-types.md))
 - include or exclude it from navigation
 - reorder navigation
 - delete the page
+
+For `collection_detail` templates, the page editor exposes block field-binding controls per block prop: pick a source entry field (typed to match the prop) or leave the literal prop value in place.
+
+Programmatic-SEO patterns (e.g. one URL per `service × city`) are not a page-type concern — they are handled by AI-generating one variant entry per combination into the same collection; the same `collection_detail` template renders each. See [Spec 19](./19-collections-and-content-types.md).
+
+## Collection Management
+
+Allow users to:
+
+- create a new collection (slug, singular/plural labels, initial schema)
+- edit the collection schema: add, remove, reorder, rename, and retype fields drawn from the closed field-type registry in [Spec 19](./19-collections-and-content-types.md)
+- acknowledge a migration prompt when a schema change is destructive (rename, type change, remove required field) — entries are migrated forward; publish fails until the migration is run
+- create, edit, duplicate, delete, and reorder entries within a collection
+- set per-entry SEO and status (`draft`, `published`)
+- generate entries with AI ("turn these photos into a project", "add a service", "generate location variants for {entry} in {cities}", "rewrite this entry") — see [Spec 07](./07-generation-engine.md)
+
+Editing constraints:
+
+- entries cannot be saved if they fail schema validation
+- a collection cannot be deleted while any page binds to it; the editor surfaces the offending pages
+- enum / enum_multi options are edited at the collection level, not per entry
 
 ## Theme Editing
 
@@ -99,15 +123,17 @@ This should update canonical draft data through the backend rather than bypassin
 
 ## Prompt Scope
 
-For MVP, support two prompt scopes:
+For MVP, support three prompt scopes:
 
 - site-level prompt
 - page-level prompt
+- entry-level prompt (re-prompts the fields of a single collection entry)
 
 Rules:
 
 - site-level prompt replaces the generated content for the site draft scope it targets
-- page-level prompt replaces the generated content for the targeted page
+- page-level prompt replaces the generated content for the targeted page (and, for `collection_detail` templates, may rewrite template content but not entry content)
+- entry-level prompt replaces the targeted entry's fields, scoped to that entry only
 - the result should be undoable
 - block-level prompting can wait until later
 

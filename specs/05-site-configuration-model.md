@@ -23,6 +23,14 @@ There are two related shapes in the system:
       "description": "Photography for brands, families, and events."
     }
   },
+  "brand": {
+    "businessName": "Nordic Lens Studio",
+    "logo": {
+      "assetId": "asset_logo_primary",
+      "alt": "Nordic Lens Studio logo"
+    },
+    "primaryColor": "#4B6F60"
+  },
   "theme": {
     "version": "theme.v1",
     "tokens": {
@@ -55,9 +63,37 @@ There are two related shapes in the system:
       { "label": "Contact", "pageId": "page_contact" }
     ]
   },
+  "collections": [
+    {
+      "id": "col_services",
+      "slug": "services",
+      "singularLabel": "Service",
+      "pluralLabel": "Services",
+      "schema": [
+        { "key": "title", "label": "Title", "type": "text", "required": true },
+        { "key": "summary", "label": "Summary", "type": "long_text" },
+        { "key": "cover", "label": "Cover image", "type": "asset" }
+      ],
+      "entries": [
+        {
+          "id": "entry_portraits",
+          "slug": "portraits",
+          "fields": {
+            "title": "Portraits",
+            "summary": "Natural light portrait sessions.",
+            "cover": { "assetId": "asset_portraits" }
+          },
+          "seo": { "title": "Portrait sessions | Nordic Lens", "description": "..." },
+          "status": "published",
+          "sortOrder": 0
+        }
+      ]
+    }
+  ],
   "pages": [
     {
       "id": "page_home",
+      "type": "static",
       "title": "Home",
       "slug": "/",
       "seo": {
@@ -80,18 +116,48 @@ There are two related shapes in the system:
           }
         }
       ]
+    },
+    {
+      "id": "page_services_index",
+      "type": "collection_index",
+      "title": "Services",
+      "slug": "/services",
+      "collectionId": "col_services",
+      "blocks": []
+    },
+    {
+      "id": "page_service_detail",
+      "type": "collection_detail",
+      "title": "Service detail template",
+      "collectionId": "col_services",
+      "blocks": [
+        {
+          "id": "block_hero_service",
+          "type": "hero",
+          "version": "1.0.0",
+          "props": { "headline": "Service" },
+          "bindings": {
+            "headline": { "source": "entry", "field": "title" },
+            "image": { "source": "entry", "field": "cover" }
+          }
+        }
+      ]
     }
   ]
 }
 ```
+
+See [Spec 19](./19-collections-and-content-types.md) for the full collection, entry, and page-type model.
 
 ## Model Requirements
 
 - The schema must be versioned, for example `site-config.v1`
 - The structure must be fully renderable without re-reading draft tables
 - Internal links should resolve cleanly from stored identifiers and slugs
-- Block instances must include type, version, and props
+- Block instances must include type, version, and props; bindings are optional and only valid on collection_detail pages
 - Theme tokens must use constrained keys
+- The snapshot must include every collection and every published entry that any page template binds to; the renderer must not need to re-query draft entries to serve a collection_detail URL
+- Brand is a top-level sibling to theme. Theme tokens are derived from `brand.primaryColor` (see [Spec 11](./11-theme-navigation-and-assets.md)); the Header and Footer blocks resolve `businessName` and `logo` from brand rather than carrying duplicate per-block props
 
 ## Canonical Draft Contract
 
@@ -106,6 +172,11 @@ Example:
     "name": "Nordic Lens Studio",
     "slug": "nordic-lens",
     "status": "draft"
+  },
+  "brand": {
+    "businessName": "Nordic Lens Studio",
+    "logo": { "assetId": "asset_logo_primary", "alt": "Nordic Lens Studio logo" },
+    "primaryColor": "#4B6F60"
   },
   "theme": {
     "version": "theme.v1",
@@ -164,36 +235,104 @@ type SiteDraft = {
     slug: string;
     status: "draft";
   };
+  brand: BrandConfig;
   theme: ThemeConfig;
   navigation: NavigationConfig;
   pages: PageDraft[];
+  collections: Array<Collection & { entries: CollectionEntry[] }>;
+};
+
+type BrandConfig = {
+  businessName: string;
+  logo?: {
+    assetId: string;
+    alt?: string;
+  };
+  primaryColor: string; // hex; seeds theme token derivation
 };
 ```
 
 ### Page Draft
 
 ```ts
+type PageType =
+  | "static"
+  | "collection_index"
+  | "collection_detail";
+
 type PageDraft = {
   id: string;
+  type: PageType;
   title: string;
-  slug: string;
+  slug?: string; // optional for collection_detail (URL pattern comes from the collection)
+  collectionId?: string; // required when type is collection-bound
   seo: SeoConfig;
   blocks: BlockInstance[];
+  settings?: Record<string, unknown>;
 };
 ```
 
 ### Block Instance
 
 ```ts
+type BlockBinding = {
+  source: "entry";
+  field: string;
+};
+
 type BlockInstance = {
   id: string;
   type: string;
   version: string;
   props: Record<string, unknown>;
+  bindings?: Record<string, BlockBinding>;
   settings?: {
     hidden?: boolean;
     anchorId?: string;
   };
+};
+```
+
+### Collection
+
+```ts
+type CollectionFieldType =
+  | "text" | "long_text" | "rich_text"
+  | "number" | "boolean" | "date"
+  | "url" | "email" | "phone" | "location"
+  | "enum" | "enum_multi"
+  | "asset" | "asset_list"
+  | "reference";
+
+type CollectionField = {
+  key: string;
+  label: string;
+  type: CollectionFieldType;
+  required?: boolean;
+  description?: string;
+  options?: string[];               // enum / enum_multi
+  defaultValue?: unknown;
+  validation?: Record<string, unknown>;
+};
+
+type Collection = {
+  id: string;
+  slug: string;
+  singularLabel: string;
+  pluralLabel: string;
+  schema: CollectionField[];
+  settings?: Record<string, unknown>;
+  sortOrder: number;
+};
+
+type CollectionEntry = {
+  id: string;
+  collectionId: string;
+  slug: string;
+  fields: Record<string, unknown>;
+  seo: SeoConfig;
+  status: "draft" | "published";
+  sortOrder: number;
 };
 ```
 

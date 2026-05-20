@@ -8,12 +8,13 @@ Each website is represented by structured application data:
 
 1. site metadata
 2. theme tokens
-3. pages
+3. pages (static and collection-bound templates)
 4. navigation
-5. block instances
+5. block instances (with optional bindings to collection entry fields)
 6. block content and config props
 7. assets
-8. draft and published versions
+8. collections and entries (typed lists the owner defines per site)
+9. draft and published versions
 
 The backend owns this model in Postgres. The editor works from draft data, and publishing turns that draft into lightweight public site output.
 
@@ -49,8 +50,9 @@ Internal modules:
 
 - `auth` — sessions, magic links, CSRF, user store.
 - `sites` — the authoring root. Owns sites, pages, blocks, navigation, draft revisions, and preview tokens. Pages and blocks are nested resources under a site rather than standalone modules, because they have no lifecycle outside their parent site.
+- `collections` — site-scoped typed collections, entries, schema validation, and the field-binding contract that lets page templates render from entries. See [Spec 19](./19-collections-and-content-types.md).
 - `themes` — theme tokens and regeneration.
-- `generation` — prompt-to-site planner, site/page reprompt, starter imagery.
+- `generation` — prompt-to-site planner, site/page reprompt, starter imagery, and AI generation of collections and entries.
 - `publishing` — snapshot validation, artifact production, public render, rollback, versions.
 - `analytics` — page-view aggregation and the site analytics endpoint.
 - `domains` — hosted-domain state and custom-domain attachment.
@@ -73,6 +75,8 @@ Use relational tables for stable core entities:
 - workspaces
 - sites
 - pages
+- collections
+- collection_entries
 - assets
 - domains
 - site_versions

@@ -55,6 +55,22 @@ For public serving:
 
 MVP does not require automatic redirect history for changed slugs.
 
+## Collection Runtime Semantics
+
+Collections and entries follow the same draft-vs-published split as pages. See [Spec 19](./19-collections-and-content-types.md) for the page-type and binding model.
+
+For public serving:
+
+- only collections and entries present in the active published version are routable
+- only entries with `status = 'published'` (as captured in the snapshot at publish time) serve public URLs
+- a `collection_detail` template URL `/{collection.slug}/{entry.slug}` resolves only when the snapshot contains that collection and a published entry with that slug
+- entry slug changes only affect the public site after publish
+- removing or unpublishing an entry only takes effect at the next publish
+
+Sitemap generation must include one URL per published entry on every `collection_detail` template.
+
+The published snapshot must include every collection schema and every published entry that any template binds to. The renderer must not need to re-query draft tables to serve a collection URL.
+
 ## Domain Lifecycle
 
 The default hosted subdomain is the first public address for every published site.
@@ -168,7 +184,7 @@ MVP does not require:
 
 Public caches should be invalidated when:
 
-- a site is published
+- a site is published (covers all collection-derived URLs in the new snapshot)
 - a site is rolled back
 - a hosted subdomain changes
 - a custom domain is activated, deactivated, or changed

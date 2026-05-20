@@ -14,6 +14,8 @@ Postgres is the canonical system of record.
 - `pages`
 - `block_instances`
 - `themes`
+- `collections`
+- `collection_entries`
 - `assets`
 - `site_versions`
 - `generation_jobs`
@@ -121,6 +123,52 @@ create table themes (
 );
 ```
 
+### `collections`
+
+```sql
+create table collections (
+  id uuid primary key default gen_random_uuid(),
+  site_id uuid not null references sites(id) on delete cascade,
+  slug text not null,
+  singular_label text not null,
+  plural_label text not null,
+  schema jsonb not null,
+  settings jsonb not null default '{}'::jsonb,
+  sort_order int not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (site_id, slug)
+);
+```
+
+`schema` is an ordered list of field definitions whose `type` is drawn from the closed field-type registry in [Spec 19](./19-collections-and-content-types.md). Application-layer validation rejects unknown types, missing required keys, and enum option drift across entries.
+
+### `collection_entries`
+
+```sql
+create table collection_entries (
+  id uuid primary key default gen_random_uuid(),
+  collection_id uuid not null references collections(id) on delete cascade,
+  site_id uuid not null references sites(id) on delete cascade,
+  slug text not null,
+  fields jsonb not null default '{}'::jsonb,
+  seo jsonb not null default '{}'::jsonb,
+  status text not null default 'draft'
+    check (status in ('draft', 'published')),
+  sort_order int not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (collection_id, slug)
+);
+
+create index collection_entries_site_idx on collection_entries(site_id);
+create index collection_entries_status_idx on collection_entries(collection_id, status);
+```
+
+`fields` is keyed by the parent collection's schema field `key`s. Entry validation runs on every write and again at publish time against the schema version captured in the snapshot.
+
+`site_id` is duplicated for easier authorization and tenant-scoped indexing, mirroring `block_instances`.
+
 ### `pages`
 
 ```sql
@@ -128,7 +176,10 @@ create table pages (
   id uuid primary key default gen_random_uuid(),
   site_id uuid not null references sites(id) on delete cascade,
   title text not null,
-  slug text not null,
+  slug text,
+  type text not null default 'static'
+    check (type in ('static', 'collection_index', 'collection_detail')),
+  collection_id uuid references collections(id) on delete restrict,
   sort_order int not null default 0,
   status text not null default 'draft',
   seo jsonb not null default '{}'::jsonb,
@@ -137,9 +188,17 @@ create table pages (
   updated_at timestamptz not null default now(),
   unique (site_id, slug)
 );
+
+create index pages_collection_idx on pages(collection_id) where collection_id is not null;
 ```
 
-Add application-level or DB-level validation to ensure a site cannot exceed 10 active pages.
+`slug` is nullable because `collection_detail` templates derive their URL pattern from the bound collection rather than from a static slug. Application-level validation enforces:
+
+- `slug` is required for `static` and `collection_index` pages
+- `collection_id` is required when `type` is anything other than `static`
+- a site cannot exceed 10 editor-visible pages (this cap counts templates, not URLs produced by them)
+
+See [Spec 19](./19-collections-and-content-types.md) for the page-type model and how each type serves URLs.
 
 ### `block_instances`
 
@@ -152,6 +211,7 @@ create table block_instances (
   version text not null,
   sort_order int not null default 0,
   props jsonb not null default '{}'::jsonb,
+  bindings jsonb not null default '{}'::jsonb,
   settings jsonb not null default '{}'::jsonb,
   is_hidden boolean not null default false,
   created_at timestamptz not null default now(),
@@ -160,6 +220,8 @@ create table block_instances (
 ```
 
 `site_id` is duplicated intentionally for easier authorization and querying.
+
+`bindings` maps individual prop keys to a collection entry field reference. It is only valid when the owning page's `type` is `collection_detail`; the application-layer validator rejects bindings on `static` and `collection_index` pages, and rejects bindings whose field type does not match the bound prop. See [Spec 19](./19-collections-and-content-types.md).
 
 ### `assets`
 

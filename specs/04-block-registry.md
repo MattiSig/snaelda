@@ -140,21 +140,66 @@ Props:
 
 ### 12. Footer
 
-Purpose: site footer.
+Purpose: site footer with structured business contact information.
 
 Props:
 
-- logo or site name
 - navigation links
 - social links
-- address/contact
 - copyright
+- contact:
+  - `address` — optional structured `{ street, city, postalCode, region, country }`
+  - `phone` — optional E.164-style string
+  - `email` — optional
+  - `hours` — optional structured `{ day, opens, closes, closed? }[]` covering each day of the week
+- showBrand — whether the footer renders `brand.businessName` and `brand.logo` (default true)
+
+`businessName` and `logo` are not props on this block. They are resolved from site-level brand at render time (see [Spec 11](./11-theme-navigation-and-assets.md)), which keeps brand consistent across every page.
+
+When `address` and/or `hours` are present, the renderer emits a LocalBusiness JSON-LD block on every page that includes this footer; see [Spec 09](./09-preview-publish-and-rendering.md). This is the SEO win that justifies the structured shape — generic free-text contact info doesn't qualify for LocalBusiness markup.
+
+### 13. Stats / KPI
+
+Purpose: a horizontal row of 3–5 large numbers paired with short labels, used near the top of a homepage or above a CTA to anchor trust with track-record proof.
+
+Visual hierarchy is inverted from Features Grid: the number is the hero, the label is the explanation. Features Grid would render numbers as body text, which defeats the point.
+
+Props:
+
+- eyebrow
+- heading
+- intro
+- items array, each with:
+  - `value` — string (not number), so units and symbols are free: `"12"`, `"240"`, `"98%"`, `"4.9★"`, `"€2M+"`, `"24/7"`
+  - `label` — short, 1–2 words
+  - `subLabel` — optional qualifier (`"since 2008"`, `"(Google)"`)
+- columns — 3, 4, or 5
+- layout — `centered` or `left`
+- style — `plain` or `card`
+
+Generation picks Stats when the prompt implies a track-record proof point (years in business, projects completed, customers served, nights hosted, rating). Generation does not include Stats by default for new businesses with no track record — fake numbers are worse than no Stats block.
+
+### 14. Collection List
+
+Purpose: render entries from a site collection on a static page (e.g. "Featured projects" on the homepage, "All services" on a services index page).
+
+Props:
+
+- heading
+- intro
+- `collectionId`
+- `limit` — max entries to render
+- `sort` — collection field key, with direction
+- `filter` — optional fixed filter `{ field, value }` for `enum` / `enum_multi` fields
+- `layout` — `grid`, `list`, or `carousel`
+- itemCardTemplate — which entry fields map to the card's title, image, summary, and link
+
+See [Spec 19](./19-collections-and-content-types.md) for the collection model. This block is the surface that brings collection content into static pages; `collection_detail` templates render single entries directly via bindings rather than this block.
 
 ## Optional Early Additions
 
 - logo cloud
 - map/location
-- stats/KPIs
 - blog/article teaser without full CMS
 - simple embed block limited to safe providers
 
@@ -260,6 +305,7 @@ Every block instance stores:
 - `type`
 - `version`
 - `props`
+- optional `bindings` (see below)
 
 When a block changes in a breaking way, create a new version such as:
 
@@ -268,3 +314,26 @@ When a block changes in a breaking way, create a new version such as:
 - `hero@2.0.0`
 
 Published snapshots should continue rendering against their stored block versions until explicitly migrated.
+
+## Block Bindings (Collection Templates)
+
+When a block is placed inside a `collection_detail` page template, individual props may bind to fields on the current collection entry. At render time the binding replaces the literal prop value with the entry field value.
+
+Binding shape on a block instance:
+
+```json
+{
+  "bindings": {
+    "headline": { "source": "entry", "field": "title" },
+    "image":    { "source": "entry", "field": "cover" }
+  }
+}
+```
+
+Rules:
+
+- bindings are only valid in `collection_detail` templates; the validator rejects bindings on `static` and `collection_index` pages
+- the bound field's type must match the prop's expected type (text/long_text/rich_text → string-shaped props; asset → image-shaped props; etc.) — enforced at save and at publish
+- removing or retyping a bound field requires schema migration; publish fails loudly if a binding references a missing or mismatched field
+
+See [Spec 19](./19-collections-and-content-types.md) for the field-type registry and the programmatic-SEO-via-variant-entries pattern.

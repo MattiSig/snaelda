@@ -57,6 +57,7 @@ Recommended MVP output:
 - `robots.txt`
 - canonical URL metadata in page output
 - basic social meta tags in page output
+- LocalBusiness JSON-LD on every page that includes a Footer carrying structured `address` and/or `hours` (see [Spec 04](./04-block-registry.md)). The structured shape exists specifically to enable this — generic free-text contact info doesn't qualify for LocalBusiness markup, which is the actual SEO win for the small-business ICP.
 
 ## Error Handling Rules
 

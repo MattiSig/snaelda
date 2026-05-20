@@ -205,6 +205,15 @@ Reasons:
 - theme editor
 - navigation editor
 
+### Phase 3b: Collections
+
+- collection CRUD with schema editor (constrained to the field-type registry in [Spec 19](./19-collections-and-content-types.md))
+- entries CRUD with schema-typed inputs
+- `collection_index` and `collection_detail` page types
+- block field-binding controls on `collection_detail` templates
+- AI-assisted entry generation (including "generate location variants for {entry} in {cities}") and entry-level re-prompt
+- destructive-schema-change migration prompt
+
 ### Phase 4: Publish and Hosting
 
 - snapshot builder
@@ -232,7 +241,6 @@ Avoid building these in the first version:
 - custom JS
 - complex responsive controls
 - reusable symbols/components
-- CMS collections
 - per-site frontend compilation
 
 ## Open Questions
@@ -243,10 +251,10 @@ Avoid building these in the first version:
 4. Which Stripe-backed billing model is required on day one: free beta, paid subscriptions, metered usage, or manual invoicing?
 5. Should the product support multiple languages later?
 6. Should published pages be dynamically server-rendered or statically cached after publish?
-7. Which industries should prompt presets target first?
-8. Should there be a `regenerate this block` action?
-9. Should generated copy be editable inline in preview or only in a side panel?
-10. What is the minimum acceptable public URL/domain experience for launch?
+7. Should there be a `regenerate this block` action?
+8. Should generated copy be editable inline in preview or only in a side panel?
+9. What is the minimum acceptable public URL/domain experience for launch?
+10. What are the per-plan caps on number of collections and entries per collection?
 
 ## Architecture Summary
 

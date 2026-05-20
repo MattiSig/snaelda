@@ -42,6 +42,34 @@ PATCH /api/sites/:siteId/theme
 POST /api/sites/:siteId/theme/regenerate
 ```
 
+## Collections
+
+Collections and their entries are nested under sites, since a collection has no lifecycle outside its parent site.
+
+```http
+GET    /api/sites/:siteId/collections
+POST   /api/sites/:siteId/collections
+GET    /api/sites/:siteId/collections/:collectionId
+PATCH  /api/sites/:siteId/collections/:collectionId
+DELETE /api/sites/:siteId/collections/:collectionId
+POST   /api/sites/:siteId/collections/:collectionId/schema/migrate
+```
+
+## Collection Entries
+
+```http
+GET    /api/sites/:siteId/collections/:collectionId/entries
+POST   /api/sites/:siteId/collections/:collectionId/entries
+GET    /api/sites/:siteId/collections/:collectionId/entries/:entryId
+PATCH  /api/sites/:siteId/collections/:collectionId/entries/:entryId
+DELETE /api/sites/:siteId/collections/:collectionId/entries/:entryId
+POST   /api/sites/:siteId/collections/:collectionId/entries/reorder
+POST   /api/sites/:siteId/collections/:collectionId/entries/generate
+POST   /api/sites/:siteId/collections/:collectionId/entries/:entryId/reprompt
+```
+
+`POST .../entries/generate` is the AI-assisted entry creation route ("turn these photos into a project", "add a service"). `POST .../entries/:entryId/reprompt` rewrites a single entry's fields. Both count against the trial 25-prompt budget per [Spec 17](./17-guest-authoring-and-claim.md). See [Spec 19](./19-collections-and-content-types.md) for the model and [Spec 07](./07-generation-engine.md) for generation semantics.
+
 ## Assets
 
 ```http

@@ -89,13 +89,16 @@ Preview tokens should be:
 
 - site has at least one page
 - site has a homepage with slug `/`
-- site has no more than 10 pages
-- every page slug is unique
+- site has no more than 10 editor-visible pages (templates plus static pages; collection-derived URLs do not count)
+- every page slug is unique within its type
 - every block is valid
+- every block binding targets a field that exists on the bound collection's schema and matches the prop's expected type
+- every `collection_detail` template references a collection that has at least one published entry
+- every entry validates against its collection's current schema
 - every internal navigation link resolves
 - theme tokens are valid
 - required SEO fields have fallbacks
-- sitemap inputs are valid
+- sitemap inputs are valid (including one URL per published entry on collection_detail templates)
 - canonical paths are valid
 - contact form definitions use safe supported fields
 
