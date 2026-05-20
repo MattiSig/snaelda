@@ -757,7 +757,20 @@ func (s *Service) loadPublishedArtifactPage(ctx context.Context, lookup publishe
 }
 
 func (s *Service) loadPublishedArtifact(ctx context.Context, lookup publishedSiteLookup, artifactPath string) (PublishedArtifactResult, error) {
-	file, err := s.store.Load(ctx, lookup.Version.SiteID, lookup.Version.ID, artifactPath)
+	normalizedPath := filepath.ToSlash(strings.TrimSpace(artifactPath))
+	if normalizedPath == "" {
+		return PublishedArtifactResult{}, ErrNotFound
+	}
+
+	allowed, err := s.allowedArtifactPaths(ctx, lookup)
+	if err != nil {
+		return PublishedArtifactResult{}, err
+	}
+	if _, ok := allowed[normalizedPath]; !ok {
+		return PublishedArtifactResult{}, ErrNotFound
+	}
+
+	file, err := s.store.Load(ctx, lookup.Version.SiteID, lookup.Version.ID, normalizedPath)
 	if errors.Is(err, ErrArtifactNotFound) {
 		return PublishedArtifactResult{}, ErrNotFound
 	}
@@ -771,6 +784,47 @@ func (s *Service) loadPublishedArtifact(ctx context.Context, lookup publishedSit
 		Version:  lookup.Version,
 		File:     file,
 	}, nil
+}
+
+// allowedArtifactPaths returns the set of artifact paths the manifest declares
+// for the active published version. Public artifact reads are restricted to
+// this set so callers cannot fetch arbitrary keys from the artifact store.
+func (s *Service) allowedArtifactPaths(ctx context.Context, lookup publishedSiteLookup) (map[string]struct{}, error) {
+	manifestFile, err := s.store.Load(ctx, lookup.Version.SiteID, lookup.Version.ID, "manifest.json")
+	if errors.Is(err, ErrArtifactNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load published artifact manifest: %w", err)
+	}
+	manifest, err := decodeArtifactManifest([]byte(manifestFile.Body))
+	if err != nil {
+		return nil, fmt.Errorf("load published artifact manifest: %w", err)
+	}
+
+	allowed := map[string]struct{}{
+		"manifest.json": {},
+	}
+	for _, entry := range manifest.Files {
+		key := filepath.ToSlash(strings.TrimSpace(entry))
+		if key == "" {
+			continue
+		}
+		allowed[key] = struct{}{}
+	}
+	// Pre-v1.1 manifests omit Files; fall back to the well-known set so
+	// existing publishes keep serving until they are re-rendered.
+	if len(manifest.Files) == 0 {
+		for _, path := range []string{"robots.txt", "sitemap.xml", "assets/theme.css"} {
+			allowed[path] = struct{}{}
+		}
+		for _, page := range manifest.Pages {
+			if key := filepath.ToSlash(strings.TrimSpace(page.FilePath)); key != "" {
+				allowed[key] = struct{}{}
+			}
+		}
+	}
+	return allowed, nil
 }
 
 func normalizeHostname(raw string) string {

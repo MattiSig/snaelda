@@ -28,6 +28,7 @@ type ArtifactManifest struct {
 	Hostname      string                 `json:"hostname,omitempty"`
 	Version       VersionSummary         `json:"version"`
 	Pages         []ArtifactManifestPage `json:"pages"`
+	Files         []string               `json:"files,omitempty"`
 }
 
 type ArtifactManifestPage struct {

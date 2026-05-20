@@ -14,6 +14,7 @@ import (
 	"github.com/MattiSig/snaelda/internal/analytics"
 	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/authorization"
+	"github.com/MattiSig/snaelda/internal/billing"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
 )
 
@@ -23,6 +24,7 @@ type Handler struct {
 	appBaseURL    string
 	publicBaseURL string
 	viewRecorder  PageViewRecorder
+	billingDB     billing.AccessStore
 	logger        *slog.Logger
 }
 
@@ -68,6 +70,7 @@ func NewHandlerWithConfig(db DB, cfg ServiceConfig, appBaseURL string, publicBas
 		authorizer:    authorization.New(db),
 		appBaseURL:    strings.TrimRight(appBaseURL, "/"),
 		publicBaseURL: strings.TrimSpace(publicBaseURL),
+		billingDB:     db,
 		logger:        slog.Default(),
 	}
 }
@@ -106,9 +109,16 @@ func (h *Handler) publish(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_site_id", "site id is required")
 		return
 	}
-	if _, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor); err != nil {
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
 		writeAuthorizationError(w, err)
 		return
+	}
+	if h.billingDB != nil && scope.WorkspaceID != "" {
+		if err := billing.EnforceSiteLimit(r.Context(), h.billingDB, scope.WorkspaceID); err != nil {
+			h.writePublishError(w, r, err)
+			return
+		}
 	}
 
 	session, _ := auth.SessionFromContext(r.Context())
@@ -177,9 +187,16 @@ func (h *Handler) rollback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_version_id", "version id is required")
 		return
 	}
-	if _, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor); err != nil {
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
 		writeAuthorizationError(w, err)
 		return
+	}
+	if h.billingDB != nil && scope.WorkspaceID != "" {
+		if err := billing.EnforceSiteLimit(r.Context(), h.billingDB, scope.WorkspaceID); err != nil {
+			h.writePublishError(w, r, err)
+			return
+		}
 	}
 
 	session, _ := auth.SessionFromContext(r.Context())
@@ -385,6 +402,8 @@ func (h *Handler) writePublishError(w http.ResponseWriter, r *http.Request, err 
 			},
 			"issues": validationErr.Issues,
 		})
+	case errors.Is(err, billing.ErrPlanLimitExceeded):
+		writeError(w, http.StatusForbidden, "plan_limit_exceeded", err.Error())
 	default:
 		logger := h.logger
 		if logger == nil {

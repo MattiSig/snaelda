@@ -438,6 +438,26 @@ func TestPublicFormWriteRoutesDoNotRequireCSRF(t *testing.T) {
 	}
 }
 
+func TestBillingWebhookBypassesCSRF(t *testing.T) {
+	server := NewServer(ServerConfig{
+		Config: config.Config{
+			AppEnv:     "test",
+			HTTPAddr:   "127.0.0.1:0",
+			AppBaseURL: "http://localhost:3000",
+		},
+		Logger: slog.New(slog.DiscardHandler),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/billing/webhook", strings.NewReader(`{}`))
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+
+	if res.Code == http.StatusForbidden {
+		t.Fatalf("expected billing webhook to bypass csrf, got %d", res.Code)
+	}
+}
+
 func TestFailureLoggingIncludesRequestCategory(t *testing.T) {
 	var logOutput bytes.Buffer
 	server := NewServer(ServerConfig{

@@ -368,6 +368,57 @@ func TestRestoreSessionRotatesGuestCookieAndAllowsSessionAccess(t *testing.T) {
 	}
 }
 
+func TestWriteSessionCookiesRefreshesTrialCookies(t *testing.T) {
+	handler := NewHandler(HandlerConfig{
+		Tokens:          newHandlerTestTokenManager(t),
+		RefreshTokenTTL: 30 * 24 * time.Hour,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/me", nil)
+	req.AddCookie(&http.Cookie{Name: GuestSessionCookieName, Value: "guest-token-value"})
+	req.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: "csrf-token-value"})
+	res := httptest.NewRecorder()
+
+	trialStartedAt := time.Now().UTC().Add(-time.Hour)
+	handler.writeSessionCookies(res, req, Session{
+		Kind:           SessionKindTrial,
+		TrialStartedAt: &trialStartedAt,
+	})
+
+	cookies := res.Result().Cookies()
+	guest := cookieNamed(t, cookies, GuestSessionCookieName)
+	if guest.Value != "guest-token-value" {
+		t.Fatalf("expected guest cookie to preserve value, got %q", guest.Value)
+	}
+	if guest.MaxAge <= 0 {
+		t.Fatalf("expected guest cookie MaxAge > 0, got %d", guest.MaxAge)
+	}
+	csrf := cookieNamed(t, cookies, CSRFCookieName)
+	if csrf.Value != "csrf-token-value" {
+		t.Fatalf("expected csrf cookie to preserve value, got %q", csrf.Value)
+	}
+	if csrf.MaxAge <= 0 {
+		t.Fatalf("expected csrf cookie MaxAge > 0, got %d", csrf.MaxAge)
+	}
+}
+
+func TestWriteSessionCookiesIgnoresAuthenticatedSessions(t *testing.T) {
+	handler := NewHandler(HandlerConfig{
+		Tokens:          newHandlerTestTokenManager(t),
+		RefreshTokenTTL: 30 * 24 * time.Hour,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/me", nil)
+	req.AddCookie(&http.Cookie{Name: GuestSessionCookieName, Value: "guest-token-value"})
+	res := httptest.NewRecorder()
+
+	handler.writeSessionCookies(res, req, Session{Kind: SessionKindAuthenticated, User: &User{ID: "user-1"}})
+
+	if len(res.Result().Cookies()) != 0 {
+		t.Fatalf("expected no cookies refreshed for authenticated session, got %d", len(res.Result().Cookies()))
+	}
+}
+
 func cookieNamed(t *testing.T, cookies []*http.Cookie, name string) *http.Cookie {
 	t.Helper()
 

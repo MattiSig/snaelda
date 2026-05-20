@@ -49,6 +49,7 @@ Prompt → draft → edit → preview → publish. Everything the user touches i
 | 08 | [Editor and Authoring Model](./08-editor-and-authoring.md) | The builder's rules for editing blocks, pages, themes, and navigation in place. |
 | 09 | [Preview, Publish, and Rendering](./09-preview-publish-and-rendering.md) | Draft → preview-token → immutable published version, plus the renderer pipeline. |
 | 11 | [Theme, Navigation, and Assets](./11-theme-navigation-and-assets.md) | Theme tokens, navigation as first-class data, and the asset library that feeds the renderer. |
+| 20 | [AI Authoring UX](./20-ai-authoring-ux.md) | Generation progress, reprompt history with diff, and AI-assist inside the editor. |
 
 ### 4. Platform & Runtime
 

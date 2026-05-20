@@ -36,6 +36,7 @@ type PublishedArtifactManifest = {
     description: string;
     canonicalUrl: string;
   }>;
+  files: string[];
 };
 
 export function buildPublishedArtifactBundle(
@@ -72,6 +73,18 @@ export function buildPublishedArtifactBundle(
     };
   });
 
+  const files: PublishedArtifactFile[] = pages.map(({ filePath, html }) => ({
+    path: filePath,
+    contentType: "text/html; charset=utf-8",
+    body: html,
+  }));
+
+  files.push({
+    path: "assets/theme.css",
+    contentType: "text/css; charset=utf-8",
+    body: buildPublishedThemeCSS(input.snapshot),
+  });
+
   const manifest: PublishedArtifactManifest = {
     schemaVersion: "published_artifacts.v1",
     siteSlug: input.siteSlug,
@@ -87,19 +100,14 @@ export function buildPublishedArtifactBundle(
         canonicalUrl,
       }),
     ),
+    files: [
+      ...files.map((file) => file.path),
+      "sitemap.xml",
+      "robots.txt",
+      "manifest.json",
+    ],
   };
 
-  const files: PublishedArtifactFile[] = pages.map(({ filePath, html }) => ({
-    path: filePath,
-    contentType: "text/html; charset=utf-8",
-    body: html,
-  }));
-
-  files.push({
-    path: "assets/theme.css",
-    contentType: "text/css; charset=utf-8",
-    body: buildPublishedThemeCSS(input.snapshot),
-  });
   files.push({
     path: "sitemap.xml",
     contentType: "application/xml; charset=utf-8",

@@ -493,6 +493,30 @@ func TestLoadPublishedSiteBySlugRejectsUnknownPagePath(t *testing.T) {
 	}
 }
 
+func TestLoadPublishedArtifactRestrictsToManifestPaths(t *testing.T) {
+	store := newFakePublishingStore()
+	service := Service{db: store, store: store}
+
+	// Plant a file that is NOT declared in the manifest and confirm
+	// /api/public/artifact cannot reach it via the active published version.
+	if store.artifactFiles == nil {
+		store.artifactFiles = buildFakePublishedArtifacts(store.publishedSiteSlug, store.publishedHostname, store.publishedVersion)
+	}
+	store.artifactFiles["assets/secret.txt"] = ArtifactFile{
+		Path:        "assets/secret.txt",
+		ContentType: "text/plain; charset=utf-8",
+		Body:        "do not expose",
+	}
+
+	if _, err := service.LoadPublishedArtifactBySlug(context.Background(), "nordic-studio", "assets/secret.txt"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected manifest membership check to reject undeclared path, got %v", err)
+	}
+
+	if _, err := service.LoadPublishedArtifactBySlug(context.Background(), "nordic-studio", "robots.txt"); err != nil {
+		t.Fatalf("expected manifest-listed artifact to load, got %v", err)
+	}
+}
+
 func TestLoadPublishedSiteByHostnameResolvesRequestedPage(t *testing.T) {
 	store := newFakePublishingStore()
 	service := Service{db: store, store: store}

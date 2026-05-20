@@ -111,6 +111,7 @@ func NewServer(cfg ServerConfig) *Server {
 				},
 			},
 			EmailRateLimiter: email.NewRateLimiter(authStore),
+			IPRateLimiter:    auth.NewIPRateLimiter(authStore, logger),
 		}),
 	}
 }
@@ -463,7 +464,7 @@ func requiresCSRFMitigation(r *http.Request) bool {
 		return false
 	}
 	switch r.URL.Path {
-	case "/api/auth/login", "/api/auth/magic-link", "/api/sessions/anonymous", "/api/sessions/restore":
+	case "/api/auth/login", "/api/auth/magic-link", "/api/sessions/anonymous", "/api/sessions/restore", "/api/billing/webhook":
 		return false
 	default:
 		return true

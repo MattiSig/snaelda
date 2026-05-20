@@ -41,6 +41,7 @@ type HandlerConfig struct {
 	APIBaseURL       string
 	EmailSender      email.Sender
 	EmailRateLimiter *email.RateLimiter
+	IPRateLimiter    *IPRateLimiter
 }
 
 type Handler struct {
@@ -52,6 +53,7 @@ type Handler struct {
 	apiBaseURL       string
 	emailSender      email.Sender
 	emailRateLimiter *email.RateLimiter
+	ipRateLimiter    *IPRateLimiter
 }
 
 type genericEmailRequest struct {
@@ -90,6 +92,7 @@ func NewHandler(cfg HandlerConfig) *Handler {
 		apiBaseURL:       strings.TrimRight(strings.TrimSpace(cfg.APIBaseURL), "/"),
 		emailSender:      cfg.EmailSender,
 		emailRateLimiter: cfg.EmailRateLimiter,
+		ipRateLimiter:    cfg.IPRateLimiter,
 	}
 }
 
@@ -154,9 +157,6 @@ func (h *Handler) blockedTrialRequest(r *http.Request, session Session) (int, st
 	if generationRoute(r) && session.PromptsUsed >= trialPromptLimit {
 		return http.StatusForbidden, "trial_exhausted", "your trial has reached its prompt limit", true
 	}
-	if publishRoute(r) && !session.IsClaimed() {
-		return http.StatusForbidden, "claim_required", "save your workspace before publishing", true
-	}
 	return 0, "", "", false
 }
 
@@ -172,10 +172,6 @@ func generationRoute(r *http.Request) bool {
 	return r.URL.Path == "/api/sites/generate" || strings.Contains(r.URL.Path, "/reprompt")
 }
 
-func publishRoute(r *http.Request) bool {
-	return strings.HasSuffix(r.URL.Path, "/publish")
-}
-
 func (h *Handler) startAnonymousSession(w http.ResponseWriter, r *http.Request) {
 	if h.store == nil {
 		writeAuthError(w, http.StatusServiceUnavailable, "auth_unavailable", "sessions are not configured")
@@ -183,7 +179,7 @@ func (h *Handler) startAnonymousSession(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if session, err := h.resolveSession(r); err == nil {
-		h.writeSessionCookies(w, session)
+		h.writeSessionCookies(w, r, session)
 		writeAuthJSON(w, http.StatusOK, sessionResponse{Session: session})
 		return
 	}
@@ -205,11 +201,15 @@ func (h *Handler) sessionMe(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, http.StatusUnauthorized, "unauthenticated", "a session is required")
 		return
 	}
-	h.writeSessionCookies(w, session)
+	h.writeSessionCookies(w, r, session)
 	writeAuthJSON(w, http.StatusOK, sessionResponse{Session: session})
 }
 
 func (h *Handler) restoreSession(w http.ResponseWriter, r *http.Request) {
+	if !h.ipRateLimiter.Allow(r.Context(), RateLimitPurposeRecoveryRestore, ClientIPFromRequest(r), DefaultRecoveryRestoreRules...) {
+		writeAuthError(w, http.StatusTooManyRequests, "rate_limited", "too many recovery attempts; please try again later")
+		return
+	}
 	if h.store == nil {
 		writeAuthError(w, http.StatusServiceUnavailable, "auth_unavailable", "sessions are not configured")
 		return
@@ -242,6 +242,11 @@ func (h *Handler) issueRecoveryKey(w http.ResponseWriter, r *http.Request) {
 	}
 	if session.IsClaimed() {
 		writeAuthError(w, http.StatusConflict, "already_claimed", "claimed workspaces use magic-link login instead")
+		return
+	}
+
+	if !h.ipRateLimiter.Allow(r.Context(), RateLimitPurposeRecoveryIssue, ClientIPFromRequest(r), DefaultRecoveryIssueRules...) {
+		writeAuthError(w, http.StatusTooManyRequests, "rate_limited", "too many recovery-key requests; please try again later")
 		return
 	}
 
@@ -319,7 +324,7 @@ func (h *Handler) claimSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.writeSessionCookies(w, nextSession)
+	h.writeSessionCookies(w, r, nextSession)
 	writeAuthJSON(w, http.StatusOK, map[string]any{
 		"session": nextSession,
 		"status":  "magic_link_sent",
@@ -327,6 +332,10 @@ func (h *Handler) claimSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) requestMagicLink(w http.ResponseWriter, r *http.Request) {
+	if !h.ipRateLimiter.Allow(r.Context(), RateLimitPurposeMagicLinkRequest, ClientIPFromRequest(r), DefaultMagicLinkRequestRules...) {
+		writeAuthError(w, http.StatusTooManyRequests, "rate_limited", "too many magic-link requests from this address; please try again later")
+		return
+	}
 	if h.store == nil {
 		writeAuthError(w, http.StatusServiceUnavailable, "auth_unavailable", "authentication is not configured")
 		return
@@ -358,6 +367,10 @@ func (h *Handler) requestMagicLink(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) consumeMagicLink(w http.ResponseWriter, r *http.Request) {
+	if !h.ipRateLimiter.Allow(r.Context(), RateLimitPurposeMagicLinkVerify, ClientIPFromRequest(r), DefaultMagicLinkVerifyRules...) {
+		writeAuthError(w, http.StatusTooManyRequests, "rate_limited", "too many magic-link verification attempts; please try again later")
+		return
+	}
 	if h.store == nil || h.tokens == nil {
 		writeAuthError(w, http.StatusServiceUnavailable, "auth_unavailable", "authentication is not configured")
 		return
@@ -1024,11 +1037,22 @@ func (h *Handler) recoveryURL(token string) string {
 	return h.appURL("/restore?k=" + url.QueryEscape(token))
 }
 
-func (h *Handler) writeSessionCookies(w http.ResponseWriter, session Session) {
-	if session.IsTrial() {
-		if _, err := CSRFCookieFromRequest(&http.Request{Header: http.Header{}}); err != nil {
-			// no-op; this helper intentionally only refreshes the cookie lifetime
-		}
+// writeSessionCookies refreshes the cookies that back an active trial session
+// so the rolling TTL keeps pace with usage. For authenticated sessions the
+// access/refresh cookies are already rotated on /api/auth/refresh, so this is a
+// no-op there.
+func (h *Handler) writeSessionCookies(w http.ResponseWriter, r *http.Request, session Session) {
+	if !session.IsTrial() {
+		return
+	}
+	guest, err := r.Cookie(GuestSessionCookieName)
+	if err != nil || strings.TrimSpace(guest.Value) == "" {
+		return
+	}
+	maxAge := int(h.refreshTokenTTL.Seconds())
+	http.SetCookie(w, h.guestCookie(guest.Value, maxAge))
+	if csrf, err := r.Cookie(CSRFCookieName); err == nil && strings.TrimSpace(csrf.Value) != "" {
+		http.SetCookie(w, h.csrfCookie(csrf.Value, maxAge))
 	}
 }
 
