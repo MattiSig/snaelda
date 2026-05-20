@@ -79,13 +79,6 @@ This file tracks confirmed remaining work only, sorted by implementation priorit
   - Replace the in-memory render cache with a shared cache (Redis or per-artifact CDN purge) so replicas stay coherent.
   - Acceptance: a multi-replica deploy serves published artifacts from object storage with correct cache semantics and invalidation.
 
-- [ ] End-to-end test coverage + CI workflow.
-  - Add `.github/workflows/ci.yml` running `make test`, `npm run web:lint`, `npm run web:build`, and a Playwright suite.
-  - Add Playwright suite under `apps/web/tests/e2e/` covering: anonymous prompt → generate → edit → preview → claim → publish → public render → rollback → assets upload → preview-token share → contact submission.
-  - Backfill Go tests for `internal/platform/database`, `cmd/api`, `cmd/db`.
-  - Backfill web tests for `apps/web/src/lib/api.ts`, `lib/assets.ts`, `lib/public-site.ts`, `lib/styles.ts`, `lib/utils.ts`, and `components/PuckBuilder.tsx`.
-  - Add a Stripe webhook test using `stripe fixtures` or a fake transport; add an OpenAI schema contract test in `internal/generation/`.
-
 - [ ] Remove dead placeholders and prune unused env (specs 02, 10).
   - Delete `internal/pages` and `internal/blocks` packages and their `mountAuthenticatedPlaceholderModule` lines in `internal/api/server.go`. (`internal/workspaces` stays as the intentional tenancy placeholder.)
   - Remove unused env declarations from `.env.example`: `UNSPLASH_*`, `RAILWAY_API_TOKEN`, `API_BASE_URL` (and any `STRIPE_*`/`BILLING_*` not actually read after the billing module lands).
