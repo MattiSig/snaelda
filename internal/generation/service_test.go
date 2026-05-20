@@ -498,7 +498,7 @@ func TestRepairGenerationPlanRepairsSafeIssues(t *testing.T) {
 		}
 	}
 
-	draft, err := buildDraftFromPlan(repaired, "north-light-studio")
+	draft, err := buildDraftFromPlan(repaired, "north-light-studio", siteconfig.BrandConfig{})
 	if err != nil {
 		t.Fatalf("expected repaired plan to build, got %v", err)
 	}

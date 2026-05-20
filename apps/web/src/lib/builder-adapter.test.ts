@@ -44,6 +44,10 @@ function buildDraft(): SiteDraft {
       slug: 'loom-light',
       status: 'draft',
     },
+    brand: {
+      businessName: 'Loom & Light',
+      primaryColor: '#8ee2d1',
+    },
     theme: {
       version: 'theme.v1',
       tokens: {

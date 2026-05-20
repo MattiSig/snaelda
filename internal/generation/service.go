@@ -46,6 +46,7 @@ type GenerateInput struct {
 	Name   string
 	Slug   string
 	Prompt string
+	Brand  siteconfig.BrandConfig
 }
 
 type RepromptInput struct {
@@ -153,6 +154,7 @@ func (s *Service) Generate(ctx context.Context, workspaceID string, userID strin
 		NameHint: strings.TrimSpace(input.Name),
 		SlugHint: strings.TrimSpace(input.Slug),
 		Prompt:   prompt,
+		Brand:    input.Brand,
 	}
 	jobID, err := s.createGenerationJob(ctx, workspaceID, userID, inputContext)
 	if err != nil {
@@ -542,7 +544,7 @@ func (s *Service) generateDraftWithRetry(ctx context.Context, workspaceID string
 			return generationPlan{}, siteconfig.SiteDraft{}, attempt - 1, err
 		}
 
-		draft, err := buildDraftFromPlan(plan, slugValue)
+		draft, err := buildDraftFromPlan(plan, slugValue, input.Brand)
 		if err == nil {
 			err = s.writer.SaveDraft(ctx, workspaceID, draft)
 		}
@@ -570,12 +572,13 @@ func (s *Service) buildPlan(ctx context.Context, input generationInputContext, f
 }
 
 type generationInputContext struct {
-	SiteID   string `json:"siteId,omitempty"`
-	PageID   string `json:"pageId,omitempty"`
-	NameHint string `json:"nameHint,omitempty"`
-	SlugHint string `json:"slugHint,omitempty"`
-	Prompt   string `json:"prompt"`
-	Scope    string `json:"scope,omitempty"`
+	SiteID   string                 `json:"siteId,omitempty"`
+	PageID   string                 `json:"pageId,omitempty"`
+	NameHint string                 `json:"nameHint,omitempty"`
+	SlugHint string                 `json:"slugHint,omitempty"`
+	Prompt   string                 `json:"prompt"`
+	Scope    string                 `json:"scope,omitempty"`
+	Brand    siteconfig.BrandConfig `json:"brand,omitempty"`
 }
 
 type generationPlan struct {
@@ -995,7 +998,7 @@ func buildGenerationPlan(nameHint string, prompt string) generationPlan {
 	}
 }
 
-func buildDraftFromPlan(plan generationPlan, slugValue string) (siteconfig.SiteDraft, error) {
+func buildDraftFromPlan(plan generationPlan, slugValue string, brandHint siteconfig.BrandConfig) (siteconfig.SiteDraft, error) {
 	siteID, err := ids.New()
 	if err != nil {
 		return siteconfig.SiteDraft{}, fmt.Errorf("generate site id: %w", err)
@@ -1037,6 +1040,18 @@ func buildDraftFromPlan(plan generationPlan, slugValue string) (siteconfig.SiteD
 		})
 	}
 
+	brand := brandHint
+	if strings.TrimSpace(brand.BusinessName) == "" {
+		brand.BusinessName = plan.SiteName
+	}
+	if strings.TrimSpace(brand.PrimaryColor) == "" {
+		brand.PrimaryColor = plan.Theme.Tokens.Colors["primary"]
+	}
+	plan.Theme = siteconfig.BuildThemeWithBrand(
+		siteconfig.DetectThemeSelection(plan.Theme),
+		brand,
+	)
+
 	draft := siteconfig.SiteDraft{
 		Site: siteconfig.DraftSite{
 			ID:            siteID,
@@ -1049,6 +1064,7 @@ func buildDraftFromPlan(plan generationPlan, slugValue string) (siteconfig.SiteD
 				Description: siteDescription,
 			},
 		},
+		Brand:      brand,
 		Theme:      plan.Theme,
 		Navigation: siteconfig.NavigationConfig{Primary: navigation},
 		Pages:      pages,
@@ -1065,6 +1081,15 @@ func applySiteIdentity(nextDraft siteconfig.SiteDraft, currentDraft siteconfig.S
 	nextDraft.Site.Slug = currentDraft.Site.Slug
 	nextDraft.Site.Status = currentDraft.Site.Status
 	nextDraft.Site.DefaultLocale = currentDraft.Site.DefaultLocale
+	if currentDraft.Brand.BusinessName != "" || currentDraft.Brand.PrimaryColor != "" || currentDraft.Brand.Logo != nil {
+		nextDraft.Brand = currentDraft.Brand
+	}
+	if currentBrandColor := currentDraft.Brand.PrimaryColor; currentBrandColor != "" {
+		nextDraft.Theme = siteconfig.BuildThemeWithBrand(
+			siteconfig.DetectThemeSelection(nextDraft.Theme),
+			currentDraft.Brand,
+		)
+	}
 	return nextDraft
 }
 

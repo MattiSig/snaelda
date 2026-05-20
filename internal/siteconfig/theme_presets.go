@@ -216,11 +216,24 @@ func ThemePreset(name string) ThemeConfig {
 }
 
 func BuildTheme(selection ThemeSelection) ThemeConfig {
+	return BuildThemeWithBrand(selection, BrandConfig{})
+}
+
+// BuildThemeWithBrand builds the theme tokens and, when brand.primaryColor is
+// set, overrides the palette's primary token with the brand color. Per
+// [Spec 11](../../specs/11-theme-navigation-and-assets.md), brand is the
+// source of the theme palette: the platform chooses preset families and the
+// brand's primary color authoritatively becomes the rendered primary.
+func BuildThemeWithBrand(selection ThemeSelection, brand BrandConfig) ThemeConfig {
 	normalized := normalizeThemeSelection(selection)
+	colors := maps.Clone(themePaletteTokens[normalized.Palette])
+	if brand.PrimaryColor != "" && hexColorPattern.MatchString(brand.PrimaryColor) {
+		colors["primary"] = brand.PrimaryColor
+	}
 	return ThemeConfig{
 		Version: ThemeVersionV1,
 		Tokens: ThemeTokens{
-			Colors:     maps.Clone(themePaletteTokens[normalized.Palette]),
+			Colors:     colors,
 			Typography: maps.Clone(themeTypographyTokens[normalized.FontPreset]),
 			Layout: map[string]any{
 				"maxWidth":       "1120px",

@@ -182,6 +182,7 @@ func normalizeDraft(draft siteconfig.SiteDraft) (NormalizedDraftRows, error) {
 			SEO:           draft.Site.SEO,
 			Navigation:    draft.Navigation,
 			HasNavigation: true,
+			Brand:         draft.Brand,
 		},
 		Theme: themeRow{
 			Version: draft.Theme.Version,
@@ -210,18 +211,23 @@ func saveSite(ctx context.Context, tx pgx.Tx, workspaceID string, site siteRow) 
 	if err != nil {
 		return fmt.Errorf("encode site settings: %w", err)
 	}
+	brandJSON, err := marshalBrand(site.Brand)
+	if err != nil {
+		return fmt.Errorf("encode site brand: %w", err)
+	}
 	tag, err := tx.Exec(ctx, `
-		insert into sites (id, workspace_id, name, slug, status, default_locale, settings)
-		values ($1, $2, $3, $4, $5, $6, $7)
+		insert into sites (id, workspace_id, name, slug, status, default_locale, settings, brand)
+		values ($1, $2, $3, $4, $5, $6, $7, $8)
 		on conflict (id) do update
 		set name = excluded.name,
 		    slug = excluded.slug,
 		    status = excluded.status,
 		    default_locale = excluded.default_locale,
 		    settings = excluded.settings,
+		    brand = excluded.brand,
 		    updated_at = now()
 		where sites.workspace_id = excluded.workspace_id
-	`, site.ID, workspaceID, site.Name, site.Slug, site.Status, site.DefaultLocale, settingsJSON)
+	`, site.ID, workspaceID, site.Name, site.Slug, site.Status, site.DefaultLocale, settingsJSON, brandJSON)
 	if err != nil {
 		return fmt.Errorf("save site row: %w", err)
 	}
@@ -229,6 +235,13 @@ func saveSite(ctx context.Context, tx pgx.Tx, workspaceID string, site siteRow) 
 		return err
 	}
 	return nil
+}
+
+func marshalBrand(brand siteconfig.BrandConfig) ([]byte, error) {
+	if brand.BusinessName == "" && brand.PrimaryColor == "" && brand.Logo == nil {
+		return []byte(`{}`), nil
+	}
+	return json.Marshal(brand)
 }
 
 func saveTheme(ctx context.Context, tx pgx.Tx, siteID string, theme themeRow) error {

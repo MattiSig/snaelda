@@ -60,6 +60,7 @@ type siteRow struct {
 	SEO           siteconfig.SEOConfig
 	Navigation    siteconfig.NavigationConfig
 	HasNavigation bool
+	Brand         siteconfig.BrandConfig
 }
 
 type themeRow struct {
@@ -217,11 +218,12 @@ func (r *PostgresReader) LoadGenerationMetadata(ctx context.Context, siteID stri
 func (r *PostgresReader) loadNormalizedDraft(ctx context.Context, siteID string) (NormalizedDraftRows, error) {
 	var site siteRow
 	var siteSettingsJSON []byte
+	var brandJSON []byte
 	err := r.db.QueryRow(ctx, `
-		select id::text, name, slug, status, default_locale, settings
+		select id::text, name, slug, status, default_locale, settings, coalesce(brand, '{}'::jsonb)
 		from sites
 		where id = $1
-	`, siteID).Scan(&site.ID, &site.Name, &site.Slug, &site.Status, &site.DefaultLocale, &siteSettingsJSON)
+	`, siteID).Scan(&site.ID, &site.Name, &site.Slug, &site.Status, &site.DefaultLocale, &siteSettingsJSON, &brandJSON)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return NormalizedDraftRows{}, ErrNotFound
 	}
@@ -230,6 +232,9 @@ func (r *PostgresReader) loadNormalizedDraft(ctx context.Context, siteID string)
 	}
 	if err := decodeSiteSettings(siteSettingsJSON, &site); err != nil {
 		return NormalizedDraftRows{}, fmt.Errorf("decode site settings: %w", err)
+	}
+	if err := decodeJSON(brandJSON, &site.Brand); err != nil {
+		return NormalizedDraftRows{}, fmt.Errorf("decode site brand: %w", err)
 	}
 
 	var theme themeRow
@@ -581,6 +586,7 @@ func AssembleDraft(rows NormalizedDraftRows) siteconfig.SiteDraft {
 			DefaultLocale: rows.Site.DefaultLocale,
 			SEO:           rows.Site.SEO,
 		},
+		Brand:       rows.Site.Brand,
 		Theme:       siteconfig.ThemeConfig{Version: rows.Theme.Version, Tokens: rows.Theme.Tokens},
 		Navigation:  navigation,
 		Pages:       draftPages,

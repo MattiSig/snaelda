@@ -1009,6 +1009,10 @@
         "description": "Shared block-registry fixture proving Go validation and React rendering stay aligned."
       }
     },
+    "brand": {
+      "businessName": "Registry Contract Studio",
+      "primaryColor": "#8ee2d1"
+    },
     "theme": {
       "version": "theme.v1",
       "tokens": {

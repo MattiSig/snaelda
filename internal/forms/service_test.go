@@ -647,6 +647,10 @@ func publishedContactSnapshotWithNotification(notificationEmail string) siteconf
 				Description: "Prompt-built sites for warm small businesses.",
 			},
 		},
+		Brand: siteconfig.BrandConfig{
+			BusinessName: "Loom & Light",
+			PrimaryColor: "#86d8cf",
+		},
 		Theme:      siteconfig.ThemePreset(siteconfig.ThemePaletteMeanerDark),
 		Navigation: siteconfig.NavigationConfig{Primary: []siteconfig.NavigationItem{{Label: "Home", PageID: "page-home"}}},
 		Pages:      draft.Pages,

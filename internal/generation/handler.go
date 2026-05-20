@@ -44,9 +44,10 @@ type Authorizer interface {
 }
 
 type generateRequest struct {
-	Name   string `json:"name,omitempty"`
-	Slug   string `json:"slug,omitempty"`
-	Prompt string `json:"prompt"`
+	Name   string                 `json:"name,omitempty"`
+	Slug   string                 `json:"slug,omitempty"`
+	Prompt string                 `json:"prompt"`
+	Brand  siteconfig.BrandConfig `json:"brand,omitempty"`
 }
 
 type repromptRequest struct {
@@ -137,6 +138,7 @@ func (h *Handler) generate(w http.ResponseWriter, r *http.Request) {
 		Name:   strings.TrimSpace(payload.Name),
 		Slug:   strings.TrimSpace(payload.Slug),
 		Prompt: strings.TrimSpace(payload.Prompt),
+		Brand:  payload.Brand,
 	})
 	if err != nil {
 		h.writeGenerationError(w, r, err)

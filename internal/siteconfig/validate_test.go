@@ -279,6 +279,10 @@ func TestValidatePublishedSnapshotAcceptsCollectionDetailWithPublishedEntry(t *t
 				Description: "Calm design systems for focused teams.",
 			},
 		},
+		Brand: BrandConfig{
+			BusinessName: draft.Site.Name,
+			PrimaryColor: "#3c78ad",
+		},
 		Theme:      draft.Theme,
 		Navigation: NavigationConfig{Primary: []NavigationItem{{Label: "Home", PageID: "page_home"}}},
 		Pages: []PageDraft{
@@ -342,6 +346,93 @@ func TestValidateFormDefinitionRejectsUnsupportedFields(t *testing.T) {
 	}
 	if !hasIssue(t, err, "invalid_email") {
 		t.Fatalf("expected invalid email issue, got %v", err)
+	}
+}
+
+func TestValidateDraftAcceptsBrand(t *testing.T) {
+	draft := validDraft()
+	draft.Brand = BrandConfig{
+		BusinessName: "Nordic Studio",
+		PrimaryColor: "#315c4f",
+		Logo: &BrandLogo{
+			AssetID: "asset_logo_primary",
+			Alt:     "Nordic Studio logo",
+		},
+	}
+	if err := ValidateDraft(draft); err != nil {
+		t.Fatalf("validate draft with brand: %v", err)
+	}
+}
+
+func TestValidateDraftRejectsInvalidBrandPrimaryColor(t *testing.T) {
+	draft := validDraft()
+	draft.Brand = BrandConfig{
+		BusinessName: "Nordic Studio",
+		PrimaryColor: "rgba(0,0,0,1)",
+	}
+	err := ValidateDraft(draft)
+	if !hasIssue(t, err, "invalid_color") {
+		t.Fatalf("expected invalid_color issue, got %v", err)
+	}
+}
+
+func TestValidateDraftRejectsBrandLogoWithoutAsset(t *testing.T) {
+	draft := validDraft()
+	draft.Brand = BrandConfig{
+		Logo: &BrandLogo{Alt: "missing"},
+	}
+	err := ValidateDraft(draft)
+	if !hasIssue(t, err, "required") {
+		t.Fatalf("expected required issue for missing logo assetId, got %v", err)
+	}
+}
+
+func TestValidatePublishedSnapshotRequiresBrand(t *testing.T) {
+	draft := validDraft()
+	snapshot := PublishedSnapshot{
+		SchemaVersion: SiteConfigVersionV1,
+		Site: PublishedSite{
+			ID:            draft.Site.ID,
+			Name:          draft.Site.Name,
+			DefaultLocale: draft.Site.DefaultLocale,
+			SEO: SEOConfig{
+				Title:       draft.Site.Name,
+				Description: "Calm design systems for focused teams.",
+			},
+		},
+		Theme:      draft.Theme,
+		Navigation: draft.Navigation,
+		Pages: []PageDraft{
+			{
+				ID:    "page_home",
+				Title: "Home",
+				Slug:  "/",
+				SEO: SEOConfig{
+					Title:       "Home | Nordic Studio",
+					Description: "Welcome to the studio.",
+				},
+				Blocks: draft.Pages[0].Blocks,
+			},
+		},
+	}
+	err := ValidatePublishedSnapshot(snapshot)
+	if !hasIssue(t, err, "required") {
+		t.Fatalf("expected required brand issue, got %v", err)
+	}
+}
+
+func TestBuildThemeWithBrandOverridesPrimary(t *testing.T) {
+	theme := BuildThemeWithBrand(DefaultThemeSelection(), BrandConfig{PrimaryColor: "#abcdef"})
+	if theme.Tokens.Colors["primary"] != "#abcdef" {
+		t.Fatalf("expected primary to be overridden, got %q", theme.Tokens.Colors["primary"])
+	}
+}
+
+func TestBuildThemeWithBrandIgnoresInvalidBrandColor(t *testing.T) {
+	preset := BuildTheme(DefaultThemeSelection())
+	theme := BuildThemeWithBrand(DefaultThemeSelection(), BrandConfig{PrimaryColor: "not-a-color"})
+	if theme.Tokens.Colors["primary"] != preset.Tokens.Colors["primary"] {
+		t.Fatalf("expected invalid brand color to be ignored, got %q", theme.Tokens.Colors["primary"])
 	}
 }
 

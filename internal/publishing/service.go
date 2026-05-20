@@ -1238,11 +1238,27 @@ func buildPublishedSnapshot(draft siteconfig.SiteDraft) siteconfig.PublishedSnap
 			DefaultLocale: defaultLocale,
 			SEO:           siteSEO,
 		},
+		Brand:       publishedBrand(draft),
 		Theme:       draft.Theme,
 		Navigation:  draft.Navigation,
 		Pages:       pages,
 		Collections: collections,
 	}
+}
+
+// publishedBrand guarantees the snapshot carries the minimum brand fields the
+// published validator requires. If the draft has no brand stored yet, fall back
+// to site.name for businessName and the theme's primary color so older drafts
+// authored before the brand column existed still pass publish validation.
+func publishedBrand(draft siteconfig.SiteDraft) siteconfig.BrandConfig {
+	brand := draft.Brand
+	if strings.TrimSpace(brand.BusinessName) == "" {
+		brand.BusinessName = draft.Site.Name
+	}
+	if strings.TrimSpace(brand.PrimaryColor) == "" {
+		brand.PrimaryColor = draft.Theme.Tokens.Colors["primary"]
+	}
+	return brand
 }
 
 // publishedCollections drops draft entries from the snapshot so only

@@ -1,8 +1,10 @@
 # Implementation Plan
 
-Refreshed 2026-05-21 from 16 spec-vs-code audits plus the newly-authored `specs/20-ai-authoring-ux.md`. The MVP shape is unchanged: anonymous prompt → generated site → editable draft → published hosted subdomain, with optional account claim and Stripe billing. Open items are sorted by priority tier; "Recently Confirmed Complete" preserves shipped history.
+Refreshed 2026-05-21 from 16 spec-vs-code audits plus the newly-authored `specs/20-ai-authoring-ux.md`, and again after landing the brand-entity foundation. The MVP shape is unchanged: anonymous prompt → generated site → editable draft → published hosted subdomain, with optional account claim and Stripe billing. Open items are sorted by priority tier; "Recently Confirmed Complete" preserves shipped history.
 
 ## Recently Confirmed Complete
+
+- [x] Brand as a first-class typed object (specs 3, 5, 11): new `BrandConfig` Go struct + TypeScript type carry `businessName`, optional `{assetId, alt}` logo, and `primaryColor`; SiteDraft and PublishedSnapshot expose `brand` alongside theme; new `000014_site_brand.sql` adds a `brand jsonb` column on `sites` and the sites reader/writer persist it atomically with the rest of the draft. The siteconfig validator enforces hex colors and required-on-publish; published snapshots fall back to `site.name` + theme primary so legacy drafts still ship. `siteconfig.BuildThemeWithBrand` overrides the palette's `primary` token with `brand.primaryColor` so theme update + regenerate continue to use brand as the source of the rendered primary, and theme regeneration passes the current brand to the model as a constraint. Generation seeds brand from the site name and selected palette primary, the generation input contract carries an optional brand from callers, and `applySiteIdentity` preserves brand across site reprompt.
 
 - [x] Collections module Phase 2 (spec 19): `collection_detail` templates now expand at publish time into one rendered HTML page per published entry under `/{collection.slug}/{entry.slug}`, with `block.bindings` substituting entry field values into the template's bound props before SSR. `collection_list` and `collection_index` blocks resolve their entry list from the snapshot at render time, link to the per-entry URLs, and the `stats` block ships its missing renderer alongside. Publish validation expands each template into expected entry paths, refuses templates whose collection has no published entries, and the manifest + sitemap include the per-entry URLs.
 - [x] Asset upload and image-library UI exist in the builder, including uploaded-asset selection in block editors.
@@ -60,10 +62,11 @@ Refreshed 2026-05-21 from 16 spec-vs-code audits plus the newly-authored `specs/
   - Settings UI under `apps/web/src/routes/app.sites.$siteId.settings.*` with DNS-TXT instructions and verification state, gated by paid entitlement (replace the static "locked" hint).
   - Acceptance: paid user attaches `example.com`, verifies via DNS TXT, TLS issues automatically, public render serves on that host.
 
-- [ ] Introduce the `brand` entity as a first-class typed object (specs 3, 5, 11).
-  - Add a `BrandConfig` Go struct, `brand` jsonb column on `sites`, top-level `brand` in `SiteDraft` (Go + TS), and a validator.
-  - Wire `brand.primaryColor` into theme regeneration so palette derivation per spec 11 is actually possible.
-  - Plumb brand through generation input (along with `preferredLanguage` / `optionalHints` — see Generation Hardening).
+- [ ] Brand follow-ups (specs 3, 5, 11) — foundation shipped; remaining work:
+  - Deterministic derivation of `secondary` / `accent` / `surface` / contrast tokens from `brand.primaryColor` (today `BuildThemeWithBrand` only overrides `primary`; the rest still come from the preset palette).
+  - Builder UI under `/app/sites/:siteId` for editing `brand.businessName`, `brand.logo`, and `brand.primaryColor`.
+  - Resolve `brand.businessName` and `brand.logo` from the Header/Footer renderers instead of per-block props (pairs with the footer-navigation item below).
+  - Plumb `preferredLanguage` / `optionalHints` through the generation input contract (see Generation Hardening).
 
 - [ ] Align theme tokens with spec 11 vocabulary.
   - Replace `--site-*` vars in `apps/web/src/lib/styles.ts` and themed renderer paths with `--color-*`, `--font-*`, `--radius-*`, `--space-sectionPaddingX/Y`.

@@ -134,7 +134,7 @@ func (s *Service) Update(ctx context.Context, workspaceID string, siteID string,
 		return ThemeState{}, err
 	}
 
-	draft.Theme = siteconfig.BuildTheme(selection)
+	draft.Theme = siteconfig.BuildThemeWithBrand(selection, draft.Brand)
 	if err := s.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
 		return ThemeState{}, err
 	}
@@ -173,7 +173,7 @@ func (s *Service) Regenerate(ctx context.Context, workspaceID string, siteID str
 		return ThemeState{}, err
 	}
 
-	draft.Theme = siteconfig.BuildTheme(selection)
+	draft.Theme = siteconfig.BuildThemeWithBrand(selection, draft.Brand)
 	if err := s.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
 		return ThemeState{}, err
 	}

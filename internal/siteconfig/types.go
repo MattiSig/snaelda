@@ -2,10 +2,26 @@ package siteconfig
 
 type SiteDraft struct {
 	Site        DraftSite        `json:"site"`
+	Brand       BrandConfig      `json:"brand"`
 	Theme       ThemeConfig      `json:"theme"`
 	Navigation  NavigationConfig `json:"navigation"`
 	Pages       []PageDraft      `json:"pages"`
 	Collections []Collection     `json:"collections,omitempty"`
+}
+
+// BrandConfig captures the user-provided business identity that the theme
+// system and brand-aware blocks (Header, Footer, sometimes Hero) read from at
+// render time. Brand is a sibling to theme, not a child of it: brand is the
+// source of truth, theme is the derived rendering layer.
+type BrandConfig struct {
+	BusinessName string     `json:"businessName"`
+	Logo         *BrandLogo `json:"logo,omitempty"`
+	PrimaryColor string     `json:"primaryColor"`
+}
+
+type BrandLogo struct {
+	AssetID string `json:"assetId"`
+	Alt     string `json:"alt,omitempty"`
 }
 
 type DraftSite struct {
@@ -20,6 +36,7 @@ type DraftSite struct {
 type PublishedSnapshot struct {
 	SchemaVersion string           `json:"schemaVersion"`
 	Site          PublishedSite    `json:"site"`
+	Brand         BrandConfig      `json:"brand"`
 	Theme         ThemeConfig      `json:"theme"`
 	Navigation    NavigationConfig `json:"navigation"`
 	Pages         []PageDraft      `json:"pages"`

@@ -160,6 +160,10 @@ function buildDraft(): SiteDraft {
         description: 'Warm, small-business websites spun up from a prompt.',
       },
     },
+    brand: {
+      businessName: 'Loom & Light',
+      primaryColor: '#8ee2d1',
+    },
     theme: {
       version: 'theme.v1',
       tokens: {

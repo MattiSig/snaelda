@@ -165,9 +165,11 @@ func (p *OpenAIPlanner) RegenerateThemeSelection(ctx context.Context, prompt str
 		"currentSelection":    siteconfig.DetectThemeSelection(draft.Theme),
 		"themeOptions":        siteconfig.DefaultThemeEditorCatalog(),
 		"draftSummary":        summarizeDraftForTheme(draft),
+		"brand":               draft.Brand,
 		"brandDirection":      "warm, crafted, friendly, a little silly, dependable",
 		"darkModeRequirement": true,
 		"darkModeDirection":   "warmer near-black/plum backgrounds, stronger contrast, brighter ribbon accents, calm readability",
+		"brandColorRule":      "If brand.primaryColor is set, the rendered theme will override the preset's primary color with brand.primaryColor; pick a palette whose secondary/accent harmonize with it.",
 	}
 	userJSON, err := json.Marshal(payload)
 	if err != nil {

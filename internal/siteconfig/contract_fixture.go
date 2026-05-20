@@ -33,6 +33,10 @@ func BuildBlockRegistryContractFixture() BlockRegistryContractFixture {
 					Description: "Shared block-registry fixture proving Go validation and React rendering stay aligned.",
 				},
 			},
+			Brand: BrandConfig{
+				BusinessName: "Registry Contract Studio",
+				PrimaryColor: "#8ee2d1",
+			},
 			Theme: ThemeConfig{
 				Version: ThemeVersionV1,
 				Tokens: ThemeTokens{

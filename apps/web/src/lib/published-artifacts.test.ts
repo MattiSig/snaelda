@@ -37,6 +37,10 @@ function buildSnapshot(): PublishedSnapshot {
         description: 'Demo studio for spec-19 testing.',
       },
     },
+    brand: {
+      businessName: 'Demo Studio',
+      primaryColor: '#8ee2d1',
+    },
     theme: {
       version: 'theme.v1',
       tokens: {

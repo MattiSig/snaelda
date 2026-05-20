@@ -52,6 +52,7 @@ func ValidatePublishedSnapshot(snapshot PublishedSnapshot) error {
 func (v Validator) ValidateDraft(draft SiteDraft) error {
 	var c collector
 	v.validateDraftSite("site", draft.Site, &c)
+	validateBrand("brand", draft.Brand, false, &c)
 	v.validateTheme("theme", draft.Theme, &c)
 	collectionsByID := validateCollections("collections", draft.Collections, &c)
 	pageIDs := v.validatePages("pages", draft.Pages, false, collectionsByID, &c)
@@ -68,11 +69,39 @@ func (v Validator) ValidatePublishedSnapshot(snapshot PublishedSnapshot) error {
 	validateRequiredText("site.name", snapshot.Site.Name, 1, 120, &c)
 	v.validateLocale("site.defaultLocale", snapshot.Site.DefaultLocale, true, &c)
 	validateSEO("site.seo", snapshot.Site.SEO, true, &c)
+	validateBrand("brand", snapshot.Brand, true, &c)
 	v.validateTheme("theme", snapshot.Theme, &c)
 	collectionsByID := validateCollections("collections", snapshot.Collections, &c)
 	pageIDs := v.validatePages("pages", snapshot.Pages, true, collectionsByID, &c)
 	v.validateNavigation("navigation", snapshot.Navigation, pageIDs, &c)
 	return c.err()
+}
+
+func validateBrand(path string, brand BrandConfig, required bool, c *collector) {
+	hasAnyField := brand.BusinessName != "" || brand.PrimaryColor != "" || brand.Logo != nil
+	if !required && !hasAnyField {
+		return
+	}
+	if required {
+		validateRequiredText(child(path, "businessName"), brand.BusinessName, 1, 120, c)
+		if strings.TrimSpace(brand.PrimaryColor) == "" {
+			c.add(child(path, "primaryColor"), "required", "brand primary color is required")
+		}
+	} else if brand.BusinessName != "" {
+		validateRequiredText(child(path, "businessName"), brand.BusinessName, 1, 120, c)
+	}
+	if brand.PrimaryColor != "" && !hexColorPattern.MatchString(brand.PrimaryColor) {
+		c.add(child(path, "primaryColor"), "invalid_color", "brand primary color must be a hex color")
+	}
+	if brand.Logo != nil {
+		logoPath := child(path, "logo")
+		if strings.TrimSpace(brand.Logo.AssetID) == "" {
+			c.add(child(logoPath, "assetId"), "required", "brand logo assetId is required")
+		}
+		if brand.Logo.Alt != "" {
+			validateRequiredText(child(logoPath, "alt"), brand.Logo.Alt, 1, 200, c)
+		}
+	}
 }
 
 func (v Validator) validateDraftSite(path string, site DraftSite, c *collector) {

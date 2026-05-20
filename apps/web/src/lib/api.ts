@@ -69,6 +69,15 @@ export type SiteSummary = {
   pageCount: number;
 };
 
+export type BrandConfig = {
+  businessName: string;
+  logo?: {
+    assetId: string;
+    alt?: string;
+  };
+  primaryColor: string;
+};
+
 export type SiteDraft = {
   site: {
     id: string;
@@ -81,6 +90,7 @@ export type SiteDraft = {
       description?: string;
     };
   };
+  brand: BrandConfig;
   theme: {
     version: string;
     tokens: {
@@ -210,6 +220,7 @@ export type PublishedSnapshot = {
       description?: string;
     };
   };
+  brand: BrandConfig;
   theme: SiteDraft["theme"];
   navigation: SiteDraft["navigation"];
   pages: SiteDraft["pages"];
@@ -734,6 +745,7 @@ export async function generateSite(input: {
   name?: string;
   prompt: string;
   slug?: string;
+  brand?: BrandConfig;
 }) {
   return apiFetch<SiteRepromptResponse>("/api/sites/generate", {
     method: "POST",
