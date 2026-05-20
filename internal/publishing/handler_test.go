@@ -371,6 +371,40 @@ func TestGetPublishedArtifactByHostnameReturnsStoredArtifact(t *testing.T) {
 	}
 }
 
+func TestGetPublishedArtifactSetsETagAndCacheControl(t *testing.T) {
+	publisher := &fakePublisher{}
+	handler := Handler{service: publisher}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/public/artifact?siteSlug=nordic-studio&path=robots.txt", nil)
+	res := httptest.NewRecorder()
+
+	handler.getPublishedArtifact(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	etag := res.Header().Get("ETag")
+	if etag == "" {
+		t.Fatal("expected ETag header on artifact response")
+	}
+	cacheControl := res.Header().Get("Cache-Control")
+	if cacheControl == "" || strings.Contains(cacheControl, "no-store") {
+		t.Fatalf("expected cacheable Cache-Control, got %q", cacheControl)
+	}
+
+	// If-None-Match should produce a 304 response with the same ETag.
+	req304 := httptest.NewRequest(http.MethodGet, "/api/public/artifact?siteSlug=nordic-studio&path=robots.txt", nil)
+	req304.Header.Set("If-None-Match", etag)
+	res304 := httptest.NewRecorder()
+	handler.getPublishedArtifact(res304, req304)
+	if res304.Code != http.StatusNotModified {
+		t.Fatalf("expected 304 on If-None-Match, got %d", res304.Code)
+	}
+	if res304.Body.Len() > 0 {
+		t.Fatalf("expected empty body on 304, got %d bytes", res304.Body.Len())
+	}
+}
+
 func TestPublishValidationErrorsReturnBadRequest(t *testing.T) {
 	publisher := &fakePublisher{
 		err: siteconfig.ValidationError{Issues: []siteconfig.Issue{{Code: "required"}}},

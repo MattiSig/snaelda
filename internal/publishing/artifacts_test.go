@@ -122,6 +122,44 @@ func TestPublishRendersAndStoresArtifactsBeforeCommit(t *testing.T) {
 	}
 }
 
+func TestPublishCleansUpArtifactsWhenCommitFails(t *testing.T) {
+	failingTx := &fakeArtifactPublishTx{
+		siteID:         "00000000-0000-4000-8000-000000000201",
+		workspaceID:    "00000000-0000-4000-8000-000000000101",
+		siteSlug:       "nordic-studio",
+		versionID:      "00000000-0000-4000-8000-000000000701",
+		createdAt:      time.Date(2026, 5, 11, 9, 30, 0, 0, time.UTC),
+		nextVersion:    3,
+		commitFailsErr: errors.New("connection lost"),
+	}
+	db := &fakeArtifactPublishDB{tx: failingTx}
+	store := &fakeArtifactStore{}
+	service := Service{
+		db:               db,
+		reader:           fakeDraftReader{draft: buildArtifactDraft()},
+		renderer:         &fakeArtifactRenderer{bundle: validArtifactBundleForDraft()},
+		store:            store,
+		publicBaseURL:    "http://localhost:3000",
+		publicBaseDomain: "localhost",
+	}
+
+	_, err := service.Publish(
+		context.Background(),
+		"00000000-0000-4000-8000-000000000201",
+		"00000000-0000-4000-8000-000000000001",
+		PublishInput{PublishNote: "Launch day"},
+	)
+	if err == nil {
+		t.Fatal("expected publish error from commit failure")
+	}
+	if store.deleteCount != 1 {
+		t.Fatalf("expected orphan cleanup to delete saved artifacts, got %d delete calls", store.deleteCount)
+	}
+	if store.deletedSiteID != "00000000-0000-4000-8000-000000000201" || store.deletedVersionID != "00000000-0000-4000-8000-000000000701" {
+		t.Fatalf("expected cleanup to target the saved version, got site=%q version=%q", store.deletedSiteID, store.deletedVersionID)
+	}
+}
+
 func TestPublishDoesNotMarkSiteLiveWhenArtifactStorageFails(t *testing.T) {
 	db := &fakeArtifactPublishDB{
 		tx: &fakeArtifactPublishTx{
@@ -156,6 +194,36 @@ func TestPublishDoesNotMarkSiteLiveWhenArtifactStorageFails(t *testing.T) {
 	}
 	if db.tx.committed {
 		t.Fatal("expected publish transaction not to commit")
+	}
+}
+
+func TestInvalidateHostnameDropsCachedDomainAndPages(t *testing.T) {
+	cache := newMemoryPublishedSiteCache()
+	lookup := publishedSiteLookup{
+		SiteSlug: "nordic-studio",
+		Hostname: "studio.example.com",
+		Version: VersionSummary{
+			ID:            "00000000-0000-4000-8000-000000000600",
+			SiteID:        "00000000-0000-4000-8000-000000000201",
+			VersionNumber: 1,
+		},
+	}
+	cache.StoreDomain("studio.example.com", lookup)
+	cache.StorePage(lookup.Version.SiteID, lookup.Version.ID, "/", PublishedPageArtifact{
+		PagePath:     "/",
+		Title:        "Home",
+		Description:  "Home of Nordic Studio.",
+		CanonicalURL: "https://studio.example.com/",
+	})
+
+	service := &Service{cache: cache}
+	service.InvalidateHostname(context.Background(), "studio.example.com")
+
+	if _, ok := cache.LoadDomain("studio.example.com"); ok {
+		t.Fatal("expected hostname cache entry to be removed")
+	}
+	if _, ok := cache.LoadPage(lookup.Version.SiteID, lookup.Version.ID, "/"); ok {
+		t.Fatal("expected page cache entry to be removed when hostname is invalidated")
 	}
 }
 
@@ -212,6 +280,62 @@ func TestPublishInvalidatesPublishedSiteCacheAfterCommit(t *testing.T) {
 	}
 	if _, ok := cache.LoadPage("00000000-0000-4000-8000-000000000201", "00000000-0000-4000-8000-000000000699", "/contact"); ok {
 		t.Fatal("expected publish to invalidate page cache")
+	}
+}
+
+func TestPublishRejectsIncompleteRenderedPageHTML(t *testing.T) {
+	db := &fakeArtifactPublishDB{
+		tx: &fakeArtifactPublishTx{
+			siteID:      "00000000-0000-4000-8000-000000000201",
+			workspaceID: "00000000-0000-4000-8000-000000000101",
+			siteSlug:    "nordic-studio",
+			versionID:   "00000000-0000-4000-8000-000000000701",
+			createdAt:   time.Date(2026, 5, 11, 9, 30, 0, 0, time.UTC),
+			nextVersion: 3,
+		},
+	}
+	bundle := validArtifactBundleForDraft()
+	for index := range bundle.Files {
+		if bundle.Files[index].Path == "pages/index.html" {
+			// Truncate the body so the bracket-balance check trips.
+			bundle.Files[index].Body = "<section>"
+		}
+	}
+
+	service := Service{
+		db:               db,
+		reader:           fakeDraftReader{draft: buildArtifactDraft()},
+		renderer:         &fakeArtifactRenderer{bundle: bundle},
+		store:            &fakeArtifactStore{},
+		publicBaseURL:    "http://localhost:3000",
+		publicBaseDomain: "localhost",
+	}
+
+	_, err := service.Publish(
+		context.Background(),
+		"00000000-0000-4000-8000-000000000201",
+		"00000000-0000-4000-8000-000000000001",
+		PublishInput{PublishNote: "Launch day"},
+	)
+	if err == nil {
+		t.Fatal("expected publish validation error for incomplete html body")
+	}
+	var validationErr siteconfig.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected validation error, got %v", err)
+	}
+	foundIssue := false
+	for _, issue := range validationErr.Issues {
+		if issue.Code == "incomplete_artifact_html" {
+			foundIssue = true
+			break
+		}
+	}
+	if !foundIssue {
+		t.Fatalf("expected incomplete_artifact_html issue, got %#v", validationErr.Issues)
+	}
+	if db.tx.liveVersionID != "" {
+		t.Fatalf("expected sites.published_version_id to stay unchanged, got %q", db.tx.liveVersionID)
 	}
 }
 
@@ -349,10 +473,14 @@ func (r *fakeArtifactRenderer) Render(_ context.Context, input ArtifactRenderInp
 }
 
 type fakeArtifactStore struct {
-	savedSiteID    string
-	savedVersionID string
-	savedBundle    ArtifactBundle
-	err            error
+	savedSiteID      string
+	savedVersionID   string
+	savedBundle      ArtifactBundle
+	deletedSiteID    string
+	deletedVersionID string
+	deleteCount      int
+	err              error
+	loadFn           func(ctx context.Context, siteID string, versionID string, path string) (ArtifactFile, error)
 }
 
 func (s *fakeArtifactStore) Save(_ context.Context, siteID string, versionID string, bundle ArtifactBundle) error {
@@ -362,8 +490,21 @@ func (s *fakeArtifactStore) Save(_ context.Context, siteID string, versionID str
 	return s.err
 }
 
-func (s *fakeArtifactStore) Load(context.Context, string, string, string) (ArtifactFile, error) {
+func (s *fakeArtifactStore) Load(ctx context.Context, siteID string, versionID string, path string) (ArtifactFile, error) {
+	if s != nil && s.loadFn != nil {
+		return s.loadFn(ctx, siteID, versionID, path)
+	}
 	return ArtifactFile{}, errors.New("load is not implemented in fakeArtifactStore")
+}
+
+func (s *fakeArtifactStore) Delete(_ context.Context, siteID string, versionID string) error {
+	if s == nil {
+		return nil
+	}
+	s.deletedSiteID = siteID
+	s.deletedVersionID = versionID
+	s.deleteCount++
+	return nil
 }
 
 type fakeArtifactPublishDB struct {
@@ -387,15 +528,16 @@ func (db *fakeArtifactPublishDB) BeginTx(context.Context, pgx.TxOptions) (pgx.Tx
 }
 
 type fakeArtifactPublishTx struct {
-	siteID        string
-	workspaceID   string
-	siteSlug      string
-	versionID     string
-	createdAt     time.Time
-	nextVersion   int
-	hostname      string
-	liveVersionID string
-	committed     bool
+	siteID         string
+	workspaceID    string
+	siteSlug       string
+	versionID      string
+	createdAt      time.Time
+	nextVersion    int
+	hostname       string
+	liveVersionID  string
+	committed      bool
+	commitFailsErr error
 }
 
 func (tx *fakeArtifactPublishTx) Begin(context.Context) (pgx.Tx, error) {
@@ -403,6 +545,9 @@ func (tx *fakeArtifactPublishTx) Begin(context.Context) (pgx.Tx, error) {
 }
 
 func (tx *fakeArtifactPublishTx) Commit(context.Context) error {
+	if tx.commitFailsErr != nil {
+		return tx.commitFailsErr
+	}
 	tx.committed = true
 	return nil
 }

@@ -11,6 +11,7 @@ type publishedSiteCache interface {
 	LoadPage(siteID string, versionID string, pagePath string) (PublishedPageArtifact, bool)
 	StorePage(siteID string, versionID string, pagePath string, page PublishedPageArtifact)
 	InvalidateSite(siteID string)
+	InvalidateHostname(hostname string)
 }
 
 type memoryPublishedSiteCache struct {
@@ -105,6 +106,36 @@ func (c *memoryPublishedSiteCache) InvalidateSite(siteID string) {
 			delete(c.pages, key)
 		}
 	}
+}
+
+// InvalidateHostname removes any cached entries keyed to a specific hostname
+// and drops the page cache for the site that hostname previously resolved to.
+// This is the right hook for domain activate/deactivate and hostname change
+// events that fire outside the publish/rollback flow.
+func (c *memoryPublishedSiteCache) InvalidateHostname(hostname string) {
+	if c == nil {
+		return
+	}
+	normalized := normalizeHostname(hostname)
+	if normalized == "" {
+		return
+	}
+
+	c.mu.Lock()
+	cachedSiteID := c.domainSiteIDs[normalized]
+	delete(c.domainSiteIDs, normalized)
+	delete(c.domainLookups, normalized)
+	if cachedSiteID == "" {
+		c.mu.Unlock()
+		return
+	}
+	prefix := cachedSiteID + ":"
+	for key := range c.pages {
+		if strings.HasPrefix(key, prefix) {
+			delete(c.pages, key)
+		}
+	}
+	c.mu.Unlock()
 }
 
 func pageCacheKey(siteID string, versionID string, pagePath string) string {

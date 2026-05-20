@@ -2,11 +2,7 @@ package publishing
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"os/exec"
-	"strings"
 
 	"github.com/MattiSig/snaelda/internal/siteconfig"
 )
@@ -55,54 +51,14 @@ type ArtifactRenderer interface {
 type ArtifactStore interface {
 	Save(ctx context.Context, siteID string, versionID string, bundle ArtifactBundle) error
 	Load(ctx context.Context, siteID string, versionID string, path string) (ArtifactFile, error)
+	Delete(ctx context.Context, siteID string, versionID string) error
 }
 
 var ErrArtifactNotFound = errors.New("published artifact not found")
 
-type commandArtifactRenderer struct {
-	publicBaseURL string
-}
-
-func newCommandArtifactRenderer(publicBaseURL string) ArtifactRenderer {
-	return &commandArtifactRenderer{publicBaseURL: strings.TrimSpace(publicBaseURL)}
-}
-
-func (r *commandArtifactRenderer) Render(ctx context.Context, input ArtifactRenderInput) (ArtifactBundle, error) {
-	payload := input
-	if strings.TrimSpace(payload.PublicBaseURL) == "" {
-		payload.PublicBaseURL = r.publicBaseURL
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return ArtifactBundle{}, fmt.Errorf("encode artifact render input: %w", err)
-	}
-
-	cmd := exec.CommandContext(
-		ctx,
-		"npm",
-		"run",
-		"--workspace",
-		"@snaelda/web",
-		"--silent",
-		"render:artifacts",
-	)
-	cmd.Stdin = strings.NewReader(string(body))
-
-	output, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return ArtifactBundle{}, fmt.Errorf("render published artifacts: %s", strings.TrimSpace(string(exitErr.Stderr)))
-		}
-		return ArtifactBundle{}, fmt.Errorf("render published artifacts: %w", err)
-	}
-
-	var bundle ArtifactBundle
-	if err := json.Unmarshal(output, &bundle); err != nil {
-		return ArtifactBundle{}, fmt.Errorf("decode rendered artifacts: %w", err)
-	}
-	if bundle.SchemaVersion == "" {
-		return ArtifactBundle{}, fmt.Errorf("decode rendered artifacts: missing schema version")
-	}
-	return bundle, nil
+// Closer is implemented by renderers and stores that hold long-lived resources
+// (e.g., a render worker process or an HTTP client connection pool) and need to
+// be released on graceful shutdown.
+type Closer interface {
+	Close() error
 }

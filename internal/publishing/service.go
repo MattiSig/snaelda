@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"path/filepath"
 	"strings"
@@ -90,6 +91,15 @@ type ServiceConfig struct {
 	Store            ArtifactStore
 	Cache            publishedSiteCache
 	AssetProvenance  AssetProvenanceLookup
+	CDNPurger        CDNPurger
+	Logger           *slog.Logger
+}
+
+// CDNPurger releases cached responses at the edge after a publish, rollback,
+// or domain change. The default implementation is nil (no CDN); production
+// deployments inject a Fastly/Cloudflare/etc. backed implementation here.
+type CDNPurger interface {
+	PurgeSite(ctx context.Context, siteID string, hostname string) error
 }
 
 // AssetProvenanceLookup retrieves provenance metadata (provider, author,
@@ -108,6 +118,8 @@ type Service struct {
 	publicBaseURL    string
 	publicBaseDomain string
 	assetProvenance  AssetProvenanceLookup
+	cdnPurger        CDNPurger
+	logger           *slog.Logger
 }
 
 type siteMetadata struct {
@@ -122,9 +134,16 @@ type publishedSiteLookup struct {
 }
 
 func NewService(db DB, cfg ServiceConfig) *Service {
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 	renderer := cfg.Renderer
 	if renderer == nil {
-		renderer = newCommandArtifactRenderer(cfg.PublicBaseURL)
+		renderer = NewWorkerArtifactRenderer(WorkerRendererConfig{
+			PublicBaseURL: cfg.PublicBaseURL,
+			Logger:        logger,
+		})
 	}
 	store := cfg.Store
 	if store == nil {
@@ -144,6 +163,8 @@ func NewService(db DB, cfg ServiceConfig) *Service {
 		publicBaseURL:    strings.TrimSpace(cfg.PublicBaseURL),
 		publicBaseDomain: normalizeHostname(cfg.PublicBaseDomain),
 		assetProvenance:  cfg.AssetProvenance,
+		cdnPurger:        cfg.CDNPurger,
+		logger:           logger,
 	}
 }
 
@@ -224,6 +245,17 @@ func (s *Service) Publish(ctx context.Context, siteID string, userID string, inp
 	if err := s.store.Save(ctx, siteID, version.ID, artifacts); err != nil {
 		return PublishResult{}, fmt.Errorf("store published artifacts: %w", err)
 	}
+	// If anything after this point fails before commit succeeds, the artifacts
+	// would be orphans referenced by no row in site_versions. Clean them up.
+	publishCommitted := false
+	defer func() {
+		if publishCommitted {
+			return
+		}
+		if err := s.store.Delete(context.Background(), siteID, version.ID); err != nil {
+			s.logger.Warn("clean up orphan published artifacts after failed publish", "siteId", siteID, "versionId", version.ID, "error", err.Error())
+		}
+	}()
 
 	tag, err := tx.Exec(ctx, `
 		update sites
@@ -257,7 +289,9 @@ func (s *Service) Publish(ctx context.Context, siteID string, userID string, inp
 	if err := tx.Commit(ctx); err != nil {
 		return PublishResult{}, fmt.Errorf("commit publish transaction: %w", err)
 	}
+	publishCommitted = true
 	s.invalidatePublishedSiteCache(siteID)
+	s.purgeCDN(ctx, siteID, hostname)
 
 	return PublishResult{
 		Version:  version,
@@ -312,6 +346,17 @@ func (s *Service) Rollback(ctx context.Context, siteID string, versionID string,
 		return RollbackResult{}, fmt.Errorf("load published version for rollback: %w", err)
 	}
 
+	// Refuse to promote a version whose rendered artifacts are missing —
+	// without them the public site would serve 404s on every page.
+	if s.store != nil {
+		if _, err := s.store.Load(ctx, siteID, versionID, "manifest.json"); err != nil {
+			if errors.Is(err, ErrArtifactNotFound) {
+				return RollbackResult{}, ErrVersionNotFound
+			}
+			return RollbackResult{}, fmt.Errorf("verify rollback artifacts: %w", err)
+		}
+	}
+
 	tag, err := tx.Exec(ctx, `
 		update sites
 		set published_version_id = $2::uuid,
@@ -346,6 +391,7 @@ func (s *Service) Rollback(ctx context.Context, siteID string, versionID string,
 		return RollbackResult{}, fmt.Errorf("commit rollback transaction: %w", err)
 	}
 	s.invalidatePublishedSiteCache(siteID)
+	s.purgeCDN(ctx, siteID, result.Hostname)
 
 	return result, nil
 }
@@ -592,6 +638,46 @@ func (s *Service) invalidatePublishedSiteCache(siteID string) {
 	s.cache.InvalidateSite(siteID)
 }
 
+// InvalidateSite drops the public render cache for a site. External callers
+// (e.g., the domains write API, slug changes, billing entitlement flips)
+// should call this when a site's public addressability changes.
+func (s *Service) InvalidateSite(ctx context.Context, siteID string) {
+	if s == nil {
+		return
+	}
+	s.invalidatePublishedSiteCache(siteID)
+	s.purgeCDN(ctx, siteID, "")
+}
+
+// InvalidateHostname drops the public render cache for a single hostname.
+// Use this when a custom domain is activated, deactivated, verified, or
+// renamed so cached lookups do not point at stale site/version data.
+func (s *Service) InvalidateHostname(ctx context.Context, hostname string) {
+	if s == nil {
+		return
+	}
+	if s.cache != nil {
+		s.cache.InvalidateHostname(hostname)
+	}
+	s.purgeCDN(ctx, "", hostname)
+}
+
+// purgeCDN releases the public cache for a site at the edge. It is a best
+// effort signal — failures are logged, not returned, because the public cache
+// will eventually catch up via ETag revalidation regardless.
+func (s *Service) purgeCDN(ctx context.Context, siteID string, hostname string) {
+	if s == nil || s.cdnPurger == nil {
+		return
+	}
+	if err := s.cdnPurger.PurgeSite(ctx, siteID, hostname); err != nil {
+		logger := s.logger
+		if logger == nil {
+			logger = slog.Default()
+		}
+		logger.Warn("cdn purge failed", "siteId", siteID, "hostname", hostname, "error", err.Error())
+	}
+}
+
 func validateArtifactBundle(bundle ArtifactBundle, snapshot siteconfig.PublishedSnapshot, siteSlug string, hostname string, version VersionSummary) error {
 	if strings.TrimSpace(bundle.SchemaVersion) != "published_artifacts.v1" {
 		return siteconfig.ValidationError{Issues: []siteconfig.Issue{{
@@ -692,12 +778,66 @@ func validateArtifactBundle(bundle ArtifactBundle, snapshot siteconfig.Published
 				Message: "publish artifact manifest page metadata is incomplete",
 			})
 		}
+
+		pageFile, ok := filesByPath[filepath.ToSlash(manifestPage.FilePath)]
+		if !ok {
+			// Already reported above via "missing_artifact"; do not double-report.
+			continue
+		}
+		if reason := htmlBodyIncompleteReason(pageFile.Body); reason != "" {
+			issues = append(issues, siteconfig.Issue{
+				Path:    "publish.artifacts." + manifestPage.FilePath,
+				Code:    "incomplete_artifact_html",
+				Message: "rendered page artifact is incomplete: " + reason,
+			})
+		}
 	}
 
 	if len(issues) > 0 {
 		return siteconfig.ValidationError{Issues: issues}
 	}
 	return nil
+}
+
+// htmlBodyIncompleteReason returns a non-empty reason string when a rendered
+// page artifact looks empty, malformed, or contains a known render-failure
+// marker. An empty return value means the body passes the structural sanity
+// checks performed at publish time.
+//
+// These checks are intentionally cheap and structural — they are not a full
+// HTML validator. The goal is to fail loudly when the renderer emits stub or
+// truncated content (which would otherwise ship to production).
+func htmlBodyIncompleteReason(body string) string {
+	trimmed := strings.TrimSpace(body)
+	if trimmed == "" {
+		return "body is empty"
+	}
+	// React's renderToStaticMarkup never emits "[object Object]"; its presence
+	// indicates a value leaked through a missing renderer for a prop. Treat
+	// these as render failures so they cannot be published.
+	if strings.Contains(trimmed, "[object Object]") {
+		return "body contains \"[object Object]\" render leak"
+	}
+	if strings.Contains(trimmed, "<!-- error:") {
+		return "body contains an error comment"
+	}
+	// Sanity-check that the body has at least one element with matching open
+	// and close brackets. Catches truncated streams where the renderer cut
+	// off mid-tag.
+	openCount := strings.Count(trimmed, "<")
+	closeCount := strings.Count(trimmed, ">")
+	if openCount == 0 || closeCount == 0 {
+		return "body has no HTML elements"
+	}
+	if openCount != closeCount {
+		return "body has unbalanced angle brackets"
+	}
+	// Require at least one closing tag, which proves at least one element was
+	// rendered through to completion (rather than leaving dangling text).
+	if !strings.Contains(trimmed, "</") {
+		return "body has no closing HTML tag"
+	}
+	return ""
 }
 
 func decodeArtifactManifest(body []byte) (ArtifactManifest, error) {

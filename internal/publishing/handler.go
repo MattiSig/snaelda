@@ -2,6 +2,8 @@ package publishing
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -320,10 +322,62 @@ func (h *Handler) getPublishedArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	body := []byte(result.File.Body)
+	etag := buildArtifactETag(result.Version.ID, body)
 	w.Header().Set("Content-Type", result.File.ContentType)
-	w.Header().Set("Cache-Control", "no-store")
+	// The URL path (e.g. /api/public/artifact?path=robots.txt) is not versioned,
+	// but the response body is keyed to the active published version. Use ETag
+	// validation so caches revalidate quickly and serve 304s when unchanged.
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", cacheControlForArtifact(artifactPath))
+	w.Header().Set("Vary", "Accept-Encoding")
+	w.Header().Add("Vary", "Host")
+	if ifNoneMatchMatches(r.Header.Get("If-None-Match"), etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
-	_, _ = io.WriteString(w, result.File.Body)
+	_, _ = w.Write(body)
+}
+
+func buildArtifactETag(versionID string, body []byte) string {
+	hash := sha256.Sum256(body)
+	return `"` + strings.TrimSpace(versionID) + ":" + hex.EncodeToString(hash[:8]) + `"`
+}
+
+func cacheControlForArtifact(artifactPath string) string {
+	switch {
+	case strings.HasSuffix(strings.ToLower(artifactPath), ".html"),
+		strings.HasSuffix(strings.ToLower(artifactPath), "/index.html"),
+		artifactPath == "manifest.json":
+		return "public, max-age=60, must-revalidate, stale-while-revalidate=600"
+	case strings.HasSuffix(strings.ToLower(artifactPath), ".xml"),
+		strings.HasSuffix(strings.ToLower(artifactPath), ".txt"):
+		return "public, max-age=300, stale-while-revalidate=3600"
+	default:
+		return "public, max-age=3600, stale-while-revalidate=86400"
+	}
+}
+
+func ifNoneMatchMatches(header string, etag string) bool {
+	header = strings.TrimSpace(header)
+	if header == "" || etag == "" {
+		return false
+	}
+	for _, candidate := range strings.Split(header, ",") {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "*" {
+			return true
+		}
+		// Strip weak prefix.
+		if strings.HasPrefix(candidate, "W/") {
+			candidate = strings.TrimPrefix(candidate, "W/")
+		}
+		if candidate == etag {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Handler) publicURL(siteSlug string, hostname string, pagePath string) string {

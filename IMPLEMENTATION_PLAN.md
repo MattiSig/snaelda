@@ -1,6 +1,6 @@
 # Implementation Plan
 
-Refreshed 2026-05-20 from 16 spec-vs-code audits plus the newly-authored `specs/20-ai-authoring-ux.md`. The MVP shape is unchanged: anonymous prompt → generated site → editable draft → published hosted subdomain, with optional account claim and Stripe billing. Open items are sorted by priority tier; "Recently Confirmed Complete" preserves shipped history.
+Refreshed 2026-05-21 from 16 spec-vs-code audits plus the newly-authored `specs/20-ai-authoring-ux.md`. The MVP shape is unchanged: anonymous prompt → generated site → editable draft → published hosted subdomain, with optional account claim and Stripe billing. Open items are sorted by priority tier; "Recently Confirmed Complete" preserves shipped history.
 
 ## Recently Confirmed Complete
 
@@ -42,16 +42,13 @@ Refreshed 2026-05-20 from 16 spec-vs-code audits plus the newly-authored `specs/
 - [x] Publish and rollback gate on `billing.EnforceSiteLimit` (mirroring `internal/sites/handler.go`) and surface `plan_limit_exceeded` to the builder publish panel.
 - [x] Per-IP rate limiting on auth endpoints (`magic-link request`, `magic-link verify`, `recovery-restore`, `recovery-issue`) via durable `auth_rate_limit_attempts` table; verify path tightened to spec-18 3/hour.
 - [x] Public artifact serving now requires manifest membership: `loadPublishedArtifact` validates the requested path against `manifest.Files` (with legacy fallback to known well-known artifacts) and the bundle builder emits the explicit allowlist.
-
-## MVP Release Blockers
-
-- [ ] Productionize publish-artifact pipeline (specs 09, 16).
-  - Replace the `npm run --workspace @snaelda/web render:artifacts` shell-out at `internal/publishing/artifacts.go:80-89` with an in-process renderer or long-lived render worker.
-  - Move artifact storage from `internal/publishing/local_artifacts.go` to S3/SeaweedFS; the bucket is already in compose.
-  - Fix the save→commit ordering risk between disk write and DB commit; ensure rollback verifies artifact existence before promoting.
-  - Replace `Cache-Control: no-store` on artifact responses with versioned immutable caching plus CDN purge on publish.
-  - Replace the in-process `sync.Map` render cache; invalidate domain cache on domain activate/deactivate and hostname change, not only on publish/rollback.
-  - Extend `validateArtifactBundle` to assert HTML body completeness, not just file presence.
+- [x] Productionize publish-artifact pipeline (specs 09, 16):
+  - Replaced the `npm run` per-publish shell-out with a long-lived Node render worker (newline-delimited JSON over stdin/stdout) in `internal/publishing/worker_renderer.go`, restarting on crash.
+  - Added `internal/publishing/s3_artifacts.go` plus a `PUBLISHED_ARTIFACTS_BACKEND=s3` toggle so published artifacts are persisted to the S3/SeaweedFS bucket already in compose.
+  - Publish now cleans up orphan artifacts when the commit fails, and rollback refuses to promote a version whose manifest is missing from the store.
+  - Artifact responses now carry an `ETag` keyed on the published version plus tiered `Cache-Control` (HTML revalidates quickly; static crawl files cache longer) with built-in `If-None-Match` → 304 support and an injectable `CDNPurger` hook fired on publish/rollback.
+  - Cache exposes `InvalidateHostname`/`InvalidateSite` so the upcoming custom-domain write API can invalidate without depending on a publish event.
+  - `validateArtifactBundle` now asserts each rendered page's HTML body via balanced-tag and closing-tag structural checks, rejecting truncated or empty renders before they ship.
 
 ## Core Spec Gaps
 

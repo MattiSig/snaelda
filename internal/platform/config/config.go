@@ -42,9 +42,12 @@ type Config struct {
 	AuthAccessTokenTTL     time.Duration
 	AuthRefreshTokenTTL    time.Duration
 	AuthCookieSecure       bool
-	PreviewTokenTTL        time.Duration
-	PublishedArtifactsDir  string
-	S3Endpoint             string
+	PreviewTokenTTL              time.Duration
+	PublishedArtifactsDir        string
+	PublishedArtifactsBackend    string
+	PublishedArtifactsS3Bucket   string
+	PublishedArtifactsS3Prefix   string
+	S3Endpoint                   string
 	S3Bucket               string
 	S3Region               string
 	S3AccessKeyID          string
@@ -110,9 +113,12 @@ func Load() (Config, error) {
 		AuthAccessTokenTTL:     accessTokenTTL,
 		AuthRefreshTokenTTL:    refreshTokenTTL,
 		AuthCookieSecure:       cookieSecure,
-		PreviewTokenTTL:        previewTokenTTL,
-		PublishedArtifactsDir:  env.get("PUBLISHED_ARTIFACTS_DIR", "var/published-artifacts"),
-		S3Endpoint:             env.get("S3_ENDPOINT", "http://localhost:8333"),
+		PreviewTokenTTL:              previewTokenTTL,
+		PublishedArtifactsDir:        env.get("PUBLISHED_ARTIFACTS_DIR", "var/published-artifacts"),
+		PublishedArtifactsBackend:    strings.ToLower(strings.TrimSpace(env.lookup("PUBLISHED_ARTIFACTS_BACKEND"))),
+		PublishedArtifactsS3Bucket:   strings.TrimSpace(env.lookup("PUBLISHED_ARTIFACTS_S3_BUCKET")),
+		PublishedArtifactsS3Prefix:   strings.TrimSpace(env.get("PUBLISHED_ARTIFACTS_S3_PREFIX", "published-artifacts")),
+		S3Endpoint:                   env.get("S3_ENDPOINT", "http://localhost:8333"),
 		S3Bucket:               env.get("S3_BUCKET", "snaelda-local"),
 		S3Region:               env.get("S3_REGION", "us-east-1"),
 		S3AccessKeyID:          env.get("S3_ACCESS_KEY_ID", "snaelda"),
@@ -160,6 +166,24 @@ func Load() (Config, error) {
 	}
 	if cfg.PublicBaseDomain == "" {
 		return Config{}, fmt.Errorf("PUBLIC_BASE_DOMAIN is required")
+	}
+	if cfg.PublishedArtifactsS3Bucket == "" {
+		cfg.PublishedArtifactsS3Bucket = cfg.S3Bucket
+	}
+	if cfg.PublishedArtifactsBackend == "" {
+		if cfg.PublishedArtifactsS3Bucket != "" {
+			cfg.PublishedArtifactsBackend = "s3"
+		} else {
+			cfg.PublishedArtifactsBackend = "local"
+		}
+	}
+	switch cfg.PublishedArtifactsBackend {
+	case "s3", "local":
+	default:
+		return Config{}, fmt.Errorf("PUBLISHED_ARTIFACTS_BACKEND must be one of s3, local")
+	}
+	if cfg.PublishedArtifactsBackend == "s3" && cfg.PublishedArtifactsS3Bucket == "" {
+		return Config{}, fmt.Errorf("PUBLISHED_ARTIFACTS_S3_BUCKET (or S3_BUCKET) is required when PUBLISHED_ARTIFACTS_BACKEND=s3")
 	}
 	if (cfg.StripeSecretKey != "" || cfg.StripeWebhookSecret != "" || cfg.StripePriceBasic != "" || cfg.StripePricePro != "" || cfg.StripePriceOnceOver != "") &&
 		(cfg.BillingSuccessURL == "" || cfg.BillingCancelURL == "" || cfg.BillingPortalReturnURL == "") {

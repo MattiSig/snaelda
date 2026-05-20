@@ -25,6 +25,10 @@ import (
 	"github.com/MattiSig/snaelda/internal/sites"
 	"github.com/MattiSig/snaelda/internal/themes"
 	"github.com/MattiSig/snaelda/internal/workspaces"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awscfg "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 type ServerConfig struct {
@@ -213,6 +217,15 @@ func (s *Server) Handler() http.Handler {
 			PublicBaseURL:    s.config.PublicBaseURL,
 			PublicBaseDomain: s.config.PublicBaseDomain,
 			ArtifactsDir:     s.config.PublishedArtifactsDir,
+			Logger:           s.logger,
+		}
+		if strings.EqualFold(s.config.PublishedArtifactsBackend, "s3") {
+			artifactStore, err := s.newPublishedArtifactsS3Store()
+			if err != nil {
+				s.logger.Error("configure published artifacts S3 store", "error", err)
+			} else {
+				publishConfig.Store = artifactStore
+			}
 		}
 		if assetService != nil {
 			publishConfig.AssetProvenance = assetService
@@ -527,6 +540,32 @@ func (r *statusRecorder) Write(body []byte) (int, error) {
 		r.status = http.StatusOK
 	}
 	return r.ResponseWriter.Write(body)
+}
+
+func (s *Server) newPublishedArtifactsS3Store() (publishing.ArtifactStore, error) {
+	awsConfig, err := awscfg.LoadDefaultConfig(
+		context.Background(),
+		awscfg.WithRegion(firstNonEmpty(s.config.S3Region, "us-east-1")),
+		awscfg.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+			s.config.S3AccessKeyID,
+			s.config.S3SecretAccessKey,
+			"",
+		)),
+	)
+	if err != nil {
+		return nil, err
+	}
+	client := s3.NewFromConfig(awsConfig, func(options *s3.Options) {
+		options.UsePathStyle = s.config.S3ForcePathStyle
+		if endpoint := strings.TrimSpace(s.config.S3Endpoint); endpoint != "" {
+			options.BaseEndpoint = aws.String(endpoint)
+		}
+	})
+	return publishing.NewS3ArtifactStore(publishing.S3ArtifactStoreConfig{
+		Client: client,
+		Bucket: s.config.PublishedArtifactsS3Bucket,
+		Prefix: s.config.PublishedArtifactsS3Prefix,
+	})
 }
 
 func firstNonEmpty(value string, fallback string) string {

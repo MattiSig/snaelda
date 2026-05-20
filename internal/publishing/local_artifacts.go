@@ -60,6 +60,20 @@ func (s *localArtifactStore) Save(_ context.Context, siteID string, versionID st
 	return nil
 }
 
+func (s *localArtifactStore) Delete(_ context.Context, siteID string, versionID string) error {
+	if strings.TrimSpace(siteID) == "" || strings.TrimSpace(versionID) == "" {
+		return nil
+	}
+	if strings.TrimSpace(s.rootDir) == "" {
+		return nil
+	}
+	targetDir := filepath.Join(s.rootDir, siteID, versionID)
+	if err := os.RemoveAll(targetDir); err != nil {
+		return fmt.Errorf("delete artifact version: %w", err)
+	}
+	return nil
+}
+
 func (s *localArtifactStore) Load(_ context.Context, siteID string, versionID string, path string) (ArtifactFile, error) {
 	if strings.TrimSpace(siteID) == "" {
 		return ArtifactFile{}, fmt.Errorf("load artifacts: site id is required")

@@ -211,6 +211,39 @@ func TestRollbackRejectsUnknownVersion(t *testing.T) {
 	}
 }
 
+func TestRollbackRequiresArtifactsForTargetVersion(t *testing.T) {
+	store := newFakePublishingStore()
+	// fakeArtifactStore.Load always errors so rollback's manifest check fails.
+	missingStore := &fakeArtifactStore{
+		loadFn: func(context.Context, string, string, string) (ArtifactFile, error) {
+			return ArtifactFile{}, ErrArtifactNotFound
+		},
+	}
+	service := Service{
+		db:               store,
+		store:            missingStore,
+		reader:           fakePublishingReader{},
+		publicBaseURL:    "http://localhost:3000",
+		publicBaseDomain: "localhost",
+	}
+
+	_, err := service.Rollback(
+		context.Background(),
+		"00000000-0000-4000-8000-000000000201",
+		"00000000-0000-4000-8000-000000000701",
+		"00000000-0000-4000-8000-000000000001",
+	)
+	if !errors.Is(err, ErrVersionNotFound) {
+		t.Fatalf("expected rollback to refuse promoting a version with no artifacts, got %v", err)
+	}
+	if store.tx.liveVersionID != "" {
+		t.Fatalf("expected sites.published_version_id to stay unchanged, got %q", store.tx.liveVersionID)
+	}
+	if store.tx.committed {
+		t.Fatal("expected rollback transaction not to commit when artifacts are missing")
+	}
+}
+
 type fakePublishingReader struct{}
 
 func (fakePublishingReader) ListSites(context.Context, string) ([]sites.Summary, error) {
@@ -326,9 +359,31 @@ func (s *fakePublishingStore) Save(context.Context, string, string, ArtifactBund
 	return errors.New("save is not implemented in fakePublishingStore")
 }
 
-func (s *fakePublishingStore) Load(_ context.Context, siteID string, versionID string, path string) (ArtifactFile, error) {
+func (s *fakePublishingStore) Delete(_ context.Context, siteID string, versionID string) error {
+	if s == nil {
+		return nil
+	}
+	if s.artifactFiles == nil {
+		return nil
+	}
 	if siteID != s.publishedVersion.SiteID || versionID != s.publishedVersion.ID {
+		return nil
+	}
+	s.artifactFiles = nil
+	return nil
+}
+
+func (s *fakePublishingStore) Load(_ context.Context, siteID string, versionID string, path string) (ArtifactFile, error) {
+	if siteID != s.publishedVersion.SiteID {
 		return ArtifactFile{}, ErrArtifactNotFound
+	}
+	// Treat all known versions of this site as having renderable artifacts so
+	// rollback tests can promote any version recorded in the fake store.
+	knownVersion := versionID == s.publishedVersion.ID
+	if !knownVersion {
+		if _, ok := s.tx.versions[versionID]; !ok {
+			return ArtifactFile{}, ErrArtifactNotFound
+		}
 	}
 	if len(s.artifactFiles) == 0 {
 		s.artifactFiles = buildFakePublishedArtifacts(s.publishedSiteSlug, s.publishedHostname, s.publishedVersion)
