@@ -122,12 +122,20 @@ type ThemeTokens struct {
 
 type NavigationConfig struct {
 	Primary []NavigationItem `json:"primary"`
+	Footer  []NavigationItem `json:"footer,omitempty"`
 }
 
 type NavigationItem struct {
 	Label  string `json:"label"`
 	PageID string `json:"pageId,omitempty"`
 	Href   string `json:"href,omitempty"`
+}
+
+type FooterContact struct {
+	Address string   `json:"address,omitempty"`
+	Phone   string   `json:"phone,omitempty"`
+	Email   string   `json:"email,omitempty"`
+	Hours   []string `json:"hours,omitempty"`
 }
 
 type FormDefinition struct {

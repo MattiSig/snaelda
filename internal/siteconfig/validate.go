@@ -275,8 +275,13 @@ func (v Validator) validateTheme(path string, theme ThemeConfig, c *collector) {
 }
 
 func (v Validator) validateNavigation(path string, navigation NavigationConfig, pageIDs map[string]bool, c *collector) {
-	for index, item := range navigation.Primary {
-		itemPath := fmt.Sprintf("%s.primary[%d]", path, index)
+	v.validateNavigationItems(path+".primary", navigation.Primary, pageIDs, c)
+	v.validateNavigationItems(path+".footer", navigation.Footer, pageIDs, c)
+}
+
+func (v Validator) validateNavigationItems(path string, items []NavigationItem, pageIDs map[string]bool, c *collector) {
+	for index, item := range items {
+		itemPath := fmt.Sprintf("%s[%d]", path, index)
 		validateRequiredText(child(itemPath, "label"), item.Label, 1, 60, c)
 		if item.PageID == "" && item.Href == "" {
 			c.add(itemPath, "required", "navigation item must include pageId or href")

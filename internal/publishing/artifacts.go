@@ -28,12 +28,14 @@ type ArtifactManifest struct {
 }
 
 type ArtifactManifestPage struct {
-	PageID       string `json:"pageId,omitempty"`
-	PagePath     string `json:"pagePath"`
-	FilePath     string `json:"filePath"`
-	Title        string `json:"title"`
-	Description  string `json:"description"`
-	CanonicalURL string `json:"canonicalUrl"`
+	PageID              string         `json:"pageId,omitempty"`
+	PagePath            string         `json:"pagePath"`
+	FilePath            string         `json:"filePath"`
+	Title               string         `json:"title"`
+	Description         string         `json:"description"`
+	CanonicalURL        string         `json:"canonicalUrl"`
+	OGImageURL          string         `json:"ogImageUrl,omitempty"`
+	LocalBusinessJSONLD map[string]any `json:"localBusinessJsonLd,omitempty"`
 }
 
 type ArtifactRenderInput struct {

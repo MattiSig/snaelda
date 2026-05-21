@@ -1,12 +1,15 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import type {
+  BrandConfig,
   BlockBinding,
   Collection,
   CollectionEntry,
+  FooterContact,
   PublishedSnapshot,
   SiteVersion,
 } from "@/lib/api";
 import { SiteDraftRenderer } from "@/components/SiteDraftRenderer";
+import { buildPublishedAssetURL } from "@/lib/assets";
 import { normalizePagePath } from "@/lib/public-site";
 import { buildSiteThemeStyle } from "@/lib/site-theme";
 
@@ -44,6 +47,8 @@ type PublishedArtifactManifest = {
     title: string;
     description: string;
     canonicalUrl: string;
+    ogImageUrl?: string;
+    localBusinessJsonLd?: Record<string, unknown>;
   }>;
   files: string[];
 };
@@ -55,6 +60,8 @@ type RenderedRoute = {
   title: string;
   description: string;
   canonicalUrl: string;
+  ogImageUrl?: string;
+  localBusinessJsonLd?: Record<string, unknown>;
   html: string;
 };
 
@@ -110,13 +117,24 @@ export function buildPublishedArtifactBundle(
     hostname: input.hostname || undefined,
     version: input.version,
     pages: renderedRoutes.map(
-      ({ pageId, pagePath, filePath, title, description, canonicalUrl }) => ({
+      ({
         pageId,
         pagePath,
         filePath,
         title,
         description,
         canonicalUrl,
+        ogImageUrl,
+        localBusinessJsonLd,
+      }) => ({
+        pageId,
+        pagePath,
+        filePath,
+        title,
+        description,
+        canonicalUrl,
+        ogImageUrl,
+        localBusinessJsonLd,
       }),
     ),
     files: [
@@ -160,6 +178,15 @@ function renderStaticOrIndexPage(
     input.snapshot.site.seo?.description ||
     `Visit ${input.snapshot.site.name}.`;
   const canonicalUrl = buildCanonicalURL(input, page.slug);
+  const ogImageUrl = deriveOGImageURL(input.siteSlug, page);
+  const localBusinessJsonLd = buildLocalBusinessJsonLd(
+    input.siteSlug,
+    input.snapshot.brand,
+    input.snapshot.site.name,
+    page,
+    canonicalUrl,
+    ogImageUrl,
+  );
 
   return {
     pageId: page.id,
@@ -168,6 +195,8 @@ function renderStaticOrIndexPage(
     title,
     description,
     canonicalUrl,
+    ogImageUrl,
+    localBusinessJsonLd,
     html: renderToStaticMarkup(
       <SiteDraftRenderer
         site={input.snapshot}
@@ -208,6 +237,15 @@ function renderCollectionEntry(
       candidate.id === templatePage.id ? transformedPage : candidate,
     ),
   };
+  const ogImageUrl = deriveOGImageURL(input.siteSlug, transformedPage);
+  const localBusinessJsonLd = buildLocalBusinessJsonLd(
+    input.siteSlug,
+    transformedSnapshot.brand,
+    transformedSnapshot.site.name,
+    transformedPage,
+    canonicalUrl,
+    ogImageUrl,
+  );
 
   return {
     pageId: templatePage.id,
@@ -216,6 +254,8 @@ function renderCollectionEntry(
     title,
     description,
     canonicalUrl,
+    ogImageUrl,
+    localBusinessJsonLd,
     html: renderToStaticMarkup(
       <SiteDraftRenderer
         site={transformedSnapshot}
@@ -277,13 +317,73 @@ function buildPublishedThemeCSS(snapshot: PublishedSnapshot) {
 function buildSitemapXML(manifest: PublishedArtifactManifest) {
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    '<urlset xmlns="https://www.sitemaps.org/schemas/sitemap/0.9">',
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
     ...manifest.pages.map(
       (page) => `  <url><loc>${escapeXML(page.canonicalUrl)}</loc></url>`,
     ),
     "</urlset>",
     "",
   ].join("\n");
+}
+
+function deriveOGImageURL(siteSlug: string, page: SnapshotPage) {
+  const hero = page.blocks.find((block) => block.type === "hero");
+  const image = hero ? asImageRef(hero.props.image) : null;
+  if (!image) {
+    return undefined;
+  }
+  return buildPublishedAssetURL(siteSlug, image.assetId);
+}
+
+function buildLocalBusinessJsonLd(
+  siteSlug: string,
+  brand: BrandConfig,
+  siteName: string,
+  page: SnapshotPage,
+  canonicalUrl: string,
+  ogImageUrl?: string,
+) {
+  const footer = page.blocks.find((block) => block.type === "footer");
+  if (!footer) {
+    return undefined;
+  }
+
+  const contact = asFooterContact(footer.props.contact);
+  if (!contact.address && (!contact.hours || contact.hours.length === 0)) {
+    return undefined;
+  }
+
+  const brandName = brand.businessName.trim() || siteName;
+  const result: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "LocalBusiness",
+    name: brandName,
+    url: canonicalUrl,
+  };
+
+  if (contact.address) {
+    result.address = {
+      "@type": "PostalAddress",
+      streetAddress: contact.address,
+    };
+  }
+  if (contact.phone) {
+    result.telephone = contact.phone;
+  }
+  if (contact.email) {
+    result.email = contact.email;
+  }
+  if (contact.hours?.length) {
+    result.openingHours = contact.hours;
+  }
+  if (ogImageUrl) {
+    result.image = ogImageUrl;
+  }
+  if (brand.logo?.assetId) {
+    result.logo = buildPublishedAssetURL(siteSlug, brand.logo.assetId);
+  }
+
+  return result;
 }
 
 function buildRobotsTXT(manifest: PublishedArtifactManifest) {
@@ -368,4 +468,49 @@ function escapeXML(value: string) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&apos;");
+}
+
+function asImageRef(value: unknown) {
+  const object = asObject(value);
+  if (!object) {
+    return null;
+  }
+  const assetId = asText(object.assetId);
+  if (!assetId) {
+    return null;
+  }
+  return {
+    assetId,
+    alt: asText(object.alt),
+  };
+}
+
+function asFooterContact(value: unknown): FooterContact {
+  const object = asObject(value);
+  if (!object) {
+    return {};
+  }
+  return {
+    address: asText(object.address) || undefined,
+    phone: asText(object.phone) || undefined,
+    email: asText(object.email) || undefined,
+    hours: asStringArray(object.hours),
+  };
+}
+
+function asObject(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function asText(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function asStringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : [];
 }

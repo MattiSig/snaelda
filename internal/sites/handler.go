@@ -127,6 +127,7 @@ type navigationItemRequest struct {
 
 type updateNavigationRequest struct {
 	Primary []navigationItemRequest `json:"primary"`
+	Footer  []navigationItemRequest `json:"footer"`
 }
 
 type createBlockRequest struct {
@@ -482,16 +483,26 @@ func (h *Handler) updateNavigation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items := make([]siteconfig.NavigationItem, 0, len(payload.Primary))
+	navigation := siteconfig.NavigationConfig{
+		Primary: make([]siteconfig.NavigationItem, 0, len(payload.Primary)),
+		Footer:  make([]siteconfig.NavigationItem, 0, len(payload.Footer)),
+	}
 	for _, raw := range payload.Primary {
-		items = append(items, siteconfig.NavigationItem{
+		navigation.Primary = append(navigation.Primary, siteconfig.NavigationItem{
+			Label:  strings.TrimSpace(raw.Label),
+			PageID: strings.TrimSpace(raw.PageID),
+			Href:   strings.TrimSpace(raw.Href),
+		})
+	}
+	for _, raw := range payload.Footer {
+		navigation.Footer = append(navigation.Footer, siteconfig.NavigationItem{
 			Label:  strings.TrimSpace(raw.Label),
 			PageID: strings.TrimSpace(raw.PageID),
 			Href:   strings.TrimSpace(raw.Href),
 		})
 	}
 
-	draft, err := h.mutator.UpdateNavigation(r.Context(), scope.WorkspaceID, siteID, items)
+	draft, err := h.mutator.UpdateNavigation(r.Context(), scope.WorkspaceID, siteID, navigation)
 	if err != nil {
 		writeSiteError(w, err)
 		return

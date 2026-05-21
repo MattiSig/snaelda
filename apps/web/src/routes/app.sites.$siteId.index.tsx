@@ -62,6 +62,10 @@ import { actions, emptyState, form, ribbonPanel, text } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 
 type DraftPage = SiteDraft["pages"][number];
+type NavigationDraftState = {
+  primary: NavigationItemInput[];
+  footer: NavigationItemInput[];
+};
 
 export const Route = createFileRoute("/app/sites/$siteId/")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -137,11 +141,14 @@ function SiteDetail() {
   const [pageStatusMessage, setPageStatusMessage] = useState("");
   const [navigationErrorMessage, setNavigationErrorMessage] = useState("");
   const [navigationStatusMessage, setNavigationStatusMessage] = useState("");
-  const [navigationDraft, setNavigationDraft] = useState<NavigationItemInput[]>(
-    [],
-  );
-  const [externalLinkLabel, setExternalLinkLabel] = useState("");
-  const [externalLinkHref, setExternalLinkHref] = useState("");
+  const [navigationDraft, setNavigationDraft] = useState<NavigationDraftState>({
+    primary: [],
+    footer: [],
+  });
+  const [primaryExternalLinkLabel, setPrimaryExternalLinkLabel] = useState("");
+  const [primaryExternalLinkHref, setPrimaryExternalLinkHref] = useState("");
+  const [footerExternalLinkLabel, setFooterExternalLinkLabel] = useState("");
+  const [footerExternalLinkHref, setFooterExternalLinkHref] = useState("");
   const [blockErrorMessage, setBlockErrorMessage] = useState("");
   const [blockStatusMessage, setBlockStatusMessage] = useState("");
   const [themeErrorMessage, setThemeErrorMessage] = useState("");
@@ -495,36 +502,54 @@ function SiteDetail() {
   }
 
   function updateNavigationDraftItem(
+    section: keyof NavigationDraftState,
     index: number,
     patch: Partial<NavigationItemInput>,
   ) {
-    setNavigationDraft((items) =>
-      items.map((item, current) =>
+    setNavigationDraft((items) => ({
+      ...items,
+      [section]: items[section].map((item, current) =>
         current === index ? { ...item, ...patch } : item,
       ),
-    );
+    }));
     setNavigationStatusMessage("");
   }
 
-  function moveNavigationDraftItem(index: number, direction: -1 | 1) {
+  function moveNavigationDraftItem(
+    section: keyof NavigationDraftState,
+    index: number,
+    direction: -1 | 1,
+  ) {
     const nextIndex = index + direction;
-    if (nextIndex < 0 || nextIndex >= navigationDraft.length) {
+    if (nextIndex < 0 || nextIndex >= navigationDraft[section].length) {
       return;
     }
     setNavigationDraft((items) => {
-      const next = [...items];
+      const next = [...items[section]];
       [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
-      return next;
+      return {
+        ...items,
+        [section]: next,
+      };
     });
     setNavigationStatusMessage("");
   }
 
-  function removeNavigationDraftItem(index: number) {
-    setNavigationDraft((items) => items.filter((_, current) => current !== index));
+  function removeNavigationDraftItem(
+    section: keyof NavigationDraftState,
+    index: number,
+  ) {
+    setNavigationDraft((items) => ({
+      ...items,
+      [section]: items[section].filter((_, current) => current !== index),
+    }));
     setNavigationStatusMessage("");
   }
 
-  function addNavigationPageReference(pageId: string) {
+  function addNavigationPageReference(
+    section: keyof NavigationDraftState,
+    pageId: string,
+  ) {
     if (!draft) {
       return;
     }
@@ -532,26 +557,43 @@ function SiteDetail() {
     if (!page) {
       return;
     }
-    setNavigationDraft((items) => [
+    setNavigationDraft((items) => ({
       ...items,
-      { label: page.title, pageId: page.id },
-    ]);
+      [section]: [...items[section], { label: page.title, pageId: page.id }],
+    }));
     setNavigationStatusMessage("");
   }
 
-  function addNavigationExternalLink(event: FormEvent<HTMLFormElement>) {
+  function addNavigationExternalLink(
+    section: keyof NavigationDraftState,
+    event: FormEvent<HTMLFormElement>,
+  ) {
     event.preventDefault();
-    const label = externalLinkLabel.trim();
-    const href = externalLinkHref.trim();
+    const label =
+      section === "primary"
+        ? primaryExternalLinkLabel.trim()
+        : footerExternalLinkLabel.trim();
+    const href =
+      section === "primary"
+        ? primaryExternalLinkHref.trim()
+        : footerExternalLinkHref.trim();
     if (!label || !href) {
       setNavigationErrorMessage(
         "External links need both a label and a destination URL.",
       );
       return;
     }
-    setNavigationDraft((items) => [...items, { label, href }]);
-    setExternalLinkLabel("");
-    setExternalLinkHref("");
+    setNavigationDraft((items) => ({
+      ...items,
+      [section]: [...items[section], { label, href }],
+    }));
+    if (section === "primary") {
+      setPrimaryExternalLinkLabel("");
+      setPrimaryExternalLinkHref("");
+    } else {
+      setFooterExternalLinkLabel("");
+      setFooterExternalLinkHref("");
+    }
     setNavigationErrorMessage("");
     setNavigationStatusMessage("");
   }
@@ -562,11 +604,18 @@ function SiteDetail() {
     setNavigationStatusMessage("");
     clearBlockedAction();
 
-    const sanitized = navigationDraft.map((item) => ({
-      label: item.label.trim(),
-      pageId: item.pageId,
-      href: item.href,
-    }));
+    const sanitized = {
+      primary: navigationDraft.primary.map((item) => ({
+        label: item.label.trim(),
+        pageId: item.pageId,
+        href: item.href,
+      })),
+      footer: navigationDraft.footer.map((item) => ({
+        label: item.label.trim(),
+        pageId: item.pageId,
+        href: item.href,
+      })),
+    };
 
     try {
       const response = await updateSiteNavigation(siteId, sanitized);
@@ -1222,15 +1271,15 @@ function SiteDetail() {
     selectedPage && selectedBlock
       ? selectedPage.blocks.findIndex((block) => block.id === selectedBlock.id)
       : -1;
-  const navigationDraftPageIds = new Set(
-    navigationDraft
+  const primaryNavigationPageIds = new Set(
+    navigationDraft.primary
       .map((item) => item.pageId)
       .filter((id): id is string => Boolean(id)),
   );
   const navigationAvailablePages = draft.pages.filter(
-    (page) => !navigationDraftPageIds.has(page.id),
+    (page) => !primaryNavigationPageIds.has(page.id),
   );
-  const navigationIsDirty = !sameNavigationItems(
+  const navigationIsDirty = !sameNavigationDraft(
     navigationDraft,
     navigationItemsFromDraft(draft),
   );
@@ -1473,9 +1522,9 @@ function SiteDetail() {
           </p>
         </div>
 
-        {navigationDraft.length > 0 ? (
+        {navigationDraft.primary.length > 0 ? (
           <div className="grid gap-3">
-            {navigationDraft.map((item, index) => {
+            {navigationDraft.primary.map((item, index) => {
               const page = item.pageId
                 ? draft.pages.find((candidate) => candidate.id === item.pageId)
                 : null;
@@ -1500,7 +1549,7 @@ function SiteDetail() {
                       id={`nav-label-${index}`}
                       value={item.label}
                       onChange={(event) =>
-                        updateNavigationDraftItem(index, {
+                        updateNavigationDraftItem("primary", index, {
                           label: event.target.value,
                         })
                       }
@@ -1518,7 +1567,7 @@ function SiteDetail() {
                           id={`nav-href-${index}`}
                           value={item.href}
                           onChange={(event) =>
-                            updateNavigationDraftItem(index, {
+                            updateNavigationDraftItem("primary", index, {
                               href: event.target.value,
                             })
                           }
@@ -1534,7 +1583,7 @@ function SiteDetail() {
                       variant="plain"
                       className={actions.inlineLink}
                       disabled={index === 0 || isSavingNavigation}
-                      onClick={() => moveNavigationDraftItem(index, -1)}
+                      onClick={() => moveNavigationDraftItem("primary", index, -1)}
                     >
                       Move up
                     </Button>
@@ -1543,9 +1592,9 @@ function SiteDetail() {
                       variant="plain"
                       className={actions.inlineLink}
                       disabled={
-                        index === navigationDraft.length - 1 || isSavingNavigation
+                        index === navigationDraft.primary.length - 1 || isSavingNavigation
                       }
-                      onClick={() => moveNavigationDraftItem(index, 1)}
+                      onClick={() => moveNavigationDraftItem("primary", index, 1)}
                     >
                       Move down
                     </Button>
@@ -1554,7 +1603,7 @@ function SiteDetail() {
                       variant="plain"
                       className={actions.inlineLink}
                       disabled={isSavingNavigation}
-                      onClick={() => removeNavigationDraftItem(index)}
+                      onClick={() => removeNavigationDraftItem("primary", index)}
                     >
                       Remove
                     </Button>
@@ -1582,7 +1631,7 @@ function SiteDetail() {
                   variant="outline"
                   size="sm"
                   disabled={isSavingNavigation}
-                  onClick={() => addNavigationPageReference(page.id)}
+                  onClick={() => addNavigationPageReference("primary", page.id)}
                 >
                   + {page.title}
                 </Button>
@@ -1596,18 +1645,25 @@ function SiteDetail() {
           )}
         </div>
 
-        <form className={form.grid} onSubmit={addNavigationExternalLink}>
+        <form
+          className={form.grid}
+          onSubmit={(event) => addNavigationExternalLink("primary", event)}
+        >
           <p className={text.label}>Add an external link</p>
           <div className="grid gap-2 md:grid-cols-[1fr_2fr_auto]">
             <Input
-              value={externalLinkLabel}
-              onChange={(event) => setExternalLinkLabel(event.target.value)}
+              value={primaryExternalLinkLabel}
+              onChange={(event) =>
+                setPrimaryExternalLinkLabel(event.target.value)
+              }
               placeholder="Label"
               maxLength={60}
             />
             <Input
-              value={externalLinkHref}
-              onChange={(event) => setExternalLinkHref(event.target.value)}
+              value={primaryExternalLinkHref}
+              onChange={(event) =>
+                setPrimaryExternalLinkHref(event.target.value)
+              }
               placeholder="https://example.com"
             />
             <Button
@@ -1616,14 +1672,174 @@ function SiteDetail() {
               variant="outline"
               disabled={
                 isSavingNavigation ||
-                externalLinkLabel.trim() === "" ||
-                externalLinkHref.trim() === ""
+                primaryExternalLinkLabel.trim() === "" ||
+                primaryExternalLinkHref.trim() === ""
               }
             >
               Add link
             </Button>
           </div>
         </form>
+
+        <div className={workspaceInset}>
+          <div className="grid gap-2">
+            <p className={text.label}>Footer links</p>
+            <p className={form.hint}>
+              These links render in the footer block. They can reference pages
+              or external URLs and are independent of the main menu.
+            </p>
+          </div>
+          {navigationDraft.footer.length > 0 ? (
+            <div className="mt-4 grid gap-3">
+              {navigationDraft.footer.map((item, index) => {
+                const page = item.pageId
+                  ? draft.pages.find((candidate) => candidate.id === item.pageId)
+                  : null;
+                const subtitle = item.pageId
+                  ? page
+                    ? `Internal page · ${page.slug}`
+                    : "Internal page · missing"
+                  : `External link · ${item.href ?? ""}`;
+                return (
+                  <article
+                    key={`footer-${item.pageId ?? "ext"}-${item.href ?? ""}-${index}`}
+                    className={cn(workspaceRow, "items-start gap-4")}
+                  >
+                    <div className="grid flex-1 gap-2">
+                      <label
+                        htmlFor={`footer-nav-label-${index}`}
+                        className={text.label}
+                      >
+                        Footer label
+                      </label>
+                      <Input
+                        id={`footer-nav-label-${index}`}
+                        value={item.label}
+                        onChange={(event) =>
+                          updateNavigationDraftItem("footer", index, {
+                            label: event.target.value,
+                          })
+                        }
+                        maxLength={60}
+                      />
+                      {item.href !== undefined ? (
+                        <div className="grid gap-2">
+                          <label
+                            htmlFor={`footer-nav-href-${index}`}
+                            className={text.label}
+                          >
+                            External URL
+                          </label>
+                          <Input
+                            id={`footer-nav-href-${index}`}
+                            value={item.href}
+                            onChange={(event) =>
+                              updateNavigationDraftItem("footer", index, {
+                                href: event.target.value,
+                              })
+                            }
+                            placeholder="https://example.com"
+                          />
+                        </div>
+                      ) : null}
+                      <small className="text-[var(--paper-muted)]">{subtitle}</small>
+                    </div>
+                    <div className={cn(actions.row, "flex-col items-stretch")}>
+                      <Button
+                        type="button"
+                        variant="plain"
+                        className={actions.inlineLink}
+                        disabled={index === 0 || isSavingNavigation}
+                        onClick={() => moveNavigationDraftItem("footer", index, -1)}
+                      >
+                        Move up
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="plain"
+                        className={actions.inlineLink}
+                        disabled={
+                          index === navigationDraft.footer.length - 1 ||
+                          isSavingNavigation
+                        }
+                        onClick={() => moveNavigationDraftItem("footer", index, 1)}
+                      >
+                        Move down
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="plain"
+                        className={actions.inlineLink}
+                        disabled={isSavingNavigation}
+                        onClick={() => removeNavigationDraftItem("footer", index)}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="mt-4 rounded-[10px] border border-dashed border-border p-4">
+              <p className={text.p}>The footer link list is empty.</p>
+            </div>
+          )}
+
+          <div className="mt-4 grid gap-3">
+            <p className={text.label}>Add a footer page link</p>
+            <div className="flex flex-wrap gap-2">
+              {draft.pages.map((page) => (
+                <Button
+                  key={`footer-page-${page.id}`}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isSavingNavigation}
+                  onClick={() => addNavigationPageReference("footer", page.id)}
+                >
+                  + {page.title}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <form
+            className={cn(form.grid, "mt-4")}
+            onSubmit={(event) => addNavigationExternalLink("footer", event)}
+          >
+            <p className={text.label}>Add a footer external link</p>
+            <div className="grid gap-2 md:grid-cols-[1fr_2fr_auto]">
+              <Input
+                value={footerExternalLinkLabel}
+                onChange={(event) =>
+                  setFooterExternalLinkLabel(event.target.value)
+                }
+                placeholder="Label"
+                maxLength={60}
+              />
+              <Input
+                value={footerExternalLinkHref}
+                onChange={(event) =>
+                  setFooterExternalLinkHref(event.target.value)
+                }
+                placeholder="https://example.com"
+              />
+              <Button
+                type="submit"
+                size="sm"
+                variant="outline"
+                disabled={
+                  isSavingNavigation ||
+                  footerExternalLinkLabel.trim() === "" ||
+                  footerExternalLinkHref.trim() === ""
+                }
+              >
+                Add link
+              </Button>
+            </div>
+          </form>
+        </div>
 
         <div className={cn(actions.row, "flex-wrap")}>
           <Button
@@ -2457,22 +2673,32 @@ function findNewBlock(
   );
 }
 
-function navigationItemsFromDraft(draft: SiteDraft): NavigationItemInput[] {
-  const items: NavigationItemInput[] = [];
-  for (const item of draft.navigation.primary) {
+function navigationItemsFromDraft(draft: SiteDraft): NavigationDraftState {
+  return {
+    primary: normalizeNavigationItems(draft, draft.navigation.primary),
+    footer: normalizeNavigationItems(draft, draft.navigation.footer ?? []),
+  };
+}
+
+function normalizeNavigationItems(
+  draft: SiteDraft,
+  items: Array<{ label: string; pageId?: string; href?: string }>,
+) {
+  const normalized: NavigationItemInput[] = [];
+  for (const item of items) {
     if (item.pageId) {
       const page = draft.pages.find((candidate) => candidate.id === item.pageId);
       if (!page) {
         continue;
       }
-      items.push({ label: item.label, pageId: item.pageId });
+      normalized.push({ label: item.label, pageId: item.pageId });
       continue;
     }
     if (item.href) {
-      items.push({ label: item.label, href: item.href });
+      normalized.push({ label: item.label, href: item.href });
     }
   }
-  return items;
+  return normalized;
 }
 
 function sameNavigationItems(
@@ -2496,6 +2722,16 @@ function sameNavigationItems(
     }
   }
   return true;
+}
+
+function sameNavigationDraft(
+  left: NavigationDraftState,
+  right: NavigationDraftState,
+) {
+  return (
+    sameNavigationItems(left.primary, right.primary) &&
+    sameNavigationItems(left.footer, right.footer)
+  );
 }
 
 function moveItem<T extends { id: string }>(

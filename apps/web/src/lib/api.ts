@@ -78,6 +78,13 @@ export type BrandConfig = {
   primaryColor: string;
 };
 
+export type FooterContact = {
+  address?: string;
+  phone?: string;
+  email?: string;
+  hours?: string[];
+};
+
 export type SiteDraft = {
   site: {
     id: string;
@@ -102,6 +109,11 @@ export type SiteDraft = {
   };
   navigation: {
     primary: Array<{
+      label: string;
+      pageId?: string;
+      href?: string;
+    }>;
+    footer?: Array<{
       label: string;
       pageId?: string;
       href?: string;
@@ -454,6 +466,7 @@ export type BillingState = {
 export type PublishedSiteResponse = {
   siteSlug: string;
   hostname?: string;
+  brand?: BrandConfig;
   publicUrl: string;
   version: SiteVersion;
   pagePath: string;
@@ -462,6 +475,8 @@ export type PublishedSiteResponse = {
     title: string;
     description: string;
     canonicalUrl: string;
+    ogImageUrl?: string;
+    localBusinessJsonLd?: Record<string, unknown>;
     html: string;
   };
 };
@@ -997,14 +1012,17 @@ export type NavigationItemInput = {
 
 export async function updateSiteNavigation(
   siteId: string,
-  items: NavigationItemInput[],
+  navigation: {
+    primary: NavigationItemInput[];
+    footer: NavigationItemInput[];
+  },
 ) {
   return apiFetch<{ draft: SiteDraft }>(`/api/sites/${siteId}/navigation`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ primary: items }),
+    body: JSON.stringify(navigation),
   });
 }
 

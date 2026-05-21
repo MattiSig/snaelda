@@ -380,11 +380,11 @@ func (s *Service) RepromptPage(ctx context.Context, workspaceID string, userID s
 		UserID:      userID,
 		Action:      "page.reprompt",
 		Metadata: map[string]any{
-			"jobId":   jobID,
-			"pageId":  pageID,
-			"title":   pagePlan.Title,
-			"slug":    pagePlan.Slug,
-			"blocks":  len(pagePlan.Blocks),
+			"jobId":  jobID,
+			"pageId": pageID,
+			"title":  pagePlan.Title,
+			"slug":   pagePlan.Slug,
+			"blocks": len(pagePlan.Blocks),
 		},
 	})
 	return GenerateResult{
@@ -1791,12 +1791,11 @@ func footerBlockPlan(siteName string, profile promptProfile) generationBlockPlan
 		Type:    "footer",
 		Purpose: "Close the page with practical navigation and a final tone-setting line.",
 		Props: map[string]any{
-			"siteName":        siteName,
-			"tagline":         footerTagline(profile),
-			"contactLine":     "hello@example.com",
-			"copyright":       "Copyright 2026 " + siteName,
-			"navigationLinks": toAnySlice(footerNavigationLinks(profile)),
-			"socialLinks":     []any{},
+			"showBrand":   true,
+			"tagline":     footerTagline(profile),
+			"contact":     map[string]any{"email": "hello@example.com"},
+			"copyright":   "Copyright 2026 " + siteName,
+			"socialLinks": []any{},
 		},
 	}
 }

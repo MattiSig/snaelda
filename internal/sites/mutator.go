@@ -66,7 +66,7 @@ type Mutator interface {
 	DeletePage(ctx context.Context, workspaceID string, siteID string, pageID string) (siteconfig.SiteDraft, error)
 	ReorderPages(ctx context.Context, workspaceID string, siteID string, pageIDs []string) (siteconfig.SiteDraft, error)
 	ReorderNavigation(ctx context.Context, workspaceID string, siteID string, pageIDs []string) (siteconfig.SiteDraft, error)
-	UpdateNavigation(ctx context.Context, workspaceID string, siteID string, items []siteconfig.NavigationItem) (siteconfig.SiteDraft, error)
+	UpdateNavigation(ctx context.Context, workspaceID string, siteID string, navigation siteconfig.NavigationConfig) (siteconfig.SiteDraft, error)
 	CreateBlock(ctx context.Context, workspaceID string, siteID string, pageID string, input CreateBlockInput) (siteconfig.SiteDraft, error)
 	UpdateBlock(ctx context.Context, workspaceID string, siteID string, pageID string, blockID string, input UpdateBlockInput) (siteconfig.SiteDraft, error)
 	DeleteBlock(ctx context.Context, workspaceID string, siteID string, pageID string, blockID string) (siteconfig.SiteDraft, error)
@@ -208,9 +208,9 @@ func (m *PostgresMutator) CreateSite(ctx context.Context, workspaceID string, in
 		SiteID:      savedDraft.Site.ID,
 		Action:      "site.create",
 		Metadata: map[string]any{
-			"name":       savedDraft.Site.Name,
-			"slug":       savedDraft.Site.Slug,
-			"hasPrompt":  strings.TrimSpace(input.Prompt) != "",
+			"name":      savedDraft.Site.Name,
+			"slug":      savedDraft.Site.Slug,
+			"hasPrompt": strings.TrimSpace(input.Prompt) != "",
 		},
 	})
 	return savedDraft, nil
@@ -485,13 +485,13 @@ func (m *PostgresMutator) ReorderNavigation(ctx context.Context, workspaceID str
 	return m.reader.LoadDraft(ctx, siteID)
 }
 
-func (m *PostgresMutator) UpdateNavigation(ctx context.Context, workspaceID string, siteID string, items []siteconfig.NavigationItem) (siteconfig.SiteDraft, error) {
+func (m *PostgresMutator) UpdateNavigation(ctx context.Context, workspaceID string, siteID string, navigation siteconfig.NavigationConfig) (siteconfig.SiteDraft, error) {
 	draft, err := m.reader.LoadDraft(ctx, siteID)
 	if err != nil {
 		return siteconfig.SiteDraft{}, err
 	}
 
-	navigation, includedPageIDs, err := normalizeNavigationItems(items, draft.Pages)
+	navigation, includedPageIDs, err := normalizeNavigationItems(navigation, draft.Pages)
 	if err != nil {
 		return siteconfig.SiteDraft{}, err
 	}
@@ -947,7 +947,7 @@ func reorderBlocks(blocks []siteconfig.BlockInstance, blockIDs []string) ([]site
 }
 
 func normalizeNavigationItems(
-	items []siteconfig.NavigationItem,
+	navigation siteconfig.NavigationConfig,
 	pages []siteconfig.PageDraft,
 ) (siteconfig.NavigationConfig, map[string]bool, error) {
 	pageIDs := make(map[string]bool, len(pages))
@@ -955,34 +955,64 @@ func normalizeNavigationItems(
 		pageIDs[page.ID] = true
 	}
 
+	primary, includedPageIDs, err := normalizeNavigationSection(
+		navigation.Primary,
+		pageIDs,
+		true,
+	)
+	if err != nil {
+		return siteconfig.NavigationConfig{}, nil, err
+	}
+	footer, _, err := normalizeNavigationSection(
+		navigation.Footer,
+		pageIDs,
+		false,
+	)
+	if err != nil {
+		return siteconfig.NavigationConfig{}, nil, err
+	}
+
+	return siteconfig.NavigationConfig{
+		Primary: primary,
+		Footer:  footer,
+	}, includedPageIDs, nil
+}
+
+func normalizeNavigationSection(
+	items []siteconfig.NavigationItem,
+	pageIDs map[string]bool,
+	trackIncludedPages bool,
+) ([]siteconfig.NavigationItem, map[string]bool, error) {
 	normalized := make([]siteconfig.NavigationItem, 0, len(items))
 	seenPageIDs := make(map[string]bool, len(items))
 	includedPageIDs := make(map[string]bool, len(items))
 	for _, item := range items {
 		label := strings.TrimSpace(item.Label)
 		if label == "" {
-			return siteconfig.NavigationConfig{}, nil, ErrNavigationLabelRequired
+			return nil, nil, ErrNavigationLabelRequired
 		}
 		if len(label) > navigationLabelMaxLength {
-			return siteconfig.NavigationConfig{}, nil, ErrNavigationLabelTooLong
+			return nil, nil, ErrNavigationLabelTooLong
 		}
 
 		hasPageID := strings.TrimSpace(item.PageID) != ""
 		hasHref := strings.TrimSpace(item.Href) != ""
 		if hasPageID == hasHref {
-			return siteconfig.NavigationConfig{}, nil, ErrNavigationItemInvalid
+			return nil, nil, ErrNavigationItemInvalid
 		}
 
 		if hasPageID {
 			pageID := strings.TrimSpace(item.PageID)
 			if !pageIDs[pageID] {
-				return siteconfig.NavigationConfig{}, nil, ErrNavigationPageUnknown
+				return nil, nil, ErrNavigationPageUnknown
 			}
 			if seenPageIDs[pageID] {
-				return siteconfig.NavigationConfig{}, nil, ErrNavigationItemInvalid
+				return nil, nil, ErrNavigationItemInvalid
 			}
 			seenPageIDs[pageID] = true
-			includedPageIDs[pageID] = true
+			if trackIncludedPages {
+				includedPageIDs[pageID] = true
+			}
 			normalized = append(normalized, siteconfig.NavigationItem{
 				Label:  label,
 				PageID: pageID,
@@ -992,7 +1022,7 @@ func normalizeNavigationItems(
 
 		href := strings.TrimSpace(item.Href)
 		if err := siteconfig.ValidateURL(href); err != nil {
-			return siteconfig.NavigationConfig{}, nil, ErrNavigationHrefInvalid
+			return nil, nil, ErrNavigationHrefInvalid
 		}
 		normalized = append(normalized, siteconfig.NavigationItem{
 			Label: label,
@@ -1000,7 +1030,7 @@ func normalizeNavigationItems(
 		})
 	}
 
-	return siteconfig.NavigationConfig{Primary: normalized}, includedPageIDs, nil
+	return normalized, includedPageIDs, nil
 }
 
 func applyNavigationInclusion(pages []siteconfig.PageDraft, includedPageIDs map[string]bool) []siteconfig.PageDraft {

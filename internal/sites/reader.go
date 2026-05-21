@@ -629,6 +629,7 @@ func asIntValue(value any) int {
 func navigationFromPageRows(pages []pageRow) siteconfig.NavigationConfig {
 	navigation := siteconfig.NavigationConfig{
 		Primary: make([]siteconfig.NavigationItem, 0, len(pages)),
+		Footer:  []siteconfig.NavigationItem{},
 	}
 	for _, page := range pages {
 		if !pageIncludedInNavigation(page.Settings) {

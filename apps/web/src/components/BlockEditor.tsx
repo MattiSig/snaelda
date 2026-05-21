@@ -191,6 +191,16 @@ function FieldRenderer({
           emptyLabel={`Add ${field.label.toLowerCase()}`}
         />
       )
+    case 'object':
+      return (
+        <ObjectField
+          field={field}
+          value={value}
+          assetLibrary={assetLibrary}
+          onChange={onChange}
+          emptyLabel={`Add ${field.label.toLowerCase()}`}
+        />
+      )
     case 'asset':
       return (
         <AssetField
@@ -602,7 +612,11 @@ function buildObjectDefaults(fields: BlockEditorField[]) {
       result[field.name] = false
       return result
     }
-    if (field.control === 'link' || field.control === 'asset') {
+    if (
+      field.control === 'link' ||
+      field.control === 'asset' ||
+      field.control === 'object'
+    ) {
       result[field.name] = buildObjectDefaults(field.fields ?? [])
       return result
     }

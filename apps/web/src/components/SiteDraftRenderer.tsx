@@ -3,8 +3,10 @@ import { useState } from 'react'
 import {
   APIError,
   submitPublicForm,
+  type BrandConfig,
   type Collection,
   type CollectionEntry,
+  type FooterContact,
   type ImageCredit,
   type PublishedSnapshot,
   type SiteDraft,
@@ -18,7 +20,7 @@ import { buildSiteThemeStyle } from '@/lib/site-theme'
 import { preview, text } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 
-type RenderableSite = Pick<SiteDraft, 'theme' | 'navigation' | 'pages'> & {
+type RenderableSite = Pick<SiteDraft, 'brand' | 'theme' | 'navigation' | 'pages'> & {
   site: {
     id?: string
     name: string
@@ -111,7 +113,12 @@ export function SiteDraftRenderer({
       <header className={preview.header}>
         <div className={preview.headerInner}>
           <a className={preview.headerBrand} href={homeHref}>
-            {site.site.name}
+            <HeaderBrand
+              brand={site.brand}
+              siteName={site.site.name}
+              linkMode={linkMode}
+              siteSlug={siteSlug}
+            />
           </a>
           <nav className={preview.nav} aria-label="Site navigation">
             {site.navigation.primary.map((item) => (
@@ -175,6 +182,10 @@ export function SiteDraftRenderer({
                       page,
                       blockIndex,
                       siteID: site.site.id,
+                      brand: site.brand,
+                      navigation: site.navigation,
+                      pageAnchors,
+                      pageById,
                       slugToPage,
                       linkMode,
                       siteSlug,
@@ -262,6 +273,10 @@ function renderSiteBlock({
   page,
   blockIndex,
   siteID,
+  brand,
+  navigation,
+  pageAnchors,
+  pageById,
   slugToPage,
   linkMode,
   siteSlug,
@@ -272,6 +287,10 @@ function renderSiteBlock({
   page: RenderedPage
   blockIndex: number
   siteID?: string
+  brand: BrandConfig
+  navigation: SiteDraft['navigation']
+  pageAnchors: Map<string, string>
+  pageById: Map<string, RoutablePage>
   slugToPage: Map<string, RoutablePage>
   linkMode: 'anchors' | 'published'
   siteSlug?: string
@@ -444,6 +463,21 @@ function renderSiteBlock({
         <FooterBlock
           key={block.id}
           props={block.props}
+          brand={brand}
+          navigation={navigation}
+          linkMode={linkMode}
+          siteSlug={siteSlug}
+          resolveNavigationItemHref={(item) =>
+            resolveNavigationHref(
+              item,
+              pageAnchors,
+              pageById,
+              slugToPage,
+              linkMode,
+              siteSlug,
+              publishedBasePath,
+            )
+          }
           resolveHref={(href) =>
             resolvePageHref(
               href,
@@ -1277,39 +1311,75 @@ function TeamProfileCardsBlock({
 
 function FooterBlock({
   props,
+  brand,
+  navigation,
+  linkMode,
+  siteSlug,
+  resolveNavigationItemHref,
   resolveHref,
 }: {
   props: Record<string, unknown>
+  brand: BrandConfig
+  navigation: SiteDraft['navigation']
+  linkMode: 'anchors' | 'published'
+  siteSlug?: string
+  resolveNavigationItemHref: (item: { pageId?: string; href?: string }) => string
   resolveHref: (href: string) => string
 }) {
+  const brandName = resolveBrandName(brand, '')
+  const contact = asFooterContact(props.contact)
+  const footerNavigation =
+    (navigation.footer ?? []).length > 0
+      ? navigation.footer ?? []
+      : asArray(props.navigationLinks)
+  const showBrand = props.showBrand !== false
+
   return (
     <footer className={preview.footerShell}>
       <div className={preview.footerInner}>
         <div className="grid gap-3">
-          <h3 className="m-0 font-serif text-[1.4rem] font-bold leading-tight text-[var(--site-foreground)]">
-            {asText(props.siteName)}
-          </h3>
+          {showBrand ? (
+            <div className="flex items-center gap-3">
+              {brand?.logo ? (
+                <AssetImage
+                  image={{
+                    assetId: brand.logo.assetId,
+                    alt: brand.logo.alt || `${brandName} logo`,
+                  }}
+                  linkMode={linkMode}
+                  siteSlug={siteSlug}
+                  altFallback={`${brandName} logo`}
+                  className="h-10 w-10 rounded-full border border-[color-mix(in_oklch,var(--site-border)_52%,transparent)] object-cover"
+                />
+              ) : null}
+              <h3 className="m-0 font-serif text-[1.4rem] font-bold leading-tight text-[var(--site-foreground)]">
+                {brandName}
+              </h3>
+            </div>
+          ) : null}
           {asText(props.tagline) ? (
             <p className="m-0 max-w-[44ch] text-[color-mix(in_oklch,var(--site-foreground)_78%,var(--site-background))]">
               {asText(props.tagline)}
             </p>
           ) : null}
-          {asText(props.contactLine) ? (
-            <p className="m-0 text-sm text-[color-mix(in_oklch,var(--site-foreground)_72%,var(--site-background))]">
-              {asText(props.contactLine)}
-            </p>
-          ) : null}
+          <FooterContactDetails
+            contact={contact}
+            fallbackLine={asText(props.contactLine)}
+          />
         </div>
         <div className="grid gap-4 md:justify-self-end md:text-right">
-          {asArray(props.navigationLinks).length > 0 ? (
+          {footerNavigation.length > 0 ? (
             <div className={cn(preview.footerLinks, 'md:justify-end')}>
-              {asArray(props.navigationLinks).map((item, index) => {
+              {footerNavigation.map((item, index) => {
                 const value = asObject(item)
                 return (
                   <a
                     key={index}
                     className={preview.footerLink}
-                    href={resolveHref(asText(value?.href) || '#')}
+                    href={resolveNavigationItemHref({
+                      pageId: asText(value?.pageId) || undefined,
+                      href: asText(value?.href) || undefined,
+                    })}
                   >
                     {asText(value?.label)}
                   </a>
@@ -1343,6 +1413,85 @@ function FooterBlock({
         </div>
       ) : null}
     </footer>
+  )
+}
+
+function HeaderBrand({
+  brand,
+  siteName,
+  linkMode,
+  siteSlug,
+}: {
+  brand: BrandConfig
+  siteName: string
+  linkMode: 'anchors' | 'published'
+  siteSlug?: string
+}) {
+  const brandName = resolveBrandName(brand, siteName)
+
+  return (
+    <span className="flex items-center gap-3">
+      {brand?.logo ? (
+        <AssetImage
+          image={{
+            assetId: brand.logo.assetId,
+            alt: brand.logo.alt || `${brandName} logo`,
+          }}
+          linkMode={linkMode}
+          siteSlug={siteSlug}
+          altFallback={`${brandName} logo`}
+          className="h-10 w-10 rounded-full border border-[color-mix(in_oklch,var(--site-border)_52%,transparent)] object-cover"
+        />
+      ) : null}
+      <span>{brandName}</span>
+    </span>
+  )
+}
+
+function FooterContactDetails({
+  contact,
+  fallbackLine,
+}: {
+  contact: FooterContact
+  fallbackLine: string
+}) {
+  const lines = [
+    contact.address,
+    contact.phone,
+    contact.email,
+    ...(contact.hours ?? []),
+  ].filter(Boolean)
+
+  if (lines.length === 0 && !fallbackLine) {
+    return null
+  }
+
+  return (
+    <div className="grid gap-1 text-sm text-[color-mix(in_oklch,var(--site-foreground)_72%,var(--site-background))]">
+      {contact.address ? (
+        <p className="m-0 whitespace-pre-line">{contact.address}</p>
+      ) : null}
+      {contact.phone ? (
+        <p className="m-0">
+          <a className={preview.footerLink} href={`tel:${contact.phone}`}>
+            {contact.phone}
+          </a>
+        </p>
+      ) : null}
+      {contact.email ? (
+        <p className="m-0">
+          <a className={preview.footerLink} href={`mailto:${contact.email}`}>
+            {contact.email}
+          </a>
+        </p>
+      ) : null}
+      {(contact.hours ?? []).map((entry, index) => (
+        <p key={index} className="m-0">
+          {entry}
+        </p>
+      ))}
+      {lines.length === 0 && fallbackLine ? <p className="m-0">{fallbackLine}</p> : null}
+    </div>
   )
 }
 
@@ -1693,6 +1842,24 @@ function asImageRef(value: unknown) {
     assetId,
     alt: asText(object.alt),
   }
+}
+
+function asFooterContact(value: unknown): FooterContact {
+  const object = asObject(value)
+  if (!object) {
+    return {}
+  }
+
+  return {
+    address: asText(object.address) || undefined,
+    phone: asText(object.phone) || undefined,
+    email: asText(object.email) || undefined,
+    hours: asStringArray(object.hours),
+  }
+}
+
+function resolveBrandName(brand: BrandConfig | undefined, fallback: string) {
+  return asText(brand?.businessName) || fallback || 'Business'
 }
 
 function asArray(value: unknown) {

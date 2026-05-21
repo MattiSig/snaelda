@@ -7,6 +7,7 @@ Refreshed 2026-05-21 from 16 spec-vs-code audits plus the newly-authored `specs/
 - [x] Brand as a first-class typed object (specs 3, 5, 11): new `BrandConfig` Go struct + TypeScript type carry `businessName`, optional `{assetId, alt}` logo, and `primaryColor`; SiteDraft and PublishedSnapshot expose `brand` alongside theme; new `000014_site_brand.sql` adds a `brand jsonb` column on `sites` and the sites reader/writer persist it atomically with the rest of the draft. The siteconfig validator enforces hex colors and required-on-publish; published snapshots fall back to `site.name` + theme primary so legacy drafts still ship. `siteconfig.BuildThemeWithBrand` overrides the palette's `primary` token with `brand.primaryColor` so theme update + regenerate continue to use brand as the source of the rendered primary, and theme regeneration passes the current brand to the model as a constraint. Generation seeds brand from the site name and selected palette primary, the generation input contract carries an optional brand from callers, and `applySiteIdentity` preserves brand across site reprompt.
 
 - [x] Collections module Phase 2 (spec 19): `collection_detail` templates now expand at publish time into one rendered HTML page per published entry under `/{collection.slug}/{entry.slug}`, with `block.bindings` substituting entry field values into the template's bound props before SSR. `collection_list` and `collection_index` blocks resolve their entry list from the snapshot at render time, link to the per-entry URLs, and the `stats` block ships its missing renderer alongside. Publish validation expands each template into expected entry paths, refuses templates whose collection has no published entries, and the manifest + sitemap include the per-entry URLs.
+- [x] Footer/navigation/SEO spec-11 follow-through: `NavigationConfig` now carries both `primary` and `footer` link lists end to end, the builder navigation editor saves both sections, and the Footer renderer resolves its links from canonical site navigation instead of footer-local props. Footer blocks now use structured `contact.{address,phone,email,hours}` plus `showBrand`, and Header/Footer resolve `brand.businessName`/`brand.logo` from site context at render time. Published artifact manifests now carry derived `ogImageUrl` and `localBusinessJsonLd`, the public page head emits `og:image`, `twitter:image`, and `LocalBusiness` JSON-LD when the footer includes structured address/hours, and sitemap XML now uses the spec-required `http://www.sitemaps.org` namespace.
 - [x] Asset upload and image-library UI exist in the builder, including uploaded-asset selection in block editors.
 - [x] Contact-form submission storage and the chosen MVP moderation flow exist; email forwarding remains optional follow-up work, not unfinished core behavior.
 - [x] The 10-page limit is already enforced in validation, generation repair, the database, and publish preflight.
@@ -65,7 +66,6 @@ Refreshed 2026-05-21 from 16 spec-vs-code audits plus the newly-authored `specs/
 - [ ] Brand follow-ups (specs 3, 5, 11) — foundation shipped; remaining work:
   - Deterministic derivation of `secondary` / `accent` / `surface` / contrast tokens from `brand.primaryColor` (today `BuildThemeWithBrand` only overrides `primary`; the rest still come from the preset palette).
   - Builder UI under `/app/sites/:siteId` for editing `brand.businessName`, `brand.logo`, and `brand.primaryColor`.
-  - Resolve `brand.businessName` and `brand.logo` from the Header/Footer renderers instead of per-block props (pairs with the footer-navigation item below).
   - Plumb `preferredLanguage` / `optionalHints` through the generation input contract (see Generation Hardening).
 
 - [ ] Align theme tokens with spec 11 vocabulary.
@@ -73,18 +73,10 @@ Refreshed 2026-05-21 from 16 spec-vs-code audits plus the newly-authored `specs/
   - Add `headingWeight` / `bodyWeight` typography tokens and split single `sectionSpacing` into `sectionPaddingX` + `sectionPaddingY`.
   - Update `internal/siteconfig/themes.go` and the per-site `theme.css` artifact (already emitted) to use the new vocabulary.
 
-- [ ] Add footer navigation (specs 4, 11).
-  - Extend `NavigationConfig` in `internal/siteconfig/` beyond `Primary` to include `Footer`; surface in the navigation editor and renderer; thread through validation.
-  - Replace `validateFooterProps` (knows only `siteName`/`tagline`/`contactLine`) with structured `contact.{address,phone,email,hours}` + `showBrand` so LocalBusiness JSON-LD is generatable.
-
 - [ ] Make the block registry contract test cover every spec-required type by name, not just fixtures (the `stats`, `collection_list`, `collection_index`, and `collection_detail` blocks now exist but the contract test still asserts only sorted order, not spec coverage by name).
 
 - [ ] Make image `alt` required end-to-end (specs 4, 7).
   - `optionalImage` in `internal/siteconfig/blocks.go:923` allows missing alt; spec requires it at every layer including backend repair. Renderer must not silently fall back to `altFallback`.
-
-- [ ] Emit publish-time LocalBusiness JSON-LD and `og:image` (spec 9).
-  - Generate JSON-LD from the new structured footer/contact fields; add default `og:image` derivation from the hero asset.
-  - Fix sitemap namespace from `https://www.sitemaps.org` to `http://www.sitemaps.org` per spec.
 
 - [ ] Propagate `Page.status` (specs 3, 5, 6).
   - Column exists in DB but is never lifted into `PageDraft` (Go or TS); add to draft contract, generation output, validation, and the builder page settings UI.

@@ -31,6 +31,7 @@ export function buildPublishedPageHead(site?: PublishedSiteResponse | null) {
   const title = site.page.title;
   const description = site.page.description;
   const canonicalUrl = site.page.canonicalUrl || buildPublishedPageURL(site);
+  const brandName = site.brand?.businessName?.trim() || site.siteSlug;
 
   return {
     links: [{ rel: "canonical", href: canonicalUrl }],
@@ -38,21 +39,35 @@ export function buildPublishedPageHead(site?: PublishedSiteResponse | null) {
       { title },
       { name: "description", content: description },
       { property: "og:type", content: "website" },
-      { property: "og:site_name", content: site.siteSlug },
+      { property: "og:site_name", content: brandName },
       { property: "og:title", content: title },
       { property: "og:description", content: description },
       { property: "og:url", content: canonicalUrl },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:title", content: title },
       { name: "twitter:description", content: description },
+      ...(site.page.ogImageUrl
+        ? [
+            { property: "og:image", content: site.page.ogImageUrl },
+            { name: "twitter:image", content: site.page.ogImageUrl },
+          ]
+        : []),
     ],
+    scripts: site.page.localBusinessJsonLd
+      ? [
+          {
+            type: "application/ld+json",
+            children: JSON.stringify(site.page.localBusinessJsonLd),
+          },
+        ]
+      : [],
   };
 }
 
 export function buildAppSitemapXML(appBaseURL = getAppBaseURL()) {
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    '<urlset xmlns="https://www.sitemaps.org/schemas/sitemap/0.9">',
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
     `  <url><loc>${escapeXML(new URL("/", appBaseURL).toString())}</loc></url>`,
     `  <url><loc>${escapeXML(new URL("/login", appBaseURL).toString())}</loc></url>`,
     "</urlset>",

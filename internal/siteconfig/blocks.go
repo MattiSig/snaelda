@@ -2,6 +2,7 @@ package siteconfig
 
 import (
 	"fmt"
+	"net/mail"
 	"strings"
 )
 
@@ -553,30 +554,33 @@ func footerBlockDefinition() BlockDefinition {
 		DisplayName: "Footer",
 		Category:    BlockCategoryContent,
 		DefaultProps: map[string]any{
-			"siteName":  "Site name",
+			"showBrand": true,
 			"tagline":   "A short closing line that reinforces the tone of the site.",
-			"copyright": "Copyright 2026 Site name",
-			"navigationLinks": []any{
-				map[string]any{
-					"label": "Contact",
-					"href":  "/contact",
-				},
+			"contact": map[string]any{
+				"email": "hello@example.com",
 			},
+			"copyright": "Copyright 2026 Site name",
 		},
 		EditorSchema: []EditorField{
-			{Name: "siteName", Label: "Site name", Control: "text"},
+			{Name: "showBrand", Label: "Show business name and logo", Control: "checkbox"},
 			{Name: "tagline", Label: "Tagline", Control: "textarea"},
-			{Name: "contactLine", Label: "Contact line", Control: "text"},
-			{Name: "copyright", Label: "Copyright", Control: "text"},
 			{
-				Name:    "navigationLinks",
-				Label:   "Navigation links",
-				Control: "repeater",
-				ItemFields: []EditorField{
-					{Name: "label", Label: "Label", Control: "text"},
-					{Name: "href", Label: "Link", Control: "text", Placeholder: "/contact"},
+				Name:    "contact",
+				Label:   "Contact details",
+				Control: "object",
+				Fields: []EditorField{
+					{Name: "address", Label: "Address", Control: "textarea"},
+					{Name: "phone", Label: "Phone", Control: "text"},
+					{Name: "email", Label: "Email", Control: "text"},
+					{
+						Name:        "hours",
+						Label:       "Opening hours",
+						Control:     "string_list",
+						Description: "One line per schedule entry, for example Mon-Fri 09:00-17:00.",
+					},
 				},
 			},
+			{Name: "copyright", Label: "Copyright", Control: "text"},
 			{
 				Name:    "socialLinks",
 				Label:   "Social links",
@@ -888,9 +892,11 @@ func validateTeamProfileCardsProps(path string, props map[string]any, c *collect
 }
 
 func validateFooterProps(path string, props map[string]any, c *collector) {
-	requireKnownProps(path, props, c, "siteName", "tagline", "contactLine", "copyright", "navigationLinks", "socialLinks")
-	requireString(path, props, "siteName", 1, 120, c)
+	requireKnownProps(path, props, c, "showBrand", "tagline", "contact", "copyright", "socialLinks", "siteName", "contactLine", "navigationLinks")
+	optionalBool(path, props, "showBrand", c)
 	optionalString(path, props, "tagline", 240, c)
+	validateFooterContact(path, props, "contact", c)
+	optionalString(path, props, "siteName", 120, c)
 	optionalString(path, props, "contactLine", 180, c)
 	requireString(path, props, "copyright", 1, 120, c)
 	optionalLinkList(path, props, "navigationLinks", 0, 6, c)
@@ -1026,6 +1032,69 @@ func optionalImage(path string, props map[string]any, key string, c *collector) 
 	requireKnownProps(fieldPath, object, c, "assetId", "alt")
 	requireString(fieldPath, object, "assetId", 1, 120, c)
 	optionalString(fieldPath, object, "alt", 180, c)
+}
+
+func validateFooterContact(path string, props map[string]any, key string, c *collector) {
+	value, ok := props[key]
+	if !ok || value == nil {
+		return
+	}
+	object, ok := asObject(value)
+	fieldPath := child(path, key)
+	if !ok {
+		c.add(fieldPath, "invalid_type", key+" must be an object")
+		return
+	}
+	requireKnownProps(fieldPath, object, c, "address", "phone", "email", "hours")
+	optionalString(fieldPath, object, "address", 240, c)
+	optionalString(fieldPath, object, "phone", 40, c)
+	optionalString(fieldPath, object, "email", 160, c)
+	if email, _ := object["email"].(string); strings.TrimSpace(email) != "" && !validFooterEmail(email) {
+		c.add(child(fieldPath, "email"), "invalid_email", "email must be a valid address")
+	}
+	optionalStringList(fieldPath, object, "hours", 0, 14, 80, c)
+}
+
+func optionalBool(path string, props map[string]any, key string, c *collector) {
+	value, ok := props[key]
+	if !ok || value == nil {
+		return
+	}
+	if _, ok := value.(bool); !ok {
+		c.add(child(path, key), "invalid_type", key+" must be a boolean")
+	}
+}
+
+func optionalStringList(path string, props map[string]any, key string, minItems int, maxItems int, maxLength int, c *collector) {
+	value, ok := props[key]
+	if !ok || value == nil {
+		return
+	}
+	values, ok := asSlice(value)
+	fieldPath := child(path, key)
+	if !ok {
+		c.add(fieldPath, "invalid_type", key+" must be an array")
+		return
+	}
+	if len(values) < minItems || len(values) > maxItems {
+		c.add(fieldPath, "invalid_length", fmt.Sprintf("%s must include between %d and %d entries", key, minItems, maxItems))
+	}
+	for index, raw := range values {
+		text, ok := raw.(string)
+		itemPath := fmt.Sprintf("%s[%d]", fieldPath, index)
+		if !ok {
+			c.add(itemPath, "invalid_type", key+" entry must be a string")
+			continue
+		}
+		trimmed := strings.TrimSpace(text)
+		validateStringLength(itemPath, trimmed, 0, maxLength, c)
+		validatePlainText(itemPath, trimmed, c)
+	}
+}
+
+func validFooterEmail(value string) bool {
+	_, err := mail.ParseAddress(value)
+	return err == nil
 }
 
 func optionalLinkList(path string, props map[string]any, key string, minItems int, maxItems int, c *collector) {

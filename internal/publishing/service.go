@@ -67,12 +67,14 @@ type PublishedSiteResult struct {
 }
 
 type PublishedPageArtifact struct {
-	PageID       string `json:"pageId,omitempty"`
-	PagePath     string `json:"pagePath"`
-	Title        string `json:"title"`
-	Description  string `json:"description"`
-	CanonicalURL string `json:"canonicalUrl"`
-	HTML         string `json:"html"`
+	PageID              string         `json:"pageId,omitempty"`
+	PagePath            string         `json:"pagePath"`
+	Title               string         `json:"title"`
+	Description         string         `json:"description"`
+	CanonicalURL        string         `json:"canonicalUrl"`
+	OGImageURL          string         `json:"ogImageUrl,omitempty"`
+	LocalBusinessJSONLD map[string]any `json:"localBusinessJsonLd,omitempty"`
+	HTML                string         `json:"html"`
 }
 
 type PublishedArtifactResult struct {
@@ -934,12 +936,14 @@ func (s *Service) loadPublishedArtifactPage(ctx context.Context, lookup publishe
 	}
 
 	return PublishedPageArtifact{
-		PageID:       manifestPage.PageID,
-		PagePath:     pagePath,
-		Title:        manifestPage.Title,
-		Description:  manifestPage.Description,
-		CanonicalURL: manifestPage.CanonicalURL,
-		HTML:         pageFile.Body,
+		PageID:              manifestPage.PageID,
+		PagePath:            pagePath,
+		Title:               manifestPage.Title,
+		Description:         manifestPage.Description,
+		CanonicalURL:        manifestPage.CanonicalURL,
+		OGImageURL:          manifestPage.OGImageURL,
+		LocalBusinessJSONLD: manifestPage.LocalBusinessJSONLD,
+		HTML:                pageFile.Body,
 	}, nil
 }
 

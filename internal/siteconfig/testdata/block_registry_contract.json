@@ -408,21 +408,18 @@
       "displayName": "Footer",
       "category": "content",
       "defaultProps": {
+        "contact": {
+          "email": "hello@example.com"
+        },
         "copyright": "Copyright 2026 Site name",
-        "navigationLinks": [
-          {
-            "href": "/contact",
-            "label": "Contact"
-          }
-        ],
-        "siteName": "Site name",
+        "showBrand": true,
         "tagline": "A short closing line that reinforces the tone of the site."
       },
       "editorSchema": [
         {
-          "name": "siteName",
-          "label": "Site name",
-          "control": "text"
+          "name": "showBrand",
+          "label": "Show business name and logo",
+          "control": "checkbox"
         },
         {
           "name": "tagline",
@@ -430,32 +427,37 @@
           "control": "textarea"
         },
         {
-          "name": "contactLine",
-          "label": "Contact line",
-          "control": "text"
+          "name": "contact",
+          "label": "Contact details",
+          "control": "object",
+          "fields": [
+            {
+              "name": "address",
+              "label": "Address",
+              "control": "textarea"
+            },
+            {
+              "name": "phone",
+              "label": "Phone",
+              "control": "text"
+            },
+            {
+              "name": "email",
+              "label": "Email",
+              "control": "text"
+            },
+            {
+              "name": "hours",
+              "label": "Opening hours",
+              "control": "string_list",
+              "description": "One line per schedule entry, for example Mon-Fri 09:00-17:00."
+            }
+          ]
         },
         {
           "name": "copyright",
           "label": "Copyright",
           "control": "text"
-        },
-        {
-          "name": "navigationLinks",
-          "label": "Navigation links",
-          "control": "repeater",
-          "itemFields": [
-            {
-              "name": "label",
-              "label": "Label",
-              "control": "text"
-            },
-            {
-              "name": "href",
-              "label": "Link",
-              "control": "text",
-              "placeholder": "/contact"
-            }
-          ]
         },
         {
           "name": "socialLinks",
@@ -1170,14 +1172,11 @@
             "type": "footer",
             "version": "1.0.0",
             "props": {
+              "contact": {
+                "email": "hello@example.com"
+              },
               "copyright": "Copyright 2026 Site name",
-              "navigationLinks": [
-                {
-                  "href": "/contact",
-                  "label": "Contact"
-                }
-              ],
-              "siteName": "Site name",
+              "showBrand": true,
               "tagline": "A short closing line that reinforces the tone of the site."
             },
             "settings": {}

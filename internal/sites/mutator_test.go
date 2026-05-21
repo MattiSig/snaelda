@@ -582,11 +582,16 @@ func TestUpdateNavigationReplacesItemsAndReconcilesInclusion(t *testing.T) {
 		writer: store,
 	}
 
-	items := []siteconfig.NavigationItem{
-		{Label: "Welcome", PageID: "page_home"},
-		{Label: "Instagram", Href: "https://example.com/instagram"},
+	navigation := siteconfig.NavigationConfig{
+		Primary: []siteconfig.NavigationItem{
+			{Label: "Welcome", PageID: "page_home"},
+			{Label: "Instagram", Href: "https://example.com/instagram"},
+		},
+		Footer: []siteconfig.NavigationItem{
+			{Label: "Privacy", Href: "/privacy"},
+		},
 	}
-	updated, err := mutator.UpdateNavigation(context.Background(), "workspace-1", "site-1", items)
+	updated, err := mutator.UpdateNavigation(context.Background(), "workspace-1", "site-1", navigation)
 	if err != nil {
 		t.Fatalf("update navigation: %v", err)
 	}
@@ -598,6 +603,9 @@ func TestUpdateNavigationReplacesItemsAndReconcilesInclusion(t *testing.T) {
 	}
 	if updated.Navigation.Primary[1].Label != "Instagram" || updated.Navigation.Primary[1].Href != "https://example.com/instagram" {
 		t.Fatalf("expected external link to be saved, got %#v", updated.Navigation.Primary[1])
+	}
+	if len(updated.Navigation.Footer) != 1 || updated.Navigation.Footer[0].Label != "Privacy" {
+		t.Fatalf("expected footer navigation to be saved, got %#v", updated.Navigation.Footer)
 	}
 
 	aboutPage := findPageByID(updated.Pages, "page_about")
@@ -630,9 +638,11 @@ func TestUpdateNavigationRejectsInvalidHref(t *testing.T) {
 		writer: store,
 	}
 
-	_, err := mutator.UpdateNavigation(context.Background(), "workspace-1", "site-1", []siteconfig.NavigationItem{
-		{Label: "Home", PageID: "page_home"},
-		{Label: "Bad", Href: "javascript:alert(1)"},
+	_, err := mutator.UpdateNavigation(context.Background(), "workspace-1", "site-1", siteconfig.NavigationConfig{
+		Primary: []siteconfig.NavigationItem{
+			{Label: "Home", PageID: "page_home"},
+			{Label: "Bad", Href: "javascript:alert(1)"},
+		},
 	})
 	if !errors.Is(err, ErrNavigationHrefInvalid) {
 		t.Fatalf("expected invalid href error, got %v", err)
@@ -651,9 +661,11 @@ func TestUpdateNavigationRejectsItemWithoutTarget(t *testing.T) {
 		writer: store,
 	}
 
-	_, err := mutator.UpdateNavigation(context.Background(), "workspace-1", "site-1", []siteconfig.NavigationItem{
-		{Label: "Home", PageID: "page_home"},
-		{Label: "Empty"},
+	_, err := mutator.UpdateNavigation(context.Background(), "workspace-1", "site-1", siteconfig.NavigationConfig{
+		Primary: []siteconfig.NavigationItem{
+			{Label: "Home", PageID: "page_home"},
+			{Label: "Empty"},
+		},
 	})
 	if !errors.Is(err, ErrNavigationItemInvalid) {
 		t.Fatalf("expected invalid item error, got %v", err)
@@ -672,8 +684,10 @@ func TestUpdateNavigationRejectsMissingLabel(t *testing.T) {
 		writer: store,
 	}
 
-	_, err := mutator.UpdateNavigation(context.Background(), "workspace-1", "site-1", []siteconfig.NavigationItem{
-		{Label: "", PageID: "page_home"},
+	_, err := mutator.UpdateNavigation(context.Background(), "workspace-1", "site-1", siteconfig.NavigationConfig{
+		Primary: []siteconfig.NavigationItem{
+			{Label: "", PageID: "page_home"},
+		},
 	})
 	if !errors.Is(err, ErrNavigationLabelRequired) {
 		t.Fatalf("expected missing label error, got %v", err)

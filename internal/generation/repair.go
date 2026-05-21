@@ -640,22 +640,42 @@ func repairTeamProfileCardsProps(props map[string]any, pageTitle string) map[str
 }
 
 func repairFooterProps(props map[string]any, pageTitle string) map[string]any {
-	navigationLinks := repairLinkList(props["navigationLinks"], 6)
-	if len(navigationLinks) == 0 {
-		navigationLinks = []any{
-			map[string]any{"label": "Home", "href": "/"},
-			map[string]any{"label": "Contact", "href": "/contact"},
-		}
+	return map[string]any{
+		"showBrand":   footerShowBrand(props),
+		"tagline":     readGeneratedText(props, "tagline", 240),
+		"contact":     repairFooterContact(props),
+		"copyright":   firstNonEmpty(readGeneratedText(props, "copyright", 120), "Copyright 2026 "+pageTitle),
+		"socialLinks": repairLinkList(props["socialLinks"], 6),
+	}
+}
+
+func repairFooterContact(props map[string]any) map[string]any {
+	contact, _ := props["contact"].(map[string]any)
+	result := map[string]any{}
+
+	if address := readGeneratedText(contact, "address", 240); address != "" {
+		result["address"] = address
+	}
+	if phone := readGeneratedText(contact, "phone", 40); phone != "" {
+		result["phone"] = phone
+	}
+	if email := readGeneratedText(contact, "email", 160); email != "" {
+		result["email"] = email
+	} else if contactLine := readGeneratedText(props, "contactLine", 180); contactLine != "" {
+		result["email"] = contactLine
+	}
+	if hours := repairStringList(contact["hours"], 14); len(hours) > 0 {
+		result["hours"] = hours
 	}
 
-	return map[string]any{
-		"siteName":        firstNonEmpty(readGeneratedText(props, "siteName", 120), pageTitle),
-		"tagline":         readGeneratedText(props, "tagline", 240),
-		"contactLine":     readGeneratedText(props, "contactLine", 180),
-		"copyright":       firstNonEmpty(readGeneratedText(props, "copyright", 120), "Copyright 2026 "+pageTitle),
-		"navigationLinks": navigationLinks,
-		"socialLinks":     repairLinkList(props["socialLinks"], 6),
+	return result
+}
+
+func footerShowBrand(props map[string]any) bool {
+	if _, ok := props["showBrand"]; !ok {
+		return true
 	}
+	return readBool(props, "showBrand")
 }
 
 func repairContactFormProps(props map[string]any, pageTitle string) map[string]any {
