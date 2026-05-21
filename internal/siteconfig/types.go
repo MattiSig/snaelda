@@ -21,7 +21,7 @@ type BrandConfig struct {
 
 type BrandLogo struct {
 	AssetID string `json:"assetId"`
-	Alt     string `json:"alt,omitempty"`
+	Alt     string `json:"alt"`
 }
 
 type DraftSite struct {
@@ -66,6 +66,7 @@ type PageDraft struct {
 	ID           string          `json:"id"`
 	Title        string          `json:"title"`
 	Slug         string          `json:"slug"`
+	Status       string          `json:"status,omitempty"`
 	Type         string          `json:"type,omitempty"`
 	CollectionID string          `json:"collectionId,omitempty"`
 	SEO          SEOConfig       `json:"seo,omitempty"`
@@ -77,6 +78,9 @@ const (
 	PageTypeStatic           = "static"
 	PageTypeCollectionIndex  = "collection_index"
 	PageTypeCollectionDetail = "collection_detail"
+
+	PageStatusDraft     = "draft"
+	PageStatusPublished = "published"
 )
 
 type SEOConfig struct {

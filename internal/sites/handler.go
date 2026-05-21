@@ -90,13 +90,15 @@ type createSiteRequest struct {
 }
 
 type updateSiteRequest struct {
-	Name *string `json:"name,omitempty"`
-	Slug *string `json:"slug,omitempty"`
+	Name  *string                 `json:"name,omitempty"`
+	Slug  *string                 `json:"slug,omitempty"`
+	Brand *siteconfig.BrandConfig `json:"brand,omitempty"`
 }
 
 type createPageRequest struct {
 	Title               string `json:"title"`
 	Slug                string `json:"slug,omitempty"`
+	Status              string `json:"status,omitempty"`
 	Type                string `json:"type,omitempty"`
 	CollectionID        string `json:"collectionId,omitempty"`
 	IncludeInNavigation *bool  `json:"includeInNavigation,omitempty"`
@@ -105,6 +107,7 @@ type createPageRequest struct {
 type updatePageRequest struct {
 	Title               *string               `json:"title,omitempty"`
 	Slug                *string               `json:"slug,omitempty"`
+	Status              *string               `json:"status,omitempty"`
 	Type                *string               `json:"type,omitempty"`
 	CollectionID        *string               `json:"collectionId,omitempty"`
 	SEO                 *siteconfig.SEOConfig `json:"seo,omitempty"`
@@ -290,8 +293,9 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	draft, err := h.mutator.UpdateSite(r.Context(), scope.WorkspaceID, siteID, UpdateSiteInput{
-		Name: payload.Name,
-		Slug: payload.Slug,
+		Name:  payload.Name,
+		Slug:  payload.Slug,
+		Brand: payload.Brand,
 	})
 	if err != nil {
 		writeSiteError(w, err)
@@ -322,6 +326,7 @@ func (h *Handler) createPage(w http.ResponseWriter, r *http.Request) {
 	draft, err := h.mutator.CreatePage(r.Context(), scope.WorkspaceID, siteID, CreatePageInput{
 		Title:               strings.TrimSpace(payload.Title),
 		Slug:                strings.TrimSpace(payload.Slug),
+		Status:              strings.TrimSpace(payload.Status),
 		Type:                strings.TrimSpace(payload.Type),
 		CollectionID:        strings.TrimSpace(payload.CollectionID),
 		IncludeInNavigation: payload.IncludeInNavigation,
@@ -356,6 +361,7 @@ func (h *Handler) updatePage(w http.ResponseWriter, r *http.Request) {
 	draft, err := h.mutator.UpdatePage(r.Context(), scope.WorkspaceID, siteID, pageID, UpdatePageInput{
 		Title:               payload.Title,
 		Slug:                payload.Slug,
+		Status:              payload.Status,
 		Type:                payload.Type,
 		CollectionID:        payload.CollectionID,
 		SEO:                 payload.SEO,
@@ -772,6 +778,8 @@ func writeSiteError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "page_collection_unsupported", "static pages cannot reference a collection")
 	case errors.Is(err, ErrPageCollectionNotFound):
 		writeError(w, http.StatusBadRequest, "page_collection_not_found", "page references a collection that does not exist")
+	case errors.Is(err, ErrPageStatusInvalid):
+		writeError(w, http.StatusBadRequest, "invalid_page_status", "page status must be draft or published")
 	case errors.Is(err, ErrMinimumPagesRequired):
 		writeError(w, http.StatusBadRequest, "minimum_pages_required", "site must keep at least one page")
 	case errors.Is(err, ErrBlockTypeRequired):

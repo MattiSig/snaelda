@@ -96,11 +96,16 @@ func normalizeDraft(draft siteconfig.SiteDraft) (NormalizedDraftRows, error) {
 		if pageType == "" {
 			pageType = siteconfig.PageTypeStatic
 		}
+		pageStatus := page.Status
+		if pageStatus == "" {
+			pageStatus = siteconfig.PageStatusDraft
+		}
 		pages = append(pages, pageRow{
 			ID:           page.ID,
 			Title:        page.Title,
 			Slug:         page.Slug,
 			Sort:         pageIndex,
+			Status:       pageStatus,
 			Type:         pageType,
 			CollectionID: page.CollectionID,
 			SEO:          page.SEO,
@@ -302,7 +307,7 @@ func replacePagesAndBlocks(ctx context.Context, tx pgx.Tx, siteID string, pages 
 		}
 		tag, err := tx.Exec(ctx, `
 			insert into pages (id, site_id, title, slug, sort_order, status, type, collection_id, seo, settings)
-			values ($1, $2, $3, $4, $5, 'draft', $6, $7, $8, $9)
+			values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 			on conflict (id) do update
 			set title = excluded.title,
 			    slug = excluded.slug,
@@ -314,7 +319,7 @@ func replacePagesAndBlocks(ctx context.Context, tx pgx.Tx, siteID string, pages 
 			    settings = excluded.settings,
 			    updated_at = now()
 			where pages.site_id = excluded.site_id
-		`, page.ID, siteID, page.Title, page.Slug, page.Sort, pageType, collectionID, seoJSON, settingsJSON)
+		`, page.ID, siteID, page.Title, page.Slug, page.Sort, page.Status, pageType, collectionID, seoJSON, settingsJSON)
 		if err != nil {
 			return fmt.Errorf("save page row %s: %w", page.ID, err)
 		}

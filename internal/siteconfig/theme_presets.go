@@ -1,6 +1,10 @@
 package siteconfig
 
-import "maps"
+import (
+	"fmt"
+	"maps"
+	"math"
+)
 
 const (
 	ThemePaletteCalmNordic    = "calm-nordic"
@@ -93,25 +97,31 @@ var (
 	}
 	themeTypographyTokens = map[string]map[string]any{
 		ThemeFontBalanced: {
-			"heading":     "Iowan Old Style",
-			"body":        "Avenir Next",
-			"headingFont": "Iowan Old Style",
-			"bodyFont":    "Avenir Next",
-			"scale":       "calm",
+			"heading":       "Iowan Old Style",
+			"body":          "Avenir Next",
+			"headingFont":   "Iowan Old Style",
+			"bodyFont":      "Avenir Next",
+			"headingWeight": 700,
+			"bodyWeight":    400,
+			"scale":         "calm",
 		},
 		ThemeFontEditorial: {
-			"heading":     "Iowan Old Style",
-			"body":        "Avenir Next",
-			"headingFont": "Iowan Old Style",
-			"bodyFont":    "Avenir Next",
-			"scale":       "editorial",
+			"heading":       "Iowan Old Style",
+			"body":          "Avenir Next",
+			"headingFont":   "Iowan Old Style",
+			"bodyFont":      "Avenir Next",
+			"headingWeight": 700,
+			"bodyWeight":    400,
+			"scale":         "editorial",
 		},
 		ThemeFontStudioSans: {
-			"heading":     "Avenir Next",
-			"body":        "Avenir Next",
-			"headingFont": "Avenir Next",
-			"bodyFont":    "Avenir Next",
-			"scale":       "playful",
+			"heading":       "Avenir Next",
+			"body":          "Avenir Next",
+			"headingFont":   "Avenir Next",
+			"bodyFont":      "Avenir Next",
+			"headingWeight": 700,
+			"bodyWeight":    400,
+			"scale":         "playful",
 		},
 	}
 	themeSectionSpacingValues = map[string]string{
@@ -228,17 +238,20 @@ func BuildThemeWithBrand(selection ThemeSelection, brand BrandConfig) ThemeConfi
 	normalized := normalizeThemeSelection(selection)
 	colors := maps.Clone(themePaletteTokens[normalized.Palette])
 	if brand.PrimaryColor != "" && hexColorPattern.MatchString(brand.PrimaryColor) {
-		colors["primary"] = brand.PrimaryColor
+		colors = deriveBrandPalette(colors, brand.PrimaryColor)
 	}
+	sectionPaddingY := themeSectionSpacingValues[normalized.SectionSpacing]
 	return ThemeConfig{
 		Version: ThemeVersionV1,
 		Tokens: ThemeTokens{
 			Colors:     colors,
 			Typography: maps.Clone(themeTypographyTokens[normalized.FontPreset]),
 			Layout: map[string]any{
-				"maxWidth":       "1120px",
-				"contentWidth":   "720px",
-				"sectionSpacing": themeSectionSpacingValues[normalized.SectionSpacing],
+				"maxWidth":        "1120px",
+				"contentWidth":    "720px",
+				"sectionSpacing":  sectionPaddingY,
+				"sectionPaddingX": "24px",
+				"sectionPaddingY": sectionPaddingY,
 			},
 			Shape: map[string]any{
 				"radius":      themeRadiusValues[normalized.Radius],
@@ -362,6 +375,146 @@ func sameStringMap(left map[string]string, right map[string]string) bool {
 		}
 	}
 	return true
+}
+
+func deriveBrandPalette(base map[string]string, primaryHex string) map[string]string {
+	primary, ok := parseHexColor(primaryHex)
+	if !ok {
+		return base
+	}
+	background, _ := parseHexColor(base["background"])
+	foreground, _ := parseHexColor(base["foreground"])
+	darkMode := luminance(background) < luminance(foreground)
+
+	primaryHSL := rgbToHSL(primary)
+	secondaryHSL := primaryHSL
+	secondaryHSL.h = math.Mod(secondaryHSL.h+18+360, 360)
+	secondaryHSL.s = clampFloat(secondaryHSL.s*0.82, 0.18, 0.88)
+	secondaryHSL.l = clampFloat(primaryHSL.l+map[bool]float64{true: 0.10, false: -0.08}[darkMode], 0.16, 0.82)
+
+	accentHSL := primaryHSL
+	accentHSL.h = math.Mod(accentHSL.h-28+360, 360)
+	accentHSL.s = clampFloat(primaryHSL.s*1.08, 0.22, 0.92)
+	accentHSL.l = clampFloat(primaryHSL.l+map[bool]float64{true: 0.16, false: -0.04}[darkMode], 0.18, 0.86)
+
+	surface := mixRGB(background, primary, map[bool]float64{true: 0.18, false: 0.08}[darkMode])
+	surfaceMuted := mixRGB(background, primary, map[bool]float64{true: 0.28, false: 0.14}[darkMode])
+	border := mixRGB(surfaceMuted, foreground, map[bool]float64{true: 0.24, false: 0.10}[darkMode])
+	muted := mixRGB(primary, background, map[bool]float64{true: 0.42, false: 0.54}[darkMode])
+	ring := mixRGB(primary, foreground, map[bool]float64{true: 0.28, false: 0.18}[darkMode])
+
+	base["primary"] = formatHexColor(primary)
+	base["secondary"] = formatHexColor(hslToRGB(secondaryHSL))
+	base["accent"] = formatHexColor(hslToRGB(accentHSL))
+	base["surface"] = formatHexColor(surface)
+	base["surfaceMuted"] = formatHexColor(surfaceMuted)
+	base["border"] = formatHexColor(border)
+	base["muted"] = formatHexColor(muted)
+	base["ring"] = formatHexColor(ring)
+	return base
+}
+
+type rgbColor struct {
+	r float64
+	g float64
+	b float64
+}
+
+type hslColor struct {
+	h float64
+	s float64
+	l float64
+}
+
+func parseHexColor(value string) (rgbColor, bool) {
+	var r int
+	var g int
+	var b int
+	if _, err := fmt.Sscanf(value, "#%02x%02x%02x", &r, &g, &b); err == nil {
+		return rgbColor{r: float64(r), g: float64(g), b: float64(b)}, true
+	}
+	return rgbColor{}, false
+}
+
+func formatHexColor(value rgbColor) string {
+	return fmt.Sprintf("#%02x%02x%02x", clampChannel(value.r), clampChannel(value.g), clampChannel(value.b))
+}
+
+func mixRGB(left rgbColor, right rgbColor, weight float64) rgbColor {
+	weight = clampFloat(weight, 0, 1)
+	return rgbColor{
+		r: left.r + ((right.r - left.r) * weight),
+		g: left.g + ((right.g - left.g) * weight),
+		b: left.b + ((right.b - left.b) * weight),
+	}
+}
+
+func luminance(value rgbColor) float64 {
+	return (0.2126 * value.r) + (0.7152 * value.g) + (0.0722 * value.b)
+}
+
+func rgbToHSL(value rgbColor) hslColor {
+	r := value.r / 255
+	g := value.g / 255
+	b := value.b / 255
+	maxValue := math.Max(r, math.Max(g, b))
+	minValue := math.Min(r, math.Min(g, b))
+	lightness := (maxValue + minValue) / 2
+	if maxValue == minValue {
+		return hslColor{l: lightness}
+	}
+
+	delta := maxValue - minValue
+	saturation := delta / (1 - math.Abs((2*lightness)-1))
+	var hue float64
+	switch maxValue {
+	case r:
+		hue = math.Mod(((g - b) / delta), 6)
+	case g:
+		hue = ((b - r) / delta) + 2
+	default:
+		hue = ((r - g) / delta) + 4
+	}
+	return hslColor{h: 60 * hue, s: saturation, l: lightness}
+}
+
+func hslToRGB(value hslColor) rgbColor {
+	chroma := (1 - math.Abs((2*value.l)-1)) * value.s
+	segment := value.h / 60
+	x := chroma * (1 - math.Abs(math.Mod(segment, 2)-1))
+
+	var rPrime float64
+	var gPrime float64
+	var bPrime float64
+	switch {
+	case segment >= 0 && segment < 1:
+		rPrime, gPrime = chroma, x
+	case segment >= 1 && segment < 2:
+		rPrime, gPrime = x, chroma
+	case segment >= 2 && segment < 3:
+		gPrime, bPrime = chroma, x
+	case segment >= 3 && segment < 4:
+		gPrime, bPrime = x, chroma
+	case segment >= 4 && segment < 5:
+		rPrime, bPrime = x, chroma
+	default:
+		rPrime, bPrime = chroma, x
+	}
+
+	match := value.l - (chroma / 2)
+	return rgbColor{
+		r: (rPrime + match) * 255,
+		g: (gPrime + match) * 255,
+		b: (bPrime + match) * 255,
+	}
+}
+
+func clampFloat(value float64, minValue float64, maxValue float64) float64 {
+	return math.Min(math.Max(value, minValue), maxValue)
+}
+
+func clampChannel(value float64) int {
+	return int(math.Round(clampFloat(value, 0, 255)))
 }
 
 func sameAnyMap(left map[string]any, right map[string]any) bool {

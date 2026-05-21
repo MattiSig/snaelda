@@ -73,6 +73,7 @@ type pageRow struct {
 	Title        string
 	Slug         string
 	Sort         int
+	Status       string
 	Type         string
 	CollectionID string
 	SEO          siteconfig.SEOConfig
@@ -289,6 +290,7 @@ func (r *PostgresReader) loadPages(ctx context.Context, siteID string) ([]pageRo
 		       title,
 		       slug,
 		       sort_order,
+		       status,
 		       coalesce(type, 'static'),
 		       coalesce(collection_id::text, ''),
 		       seo,
@@ -312,6 +314,7 @@ func (r *PostgresReader) loadPages(ctx context.Context, siteID string) ([]pageRo
 			&page.Title,
 			&page.Slug,
 			&page.Sort,
+			&page.Status,
 			&page.Type,
 			&page.CollectionID,
 			&seoJSON,
@@ -534,6 +537,7 @@ func AssembleDraft(rows NormalizedDraftRows) siteconfig.SiteDraft {
 			ID:       page.ID,
 			Title:    page.Title,
 			Slug:     page.Slug,
+			Status:   page.Status,
 			SEO:      page.SEO,
 			Blocks:   draftBlocks,
 			Settings: page.Settings,

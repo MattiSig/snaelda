@@ -787,7 +787,9 @@ func repairImage(value any) map[string]any {
 	repaired := map[string]any{"assetId": assetID}
 	if alt := readGeneratedText(object, "alt", 180); alt != "" {
 		repaired["alt"] = alt
+		return repaired
 	}
+	repaired["alt"] = "Descriptive image"
 	return repaired
 }
 

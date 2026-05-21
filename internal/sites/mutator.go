@@ -49,6 +49,7 @@ var (
 	ErrPageCollectionUnsupported = errors.New("static pages cannot reference a collection")
 	ErrPageCollectionNotFound    = errors.New("page references a collection that does not exist")
 	ErrPageTypeChangeForbidden   = errors.New("page type cannot be changed after creation")
+	ErrPageStatusInvalid         = errors.New("page status must be draft or published")
 )
 
 const navigationLabelMaxLength = 60
@@ -82,13 +83,15 @@ type CreateSiteInput struct {
 }
 
 type UpdateSiteInput struct {
-	Name *string
-	Slug *string
+	Name  *string
+	Slug  *string
+	Brand *siteconfig.BrandConfig
 }
 
 type CreatePageInput struct {
 	Title               string
 	Slug                string
+	Status              string
 	Type                string
 	CollectionID        string
 	IncludeInNavigation *bool
@@ -97,6 +100,7 @@ type CreatePageInput struct {
 type UpdatePageInput struct {
 	Title               *string
 	Slug                *string
+	Status              *string
 	Type                *string
 	CollectionID        *string
 	SEO                 *siteconfig.SEOConfig
@@ -217,7 +221,7 @@ func (m *PostgresMutator) CreateSite(ctx context.Context, workspaceID string, in
 }
 
 func (m *PostgresMutator) UpdateSite(ctx context.Context, workspaceID string, siteID string, input UpdateSiteInput) (siteconfig.SiteDraft, error) {
-	if input.Name == nil && input.Slug == nil {
+	if input.Name == nil && input.Slug == nil && input.Brand == nil {
 		return siteconfig.SiteDraft{}, ErrNoSiteChanges
 	}
 
@@ -247,6 +251,9 @@ func (m *PostgresMutator) UpdateSite(ctx context.Context, workspaceID string, si
 			return siteconfig.SiteDraft{}, ErrSiteSlugConflict
 		}
 		draft.Site.Slug = slugValue
+	}
+	if input.Brand != nil {
+		draft.Brand = *input.Brand
 	}
 
 	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
@@ -287,6 +294,10 @@ func (m *PostgresMutator) CreatePage(ctx context.Context, workspaceID string, si
 	if pageType == "" {
 		pageType = siteconfig.PageTypeStatic
 	}
+	pageStatus := normalizePageStatus(input.Status)
+	if pageStatus == "" {
+		return siteconfig.SiteDraft{}, ErrPageStatusInvalid
+	}
 	switch pageType {
 	case siteconfig.PageTypeStatic:
 		if strings.TrimSpace(input.CollectionID) != "" {
@@ -304,9 +315,10 @@ func (m *PostgresMutator) CreatePage(ctx context.Context, workspaceID string, si
 	}
 
 	page := siteconfig.PageDraft{
-		ID:    pageID,
-		Title: title,
-		Slug:  slugValue,
+		ID:     pageID,
+		Title:  title,
+		Slug:   slugValue,
+		Status: pageStatus,
 		SEO: siteconfig.SEOConfig{
 			Title:       title,
 			Description: draft.Site.SEO.Description,
@@ -328,7 +340,7 @@ func (m *PostgresMutator) CreatePage(ctx context.Context, workspaceID string, si
 }
 
 func (m *PostgresMutator) UpdatePage(ctx context.Context, workspaceID string, siteID string, pageID string, input UpdatePageInput) (siteconfig.SiteDraft, error) {
-	if input.Title == nil && input.Slug == nil && input.SEO == nil && input.IncludeInNavigation == nil && input.Type == nil && input.CollectionID == nil {
+	if input.Title == nil && input.Slug == nil && input.Status == nil && input.SEO == nil && input.IncludeInNavigation == nil && input.Type == nil && input.CollectionID == nil {
 		return siteconfig.SiteDraft{}, ErrNoPageChanges
 	}
 
@@ -364,6 +376,13 @@ func (m *PostgresMutator) UpdatePage(ctx context.Context, workspaceID string, si
 	}
 	if input.SEO != nil {
 		page.SEO = *input.SEO
+	}
+	if input.Status != nil {
+		pageStatus := normalizePageStatus(*input.Status)
+		if pageStatus == "" {
+			return siteconfig.SiteDraft{}, ErrPageStatusInvalid
+		}
+		page.Status = pageStatus
 	}
 	if input.Type != nil {
 		requestedType := strings.TrimSpace(*input.Type)
@@ -412,6 +431,17 @@ func collectionExists(collections []siteconfig.Collection, id string) bool {
 		}
 	}
 	return false
+}
+
+func normalizePageStatus(value string) string {
+	switch strings.TrimSpace(value) {
+	case "", siteconfig.PageStatusDraft:
+		return siteconfig.PageStatusDraft
+	case siteconfig.PageStatusPublished:
+		return siteconfig.PageStatusPublished
+	default:
+		return ""
+	}
 }
 
 func (m *PostgresMutator) DeletePage(ctx context.Context, workspaceID string, siteID string, pageID string) (siteconfig.SiteDraft, error) {

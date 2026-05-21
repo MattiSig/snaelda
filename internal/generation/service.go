@@ -43,10 +43,12 @@ type draftReader interface {
 }
 
 type GenerateInput struct {
-	Name   string
-	Slug   string
-	Prompt string
-	Brand  siteconfig.BrandConfig
+	Name              string
+	Slug              string
+	Prompt            string
+	PreferredLanguage string
+	OptionalHints     map[string]string
+	Brand             siteconfig.BrandConfig
 }
 
 type RepromptInput struct {
@@ -151,10 +153,12 @@ func (s *Service) Generate(ctx context.Context, workspaceID string, userID strin
 	}
 
 	inputContext := generationInputContext{
-		NameHint: strings.TrimSpace(input.Name),
-		SlugHint: strings.TrimSpace(input.Slug),
-		Prompt:   prompt,
-		Brand:    input.Brand,
+		NameHint:          strings.TrimSpace(input.Name),
+		SlugHint:          strings.TrimSpace(input.Slug),
+		Prompt:            prompt,
+		PreferredLanguage: strings.TrimSpace(input.PreferredLanguage),
+		OptionalHints:     cloneStringMap(input.OptionalHints),
+		Brand:             input.Brand,
 	}
 	jobID, err := s.createGenerationJob(ctx, workspaceID, userID, inputContext)
 	if err != nil {
@@ -544,7 +548,7 @@ func (s *Service) generateDraftWithRetry(ctx context.Context, workspaceID string
 			return generationPlan{}, siteconfig.SiteDraft{}, attempt - 1, err
 		}
 
-		draft, err := buildDraftFromPlan(plan, slugValue, input.Brand)
+		draft, err := buildDraftFromPlan(plan, slugValue, input.PreferredLanguage, input.Brand)
 		if err == nil {
 			err = s.writer.SaveDraft(ctx, workspaceID, draft)
 		}
@@ -572,13 +576,15 @@ func (s *Service) buildPlan(ctx context.Context, input generationInputContext, f
 }
 
 type generationInputContext struct {
-	SiteID   string                 `json:"siteId,omitempty"`
-	PageID   string                 `json:"pageId,omitempty"`
-	NameHint string                 `json:"nameHint,omitempty"`
-	SlugHint string                 `json:"slugHint,omitempty"`
-	Prompt   string                 `json:"prompt"`
-	Scope    string                 `json:"scope,omitempty"`
-	Brand    siteconfig.BrandConfig `json:"brand,omitempty"`
+	SiteID            string                 `json:"siteId,omitempty"`
+	PageID            string                 `json:"pageId,omitempty"`
+	NameHint          string                 `json:"nameHint,omitempty"`
+	SlugHint          string                 `json:"slugHint,omitempty"`
+	Prompt            string                 `json:"prompt"`
+	Scope             string                 `json:"scope,omitempty"`
+	PreferredLanguage string                 `json:"preferredLanguage,omitempty"`
+	OptionalHints     map[string]string      `json:"optionalHints,omitempty"`
+	Brand             siteconfig.BrandConfig `json:"brand,omitempty"`
 }
 
 type generationPlan struct {
@@ -998,7 +1004,7 @@ func buildGenerationPlan(nameHint string, prompt string) generationPlan {
 	}
 }
 
-func buildDraftFromPlan(plan generationPlan, slugValue string, brandHint siteconfig.BrandConfig) (siteconfig.SiteDraft, error) {
+func buildDraftFromPlan(plan generationPlan, slugValue string, preferredLanguage string, brandHint siteconfig.BrandConfig) (siteconfig.SiteDraft, error) {
 	siteID, err := ids.New()
 	if err != nil {
 		return siteconfig.SiteDraft{}, fmt.Errorf("generate site id: %w", err)
@@ -1031,6 +1037,7 @@ func buildDraftFromPlan(plan generationPlan, slugValue string, brandHint sitecon
 			ID:     pageID,
 			Title:  pagePlan.Title,
 			Slug:   pagePlan.Slug,
+			Status: siteconfig.PageStatusDraft,
 			SEO:    pagePlan.SEO,
 			Blocks: blocks,
 		})
@@ -1058,7 +1065,7 @@ func buildDraftFromPlan(plan generationPlan, slugValue string, brandHint sitecon
 			Name:          plan.SiteName,
 			Slug:          slugValue,
 			Status:        "draft",
-			DefaultLocale: "en",
+			DefaultLocale: firstNonEmpty(strings.TrimSpace(preferredLanguage), "en"),
 			SEO: siteconfig.SEOConfig{
 				Title:       clampSentence(plan.SiteName, 70),
 				Description: siteDescription,
@@ -1074,6 +1081,17 @@ func buildDraftFromPlan(plan generationPlan, slugValue string, brandHint sitecon
 		return siteconfig.SiteDraft{}, err
 	}
 	return draft, nil
+}
+
+func cloneStringMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+	output := make(map[string]string, len(input))
+	for key, value := range input {
+		output[key] = value
+	}
+	return output
 }
 
 func applySiteIdentity(nextDraft siteconfig.SiteDraft, currentDraft siteconfig.SiteDraft) siteconfig.SiteDraft {

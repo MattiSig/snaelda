@@ -73,7 +73,7 @@ export type BrandConfig = {
   businessName: string;
   logo?: {
     assetId: string;
-    alt?: string;
+    alt: string;
   };
   primaryColor: string;
 };
@@ -102,9 +102,9 @@ export type SiteDraft = {
     version: string;
     tokens: {
       colors: Record<string, string>;
-      typography: Record<string, string>;
-      layout: Record<string, string>;
-      shape: Record<string, string>;
+      typography: Record<string, string | number>;
+      layout: Record<string, string | number>;
+      shape: Record<string, string | number>;
     };
   };
   navigation: {
@@ -123,6 +123,7 @@ export type SiteDraft = {
     id: string;
     title: string;
     slug: string;
+    status?: "draft" | "published";
     type?: PageType;
     collectionId?: string;
     seo?: {
@@ -145,29 +146,29 @@ export type SiteDraft = {
   collections?: Collection[];
 };
 
-export type PageType = 'static' | 'collection_index' | 'collection_detail';
+export type PageType = "static" | "collection_index" | "collection_detail";
 
 export type BlockBinding = {
-  source: 'entry';
+  source: "entry";
   field: string;
 };
 
 export type CollectionFieldType =
-  | 'text'
-  | 'long_text'
-  | 'rich_text'
-  | 'number'
-  | 'boolean'
-  | 'date'
-  | 'url'
-  | 'email'
-  | 'phone'
-  | 'location'
-  | 'enum'
-  | 'enum_multi'
-  | 'asset'
-  | 'asset_list'
-  | 'reference';
+  | "text"
+  | "long_text"
+  | "rich_text"
+  | "number"
+  | "boolean"
+  | "date"
+  | "url"
+  | "email"
+  | "phone"
+  | "location"
+  | "enum"
+  | "enum_multi"
+  | "asset"
+  | "asset_list"
+  | "reference";
 
 export type FieldDefinition = {
   key: string;
@@ -198,7 +199,7 @@ export type CollectionEntry = {
     title?: string;
     description?: string;
   };
-  status?: 'draft' | 'published';
+  status?: "draft" | "published";
   sortOrder: number;
 };
 
@@ -760,6 +761,8 @@ export async function generateSite(input: {
   name?: string;
   prompt: string;
   slug?: string;
+  preferredLanguage?: string;
+  optionalHints?: Record<string, string>;
   brand?: BrandConfig;
 }) {
   return apiFetch<SiteRepromptResponse>("/api/sites/generate", {
@@ -809,6 +812,7 @@ export async function updateSite(
   input: {
     name?: string;
     slug?: string;
+    brand?: BrandConfig;
   },
 ) {
   return apiFetch<{ draft: SiteDraft }>(`/api/sites/${siteId}`, {
@@ -931,6 +935,7 @@ export async function createPage(
   input: {
     title: string;
     slug?: string;
+    status?: "draft" | "published";
     type?: PageType;
     collectionId?: string;
     includeInNavigation?: boolean;
@@ -951,6 +956,7 @@ export async function updatePage(
   input: {
     title?: string;
     slug?: string;
+    status?: "draft" | "published";
     type?: PageType;
     collectionId?: string;
     seo?: {

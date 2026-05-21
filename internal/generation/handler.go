@@ -44,10 +44,12 @@ type Authorizer interface {
 }
 
 type generateRequest struct {
-	Name   string                 `json:"name,omitempty"`
-	Slug   string                 `json:"slug,omitempty"`
-	Prompt string                 `json:"prompt"`
-	Brand  siteconfig.BrandConfig `json:"brand,omitempty"`
+	Name              string                 `json:"name,omitempty"`
+	Slug              string                 `json:"slug,omitempty"`
+	Prompt            string                 `json:"prompt"`
+	PreferredLanguage string                 `json:"preferredLanguage,omitempty"`
+	OptionalHints     map[string]string      `json:"optionalHints,omitempty"`
+	Brand             siteconfig.BrandConfig `json:"brand,omitempty"`
 }
 
 type repromptRequest struct {
@@ -135,10 +137,12 @@ func (h *Handler) generate(w http.ResponseWriter, r *http.Request) {
 		userID = session.User.ID
 	}
 	result, err := h.service.Generate(r.Context(), workspaceID, userID, GenerateInput{
-		Name:   strings.TrimSpace(payload.Name),
-		Slug:   strings.TrimSpace(payload.Slug),
-		Prompt: strings.TrimSpace(payload.Prompt),
-		Brand:  payload.Brand,
+		Name:              strings.TrimSpace(payload.Name),
+		Slug:              strings.TrimSpace(payload.Slug),
+		Prompt:            strings.TrimSpace(payload.Prompt),
+		PreferredLanguage: strings.TrimSpace(payload.PreferredLanguage),
+		OptionalHints:     trimOptionalHints(payload.OptionalHints),
+		Brand:             payload.Brand,
 	})
 	if err != nil {
 		h.writeGenerationError(w, r, err)
@@ -146,6 +150,25 @@ func (h *Handler) generate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, result)
+}
+
+func trimOptionalHints(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+	output := make(map[string]string, len(input))
+	for key, value := range input {
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key == "" || value == "" {
+			continue
+		}
+		output[key] = value
+	}
+	if len(output) == 0 {
+		return nil
+	}
+	return output
 }
 
 func (h *Handler) repromptSite(w http.ResponseWriter, r *http.Request) {

@@ -118,14 +118,17 @@ func (p *OpenAIPlanner) BuildPlan(ctx context.Context, input generationInputCont
 	}
 
 	payload := map[string]any{
-		"scope":        firstNonEmpty(strings.TrimSpace(input.Scope), "site"),
-		"prompt":       strings.TrimSpace(input.Prompt),
-		"nameHint":     strings.TrimSpace(input.NameHint),
-		"slugHint":     strings.TrimSpace(input.SlugHint),
-		"attempt":      feedback.Attempt,
-		"validation":   feedback.ValidationIssues,
-		"blocks":       summarizeBlockRegistry(),
-		"themeOptions": siteconfig.DefaultThemeEditorCatalog(),
+		"scope":             firstNonEmpty(strings.TrimSpace(input.Scope), "site"),
+		"prompt":            strings.TrimSpace(input.Prompt),
+		"nameHint":          strings.TrimSpace(input.NameHint),
+		"slugHint":          strings.TrimSpace(input.SlugHint),
+		"preferredLanguage": strings.TrimSpace(input.PreferredLanguage),
+		"optionalHints":     input.OptionalHints,
+		"brand":             input.Brand,
+		"attempt":           feedback.Attempt,
+		"validation":        feedback.ValidationIssues,
+		"blocks":            summarizeBlockRegistry(),
+		"themeOptions":      siteconfig.DefaultThemeEditorCatalog(),
 	}
 	userJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -138,6 +141,7 @@ func (p *OpenAIPlanner) BuildPlan(ctx context.Context, input generationInputCont
 		Schema: generationPlanSchema(),
 		System: generationPlannerSystemPrompt,
 		User:   string(userJSON),
+		Strict: true,
 	}, &responsePayload); err != nil {
 		return generationPlan{}, err
 	}

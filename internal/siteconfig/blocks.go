@@ -1031,7 +1031,7 @@ func optionalImage(path string, props map[string]any, key string, c *collector) 
 	}
 	requireKnownProps(fieldPath, object, c, "assetId", "alt")
 	requireString(fieldPath, object, "assetId", 1, 120, c)
-	optionalString(fieldPath, object, "alt", 180, c)
+	requireString(fieldPath, object, "alt", 1, 180, c)
 }
 
 func validateFooterContact(path string, props map[string]any, key string, c *collector) {

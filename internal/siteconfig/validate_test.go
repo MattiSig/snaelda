@@ -230,10 +230,10 @@ func TestValidatePublishedSnapshotRejectsCollectionDetailWithoutPublishedEntries
 		Navigation: NavigationConfig{Primary: []NavigationItem{{Label: "Home", PageID: "page_home"}}},
 		Pages: []PageDraft{
 			{
-				ID:    "page_home",
-				Title: "Home",
-				Slug:  "/",
-				SEO:   SEOConfig{Title: "Home", Description: "Welcome to the studio."},
+				ID:     "page_home",
+				Title:  "Home",
+				Slug:   "/",
+				SEO:    SEOConfig{Title: "Home", Description: "Welcome to the studio."},
 				Blocks: draft.Pages[0].Blocks,
 			},
 			{
@@ -426,6 +426,9 @@ func TestBuildThemeWithBrandOverridesPrimary(t *testing.T) {
 	if theme.Tokens.Colors["primary"] != "#abcdef" {
 		t.Fatalf("expected primary to be overridden, got %q", theme.Tokens.Colors["primary"])
 	}
+	if theme.Tokens.Colors["secondary"] == "" || theme.Tokens.Colors["accent"] == "" || theme.Tokens.Colors["surface"] == "" {
+		t.Fatalf("expected derived palette tokens to be populated, got %#v", theme.Tokens.Colors)
+	}
 }
 
 func TestBuildThemeWithBrandIgnoresInvalidBrandColor(t *testing.T) {
@@ -433,6 +436,28 @@ func TestBuildThemeWithBrandIgnoresInvalidBrandColor(t *testing.T) {
 	theme := BuildThemeWithBrand(DefaultThemeSelection(), BrandConfig{PrimaryColor: "not-a-color"})
 	if theme.Tokens.Colors["primary"] != preset.Tokens.Colors["primary"] {
 		t.Fatalf("expected invalid brand color to be ignored, got %q", theme.Tokens.Colors["primary"])
+	}
+}
+
+func TestValidateDraftRejectsImageWithoutAlt(t *testing.T) {
+	draft := validDraft()
+	draft.Pages[0].Blocks[0].Props["image"] = map[string]any{
+		"assetId": "asset_hero",
+	}
+
+	err := ValidateDraft(draft)
+	if !hasIssue(t, err, "required") {
+		t.Fatalf("expected required alt issue, got %v", err)
+	}
+}
+
+func TestValidateDraftRejectsInvalidPageStatus(t *testing.T) {
+	draft := validDraft()
+	draft.Pages[0].Status = "archived"
+
+	err := ValidateDraft(draft)
+	if !hasIssue(t, err, "invalid_value") {
+		t.Fatalf("expected invalid page status issue, got %v", err)
 	}
 }
 

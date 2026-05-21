@@ -36,6 +36,30 @@ func TestBuildBlockRegistryContractFixtureProducesValidRegistryExamples(t *testi
 			t.Fatalf("validate fixture props for %s@%s: %v", definition.Type, definition.Version, err)
 		}
 	}
+
+	requiredTypes := []string{
+		"hero",
+		"text_section",
+		"image_text",
+		"features_grid",
+		"gallery",
+		"testimonials",
+		"pricing_packages",
+		"cta_band",
+		"contact_form",
+		"faq",
+		"team_profile_cards",
+		"footer",
+		"stats",
+		"collection_list",
+		"collection_index",
+		"collection_detail",
+	}
+	for _, requiredType := range requiredTypes {
+		if _, ok := blocksByType[requiredType]; !ok {
+			t.Fatalf("expected fixture block for spec-required type %s", requiredType)
+		}
+	}
 }
 
 func TestBlockRegistryContractFixtureMatchesGoldenFile(t *testing.T) {

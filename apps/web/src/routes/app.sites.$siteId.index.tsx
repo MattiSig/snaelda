@@ -90,6 +90,10 @@ function SiteDetail() {
   const [blockRegistry, setBlockRegistry] = useState<BlockDefinition[]>([]);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
+  const [brandBusinessName, setBrandBusinessName] = useState("");
+  const [brandPrimaryColor, setBrandPrimaryColor] = useState("");
+  const [brandLogoAssetId, setBrandLogoAssetId] = useState("");
+  const [brandLogoAlt, setBrandLogoAlt] = useState("");
   const [selectedPageId, setSelectedPageId] = useState("");
   const [selectedBlockId, setSelectedBlockId] = useState("");
   const [versions, setVersions] = useState<SiteVersion[]>([]);
@@ -103,6 +107,7 @@ function SiteDetail() {
     useState(true);
   const [pageTitle, setPageTitle] = useState("");
   const [pageSlug, setPageSlug] = useState("");
+  const [pageStatus, setPageStatus] = useState<"draft" | "published">("draft");
   const [pageSEOTitle, setPageSEOTitle] = useState("");
   const [pageSEODescription, setPageSEODescription] = useState("");
   const [pageIncludeInNavigation, setPageIncludeInNavigation] = useState(true);
@@ -170,8 +175,23 @@ function SiteDetail() {
   const [repromptErrorMessage, setRepromptErrorMessage] = useState("");
   const [repromptStatusMessage, setRepromptStatusMessage] = useState("");
   const [blockedActionMessage, setBlockedActionMessage] = useState("");
-  const [blockedActionMode, setBlockedActionMode] = useState<"billing" | "claim" | "">("");
+  const [blockedActionMode, setBlockedActionMode] = useState<
+    "billing" | "claim" | ""
+  >("");
   const [isStartingUpgrade, setIsStartingUpgrade] = useState(false);
+
+  function syncSiteFields(nextDraft: SiteDraft) {
+    setName(nextDraft.site.name);
+    setSlug(nextDraft.site.slug);
+    setBrandBusinessName(nextDraft.brand.businessName || nextDraft.site.name);
+    setBrandPrimaryColor(
+      nextDraft.brand.primaryColor ||
+        nextDraft.theme.tokens.colors.primary ||
+        "",
+    );
+    setBrandLogoAssetId(nextDraft.brand.logo?.assetId ?? "");
+    setBrandLogoAlt(nextDraft.brand.logo?.alt ?? "");
+  }
 
   function syncSelectedPageFields(
     nextDraft: SiteDraft,
@@ -180,6 +200,7 @@ function SiteDetail() {
     if (!nextPage) {
       setPageTitle("");
       setPageSlug("");
+      setPageStatus("draft");
       setPageSEOTitle("");
       setPageSEODescription("");
       setPageIncludeInNavigation(true);
@@ -188,6 +209,7 @@ function SiteDetail() {
 
     setPageTitle(nextPage.title);
     setPageSlug(nextPage.slug);
+    setPageStatus(nextPage.status === "published" ? "published" : "draft");
     setPageSEOTitle(nextPage.seo?.title ?? "");
     setPageSEODescription(nextPage.seo?.description ?? "");
     setPageIncludeInNavigation(
@@ -216,6 +238,7 @@ function SiteDetail() {
     }
     setSelectedPageId(nextPage?.id ?? "");
     setSelectedBlockId(nextBlock?.id ?? "");
+    syncSiteFields(nextDraft);
     syncSelectedPageFields(nextDraft, nextPage);
     setNavigationDraft(navigationItemsFromDraft(nextDraft));
     setNavigationErrorMessage("");
@@ -259,8 +282,7 @@ function SiteDetail() {
           setThemeOptions(themeResponse.options);
           setSiteAssets(assetResponse.assets);
           setFormSubmissions(submissionResponse.submissions);
-          setName(draftResponse.draft.site.name);
-          setSlug(draftResponse.draft.site.slug);
+          syncSiteFields(draftResponse.draft);
           const initialPage = draftResponse.draft.pages[0] ?? null;
           setDraft(draftResponse.draft);
           setSelectedPageId(initialPage?.id ?? "");
@@ -365,9 +387,22 @@ function SiteDetail() {
     clearBlockedAction();
 
     try {
-      const response = await updateSite(siteId, { name, slug });
-      setName(response.draft.site.name);
-      setSlug(response.draft.site.slug);
+      const response = await updateSite(siteId, {
+        name,
+        slug,
+        brand: {
+          businessName: brandBusinessName.trim(),
+          primaryColor: brandPrimaryColor.trim(),
+          ...(brandLogoAssetId.trim()
+            ? {
+                logo: {
+                  assetId: brandLogoAssetId.trim(),
+                  alt: brandLogoAlt.trim(),
+                },
+              }
+            : {}),
+        },
+      });
       setSiteStatusMessage("Site details saved.");
       applyDraftUpdate(response.draft, selectedPage?.id, selectedBlock?.id);
     } catch (error) {
@@ -426,6 +461,7 @@ function SiteDetail() {
       const response = await updatePage(siteId, selectedPage.id, {
         title: pageTitle,
         slug: pageSlug,
+        status: pageStatus,
         seo: {
           title: pageSEOTitle,
           description: pageSEODescription,
@@ -809,7 +845,9 @@ function SiteDetail() {
       setThemeStatusMessage("Theme regenerated from the site brief.");
     } catch (error) {
       setThemeErrorMessage(
-        error instanceof APIError ? error.message : "Could not regenerate theme",
+        error instanceof APIError
+          ? error.message
+          : "Could not regenerate theme",
       );
     } finally {
       setIsRegeneratingTheme(false);
@@ -1296,7 +1334,9 @@ function SiteDetail() {
   const billingPromptNotice = blockedActionMessage ? (
     <div className="rounded-[14px] border border-[color-mix(in_oklch,var(--thread-gold)_65%,var(--border))] bg-[color-mix(in_oklch,var(--thread-gold)_10%,var(--surface-1))] p-4">
       <p className="text-sm font-bold text-[var(--paper)]">Action blocked</p>
-      <p className="mt-2 text-sm text-[var(--paper-muted)]">{blockedActionMessage}</p>
+      <p className="mt-2 text-sm text-[var(--paper-muted)]">
+        {blockedActionMessage}
+      </p>
       <div className="mt-4 flex flex-wrap gap-3">
         {blockedActionMode === "billing" ? (
           <>
@@ -1323,7 +1363,9 @@ function SiteDetail() {
 
   const sitePanelContent = (
     <div className="grid gap-4 2xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-      {billingPromptNotice ? <div className="2xl:col-span-2">{billingPromptNotice}</div> : null}
+      {billingPromptNotice ? (
+        <div className="2xl:col-span-2">{billingPromptNotice}</div>
+      ) : null}
       <section className={workspaceSection}>
         <div>
           <p className={text.eyebrow}>Generation brief</p>
@@ -1575,7 +1617,9 @@ function SiteDetail() {
                         />
                       </div>
                     ) : null}
-                    <small className="text-[var(--paper-muted)]">{subtitle}</small>
+                    <small className="text-[var(--paper-muted)]">
+                      {subtitle}
+                    </small>
                   </div>
                   <div className={cn(actions.row, "flex-col items-stretch")}>
                     <Button
@@ -1583,7 +1627,9 @@ function SiteDetail() {
                       variant="plain"
                       className={actions.inlineLink}
                       disabled={index === 0 || isSavingNavigation}
-                      onClick={() => moveNavigationDraftItem("primary", index, -1)}
+                      onClick={() =>
+                        moveNavigationDraftItem("primary", index, -1)
+                      }
                     >
                       Move up
                     </Button>
@@ -1592,9 +1638,12 @@ function SiteDetail() {
                       variant="plain"
                       className={actions.inlineLink}
                       disabled={
-                        index === navigationDraft.primary.length - 1 || isSavingNavigation
+                        index === navigationDraft.primary.length - 1 ||
+                        isSavingNavigation
                       }
-                      onClick={() => moveNavigationDraftItem("primary", index, 1)}
+                      onClick={() =>
+                        moveNavigationDraftItem("primary", index, 1)
+                      }
                     >
                       Move down
                     </Button>
@@ -1603,7 +1652,9 @@ function SiteDetail() {
                       variant="plain"
                       className={actions.inlineLink}
                       disabled={isSavingNavigation}
-                      onClick={() => removeNavigationDraftItem("primary", index)}
+                      onClick={() =>
+                        removeNavigationDraftItem("primary", index)
+                      }
                     >
                       Remove
                     </Button>
@@ -1693,7 +1744,9 @@ function SiteDetail() {
             <div className="mt-4 grid gap-3">
               {navigationDraft.footer.map((item, index) => {
                 const page = item.pageId
-                  ? draft.pages.find((candidate) => candidate.id === item.pageId)
+                  ? draft.pages.find(
+                      (candidate) => candidate.id === item.pageId,
+                    )
                   : null;
                 const subtitle = item.pageId
                   ? page
@@ -1742,7 +1795,9 @@ function SiteDetail() {
                           />
                         </div>
                       ) : null}
-                      <small className="text-[var(--paper-muted)]">{subtitle}</small>
+                      <small className="text-[var(--paper-muted)]">
+                        {subtitle}
+                      </small>
                     </div>
                     <div className={cn(actions.row, "flex-col items-stretch")}>
                       <Button
@@ -1750,7 +1805,9 @@ function SiteDetail() {
                         variant="plain"
                         className={actions.inlineLink}
                         disabled={index === 0 || isSavingNavigation}
-                        onClick={() => moveNavigationDraftItem("footer", index, -1)}
+                        onClick={() =>
+                          moveNavigationDraftItem("footer", index, -1)
+                        }
                       >
                         Move up
                       </Button>
@@ -1762,7 +1819,9 @@ function SiteDetail() {
                           index === navigationDraft.footer.length - 1 ||
                           isSavingNavigation
                         }
-                        onClick={() => moveNavigationDraftItem("footer", index, 1)}
+                        onClick={() =>
+                          moveNavigationDraftItem("footer", index, 1)
+                        }
                       >
                         Move down
                       </Button>
@@ -1771,7 +1830,9 @@ function SiteDetail() {
                         variant="plain"
                         className={actions.inlineLink}
                         disabled={isSavingNavigation}
-                        onClick={() => removeNavigationDraftItem("footer", index)}
+                        onClick={() =>
+                          removeNavigationDraftItem("footer", index)
+                        }
                       >
                         Remove
                       </Button>
@@ -2063,7 +2124,7 @@ function SiteDetail() {
 
         <form className={form.grid} onSubmit={handleSaveSite}>
           <label htmlFor="site-name" className={text.label}>
-            Business name
+            Site name
           </label>
           <Input
             id="site-name"
@@ -2083,6 +2144,86 @@ function SiteDetail() {
             onChange={(event) => setSlug(event.target.value)}
             required
           />
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className={form.field}>
+              <label htmlFor="site-brand-name" className={text.label}>
+                Brand business name
+              </label>
+              <Input
+                id="site-brand-name"
+                value={brandBusinessName}
+                onChange={(event) => setBrandBusinessName(event.target.value)}
+                placeholder="What customers should see in the header and footer"
+                required
+              />
+            </div>
+            <div className={form.field}>
+              <label htmlFor="site-brand-color" className={text.label}>
+                Brand primary color
+              </label>
+              <div className="flex items-center gap-3">
+                <Input
+                  id="site-brand-color"
+                  type="color"
+                  value={brandPrimaryColor || "#f4a261"}
+                  onChange={(event) => setBrandPrimaryColor(event.target.value)}
+                  className="h-11 w-16 rounded-[10px] p-1"
+                />
+                <Input
+                  value={brandPrimaryColor}
+                  onChange={(event) => setBrandPrimaryColor(event.target.value)}
+                  placeholder="#F4A261"
+                  required
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className={workspaceInset}>
+            <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <label className={form.field}>
+                <span className={text.label}>Brand logo</span>
+                <Select
+                  value={brandLogoAssetId}
+                  onChange={(event) => {
+                    const nextAssetId = event.target.value;
+                    setBrandLogoAssetId(nextAssetId);
+                    if (!nextAssetId) {
+                      setBrandLogoAlt("");
+                      return;
+                    }
+                    const nextAsset = uploadedSiteAssets.find(
+                      (asset) => asset.id === nextAssetId,
+                    );
+                    if (!brandLogoAlt.trim()) {
+                      setBrandLogoAlt(
+                        nextAsset?.altText ||
+                          `${brandBusinessName.trim() || name.trim()} logo`,
+                      );
+                    }
+                  }}
+                >
+                  <option value="">No logo selected</option>
+                  {uploadedSiteAssets.map((asset) => (
+                    <option key={asset.id} value={asset.id}>
+                      {asset.metadata.fileName || asset.id}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+              <label className={form.field}>
+                <span className={text.label}>Logo alt text</span>
+                <Input
+                  value={brandLogoAlt}
+                  onChange={(event) => setBrandLogoAlt(event.target.value)}
+                  placeholder="Describe the logo for screen readers"
+                  disabled={!brandLogoAssetId}
+                  required={Boolean(brandLogoAssetId)}
+                />
+              </label>
+            </div>
+          </div>
 
           {siteErrorMessage ? (
             <p className={text.error}>{siteErrorMessage}</p>
@@ -2402,9 +2543,14 @@ function SiteDetail() {
                 onClick={handleRegenerateTheme}
                 disabled={isSavingTheme || isRegeneratingTheme}
               >
-                {isRegeneratingTheme ? "Regenerating theme..." : "Regenerate theme"}
+                {isRegeneratingTheme
+                  ? "Regenerating theme..."
+                  : "Regenerate theme"}
               </Button>
-              <Button type="submit" disabled={isSavingTheme || isRegeneratingTheme}>
+              <Button
+                type="submit"
+                disabled={isSavingTheme || isRegeneratingTheme}
+              >
                 {isSavingTheme ? "Saving theme..." : "Save theme"}
               </Button>
             </div>
@@ -2420,7 +2566,9 @@ function SiteDetail() {
 
   const publishPanelContent = (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-      {billingPromptNotice ? <div className="xl:col-span-2">{billingPromptNotice}</div> : null}
+      {billingPromptNotice ? (
+        <div className="xl:col-span-2">{billingPromptNotice}</div>
+      ) : null}
       <section className={workspaceSection}>
         <div>
           <p className={text.eyebrow}>Draft to live</p>
@@ -2610,6 +2758,7 @@ function SiteDetail() {
       pageStatusMessage={pageStatusMessage}
       pageTitle={pageTitle}
       pageSlug={pageSlug}
+      pageStatus={pageStatus}
       pageSEOTitle={pageSEOTitle}
       pageSEODescription={pageSEODescription}
       pageIncludeInNavigation={pageIncludeInNavigation}
@@ -2630,6 +2779,7 @@ function SiteDetail() {
       onSavePage={handleSavePage}
       onSetPageTitle={setPageTitle}
       onSetPageSlug={setPageSlug}
+      onSetPageStatus={setPageStatus}
       onSetPageSEOTitle={setPageSEOTitle}
       onSetPageSEODescription={setPageSEODescription}
       onSetPageIncludeInNavigation={setPageIncludeInNavigation}
@@ -2687,7 +2837,9 @@ function normalizeNavigationItems(
   const normalized: NavigationItemInput[] = [];
   for (const item of items) {
     if (item.pageId) {
-      const page = draft.pages.find((candidate) => candidate.id === item.pageId);
+      const page = draft.pages.find(
+        (candidate) => candidate.id === item.pageId,
+      );
       if (!page) {
         continue;
       }

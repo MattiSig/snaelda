@@ -25,8 +25,8 @@ var (
 	unsafeControlChars  = regexp.MustCompile(`[\x00-\x1f\x7f]`)
 	unsafeMarkupPattern = regexp.MustCompile(`(?is)<\s*/?\s*[a-z][^>]*>`)
 	supportedColorKeys  = set("background", "text", "foreground", "surface", "surfaceMuted", "primary", "secondary", "accent", "muted", "border", "ring")
-	supportedTypeKeys   = set("headingFont", "bodyFont", "heading", "body", "scale")
-	supportedLayoutKeys = set("maxWidth", "contentWidth", "sectionSpacing")
+	supportedTypeKeys   = set("headingFont", "bodyFont", "heading", "body", "scale", "headingWeight", "bodyWeight")
+	supportedLayoutKeys = set("maxWidth", "contentWidth", "sectionSpacing", "sectionPaddingX", "sectionPaddingY")
 	supportedShapeKeys  = set("radius", "shadow", "buttonStyle", "imageStyle")
 )
 
@@ -98,9 +98,7 @@ func validateBrand(path string, brand BrandConfig, required bool, c *collector) 
 		if strings.TrimSpace(brand.Logo.AssetID) == "" {
 			c.add(child(logoPath, "assetId"), "required", "brand logo assetId is required")
 		}
-		if brand.Logo.Alt != "" {
-			validateRequiredText(child(logoPath, "alt"), brand.Logo.Alt, 1, 200, c)
-		}
+		validateRequiredText(child(logoPath, "alt"), brand.Logo.Alt, 1, 200, c)
 	}
 }
 
@@ -141,6 +139,9 @@ func (v Validator) validatePages(path string, pages []PageDraft, requireSEO bool
 		validateRequiredText(child(pagePath, "title"), page.Title, 1, 120, c)
 		if !validPageSlug(page.Slug) {
 			c.add(child(pagePath, "slug"), "invalid_slug", "page slug must be / or a slash-prefixed slug")
+		}
+		if page.Status != "" && page.Status != PageStatusDraft && page.Status != PageStatusPublished {
+			c.add(child(pagePath, "status"), "invalid_value", "page status must be draft or published")
 		}
 		if page.Slug == "/" {
 			hasHomepage = true
