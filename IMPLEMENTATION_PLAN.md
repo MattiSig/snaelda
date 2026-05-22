@@ -4,6 +4,8 @@ Refreshed 2026-05-21 from 16 spec-vs-code audits plus the newly-authored `specs/
 
 ## Recently Confirmed Complete
 
+- [x] Theme token vocabulary now matches spec 11 end to end. `internal/siteconfig/theme_presets.go` emits `sectionPaddingX` + `sectionPaddingY` instead of the old single `sectionSpacing`, while `DetectThemeSelection` and the validator stay backward-compatible with legacy snapshots that still carry `sectionSpacing`. The public renderer and published `assets/theme.css` now use the spec-facing CSS variable families (`--color-*`, `--font-*`, `--radius-*`, `--space-sectionPaddingX/Y`) instead of the old `--site-*` contract, and theme CSS now exposes `headingWeight` / `bodyWeight` alongside the existing font-family tokens.
+- [x] `once_over_intake_ready` email sends are now idempotent on Stripe webhook event ID (spec 18 hardening). `internal/email/helpers.go` accepts an idempotency key for the once-over intake-ready template, `internal/billing/once_over.go` passes `once_over_intake_ready:{event_id}`, and billing tests assert the key is present so webhook replays do not double-send through providers that honor idempotency headers.
 - [x] Brand as a first-class typed object (specs 3, 5, 11): new `BrandConfig` Go struct + TypeScript type carry `businessName`, optional `{assetId, alt}` logo, and `primaryColor`; SiteDraft and PublishedSnapshot expose `brand` alongside theme; new `000014_site_brand.sql` adds a `brand jsonb` column on `sites` and the sites reader/writer persist it atomically with the rest of the draft. The siteconfig validator enforces hex colors and required-on-publish; published snapshots fall back to `site.name` + theme primary so legacy drafts still ship. `siteconfig.BuildThemeWithBrand` overrides the palette's `primary` token with `brand.primaryColor` so theme update + regenerate continue to use brand as the source of the rendered primary, and theme regeneration passes the current brand to the model as a constraint. Generation seeds brand from the site name and selected palette primary, the generation input contract carries an optional brand from callers, and `applySiteIdentity` preserves brand across site reprompt.
 - [x] Brand follow-through (specs 3, 5, 7, 11): `BuildThemeWithBrand` now derives `secondary`, `accent`, `surface`, `surfaceMuted`, `border`, `muted`, and `ring` deterministically from `brand.primaryColor` instead of only swapping `primary`; the site settings panel now edits `brand.businessName`, `brand.primaryColor`, and `brand.logo`; and generation input now carries `preferredLanguage`, `optionalHints`, and `brand` through the API/service/OpenAI payload path with strict structured-output enabled for the main site-plan call.
 - [x] Page status contract (specs 3, 5, 6): `PageDraft` now carries `status`, the sites reader/writer persist the existing `pages.status` column end to end, generation seeds pages as `draft`, the API accepts status updates, and the builder page-setup panel exposes a draft/published selector.
@@ -68,11 +70,6 @@ Refreshed 2026-05-21 from 16 spec-vs-code audits plus the newly-authored `specs/
   - Settings UI under `apps/web/src/routes/app.sites.$siteId.settings.*` with DNS-TXT instructions and verification state, gated by paid entitlement (replace the static "locked" hint).
   - Acceptance: paid user attaches `example.com`, verifies via DNS TXT, TLS issues automatically, public render serves on that host.
 
-- [ ] Align theme tokens with spec 11 vocabulary.
-  - Replace `--site-*` vars in `apps/web/src/lib/styles.ts` and themed renderer paths with `--color-*`, `--font-*`, `--radius-*`, `--space-sectionPaddingX/Y`.
-  - Add `headingWeight` / `bodyWeight` typography tokens and split single `sectionSpacing` into `sectionPaddingX` + `sectionPaddingY`.
-  - Update `internal/siteconfig/themes.go` and the per-site `theme.css` artifact (already emitted) to use the new vocabulary.
-
 ## AI-First UX (Spec 20)
 
 Entire spec is greenfield. None of it is implemented yet.
@@ -106,9 +103,6 @@ Entire spec is greenfield. None of it is implemented yet.
   - Add per-user / per-workspace generation rate limit + cost guard in `internal/generation/handler.go` using the durable pattern from `form_submission_attempts`.
   - Scaffold `migrateFromPrevious` per block type so future block versions ship without breaking snapshots.
   - Add a frontend URL safety pass in `apps/web/src/components/SiteDraftRenderer.tsx:1352-1397` rather than trusting backend allowlist alone.
-
-- [ ] Idempotency key on `once_over_intake_ready` email (spec 18).
-  - Webhook replays would double-send. Key the email send on Stripe event ID, matching the billing-receipt pattern.
 
 - [ ] Align sessions route naming (specs 17, 10).
   - Spec 17 says `GET /api/sessions/current` and `POST /api/sessions/attach-email`; code uses `/me` and `/claim`. Update the spec to match shipped reality (code is already wired and tested).

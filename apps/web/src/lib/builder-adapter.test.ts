@@ -68,7 +68,8 @@ function buildDraft(): SiteDraft {
           bodyFont: 'Avenir Next',
         },
         layout: {
-          sectionSpacing: '96px',
+          sectionPaddingX: '24px',
+          sectionPaddingY: '96px',
           contentWidth: '720px',
         },
         shape: {

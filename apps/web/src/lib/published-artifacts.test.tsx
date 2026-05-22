@@ -31,8 +31,8 @@ describe("published artifact bundle", () => {
     const themeArtifact = bundle.files.find(
       (file) => file.path === "assets/theme.css",
     );
-    expect(themeArtifact?.body).toContain("--site-background: #151215;");
-    expect(themeArtifact?.body).toContain("--site-primary: #8fc6ff;");
+    expect(themeArtifact?.body).toContain("--color-background: #151215;");
+    expect(themeArtifact?.body).toContain("--color-primary: #8fc6ff;");
 
     const sitemap = bundle.files.find((file) => file.path === "sitemap.xml");
     expect(sitemap?.body).toContain(

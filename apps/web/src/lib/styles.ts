@@ -96,34 +96,34 @@ export const preview = {
   toolbar:
     "flex items-center justify-between gap-4 rounded-[14px] border border-[color-mix(in_oklch,var(--border)_70%,transparent)] bg-[var(--surface-1)] px-5 py-3.5 max-sm:flex-col max-sm:items-start max-sm:p-4",
   shell:
-    "w-full bg-[var(--site-background)] text-[var(--site-foreground)] [font-family:var(--site-font-body)]",
+    "w-full bg-[var(--color-background)] text-[var(--color-text)] [font-family:var(--font-body)] [font-weight:var(--font-bodyWeight,400)]",
   frame: "w-full",
   header:
-    "w-full border-b border-[color-mix(in_oklch,var(--site-border)_55%,transparent)]",
+    "w-full border-b border-[color-mix(in_oklch,var(--color-border)_55%,transparent)]",
   headerInner:
     "mx-auto flex w-full max-w-[1180px] flex-wrap items-baseline justify-between gap-x-10 gap-y-4 px-[max(1.25rem,4vw)] py-6",
   headerBrand:
-    "font-serif text-[1.35rem] font-bold leading-none tracking-tight text-[var(--site-foreground)]",
+    "text-[1.35rem] leading-none tracking-tight text-[var(--color-text)] [font-family:var(--font-heading)] [font-weight:var(--font-headingWeight,700)]",
   nav: "flex flex-wrap items-baseline gap-x-6 gap-y-2",
   navLink:
-    "text-sm font-medium text-[color-mix(in_oklch,var(--site-foreground)_72%,var(--site-background))] transition-colors hover:text-[var(--site-foreground)]",
+    "text-sm font-medium text-[color-mix(in_oklch,var(--color-text)_72%,var(--color-background))] transition-colors hover:text-[var(--color-text)]",
   page: "w-full",
   pageMeta:
-    "mx-auto mb-2 flex w-full max-w-[1180px] items-center justify-between gap-4 px-[max(1.25rem,4vw)] pt-6 text-xs uppercase tracking-[0.12em] text-[color-mix(in_oklch,var(--site-foreground)_55%,var(--site-background))]",
+    "mx-auto mb-2 flex w-full max-w-[1180px] items-center justify-between gap-4 px-[max(1.25rem,4vw)] pt-6 text-xs uppercase tracking-[0.12em] text-[color-mix(in_oklch,var(--color-text)_55%,var(--color-background))]",
   pageStack: "grid",
   panel:
     "w-full px-[max(var(--space-sectionPaddingX,24px),4vw)] py-[clamp(56px,calc(var(--space-sectionPaddingY,96px)*0.75),120px)]",
   panelInner: "mx-auto w-full max-w-[1180px]",
   panelNarrow:
-    "mx-auto w-full max-w-[min(var(--site-content-width,720px),68ch)]",
+    "mx-auto w-full max-w-[min(var(--size-contentWidth,720px),68ch)]",
   hero: "py-[clamp(80px,14vw,180px)]",
   ctaSurface:
-    "bg-[var(--site-foreground)] text-[var(--site-background)] [--site-button-background:var(--site-background)] [--site-button-foreground:var(--site-foreground)] [--site-button-border:var(--site-background)] [--site-button-ghost-foreground:var(--site-background)] [--site-button-ghost-border:var(--site-background)]",
+    "bg-[var(--color-text)] text-[var(--color-background)] [--color-buttonBackground:var(--color-background)] [--color-buttonForeground:var(--color-text)] [--color-buttonBorder:var(--color-background)] [--color-buttonGhostForeground:var(--color-background)] [--color-buttonGhostBorder:var(--color-background)]",
   actionRow: "flex flex-wrap items-center gap-3",
   button:
-    "inline-flex items-center justify-center rounded-[var(--site-radius-inner)] border border-[var(--site-button-border)] bg-[var(--site-button-background)] px-5 py-3 text-sm font-semibold text-[var(--site-button-foreground)] shadow-[var(--site-button-shadow)] transition-transform hover:-translate-y-px",
+    "inline-flex items-center justify-center rounded-[var(--radius-inner)] border border-[var(--color-buttonBorder)] bg-[var(--color-buttonBackground)] px-5 py-3 text-sm font-semibold text-[var(--color-buttonForeground)] shadow-[var(--shadow-button)] transition-transform hover:-translate-y-px",
   ghostButton:
-    "border-[var(--site-button-ghost-border)] bg-transparent text-[var(--site-button-ghost-foreground)] shadow-none hover:bg-[color-mix(in_oklch,var(--site-foreground)_6%,transparent)]",
+    "border-[var(--color-buttonGhostBorder)] bg-transparent text-[var(--color-buttonGhostForeground)] shadow-none hover:bg-[color-mix(in_oklch,var(--color-text)_6%,transparent)]",
   sectionHeading: "mb-12 grid max-w-[60ch] gap-3",
   features: "grid grid-cols-1 gap-x-10 gap-y-12 md:grid-cols-2 xl:grid-cols-3",
   feature: "grid gap-2",
@@ -131,25 +131,25 @@ export const preview = {
   split:
     "grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)] lg:items-center",
   imagePlaceholder:
-    "grid min-h-[260px] place-items-center rounded-[var(--site-radius-inner)] bg-[color-mix(in_oklch,var(--site-surface-muted)_92%,var(--site-foreground))] p-5 text-sm text-[color-mix(in_oklch,var(--site-foreground)_55%,var(--site-background))]",
+    "grid min-h-[260px] place-items-center rounded-[var(--radius-inner)] bg-[color-mix(in_oklch,var(--color-surface-muted)_92%,var(--color-text))] p-5 text-sm text-[color-mix(in_oklch,var(--color-text)_55%,var(--color-background))]",
   imagePlaceholderTall:
-    "grid min-h-[320px] place-items-end rounded-[var(--site-radius-inner)] p-5 text-left [background-image:var(--site-image-tall-background)]",
+    "grid min-h-[320px] place-items-end rounded-[var(--radius-inner)] p-5 text-left [background-image:var(--image-tallBackground)]",
   quoteCard:
-    "grid gap-5 border-t border-[color-mix(in_oklch,var(--site-border)_55%,transparent)] pt-8",
+    "grid gap-5 border-t border-[color-mix(in_oklch,var(--color-border)_55%,transparent)] pt-8",
   pricingGrid: "grid gap-5 md:grid-cols-2 xl:grid-cols-3",
   pricingCard:
-    "grid gap-5 rounded-[var(--site-radius-inner)] border border-[var(--site-border)] bg-[var(--site-surface)] p-7",
+    "grid gap-5 rounded-[var(--radius-inner)] border border-[var(--color-border)] bg-[var(--color-surface)] p-7",
   chipList:
-    "flex flex-col gap-1.5 text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]",
+    "flex flex-col gap-1.5 text-[color-mix(in_oklch,var(--color-text)_82%,var(--color-background))]",
   chip: "flex items-baseline gap-2 text-sm",
   faqList:
-    "divide-y divide-[color-mix(in_oklch,var(--site-border)_55%,transparent)]",
+    "divide-y divide-[color-mix(in_oklch,var(--color-border)_55%,transparent)]",
   faqItem: "grid gap-3 py-7 first:pt-0 last:pb-0",
   footerShell:
-    "w-full border-t border-[color-mix(in_oklch,var(--site-border)_55%,transparent)] px-[max(1.25rem,4vw)] py-14",
+    "w-full border-t border-[color-mix(in_oklch,var(--color-border)_55%,transparent)] px-[max(1.25rem,4vw)] py-14",
   footerInner:
     "mx-auto grid w-full max-w-[1180px] gap-10 md:grid-cols-[minmax(0,1.3fr)_minmax(220px,0.7fr)]",
   footerLinks: "flex flex-wrap gap-x-6 gap-y-2",
   footerLink:
-    "text-sm text-[color-mix(in_oklch,var(--site-foreground)_78%,var(--site-background))] underline-offset-4 hover:underline",
+    "text-sm text-[color-mix(in_oklch,var(--color-text)_78%,var(--color-background))] underline-offset-4 hover:underline",
 };

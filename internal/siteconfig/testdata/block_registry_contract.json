@@ -1036,7 +1036,8 @@
         },
         "layout": {
           "contentWidth": "720px",
-          "sectionSpacing": "96px"
+          "sectionPaddingX": "24px",
+          "sectionPaddingY": "96px"
         },
         "shape": {
           "radius": "28px"

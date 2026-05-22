@@ -230,7 +230,7 @@ func (s *Service) handleOnceOverCheckoutCompleted(ctx context.Context, tx pgx.Tx
 		ProductName:   s.productName,
 		WorkspaceName: contact.WorkspaceName,
 		IntakeURL:     buildOnceOverIntakeURL(s.appBaseURL),
-	})
+	}, "once_over_intake_ready:"+strings.TrimSpace(event.ID))
 	return err
 }
 

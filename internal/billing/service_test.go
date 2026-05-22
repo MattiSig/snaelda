@@ -234,6 +234,9 @@ func TestHandleWebhookCreatesOnceOverRequestAndSendsIntakeEmail(t *testing.T) {
 	if !strings.Contains(msg.Subject, "once-over intake is ready") {
 		t.Fatalf("expected once-over intake subject, got %q", msg.Subject)
 	}
+	if msg.IdempotencyKey != "once_over_intake_ready:evt_3" {
+		t.Fatalf("expected once-over idempotency key, got %q", msg.IdempotencyKey)
+	}
 	if !strings.Contains(msg.TextBody, "https://app.test/app/billing") {
 		t.Fatalf("expected intake url in email body, got %q", msg.TextBody)
 	}

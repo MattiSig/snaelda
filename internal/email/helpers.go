@@ -69,18 +69,19 @@ func (s Sender) SendBillingPaymentFailed(ctx context.Context, to Address, data B
 	})
 }
 
-func (s Sender) SendOnceOverIntakeReady(ctx context.Context, to Address, data OnceOverIntakeReadyTemplateData) (SendResult, error) {
+func (s Sender) SendOnceOverIntakeReady(ctx context.Context, to Address, data OnceOverIntakeReadyTemplateData, idempotencyKey string) (SendResult, error) {
 	subject, textBody, htmlBody, err := RenderOnceOverIntakeReady(data)
 	if err != nil {
 		return SendResult{}, err
 	}
 	return s.Mailer.Send(ctx, Message{
-		To:       []Address{to},
-		From:     s.DefaultFrom,
-		Subject:  subject,
-		TextBody: textBody,
-		HTMLBody: htmlBody,
-		Tags:     map[string]string{"template": "once_over_intake_ready"},
+		To:             []Address{to},
+		From:           s.DefaultFrom,
+		Subject:        subject,
+		TextBody:       textBody,
+		HTMLBody:       htmlBody,
+		Tags:           map[string]string{"template": "once_over_intake_ready"},
+		IdempotencyKey: idempotencyKey,
 	})
 }
 

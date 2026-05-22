@@ -51,7 +51,7 @@ func SeedDevelopment(ctx context.Context, pool *pgxpool.Pool) error {
 		 	'00000000-0000-4000-8000-000000000201',
 		 	'Default',
 		 	'theme.v1',
-		 	'{"colors":{"background":"#191119","foreground":"#f3ead8","surface":"#241a24","surfaceMuted":"#302333","primary":"#86d8cf","secondary":"#89b9f0","accent":"#ff8a9d","muted":"#caa778","border":"#5a3e57","ring":"#f2bd63"},"typography":{"heading":"Iowan Old Style","body":"Avenir Next","headingFont":"Iowan Old Style","bodyFont":"Avenir Next","scale":"editorial"},"layout":{"maxWidth":"1120px","contentWidth":"720px","sectionSpacing":"96px"},"shape":{"radius":"28px","shadow":"soft"}}'::jsonb
+		 	'{"colors":{"background":"#191119","foreground":"#f3ead8","surface":"#241a24","surfaceMuted":"#302333","primary":"#86d8cf","secondary":"#89b9f0","accent":"#ff8a9d","muted":"#caa778","border":"#5a3e57","ring":"#f2bd63"},"typography":{"heading":"Iowan Old Style","body":"Avenir Next","headingFont":"Iowan Old Style","bodyFont":"Avenir Next","scale":"editorial"},"layout":{"maxWidth":"1120px","contentWidth":"720px","sectionPaddingX":"24px","sectionPaddingY":"96px"},"shape":{"radius":"28px","shadow":"soft"}}'::jsonb
 		 )
 		 on conflict (site_id, name) do update set tokens = excluded.tokens, updated_at = now()`,
 		`insert into pages (id, site_id, title, slug, sort_order, status, seo, settings)

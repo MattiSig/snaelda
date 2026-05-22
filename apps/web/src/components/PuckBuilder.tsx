@@ -34,11 +34,11 @@ function buildBuilderPreviewStyle(theme: SiteDraft["theme"]) {
 
   return {
     ...base,
-    "--site-surface-muted": surface,
-    "--site-radius-panel": "8px",
-    "--site-radius-inner": "6px",
-    "--site-button-shadow": "none",
-    "--site-image-shadow": "none",
+    "--color-surface-muted": surface,
+    "--radius-panel": "8px",
+    "--radius-inner": "6px",
+    "--shadow-button": "none",
+    "--shadow-image": "none",
   } as React.CSSProperties;
 }
 
@@ -1006,7 +1006,7 @@ function CanvasBlockFrame({
     >
       <div
         className={cn(
-          "relative rounded-[var(--site-radius-panel)]",
+          "relative rounded-[var(--radius-panel)]",
           isSelected &&
             "shadow-[0_0_0_3px_color-mix(in_oklch,var(--thread-teal)_38%,transparent)]",
         )}
@@ -1024,7 +1024,7 @@ function CanvasBlockFrame({
         <button
           type="button"
           className={cn(
-            "absolute inset-0 rounded-[var(--site-radius-panel)] border-2 transition-[border-color,box-shadow]",
+            "absolute inset-0 rounded-[var(--radius-panel)] border-2 transition-[border-color,box-shadow]",
             isSelected
               ? "border-[var(--thread-teal)]"
               : "border-transparent hover:border-[color-mix(in_oklch,var(--thread-coral)_55%,transparent)]",
@@ -1034,19 +1034,19 @@ function CanvasBlockFrame({
         />
 
         <div className="pointer-events-none absolute left-3 right-3 top-3 flex items-start justify-between gap-3">
-          <div className="rounded-full border border-[color-mix(in_oklch,var(--site-border)_78%,transparent)] bg-[color-mix(in_oklch,var(--site-surface)_88%,transparent)] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--site-foreground)] shadow-[var(--shadow-tight)] backdrop-blur">
+          <div className="rounded-full border border-[color-mix(in_oklch,var(--color-border)_78%,transparent)] bg-[color-mix(in_oklch,var(--color-surface)_88%,transparent)] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--color-text)] shadow-[var(--shadow-tight)] backdrop-blur">
             {definition?.displayName ?? block.type}
           </div>
           <div className="pointer-events-auto flex items-center gap-2">
             {block.settings?.hidden ? (
-              <span className="rounded-full border border-[color-mix(in_oklch,var(--site-border)_78%,transparent)] bg-[color-mix(in_oklch,var(--site-surface)_88%,transparent)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--site-foreground)] shadow-[var(--shadow-tight)] backdrop-blur">
+              <span className="rounded-full border border-[color-mix(in_oklch,var(--color-border)_78%,transparent)] bg-[color-mix(in_oklch,var(--color-surface)_88%,transparent)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--color-text)] shadow-[var(--shadow-tight)] backdrop-blur">
                 Hidden
               </span>
             ) : null}
             <button
               type="button"
               draggable
-              className="rounded-full border border-[color-mix(in_oklch,var(--site-border)_78%,transparent)] bg-[color-mix(in_oklch,var(--site-surface)_88%,transparent)] px-3 py-2 text-[var(--site-foreground)] shadow-[var(--shadow-tight)] backdrop-blur transition-transform hover:-translate-y-px active:cursor-grabbing"
+              className="rounded-full border border-[color-mix(in_oklch,var(--color-border)_78%,transparent)] bg-[color-mix(in_oklch,var(--color-surface)_88%,transparent)] px-3 py-2 text-[var(--color-text)] shadow-[var(--shadow-tight)] backdrop-blur transition-transform hover:-translate-y-px active:cursor-grabbing"
               aria-label={`Drag ${definition?.displayName ?? block.type} block`}
               onClick={(event) => {
                 event.preventDefault();

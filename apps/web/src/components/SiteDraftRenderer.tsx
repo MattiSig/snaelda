@@ -176,7 +176,7 @@ export function SiteDraftRenderer({
                     {eyebrow ? `${eyebrow} · ` : ""}
                     {page.title}
                   </span>
-                  <small className="text-[color-mix(in_oklch,var(--site-foreground)_55%,var(--site-background))]">
+                  <small className="text-[color-mix(in_oklch,var(--color-text)_55%,var(--color-background))]">
                     {page.slug}
                   </small>
                 </div>
@@ -234,16 +234,16 @@ function ImageCreditsBand({ credits }: { credits?: ImageCredit[] }) {
   }
   return (
     <aside
-      className="border-t border-[color-mix(in_oklch,var(--site-border)_45%,transparent)] bg-[color-mix(in_oklch,var(--site-background)_92%,var(--site-foreground))]"
+      className="border-t border-[color-mix(in_oklch,var(--color-border)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-background)_92%,var(--color-text))]"
       aria-label="Image credits"
     >
-      <div className="mx-auto flex w-full max-w-[1180px] flex-wrap items-center gap-x-3 gap-y-1 px-6 py-4 text-xs text-[color-mix(in_oklch,var(--site-foreground)_72%,var(--site-background))]">
+      <div className="mx-auto flex w-full max-w-[1180px] flex-wrap items-center gap-x-3 gap-y-1 px-6 py-4 text-xs text-[color-mix(in_oklch,var(--color-text)_72%,var(--color-background))]">
         <span>Imagery from</span>
         <a
           href="https://www.pexels.com"
           target="_blank"
           rel="noopener noreferrer"
-          className="font-medium text-[var(--site-foreground)] hover:underline"
+          className="font-medium text-[var(--color-text)] hover:underline"
         >
           Pexels
         </a>
@@ -265,10 +265,10 @@ function ImageCreditsBand({ credits }: { credits?: ImageCredit[] }) {
                         target: "_blank",
                         rel: "noopener noreferrer",
                         className:
-                          "font-medium text-[var(--site-foreground)] hover:underline",
+                          "font-medium text-[var(--color-text)] hover:underline",
                       }
                     : {
-                        className: "font-medium text-[var(--site-foreground)]",
+                        className: "font-medium text-[var(--color-text)]",
                       })}
                 >
                   {name}
@@ -517,10 +517,10 @@ function renderSiteBlock({
 }
 
 const headingClass =
-  "font-serif text-[clamp(1.65rem,2.8vw,2.4rem)] font-bold leading-[1.08] tracking-tight text-[var(--site-foreground)]";
+  "[font-family:var(--font-heading)] text-[clamp(1.65rem,2.8vw,2.4rem)] [font-weight:var(--font-headingWeight,700)] leading-[1.08] tracking-tight text-[var(--color-text)]";
 
 const bodyClass =
-  "text-[1.05rem] leading-[1.65] text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]";
+  "text-[1.05rem] leading-[1.65] text-[color-mix(in_oklch,var(--color-text)_82%,var(--color-background))]";
 
 function HeroBlock({
   props,
@@ -552,11 +552,11 @@ function HeroBlock({
       {asText(props.eyebrow) ? (
         <p className={text.eyebrow}>{asText(props.eyebrow)}</p>
       ) : null}
-      <h2 className="font-serif text-[clamp(2.6rem,6.2vw,5.4rem)] font-bold leading-[0.96] tracking-[-0.02em] text-[var(--site-foreground)]">
+      <h2 className="[font-family:var(--font-heading)] text-[clamp(2.6rem,6.2vw,5.4rem)] [font-weight:var(--font-headingWeight,700)] leading-[0.96] tracking-[-0.02em] text-[var(--color-text)]">
         {asText(props.headline)}
       </h2>
       {asText(props.subheadline) ? (
-        <p className="max-w-[44ch] text-[1.15rem] leading-[1.6] text-[color-mix(in_oklch,var(--site-foreground)_78%,var(--site-background))]">
+        <p className="max-w-[44ch] text-[1.15rem] leading-[1.6] text-[color-mix(in_oklch,var(--color-text)_78%,var(--color-background))]">
           {asText(props.subheadline)}
         </p>
       ) : null}
@@ -602,7 +602,7 @@ function HeroBlock({
               linkMode={linkMode}
               siteSlug={siteSlug}
               className={cn(
-                "w-full rounded-[var(--site-radius-inner)] object-cover",
+                "w-full rounded-[var(--radius-inner)] object-cover",
                 isSplit
                   ? "aspect-[4/5] lg:aspect-auto lg:h-full lg:min-h-[460px]"
                   : "aspect-[16/9] max-h-[520px]",
@@ -673,10 +673,10 @@ function FeaturesGridBlock({ props }: { props: Record<string, unknown> }) {
             return (
               <div key={index} className={preview.feature}>
                 {icon ? <p className={text.eyebrow}>{icon}</p> : null}
-                <h4 className="mt-1 font-serif text-[1.2rem] font-bold leading-[1.15] text-[var(--site-foreground)]">
+                <h4 className="mt-1 [font-family:var(--font-heading)] text-[1.2rem] [font-weight:var(--font-headingWeight,700)] leading-[1.15] text-[var(--color-text)]">
                   {asText(value?.title)}
                 </h4>
-                <p className="leading-[1.6] text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
+                <p className="leading-[1.6] text-[color-mix(in_oklch,var(--color-text)_82%,var(--color-background))]">
                   {asText(value?.body)}
                 </p>
               </div>
@@ -699,9 +699,9 @@ function CTABandBlock({
   const variant = asText(props.variant) || "primary";
   const surfaceClass =
     variant === "accent"
-      ? "bg-[var(--site-primary)] text-[var(--site-background)] [--site-button-background:var(--site-background)] [--site-button-foreground:var(--site-primary)] [--site-button-border:var(--site-background)] [--site-button-ghost-foreground:var(--site-background)] [--site-button-ghost-border:var(--site-background)]"
+      ? "bg-[var(--color-primary)] text-[var(--color-background)] [--color-buttonBackground:var(--color-background)] [--color-buttonForeground:var(--color-primary)] [--color-buttonBorder:var(--color-background)] [--color-buttonGhostForeground:var(--color-background)] [--color-buttonGhostBorder:var(--color-background)]"
       : variant === "secondary"
-        ? "bg-[var(--site-surface)] text-[var(--site-foreground)]"
+        ? "bg-[var(--color-surface)] text-[var(--color-text)]"
         : preview.ctaSurface;
   return (
     <section className={cn(preview.panel, surfaceClass)}>
@@ -799,7 +799,7 @@ function ContactFormBlock({
         <form className="grid gap-5" onSubmit={handleSubmit}>
           {fields.map((field) => (
             <label key={field.name} className="grid gap-2">
-              <span className="text-sm font-medium text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
+              <span className="text-sm font-medium text-[color-mix(in_oklch,var(--color-text)_82%,var(--color-background))]">
                 {field.label}
                 {field.required ? " *" : ""}
               </span>
@@ -943,7 +943,7 @@ function ImageTextBlock({
             linkMode={linkMode}
             siteSlug={siteSlug}
             className={cn(
-              "aspect-[4/5] w-full rounded-[var(--site-radius-inner)] object-cover lg:aspect-auto lg:h-full lg:min-h-[380px]",
+              "aspect-[4/5] w-full rounded-[var(--radius-inner)] object-cover lg:aspect-auto lg:h-full lg:min-h-[380px]",
               imagePosition === "left" && "lg:order-1",
             )}
           />
@@ -1005,7 +1005,7 @@ function GalleryBlock({
                     linkMode={linkMode}
                     siteSlug={siteSlug}
                     className={cn(
-                      "w-full rounded-[var(--site-radius-inner)] object-cover",
+                      "w-full rounded-[var(--radius-inner)] object-cover",
                       isSpotlight
                         ? "aspect-[21/9]"
                         : layout === "masonry" && index % 3 === 0
@@ -1024,11 +1024,11 @@ function GalleryBlock({
                   </div>
                 )}
                 <figcaption className="grid gap-1">
-                  <span className="text-sm font-medium text-[var(--site-foreground)]">
+                  <span className="text-sm font-medium text-[var(--color-text)]">
                     {title}
                   </span>
                   {caption ? (
-                    <span className="text-sm leading-[1.55] text-[color-mix(in_oklch,var(--site-foreground)_72%,var(--site-background))]">
+                    <span className="text-sm leading-[1.55] text-[color-mix(in_oklch,var(--color-text)_72%,var(--color-background))]">
                       {caption}
                     </span>
                   ) : null}
@@ -1066,7 +1066,7 @@ function TestimonialsBlock({
             const avatar = asImageRef(value?.avatar);
             return (
               <figure key={index} className={preview.quoteCard}>
-                <blockquote className="m-0 font-serif text-[1.35rem] leading-[1.45] text-[var(--site-foreground)]">
+                <blockquote className="m-0 [font-family:var(--font-heading)] text-[1.35rem] leading-[1.45] text-[var(--color-text)]">
                   &ldquo;{asText(value?.quote)}&rdquo;
                 </blockquote>
                 <figcaption className="flex items-center gap-3">
@@ -1079,11 +1079,11 @@ function TestimonialsBlock({
                     />
                   ) : null}
                   <div>
-                    <span className="block text-sm font-semibold text-[var(--site-foreground)]">
+                    <span className="block text-sm font-semibold text-[var(--color-text)]">
                       {asText(value?.name)}
                     </span>
                     {asText(value?.role) ? (
-                      <span className="block text-sm text-[color-mix(in_oklch,var(--site-foreground)_68%,var(--site-background))]">
+                      <span className="block text-sm text-[color-mix(in_oklch,var(--color-text)_68%,var(--color-background))]">
                         {asText(value?.role)}
                       </span>
                     ) : null}
@@ -1121,13 +1121,13 @@ function PricingPackagesBlock({
             return (
               <article key={index} className={preview.pricingCard}>
                 <div className="grid gap-2">
-                  <h4 className="font-serif text-[1.3rem] font-bold leading-[1.1] text-[var(--site-foreground)]">
+                  <h4 className="[font-family:var(--font-heading)] text-[1.3rem] [font-weight:var(--font-headingWeight,700)] leading-[1.1] text-[var(--color-text)]">
                     {asText(value?.name)}
                   </h4>
-                  <p className="m-0 font-serif text-[1.8rem] font-bold leading-none text-[var(--site-foreground)]">
+                  <p className="m-0 [font-family:var(--font-heading)] text-[1.8rem] [font-weight:var(--font-headingWeight,700)] leading-none text-[var(--color-text)]">
                     {asText(value?.price)}
                   </p>
-                  <p className="m-0 text-sm leading-[1.55] text-[color-mix(in_oklch,var(--site-foreground)_78%,var(--site-background))]">
+                  <p className="m-0 text-sm leading-[1.55] text-[color-mix(in_oklch,var(--color-text)_78%,var(--color-background))]">
                     {asText(value?.description)}
                   </p>
                 </div>
@@ -1138,7 +1138,7 @@ function PricingPackagesBlock({
                       <li key={featureIndex} className={preview.chip}>
                         <span
                           aria-hidden
-                          className="text-[var(--site-primary)]"
+                          className="text-[var(--color-primary)]"
                         >
                           &#x2014;
                         </span>
@@ -1180,10 +1180,10 @@ function FAQBlock({ props }: { props: Record<string, unknown> }) {
             const value = asObject(item);
             return (
               <li key={index} className={preview.faqItem}>
-                <h4 className="font-serif text-[1.15rem] font-bold leading-[1.25] text-[var(--site-foreground)]">
+                <h4 className="[font-family:var(--font-heading)] text-[1.15rem] [font-weight:var(--font-headingWeight,700)] leading-[1.25] text-[var(--color-text)]">
                   {asText(value?.question)}
                 </h4>
-                <p className="m-0 leading-[1.65] text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
+                <p className="m-0 leading-[1.65] text-[color-mix(in_oklch,var(--color-text)_82%,var(--color-background))]">
                   {asText(value?.answer)}
                 </p>
               </li>
@@ -1217,14 +1217,14 @@ function StatsBlock({ props }: { props: Record<string, unknown> }) {
             const value = asObject(item);
             return (
               <div key={index} className="grid gap-2">
-                <p className="m-0 font-serif text-[clamp(2rem,4vw,3rem)] font-bold leading-[1.05] text-[var(--site-foreground)]">
+                <p className="m-0 [font-family:var(--font-heading)] text-[clamp(2rem,4vw,3rem)] [font-weight:var(--font-headingWeight,700)] leading-[1.05] text-[var(--color-text)]">
                   {asText(value?.value)}
                 </p>
                 <p className={cn(text.eyebrow, "m-0")}>
                   {asText(value?.label)}
                 </p>
                 {asText(value?.description) ? (
-                  <p className="m-0 text-sm leading-[1.55] text-[color-mix(in_oklch,var(--site-foreground)_78%,var(--site-background))]">
+                  <p className="m-0 text-sm leading-[1.55] text-[color-mix(in_oklch,var(--color-text)_78%,var(--color-background))]">
                     {asText(value?.description)}
                   </p>
                 ) : null}
@@ -1268,7 +1268,7 @@ function TeamProfileCardsBlock({
                     image={photo}
                     linkMode={linkMode}
                     siteSlug={siteSlug}
-                    className="aspect-[4/5] w-full rounded-[var(--site-radius-inner)] object-cover"
+                    className="aspect-[4/5] w-full rounded-[var(--radius-inner)] object-cover"
                   />
                 ) : (
                   <div
@@ -1281,14 +1281,14 @@ function TeamProfileCardsBlock({
                   </div>
                 )}
                 <div className="grid gap-1">
-                  <h4 className="font-serif text-[1.2rem] font-bold leading-[1.15] text-[var(--site-foreground)]">
+                  <h4 className="[font-family:var(--font-heading)] text-[1.2rem] [font-weight:var(--font-headingWeight,700)] leading-[1.15] text-[var(--color-text)]">
                     {asText(value?.name)}
                   </h4>
-                  <p className="m-0 text-sm font-medium uppercase tracking-[0.08em] text-[color-mix(in_oklch,var(--site-foreground)_62%,var(--site-background))]">
+                  <p className="m-0 text-sm font-medium uppercase tracking-[0.08em] text-[color-mix(in_oklch,var(--color-text)_62%,var(--color-background))]">
                     {asText(value?.role)}
                   </p>
                 </div>
-                <p className="m-0 leading-[1.6] text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
+                <p className="m-0 leading-[1.6] text-[color-mix(in_oklch,var(--color-text)_82%,var(--color-background))]">
                   {asText(value?.bio)}
                 </p>
                 {asArray(value?.links).length > 0 ? (
@@ -1358,16 +1358,16 @@ function FooterBlock({
                   }}
                   linkMode={linkMode}
                   siteSlug={siteSlug}
-                  className="h-10 w-10 rounded-full border border-[color-mix(in_oklch,var(--site-border)_52%,transparent)] object-cover"
+                  className="h-10 w-10 rounded-full border border-[color-mix(in_oklch,var(--color-border)_52%,transparent)] object-cover"
                 />
               ) : null}
-              <h3 className="m-0 font-serif text-[1.4rem] font-bold leading-tight text-[var(--site-foreground)]">
+              <h3 className="m-0 [font-family:var(--font-heading)] text-[1.4rem] [font-weight:var(--font-headingWeight,700)] leading-tight text-[var(--color-text)]">
                 {brandName}
               </h3>
             </div>
           ) : null}
           {asText(props.tagline) ? (
-            <p className="m-0 max-w-[44ch] text-[color-mix(in_oklch,var(--site-foreground)_78%,var(--site-background))]">
+            <p className="m-0 max-w-[44ch] text-[color-mix(in_oklch,var(--color-text)_78%,var(--color-background))]">
               {asText(props.tagline)}
             </p>
           ) : null}
@@ -1415,8 +1415,8 @@ function FooterBlock({
         </div>
       </div>
       {asText(props.copyright) ? (
-        <div className="mx-auto mt-10 w-full max-w-[1180px] border-t border-[color-mix(in_oklch,var(--site-border)_45%,transparent)] pt-6">
-          <small className="text-xs text-[color-mix(in_oklch,var(--site-foreground)_62%,var(--site-background))]">
+        <div className="mx-auto mt-10 w-full max-w-[1180px] border-t border-[color-mix(in_oklch,var(--color-border)_45%,transparent)] pt-6">
+          <small className="text-xs text-[color-mix(in_oklch,var(--color-text)_62%,var(--color-background))]">
             {asText(props.copyright)}
           </small>
         </div>
@@ -1448,7 +1448,7 @@ function HeaderBrand({
           }}
           linkMode={linkMode}
           siteSlug={siteSlug}
-          className="h-10 w-10 rounded-full border border-[color-mix(in_oklch,var(--site-border)_52%,transparent)] object-cover"
+          className="h-10 w-10 rounded-full border border-[color-mix(in_oklch,var(--color-border)_52%,transparent)] object-cover"
         />
       ) : null}
       <span>{brandName}</span>
@@ -1475,7 +1475,7 @@ function FooterContactDetails({
   }
 
   return (
-    <div className="grid gap-1 text-sm text-[color-mix(in_oklch,var(--site-foreground)_72%,var(--site-background))]">
+    <div className="grid gap-1 text-sm text-[color-mix(in_oklch,var(--color-text)_72%,var(--color-background))]">
       {contact.address ? (
         <p className="m-0 whitespace-pre-line">{contact.address}</p>
       ) : null}
@@ -1679,12 +1679,12 @@ function CollectionDetailBlock({
               <p className={text.eyebrow}>{collection.singularLabel}</p>
             ) : null}
             {title ? (
-              <h2 className="font-serif text-[clamp(2rem,4vw,3.4rem)] font-bold leading-[1.05] tracking-tight text-[var(--site-foreground)]">
+              <h2 className="[font-family:var(--font-heading)] text-[clamp(2rem,4vw,3.4rem)] [font-weight:var(--font-headingWeight,700)] leading-[1.05] tracking-tight text-[var(--color-text)]">
                 {title}
               </h2>
             ) : null}
             {summary ? (
-              <p className="text-[1.15rem] leading-[1.6] text-[color-mix(in_oklch,var(--site-foreground)_82%,var(--site-background))]">
+              <p className="text-[1.15rem] leading-[1.6] text-[color-mix(in_oklch,var(--color-text)_82%,var(--color-background))]">
                 {summary}
               </p>
             ) : null}
@@ -1694,11 +1694,11 @@ function CollectionDetailBlock({
               image={cover}
               linkMode={linkMode}
               siteSlug={siteSlug}
-              className="w-full rounded-[var(--site-radius-inner)] object-cover aspect-[16/9]"
+              className="w-full rounded-[var(--radius-inner)] object-cover aspect-[16/9]"
             />
           ) : null}
           {details ? (
-            <div className="grid gap-4 text-[1.05rem] leading-[1.7] text-[color-mix(in_oklch,var(--site-foreground)_85%,var(--site-background))]">
+            <div className="grid gap-4 text-[1.05rem] leading-[1.7] text-[color-mix(in_oklch,var(--color-text)_85%,var(--color-background))]">
               {details.split(/\n{2,}/).map((paragraph, index) => (
                 <p key={index}>{paragraph}</p>
               ))}
@@ -1737,14 +1737,14 @@ function CollectionEntryCard({
   return (
     <a
       href={href}
-      className="group grid gap-4 rounded-[var(--site-radius-inner)] border border-[color-mix(in_oklch,var(--site-border)_45%,transparent)] bg-[var(--site-surface)] p-5 transition-transform hover:-translate-y-px"
+      className="group grid gap-4 rounded-[var(--radius-inner)] border border-[color-mix(in_oklch,var(--color-border)_45%,transparent)] bg-[var(--color-surface)] p-5 transition-transform hover:-translate-y-px"
     >
       {cover ? (
         <AssetImage
           image={cover}
           linkMode={linkMode}
           siteSlug={siteSlug}
-          className="aspect-[4/3] w-full rounded-[var(--site-radius-inner)] object-cover"
+          className="aspect-[4/3] w-full rounded-[var(--radius-inner)] object-cover"
         />
       ) : (
         <div className={cn(preview.imagePlaceholder, "aspect-[4/3] min-h-0")}>
@@ -1752,11 +1752,11 @@ function CollectionEntryCard({
         </div>
       )}
       <div className="grid gap-2">
-        <h4 className="m-0 font-serif text-[1.2rem] font-bold leading-[1.2] text-[var(--site-foreground)]">
+        <h4 className="m-0 [font-family:var(--font-heading)] text-[1.2rem] [font-weight:var(--font-headingWeight,700)] leading-[1.2] text-[var(--color-text)]">
           {title}
         </h4>
         {summary ? (
-          <p className="m-0 text-sm leading-[1.55] text-[color-mix(in_oklch,var(--site-foreground)_78%,var(--site-background))]">
+          <p className="m-0 text-sm leading-[1.55] text-[color-mix(in_oklch,var(--color-text)_78%,var(--color-background))]">
             {summary}
           </p>
         ) : null}

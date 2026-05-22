@@ -57,8 +57,9 @@ func BuildBlockRegistryContractFixture() BlockRegistryContractFixture {
 						"bodyFont":    "Avenir Next",
 					},
 					Layout: map[string]any{
-						"sectionSpacing": "96px",
-						"contentWidth":   "720px",
+						"sectionPaddingX": "24px",
+						"sectionPaddingY": "96px",
+						"contentWidth":    "720px",
 					},
 					Shape: map[string]any{
 						"radius": "28px",

@@ -249,7 +249,6 @@ func BuildThemeWithBrand(selection ThemeSelection, brand BrandConfig) ThemeConfi
 			Layout: map[string]any{
 				"maxWidth":        "1120px",
 				"contentWidth":    "720px",
-				"sectionSpacing":  sectionPaddingY,
 				"sectionPaddingX": "24px",
 				"sectionPaddingY": sectionPaddingY,
 			},
@@ -330,7 +329,10 @@ func detectThemeFontPreset(typography map[string]any) string {
 }
 
 func detectThemeSectionSpacing(layout map[string]any) string {
-	value, _ := layout["sectionSpacing"].(string)
+	value, _ := layout["sectionPaddingY"].(string)
+	if value == "" {
+		value, _ = layout["sectionSpacing"].(string)
+	}
 	for id, spacing := range themeSectionSpacingValues {
 		if value == spacing {
 			return id

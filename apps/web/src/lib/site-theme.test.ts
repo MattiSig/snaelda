@@ -23,7 +23,8 @@ describe('buildSiteThemeStyle', () => {
           bodyFont: 'Avenir Next',
         },
         layout: {
-          sectionSpacing: '96px',
+          sectionPaddingX: '24px',
+          sectionPaddingY: '96px',
           contentWidth: '720px',
         },
         shape: {
@@ -36,9 +37,10 @@ describe('buildSiteThemeStyle', () => {
 
     const cssVars = style as Record<string, string>
 
-    expect(cssVars['--site-button-background']).toBe('#f3ead8')
-    expect(cssVars['--site-button-foreground']).toBe('#151215')
-    expect(cssVars['--site-image-border']).toBe('#ff8cad')
-    expect(cssVars['--site-image-tall-background']).toContain('linear-gradient')
+    expect(cssVars['--font-headingWeight']).toBe('700')
+    expect(cssVars['--color-buttonBackground']).toBe('#f3ead8')
+    expect(cssVars['--color-buttonForeground']).toBe('#151215')
+    expect(cssVars['--color-imageBorder']).toBe('#ff8cad')
+    expect(cssVars['--image-tallBackground']).toContain('linear-gradient')
   })
 })

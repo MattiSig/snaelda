@@ -50,7 +50,7 @@ function buildSnapshot(): PublishedSnapshot {
           primary: '#8ee2d1',
         },
         typography: { headingFont: 'Iowan Old Style', bodyFont: 'Avenir Next' },
-        layout: { sectionSpacing: '96px' },
+        layout: { sectionPaddingY: '96px' },
         shape: { radius: '14px' },
       },
     },
