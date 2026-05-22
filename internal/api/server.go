@@ -214,12 +214,14 @@ func (s *Server) Handler() http.Handler {
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, generation.Module{})
 	}
+	publishedSiteCache := publishing.NewPublishedSiteCache()
 	if store, ok := s.database.(publishing.DB); ok {
 		publishConfig := publishing.ServiceConfig{
 			AppBaseURL:       s.config.AppBaseURL,
 			PublicBaseURL:    s.config.PublicBaseURL,
 			PublicBaseDomain: s.config.PublicBaseDomain,
 			ArtifactsDir:     s.config.PublishedArtifactsDir,
+			Cache:            publishedSiteCache,
 			Logger:           s.logger,
 		}
 		if strings.EqualFold(s.config.PublishedArtifactsBackend, "s3") {
@@ -251,6 +253,7 @@ func (s *Server) Handler() http.Handler {
 			AppBaseURL:       s.config.AppBaseURL,
 			PublicBaseURL:    s.config.PublicBaseURL,
 			PublicBaseDomain: s.config.PublicBaseDomain,
+			Cache:            publishedSiteCache,
 		}).Mount(mux, s.auth.RequireSession)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, domains.Module{})

@@ -91,7 +91,7 @@ type ServiceConfig struct {
 	ArtifactsDir     string
 	Renderer         ArtifactRenderer
 	Store            ArtifactStore
-	Cache            publishedSiteCache
+	Cache            PublishedSiteCache
 	AssetProvenance  AssetProvenanceLookup
 	CDNPurger        CDNPurger
 	Logger           *slog.Logger
@@ -116,7 +116,7 @@ type Service struct {
 	reader           sites.Reader
 	renderer         ArtifactRenderer
 	store            ArtifactStore
-	cache            publishedSiteCache
+	cache            PublishedSiteCache
 	publicBaseURL    string
 	publicBaseDomain string
 	assetProvenance  AssetProvenanceLookup
@@ -153,7 +153,7 @@ func NewService(db DB, cfg ServiceConfig) *Service {
 	}
 	cache := cfg.Cache
 	if cache == nil {
-		cache = newMemoryPublishedSiteCache()
+		cache = NewPublishedSiteCache()
 	}
 
 	return &Service{

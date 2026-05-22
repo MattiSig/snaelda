@@ -14,6 +14,8 @@ type AccessStore interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
+var ErrSubscriptionRequired = errors.New("subscription required")
+
 type WorkspaceState struct {
 	Entitlement Entitlement   `json:"entitlement"`
 	Usage       Usage         `json:"usage"`
@@ -116,6 +118,17 @@ func EnforcePromptLimit(ctx context.Context, store AccessStore, workspaceID stri
 		}
 	}
 	return nil
+}
+
+func EnforceCustomDomains(ctx context.Context, store AccessStore, workspaceID string) error {
+	state, err := LoadWorkspaceState(ctx, store, workspaceID)
+	if err != nil {
+		return err
+	}
+	if state.Entitlement.SubscriptionLive && state.Entitlement.CustomDomainsEnabled {
+		return nil
+	}
+	return fmt.Errorf("%w: upgrade to a paid plan to attach and verify custom domains", ErrSubscriptionRequired)
 }
 
 func EnforceAssetStorageLimit(ctx context.Context, store AccessStore, workspaceID string, additionalBytes int64) error {

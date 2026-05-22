@@ -19,9 +19,11 @@ import {
   createBlock,
   createAssetUploadURL,
   createBillingCheckout,
+  createSiteDomain,
   createPage,
   deleteBlock,
   deletePage,
+  deleteSiteDomain,
   deleteSite,
   duplicateBlock,
   getBillingState,
@@ -57,6 +59,7 @@ import {
   updateSite,
   updateSiteTheme,
   undoSiteReprompt,
+  verifySiteDomain,
 } from "@/lib/api";
 import { actions, emptyState, form, ribbonPanel, text } from "@/lib/styles";
 import { cn } from "@/lib/utils";
@@ -131,6 +134,7 @@ function SiteDetail() {
   const [isPublishing, setIsPublishing] = useState(false);
   const [activeRollbackVersionId, setActiveRollbackVersionId] = useState("");
   const [publishNote, setPublishNote] = useState("");
+  const [newCustomDomainHostname, setNewCustomDomainHostname] = useState("");
   const [siteReprompt, setSiteReprompt] = useState("");
   const [pageReprompt, setPageReprompt] = useState("");
   const [themeSelection, setThemeSelection] = useState<ThemeSelection | null>(
@@ -168,6 +172,10 @@ function SiteDetail() {
   const [activeSubmissionId, setActiveSubmissionId] = useState("");
   const [publishErrorMessage, setPublishErrorMessage] = useState("");
   const [publishStatusMessage, setPublishStatusMessage] = useState("");
+  const [domainErrorMessage, setDomainErrorMessage] = useState("");
+  const [domainStatusMessage, setDomainStatusMessage] = useState("");
+  const [isMutatingDomain, setIsMutatingDomain] = useState(false);
+  const [activeDomainId, setActiveDomainId] = useState("");
   const [assetErrorMessage, setAssetErrorMessage] = useState("");
   const [assetStatusMessage, setAssetStatusMessage] = useState("");
   const [submissionErrorMessage, setSubmissionErrorMessage] = useState("");
@@ -1212,6 +1220,84 @@ function SiteDetail() {
     }
   }
 
+  async function handleCreateDomain(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsMutatingDomain(true);
+    setActiveDomainId("");
+    setDomainErrorMessage("");
+    setDomainStatusMessage("");
+    clearBlockedAction();
+
+    try {
+      const response = await createSiteDomain(siteId, {
+        hostname: newCustomDomainHostname,
+      });
+      setDomainState(response);
+      setNewCustomDomainHostname("");
+      setDomainStatusMessage(
+        "Custom domain added. Publish once if needed, then verify the DNS TXT record.",
+      );
+    } catch (error) {
+      setBlockedActionFromError(error);
+      setDomainErrorMessage(
+        error instanceof APIError ? error.message : "Could not add domain",
+      );
+    } finally {
+      setIsMutatingDomain(false);
+    }
+  }
+
+  async function handleVerifyDomain(domainId: string) {
+    setIsMutatingDomain(true);
+    setActiveDomainId(domainId);
+    setDomainErrorMessage("");
+    setDomainStatusMessage("");
+    clearBlockedAction();
+
+    try {
+      const response = await verifySiteDomain(siteId, domainId);
+      setDomainState(response);
+      setDomainStatusMessage("Domain verified and ready for live traffic.");
+    } catch (error) {
+      setBlockedActionFromError(error);
+      setDomainErrorMessage(
+        error instanceof APIError ? error.message : "Could not verify domain",
+      );
+    } finally {
+      setIsMutatingDomain(false);
+      setActiveDomainId("");
+    }
+  }
+
+  async function handleDeleteDomain(domainId: string, hostname: string) {
+    const confirmed = window.confirm(
+      `Remove ${hostname} from this site? The hosted Snaelda URL will keep working.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setIsMutatingDomain(true);
+    setActiveDomainId(domainId);
+    setDomainErrorMessage("");
+    setDomainStatusMessage("");
+    clearBlockedAction();
+
+    try {
+      const response = await deleteSiteDomain(siteId, domainId);
+      setDomainState(response);
+      setDomainStatusMessage("Custom domain removed.");
+    } catch (error) {
+      setBlockedActionFromError(error);
+      setDomainErrorMessage(
+        error instanceof APIError ? error.message : "Could not remove domain",
+      );
+    } finally {
+      setIsMutatingDomain(false);
+      setActiveDomainId("");
+    }
+  }
+
   async function handlePublish() {
     setIsPublishing(true);
     setPublishErrorMessage("");
@@ -1296,6 +1382,8 @@ function SiteDetail() {
       ? `https://${domainState.hostedHostname}/`
       : "");
   const liveHostname = domainState?.hostedHostname ?? "";
+  const customDomains =
+    domainState?.domains.filter((domain) => domain.type === "custom") ?? [];
   const billingPlanLabel =
     billingState?.entitlement.plan === "pro"
       ? "Pro"
@@ -2620,6 +2708,183 @@ function SiteDetail() {
               Custom domains stay locked until the workspace is on a paid plan.
             </p>
           ) : null}
+        </div>
+
+        <div className={workspaceInset}>
+          <div>
+            <p className={text.label}>Custom domains</p>
+            <p className={cn(form.hint, "mt-2")}>
+              Attach the domain you already own, add the TXT record exactly as
+              shown, then verify it here. Traffic keeps working on the hosted
+              Snaelda URL until your custom hostname is active.
+            </p>
+          </div>
+
+          {domainErrorMessage ? (
+            <p className={cn(text.error, "mt-4")}>{domainErrorMessage}</p>
+          ) : null}
+          {domainStatusMessage ? (
+            <p className={cn(text.success, "mt-4")}>{domainStatusMessage}</p>
+          ) : null}
+
+          {domainState?.customDomainsEnabled ? (
+            <form className={cn(form.grid, "mt-4")} onSubmit={handleCreateDomain}>
+              <label htmlFor="custom-domain-hostname" className={text.label}>
+                Add a hostname
+              </label>
+              <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+                <Input
+                  id="custom-domain-hostname"
+                  value={newCustomDomainHostname}
+                  onChange={(event) =>
+                    setNewCustomDomainHostname(event.target.value)
+                  }
+                  placeholder="example.com or www.example.com"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
+                <Button
+                  type="submit"
+                  disabled={
+                    isMutatingDomain || newCustomDomainHostname.trim() === ""
+                  }
+                >
+                  {isMutatingDomain && activeDomainId === ""
+                    ? "Adding..."
+                    : "Add domain"}
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <div className="mt-4 rounded-[12px] border border-[color-mix(in_oklch,var(--thread-gold)_45%,var(--border))] bg-[color-mix(in_oklch,var(--surface-2)_86%,var(--thread-gold))] p-4">
+              <p className="text-sm font-semibold text-[var(--paper)]">
+                Upgrade to attach a custom domain.
+              </p>
+              <p className={cn(form.hint, "mt-2")}>
+                Paid plans unlock DNS verification and live traffic on your own
+                hostname.
+              </p>
+              <div className="mt-4">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleStartUpgrade}
+                  disabled={isStartingUpgrade}
+                >
+                  {isStartingUpgrade ? "Opening checkout..." : "Upgrade"}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-4 grid gap-3">
+            {customDomains.length > 0 ? (
+              customDomains.map((domain) => {
+                const isActive = domain.status === "active";
+                const isPending = !isActive;
+                return (
+                  <article
+                    key={domain.id}
+                    className="rounded-[12px] border border-border bg-[color-mix(in_oklch,var(--surface-1)_42%,transparent)] p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3 max-sm:flex-col">
+                      <div>
+                        <p className="m-0 break-all text-sm font-semibold text-[var(--paper)]">
+                          {domain.hostname}
+                        </p>
+                        <p className="mt-2 text-sm text-[var(--paper-muted)]">
+                          {isActive
+                            ? "Active and eligible for live traffic."
+                            : "Pending DNS TXT verification."}
+                        </p>
+                      </div>
+                      <span
+                        className={cn(
+                          "rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.12em]",
+                          isActive
+                            ? "bg-[color-mix(in_oklch,var(--thread-teal)_26%,var(--surface-1))] text-[var(--paper)]"
+                            : "bg-[color-mix(in_oklch,var(--thread-gold)_24%,var(--surface-1))] text-[var(--paper)]",
+                        )}
+                      >
+                        {domain.status}
+                      </span>
+                    </div>
+
+                    {domain.publicUrl ? (
+                      <p className="mt-3 text-sm text-[var(--paper-muted)]">
+                        Live URL:{" "}
+                        <a
+                          href={domain.publicUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-semibold text-[var(--paper)] underline"
+                        >
+                          {domain.publicUrl}
+                        </a>
+                      </p>
+                    ) : null}
+
+                    {isPending &&
+                    domain.verificationHostname &&
+                    domain.verificationValue ? (
+                      <div className="mt-4 grid gap-3 md:grid-cols-2">
+                        <div className="rounded-[10px] border border-border bg-[var(--surface-1)] p-3">
+                          <p className={text.label}>TXT record name</p>
+                          <p className="mt-2 break-all text-sm font-semibold text-[var(--paper)]">
+                            {domain.verificationHostname}
+                          </p>
+                        </div>
+                        <div className="rounded-[10px] border border-border bg-[var(--surface-1)] p-3">
+                          <p className={text.label}>TXT record value</p>
+                          <p className="mt-2 break-all text-sm font-semibold text-[var(--paper)]">
+                            {domain.verificationValue}
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      {isPending ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={isMutatingDomain}
+                          onClick={() => handleVerifyDomain(domain.id)}
+                        >
+                          {isMutatingDomain && activeDomainId === domain.id
+                            ? "Checking DNS..."
+                            : "Verify domain"}
+                        </Button>
+                      ) : null}
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="plain"
+                        className={actions.inlineLink}
+                        disabled={isMutatingDomain}
+                        onClick={() =>
+                          handleDeleteDomain(domain.id, domain.hostname)
+                        }
+                      >
+                        {isMutatingDomain && activeDomainId === domain.id
+                          ? "Removing..."
+                          : "Remove domain"}
+                      </Button>
+                    </div>
+                  </article>
+                );
+              })
+            ) : (
+              <div className="rounded-[12px] border border-dashed border-border p-4">
+                <p className={text.p}>
+                  No custom domains yet. Add one when you are ready to point
+                  your own hostname at this site.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className={form.field}>

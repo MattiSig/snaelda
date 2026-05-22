@@ -4,6 +4,7 @@ Refreshed 2026-05-21 from 16 spec-vs-code audits plus the newly-authored `specs/
 
 ## Recently Confirmed Complete
 
+- [x] Custom-domain management foundation (specs 13, 10): `internal/domains` now supports `POST/PATCH/DELETE /api/sites/:siteId/domains` on top of the existing read path, with paid-plan enforcement via billing entitlements, hostname validation, DNS-TXT verification using `_snaelda-verify.{hostname}`, and safe refusal of hosted `subdomain` records. Domain list responses now expose pending verification instructions plus active-domain public URLs, and active custom domains become the preferred live URL in the builder. The publish/runtime cache now shares a domain cache between `internal/publishing` and `internal/domains`, so attach/verify/delete invalidates stale hostname lookups immediately. The builder publish panel now includes a production-facing custom-domain manager with add, verify, remove, DNS instructions, and paid-plan lock messaging.
 - [x] Theme token vocabulary now matches spec 11 end to end. `internal/siteconfig/theme_presets.go` emits `sectionPaddingX` + `sectionPaddingY` instead of the old single `sectionSpacing`, while `DetectThemeSelection` and the validator stay backward-compatible with legacy snapshots that still carry `sectionSpacing`. The public renderer and published `assets/theme.css` now use the spec-facing CSS variable families (`--color-*`, `--font-*`, `--radius-*`, `--space-sectionPaddingX/Y`) instead of the old `--site-*` contract, and theme CSS now exposes `headingWeight` / `bodyWeight` alongside the existing font-family tokens.
 - [x] `once_over_intake_ready` email sends are now idempotent on Stripe webhook event ID (spec 18 hardening). `internal/email/helpers.go` accepts an idempotency key for the once-over intake-ready template, `internal/billing/once_over.go` passes `once_over_intake_ready:{event_id}`, and billing tests assert the key is present so webhook replays do not double-send through providers that honor idempotency headers.
 - [x] Brand as a first-class typed object (specs 3, 5, 11): new `BrandConfig` Go struct + TypeScript type carry `businessName`, optional `{assetId, alt}` logo, and `primaryColor`; SiteDraft and PublishedSnapshot expose `brand` alongside theme; new `000014_site_brand.sql` adds a `brand jsonb` column on `sites` and the sites reader/writer persist it atomically with the rest of the draft. The siteconfig validator enforces hex colors and required-on-publish; published snapshots fall back to `site.name` + theme primary so legacy drafts still ship. `siteconfig.BuildThemeWithBrand` overrides the palette's `primary` token with `brand.primaryColor` so theme update + regenerate continue to use brand as the source of the rendered primary, and theme regeneration passes the current brand to the model as a constraint. Generation seeds brand from the site name and selected palette primary, the generation input contract carries an optional brand from callers, and `applySiteIdentity` preserves brand across site reprompt.
@@ -64,11 +65,9 @@ Refreshed 2026-05-21 from 16 spec-vs-code audits plus the newly-authored `specs/
 
 ## Core Spec Gaps
 
-- [ ] Custom-domain attach/verify/TLS (specs 13, 10).
-  - Extend `internal/domains/` `DomainService` beyond `List` with create/verify/delete; populate the existing `verification_token` column; integrate certmagic or autocert.
-  - Add `POST/PATCH/DELETE /api/sites/:siteId/domains` in `internal/api/server.go`.
-  - Settings UI under `apps/web/src/routes/app.sites.$siteId.settings.*` with DNS-TXT instructions and verification state, gated by paid entitlement (replace the static "locked" hint).
-  - Acceptance: paid user attaches `example.com`, verifies via DNS TXT, TLS issues automatically, public render serves on that host.
+- [ ] Automated TLS issuance for custom domains when the app terminates TLS directly (spec 13).
+  - Attach/verify/delete flows, paid gating, DNS-TXT instructions, and active custom-domain public routing are now shipped.
+  - Remaining work is only the deployment-specific ACME/certificate automation layer (`certmagic`, `autocert`, or equivalent) for environments where Snaelda itself, rather than an upstream proxy/platform, is responsible for certificate issuance.
 
 ## AI-First UX (Spec 20)
 

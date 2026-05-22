@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-type publishedSiteCache interface {
+type PublishedSiteCache interface {
 	LoadDomain(hostname string) (publishedSiteLookup, bool)
 	StoreDomain(hostname string, lookup publishedSiteLookup)
 	LoadPage(siteID string, versionID string, pagePath string) (PublishedPageArtifact, bool)
@@ -21,12 +21,16 @@ type memoryPublishedSiteCache struct {
 	pages         map[string]PublishedPageArtifact
 }
 
-func newMemoryPublishedSiteCache() *memoryPublishedSiteCache {
+func NewPublishedSiteCache() PublishedSiteCache {
 	return &memoryPublishedSiteCache{
 		domainLookups: map[string]publishedSiteLookup{},
 		domainSiteIDs: map[string]string{},
 		pages:         map[string]PublishedPageArtifact{},
 	}
+}
+
+func newMemoryPublishedSiteCache() *memoryPublishedSiteCache {
+	return NewPublishedSiteCache().(*memoryPublishedSiteCache)
 }
 
 func (c *memoryPublishedSiteCache) LoadDomain(hostname string) (publishedSiteLookup, bool) {

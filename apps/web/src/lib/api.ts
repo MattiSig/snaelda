@@ -403,6 +403,8 @@ export type SiteDomain = {
   type: string;
   status: string;
   publicUrl?: string;
+  verificationHostname?: string;
+  verificationValue?: string;
 };
 
 export type SiteDomainsResponse = {
@@ -1177,6 +1179,35 @@ export async function getSiteAnalytics(
 
 export async function getSiteDomains(siteId: string) {
   return apiFetch<SiteDomainsResponse>(`/api/sites/${siteId}/domains`);
+}
+
+export async function createSiteDomain(
+  siteId: string,
+  input: { hostname: string },
+) {
+  return apiFetch<SiteDomainsResponse>(`/api/sites/${siteId}/domains`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function verifySiteDomain(siteId: string, domainId: string) {
+  return apiFetch<SiteDomainsResponse>(
+    `/api/sites/${siteId}/domains/${domainId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ action: 'verify' }),
+    },
+  );
+}
+
+export async function deleteSiteDomain(siteId: string, domainId: string) {
+  return apiFetch<SiteDomainsResponse>(
+    `/api/sites/${siteId}/domains/${domainId}`,
+    {
+      method: 'DELETE',
+    },
+  );
 }
 
 export async function rollbackSiteVersion(siteId: string, versionId: string) {
