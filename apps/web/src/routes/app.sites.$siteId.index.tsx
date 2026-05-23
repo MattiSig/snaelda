@@ -3,6 +3,8 @@ import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 import { GenerationProgressCard, type GenerationProgressItem } from "@/components/GenerationProgressCard";
 import { PuckBuilder, type BuilderSection } from "@/components/PuckBuilder";
+import { RepromptHistoryPanel } from "@/components/RepromptHistoryPanel";
+import { RevisionDiffModal } from "@/components/RevisionDiffModal";
 import { Button } from "@/components/ui/button";
 
 import { Input } from "@/components/ui/input";
@@ -27,15 +29,18 @@ import {
   deleteSiteDomain,
   deleteSite,
   duplicateBlock,
+  getDraftRevision,
   getBillingState,
   getSiteDomains,
   getSiteDraft,
   getSiteTheme,
+  listRepromptHistory,
   listSiteFormSubmissions,
   listSiteAssets,
   listSiteVersions,
   publishSite,
   rollbackSiteVersion,
+  revertReprompt,
   reorderBlocks,
   streamRepromptPage,
   streamRegenerateSiteTheme,
@@ -49,6 +54,8 @@ import {
   type FormSubmissionRecord,
   type FormSubmissionStatus,
   type GenerationMetadata,
+  type DraftRevisionRecord,
+  type RepromptHistoryRecord,
   type SiteDraft,
   type SiteDomainsResponse,
   type SiteVersion,
@@ -59,7 +66,6 @@ import {
   updatePage,
   updateSite,
   updateSiteTheme,
-  undoSiteReprompt,
   verifySiteDomain,
 } from "@/lib/api";
 import { actions, emptyState, form, ribbonPanel, text } from "@/lib/styles";
@@ -218,12 +224,27 @@ function SiteDetail() {
   const [isUploadingAsset, setIsUploadingAsset] = useState(false);
   const [isRepromptingSite, setIsRepromptingSite] = useState(false);
   const [isRepromptingPage, setIsRepromptingPage] = useState(false);
+  const [repromptHistory, setRepromptHistory] = useState<
+    RepromptHistoryRecord[]
+  >([]);
   const [repromptProgressStep, setRepromptProgressStep] = useState("");
   const [repromptProgressStepTotal, setRepromptProgressStepTotal] = useState(0);
   const [repromptProgressScope, setRepromptProgressScope] = useState<
     "site" | "page" | ""
   >("");
+  const [repromptHistoryScope, setRepromptHistoryScope] = useState<
+    "site" | "page"
+  >("site");
   const [isUndoingReprompt, setIsUndoingReprompt] = useState(false);
+  const [activeRepromptHistoryId, setActiveRepromptHistoryId] = useState("");
+  const [activeRepromptDiff, setActiveRepromptDiff] =
+    useState<RepromptHistoryRecord | null>(null);
+  const [repromptDiffPrevious, setRepromptDiffPrevious] =
+    useState<DraftRevisionRecord | null>(null);
+  const [repromptDiffResult, setRepromptDiffResult] =
+    useState<DraftRevisionRecord | null>(null);
+  const [isLoadingRepromptDiff, setIsLoadingRepromptDiff] = useState(false);
+  const [repromptDiffErrorMessage, setRepromptDiffErrorMessage] = useState("");
   const [activeSubmissionId, setActiveSubmissionId] = useState("");
   const [publishErrorMessage, setPublishErrorMessage] = useState("");
   const [publishStatusMessage, setPublishStatusMessage] = useState("");
@@ -317,6 +338,7 @@ function SiteDetail() {
       getSiteDomains(siteId),
       getBillingState(),
       getSiteTheme(siteId),
+      listRepromptHistory(siteId),
       listSiteAssets(siteId),
       listSiteFormSubmissions(siteId),
     ])
@@ -327,6 +349,7 @@ function SiteDetail() {
           domainResponse,
           billingResponse,
           themeResponse,
+          repromptHistoryResponse,
           assetResponse,
           submissionResponse,
         ]) => {
@@ -343,6 +366,7 @@ function SiteDetail() {
           setBillingState(billingResponse);
           setThemeSelection(themeResponse.selection);
           setThemeOptions(themeResponse.options);
+          setRepromptHistory(repromptHistoryResponse.reprompts);
           setSiteAssets(assetResponse.assets);
           setFormSubmissions(submissionResponse.submissions);
           syncSiteFields(draftResponse.draft);
@@ -425,6 +449,12 @@ function SiteDetail() {
       preferredBlockID,
       response.generation,
     );
+    return response;
+  }
+
+  async function refreshRepromptHistoryState() {
+    const response = await listRepromptHistory(siteId);
+    setRepromptHistory(response.reprompts);
     return response;
   }
 
@@ -1188,12 +1218,11 @@ function SiteDetail() {
           },
         },
       );
-      await refreshDraftState();
+      await Promise.all([refreshDraftState(), refreshRepromptHistoryState()]);
       setSiteReprompt("");
       setPageReprompt("");
-      setRepromptStatusMessage(
-        "Site regenerated. The previous draft is available through undo.",
-      );
+      setRepromptHistoryScope("site");
+      setRepromptStatusMessage("Site regenerated. Review the diff or restore the earlier checkpoint from history.");
     } catch (error) {
       setBlockedActionFromError(error);
       setRepromptErrorMessage(
@@ -1235,10 +1264,14 @@ function SiteDetail() {
           },
         },
       );
-      await refreshDraftState(selectedPage.id, selectedBlock?.id);
+      await Promise.all([
+        refreshDraftState(selectedPage.id, selectedBlock?.id),
+        refreshRepromptHistoryState(),
+      ]);
       setPageReprompt("");
+      setRepromptHistoryScope("page");
       setRepromptStatusMessage(
-        `${selectedPage.title} was regenerated. The previous draft is available through undo.`,
+        `${selectedPage.title} was regenerated. Review the diff or restore the earlier checkpoint from history.`,
       );
     } catch (error) {
       setBlockedActionFromError(error);
@@ -1259,8 +1292,17 @@ function SiteDetail() {
     setRepromptStatusMessage("");
 
     try {
-      await undoSiteReprompt(siteId);
-      await refreshDraftState(selectedPage?.id, selectedBlock?.id);
+      if (!repromptHistory.length) {
+        setRepromptErrorMessage("There is no rebuild checkpoint to restore.");
+        return;
+      }
+      const latestReprompt = repromptHistory[0];
+      setActiveRepromptHistoryId(latestReprompt.id);
+      await revertReprompt(siteId, latestReprompt.id);
+      await Promise.all([
+        refreshDraftState(selectedPage?.id, selectedBlock?.id),
+        refreshRepromptHistoryState(),
+      ]);
       setRepromptStatusMessage("Previous draft revision restored.");
     } catch (error) {
       setRepromptErrorMessage(
@@ -1269,6 +1311,55 @@ function SiteDetail() {
           : "Could not restore draft revision",
       );
     } finally {
+      setActiveRepromptHistoryId("");
+      setIsUndoingReprompt(false);
+    }
+  }
+
+  async function handleShowRepromptDiff(reprompt: RepromptHistoryRecord) {
+    setActiveRepromptDiff(reprompt);
+    setActiveRepromptHistoryId(reprompt.id);
+    setRepromptDiffPrevious(null);
+    setRepromptDiffResult(null);
+    setRepromptDiffErrorMessage("");
+    setIsLoadingRepromptDiff(true);
+
+    try {
+      const [previousResponse, resultResponse] = await Promise.all([
+        getDraftRevision(siteId, reprompt.previousRevisionId),
+        getDraftRevision(siteId, reprompt.resultRevisionId),
+      ]);
+      setRepromptDiffPrevious(previousResponse.revision);
+      setRepromptDiffResult(resultResponse.revision);
+    } catch (error) {
+      setRepromptDiffErrorMessage(
+        error instanceof APIError ? error.message : "Could not load revision diff",
+      );
+    } finally {
+      setIsLoadingRepromptDiff(false);
+      setActiveRepromptHistoryId("");
+    }
+  }
+
+  async function handleRevertReprompt(reprompt: RepromptHistoryRecord) {
+    setIsUndoingReprompt(true);
+    setActiveRepromptHistoryId(reprompt.id);
+    setRepromptErrorMessage("");
+    setRepromptStatusMessage("");
+
+    try {
+      await revertReprompt(siteId, reprompt.id);
+      await Promise.all([
+        refreshDraftState(selectedPage?.id, selectedBlock?.id),
+        refreshRepromptHistoryState(),
+      ]);
+      setRepromptStatusMessage("Draft restored from history.");
+    } catch (error) {
+      setRepromptErrorMessage(
+        error instanceof APIError ? error.message : "Could not restore draft revision",
+      );
+    } finally {
+      setActiveRepromptHistoryId("");
       setIsUndoingReprompt(false);
     }
   }
@@ -2488,8 +2579,9 @@ function SiteDetail() {
             Replace draft direction
           </h2>
           <p className={cn(text.p, "mt-2 text-sm")}>
-            Re-prompts replace the chosen scope. They do not merge block edits
-            back together, so use undo when the new draft misses the mark.
+            Re-prompts replace the chosen scope. Each rebuild now stores a
+            checkpoint with a diff, so you can inspect changes before keeping
+            them.
           </p>
         </div>
 
@@ -2551,10 +2643,12 @@ function SiteDetail() {
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={isUndoingReprompt}
+                disabled={isUndoingReprompt || !repromptHistory.length}
                 onClick={handleUndoReprompt}
               >
-                {isUndoingReprompt ? "Restoring..." : "Undo last rebuild"}
+                {isUndoingReprompt
+                  ? "Restoring..."
+                  : "Restore latest rebuild"}
               </Button>
             </div>
           </form>
@@ -2591,6 +2685,20 @@ function SiteDetail() {
             }
           />
         ) : null}
+
+        <RepromptHistoryPanel
+          reprompts={repromptHistory}
+          activeScope={repromptHistoryScope}
+          selectedPageId={selectedPage?.id}
+          selectedPageTitle={selectedPage?.title}
+          activeDiffId={
+            isLoadingRepromptDiff ? activeRepromptHistoryId : undefined
+          }
+          activeRevertId={isUndoingReprompt ? activeRepromptHistoryId : undefined}
+          onActiveScopeChange={setRepromptHistoryScope}
+          onShowDiff={handleShowRepromptDiff}
+          onRevert={handleRevertReprompt}
+        />
 
         {repromptErrorMessage ? (
           <p className={text.error}>{repromptErrorMessage}</p>
@@ -3333,52 +3441,67 @@ function SiteDetail() {
   );
 
   return (
-    <PuckBuilder
-      draft={draft}
-      blockRegistry={blockRegistry}
-      selectedPage={selectedPage}
-      selectedBlock={selectedBlock}
-      selectedDefinition={selectedDefinition}
-      selectedBlockIndex={selectedBlockIndex}
-      blockDefinitions={blockDefinitions}
-      uploadedSiteAssets={uploadedSiteAssets}
-      newBlockType={newBlockType}
-      isSavingBlock={isSavingBlock}
-      isMutatingBlocks={isMutatingBlocks}
-      isCreatingBlock={isCreatingBlock}
-      blockErrorMessage={blockErrorMessage}
-      blockStatusMessage={blockStatusMessage}
-      pageErrorMessage={pageErrorMessage}
-      pageStatusMessage={pageStatusMessage}
-      isPublishing={isPublishing}
-      pages={draft.pages}
-      onSelectPage={handleSelectPage}
-      onSelectBlock={handleSelectBlock}
-      onSaveBlock={handleSaveBlock}
-      onCreateBlock={handleCreateBlock}
-      onDuplicateBlock={handleDuplicateBlock}
-      onDeleteBlock={handleDeleteBlock}
-      onMoveBlock={handleMoveBlock}
-      onChangeNewBlockType={setNewBlockType}
-      onReorderBlocks={handleReorderBlocks}
-      onDropPaletteBlock={handleDropPaletteBlock}
-      pagesPanelContent={pagesPanelContent}
-      seoPanelContent={seoPanelContent}
-      navigationPanelContent={navigationPanelContent}
-      assetsPanelContent={assetsPanelContent}
-      inquiriesPanelContent={inquiriesPanelContent}
-      settingsPanelContent={settingsPanelContent}
-      themePanelContent={themePanelContent}
-      publishPanelContent={publishPanelContent}
-      section={search.panel ?? "content"}
-      onSectionChange={(nextSection) =>
-        navigate({
-          to: ".",
-          search: { panel: nextSection === "content" ? undefined : nextSection },
-          replace: true,
-        })
-      }
-    />
+    <>
+      <PuckBuilder
+        draft={draft}
+        blockRegistry={blockRegistry}
+        selectedPage={selectedPage}
+        selectedBlock={selectedBlock}
+        selectedDefinition={selectedDefinition}
+        selectedBlockIndex={selectedBlockIndex}
+        blockDefinitions={blockDefinitions}
+        uploadedSiteAssets={uploadedSiteAssets}
+        newBlockType={newBlockType}
+        isSavingBlock={isSavingBlock}
+        isMutatingBlocks={isMutatingBlocks}
+        isCreatingBlock={isCreatingBlock}
+        blockErrorMessage={blockErrorMessage}
+        blockStatusMessage={blockStatusMessage}
+        pageErrorMessage={pageErrorMessage}
+        pageStatusMessage={pageStatusMessage}
+        isPublishing={isPublishing}
+        pages={draft.pages}
+        onSelectPage={handleSelectPage}
+        onSelectBlock={handleSelectBlock}
+        onSaveBlock={handleSaveBlock}
+        onCreateBlock={handleCreateBlock}
+        onDuplicateBlock={handleDuplicateBlock}
+        onDeleteBlock={handleDeleteBlock}
+        onMoveBlock={handleMoveBlock}
+        onChangeNewBlockType={setNewBlockType}
+        onReorderBlocks={handleReorderBlocks}
+        onDropPaletteBlock={handleDropPaletteBlock}
+        pagesPanelContent={pagesPanelContent}
+        seoPanelContent={seoPanelContent}
+        navigationPanelContent={navigationPanelContent}
+        assetsPanelContent={assetsPanelContent}
+        inquiriesPanelContent={inquiriesPanelContent}
+        settingsPanelContent={settingsPanelContent}
+        themePanelContent={themePanelContent}
+        publishPanelContent={publishPanelContent}
+        section={search.panel ?? "content"}
+        onSectionChange={(nextSection) =>
+          navigate({
+            to: ".",
+            search: { panel: nextSection === "content" ? undefined : nextSection },
+            replace: true,
+          })
+        }
+      />
+      <RevisionDiffModal
+        reprompt={activeRepromptDiff}
+        previousRevision={repromptDiffPrevious}
+        resultRevision={repromptDiffResult}
+        errorMessage={repromptDiffErrorMessage}
+        isLoading={isLoadingRepromptDiff}
+        onClose={() => {
+          setActiveRepromptDiff(null);
+          setRepromptDiffPrevious(null);
+          setRepromptDiffResult(null);
+          setRepromptDiffErrorMessage("");
+        }}
+      />
+    </>
   );
 }
 

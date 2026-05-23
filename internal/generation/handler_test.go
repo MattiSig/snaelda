@@ -18,14 +18,18 @@ import (
 )
 
 type fakeGenerator struct {
-	input        GenerateInput
-	siteReprompt RepromptInput
-	pageReprompt RepromptInput
-	siteID       string
-	pageID       string
-	result       GenerateResult
-	undoResult   siteconfig.SiteDraft
-	err          error
+	input           GenerateInput
+	siteReprompt    RepromptInput
+	pageReprompt    RepromptInput
+	siteID          string
+	pageID          string
+	revisionID      string
+	repromptID      string
+	result          GenerateResult
+	undoResult      siteconfig.SiteDraft
+	repromptHistory []RepromptHistoryEntry
+	revision        DraftRevision
+	err             error
 }
 
 func (g *fakeGenerator) Generate(_ context.Context, _ string, _ string, input GenerateInput) (GenerateResult, error) {
@@ -47,6 +51,20 @@ func (g *fakeGenerator) RepromptPage(_ context.Context, _ string, _ string, site
 }
 
 func (g *fakeGenerator) UndoLastDraftRevision(_ context.Context, _ string, _ string) (siteconfig.SiteDraft, error) {
+	return g.undoResult, g.err
+}
+
+func (g *fakeGenerator) ListRepromptHistory(_ context.Context, _ string, _ string) ([]RepromptHistoryEntry, error) {
+	return g.repromptHistory, g.err
+}
+
+func (g *fakeGenerator) LoadDraftRevision(_ context.Context, _ string, _ string, revisionID string) (DraftRevision, error) {
+	g.revisionID = revisionID
+	return g.revision, g.err
+}
+
+func (g *fakeGenerator) RevertReprompt(_ context.Context, _ string, _ string, repromptID string) (siteconfig.SiteDraft, error) {
+	g.repromptID = repromptID
 	return g.undoResult, g.err
 }
 
@@ -338,6 +356,113 @@ func TestUndoSiteReturnsRestoredDraft(t *testing.T) {
 
 	if res.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+}
+
+func TestListRepromptsReturnsHistory(t *testing.T) {
+	now := time.Date(2026, 5, 23, 10, 30, 0, 0, time.UTC)
+	service := &fakeGenerator{
+		repromptHistory: []RepromptHistoryEntry{{
+			ID:               "reprompt-1",
+			Scope:            "page",
+			TargetID:         "page-1",
+			Prompt:           "Tighten the pricing page.",
+			PreviousRevision: "revision-1",
+			ResultRevision:   "revision-2",
+			CreatedAt:        now,
+		}},
+	}
+	handler := Handler{
+		service:    service,
+		authorizer: fakeWorkspaceAuthorizer{},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sites/site-1/reprompts", nil).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	req.SetPathValue("siteId", "site-1")
+	res := httptest.NewRecorder()
+
+	handler.listReprompts(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	var payload struct {
+		Reprompts []RepromptHistoryEntry `json:"reprompts"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(payload.Reprompts) != 1 || payload.Reprompts[0].ID != "reprompt-1" {
+		t.Fatalf("expected reprompt history in payload, got %#v", payload)
+	}
+}
+
+func TestGetDraftRevisionReturnsSnapshot(t *testing.T) {
+	service := &fakeGenerator{
+		revision: DraftRevision{
+			ID:       "revision-2",
+			Scope:    "page",
+			TargetID: "page-1",
+			Prompt:   "Tighten the pricing page.",
+			Draft:    validGenerationDraft(),
+		},
+	}
+	handler := Handler{
+		service:    service,
+		authorizer: fakeWorkspaceAuthorizer{},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sites/site-1/revisions/revision-2", nil).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	req.SetPathValue("siteId", "site-1")
+	req.SetPathValue("revisionId", "revision-2")
+	res := httptest.NewRecorder()
+
+	handler.getDraftRevision(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	if service.revisionID != "revision-2" {
+		t.Fatalf("expected revision id to reach service, got %#v", service)
+	}
+}
+
+func TestRevertRepromptReturnsRestoredDraft(t *testing.T) {
+	service := &fakeGenerator{
+		undoResult: validGenerationDraft(),
+	}
+	handler := Handler{
+		service:    service,
+		authorizer: fakeWorkspaceAuthorizer{},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/site-1/reprompts/reprompt-1/revert", nil).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	req.SetPathValue("siteId", "site-1")
+	req.SetPathValue("repromptId", "reprompt-1")
+	res := httptest.NewRecorder()
+
+	handler.revertReprompt(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	if service.repromptID != "reprompt-1" {
+		t.Fatalf("expected reprompt id to reach service, got %#v", service)
 	}
 }
 

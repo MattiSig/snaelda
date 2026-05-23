@@ -290,6 +290,28 @@ export type SiteRepromptResponse = {
   draft: SiteDraft;
 };
 
+export type DraftRevisionRecord = {
+  id: string;
+  scope: 'site' | 'page';
+  targetId?: string;
+  prompt: string;
+  draft: SiteDraft;
+  createdAt: string;
+};
+
+export type RepromptHistoryRecord = {
+  id: string;
+  scope: 'site' | 'page';
+  targetId?: string;
+  prompt: string;
+  changeSummary?: string;
+  previousRevisionId: string;
+  resultRevisionId: string;
+  jobId?: string;
+  createdAt: string;
+  undoneAt?: string;
+};
+
 export type GenerationProgressStep = {
   step: string;
   label: string;
@@ -1080,6 +1102,27 @@ export async function undoSiteReprompt(siteId: string) {
   return apiFetch<{ draft: SiteDraft }>(`/api/sites/${siteId}/undo`, {
     method: "POST",
   });
+}
+
+export async function listRepromptHistory(siteId: string) {
+  return apiFetch<{ reprompts: RepromptHistoryRecord[] }>(
+    `/api/sites/${siteId}/reprompts`,
+  );
+}
+
+export async function getDraftRevision(siteId: string, revisionId: string) {
+  return apiFetch<{ revision: DraftRevisionRecord }>(
+    `/api/sites/${siteId}/revisions/${revisionId}`,
+  );
+}
+
+export async function revertReprompt(siteId: string, repromptId: string) {
+  return apiFetch<{ draft: SiteDraft }>(
+    `/api/sites/${siteId}/reprompts/${repromptId}/revert`,
+    {
+      method: "POST",
+    },
+  );
 }
 
 export async function updateSite(

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/MattiSig/snaelda/internal/platform/audit"
 	"github.com/MattiSig/snaelda/internal/platform/ids"
@@ -247,14 +248,15 @@ func (s *Service) RepromptSiteWithProgress(ctx context.Context, workspaceID stri
 	if err != nil {
 		return GenerateResult{}, err
 	}
-	if err := s.captureDraftRevision(ctx, workspaceID, siteID, draftRevisionRecord{
+	previousRevisionID, err := s.captureDraftRevision(ctx, workspaceID, siteID, draftRevisionRecord{
 		Scope:                 "site",
 		Prompt:                prompt,
 		Draft:                 currentDraft,
 		GenerationPrompt:      metadata.Prompt,
 		GenerationSummaryJSON: metadata.SummaryJSON,
 		CreatedBy:             userID,
-	}); err != nil {
+	})
+	if err != nil {
 		return GenerateResult{}, err
 	}
 
@@ -313,6 +315,39 @@ func (s *Service) RepromptSiteWithProgress(ctx context.Context, workspaceID stri
 	if err != nil {
 		return GenerateResult{}, err
 	}
+	resultSummaryJSON, err := json.Marshal(map[string]any{
+		"siteGoal":             plan.SiteGoal,
+		"themePreset":          plan.ThemePreset,
+		"assetsNeeded":         plan.AssetsNeeded,
+		"assumptions":          plan.Assumptions,
+		"pageCount":            len(plan.Pages),
+		"validationRetryCount": validationRetryCount,
+	})
+	if err != nil {
+		return GenerateResult{}, fmt.Errorf("encode reprompt summary: %w", err)
+	}
+	resultRevisionID, err := s.captureDraftRevision(ctx, workspaceID, siteID, draftRevisionRecord{
+		Scope:                 "site",
+		Prompt:                prompt,
+		Draft:                 savedDraft,
+		GenerationPrompt:      prompt,
+		GenerationSummaryJSON: resultSummaryJSON,
+		CreatedBy:             userID,
+	})
+	if err != nil {
+		return GenerateResult{}, err
+	}
+	if err := s.recordRepromptHistory(ctx, workspaceID, siteID, repromptHistoryRecord{
+		Scope:              "site",
+		Prompt:             prompt,
+		ChangeSummary:      summarizeReprompt("site", savedDraft, ""),
+		PreviousRevisionID: previousRevisionID,
+		ResultRevisionID:   resultRevisionID,
+		JobID:              jobID,
+		CreatedBy:          userID,
+	}); err != nil {
+		return GenerateResult{}, err
+	}
 	s.recordAudit(ctx, audit.Event{
 		WorkspaceID: workspaceID,
 		SiteID:      siteID,
@@ -355,7 +390,7 @@ func (s *Service) RepromptPageWithProgress(ctx context.Context, workspaceID stri
 	if err != nil {
 		return GenerateResult{}, err
 	}
-	if err := s.captureDraftRevision(ctx, workspaceID, siteID, draftRevisionRecord{
+	previousRevisionID, err := s.captureDraftRevision(ctx, workspaceID, siteID, draftRevisionRecord{
 		Scope:                 "page",
 		PageID:                pageID,
 		Prompt:                prompt,
@@ -363,7 +398,8 @@ func (s *Service) RepromptPageWithProgress(ctx context.Context, workspaceID stri
 		GenerationPrompt:      metadata.Prompt,
 		GenerationSummaryJSON: metadata.SummaryJSON,
 		CreatedBy:             userID,
-	}); err != nil {
+	})
+	if err != nil {
 		return GenerateResult{}, err
 	}
 
@@ -441,6 +477,30 @@ func (s *Service) RepromptPageWithProgress(ctx context.Context, workspaceID stri
 	if err != nil {
 		return GenerateResult{}, err
 	}
+	resultRevisionID, err := s.captureDraftRevision(ctx, workspaceID, siteID, draftRevisionRecord{
+		Scope:                 "page",
+		PageID:                pageID,
+		Prompt:                prompt,
+		Draft:                 savedDraft,
+		GenerationPrompt:      metadata.Prompt,
+		GenerationSummaryJSON: metadata.SummaryJSON,
+		CreatedBy:             userID,
+	})
+	if err != nil {
+		return GenerateResult{}, err
+	}
+	if err := s.recordRepromptHistory(ctx, workspaceID, siteID, repromptHistoryRecord{
+		Scope:              "page",
+		TargetID:           pageID,
+		Prompt:             prompt,
+		ChangeSummary:      summarizeReprompt("page", savedDraft, pageID),
+		PreviousRevisionID: previousRevisionID,
+		ResultRevisionID:   resultRevisionID,
+		JobID:              jobID,
+		CreatedBy:          userID,
+	}); err != nil {
+		return GenerateResult{}, err
+	}
 	s.recordAudit(ctx, audit.Event{
 		WorkspaceID: workspaceID,
 		SiteID:      siteID,
@@ -477,6 +537,14 @@ func (s *Service) incrementTrialPromptUsage(ctx context.Context, workspaceID str
 }
 
 func (s *Service) UndoLastDraftRevision(ctx context.Context, workspaceID string, siteID string) (siteconfig.SiteDraft, error) {
+	entry, err := s.loadLatestRepromptHistory(ctx, workspaceID, siteID)
+	if err == nil {
+		return s.RevertReprompt(ctx, workspaceID, siteID, entry.ID)
+	}
+	if !errors.Is(err, ErrRepromptNotFound) {
+		return siteconfig.SiteDraft{}, err
+	}
+
 	revision, err := s.loadLatestDraftRevision(ctx, workspaceID, siteID)
 	if err != nil {
 		return siteconfig.SiteDraft{}, err
@@ -716,6 +784,7 @@ type draftRevisionRecord struct {
 	GenerationPrompt      string
 	GenerationSummaryJSON []byte
 	CreatedBy             string
+	CreatedAt             time.Time
 }
 
 type promptProfile struct {
@@ -892,87 +961,6 @@ func (s *Service) loadSiteMetadata(ctx context.Context, workspaceID string, site
 		SummaryJSON: summaryJSON,
 		Summary:     summary,
 	}, nil
-}
-
-func (s *Service) captureDraftRevision(ctx context.Context, workspaceID string, siteID string, revision draftRevisionRecord) error {
-	revisionJSON, err := json.Marshal(revision.Draft)
-	if err != nil {
-		return fmt.Errorf("encode draft revision: %w", err)
-	}
-
-	summaryJSON := revision.GenerationSummaryJSON
-	if len(summaryJSON) == 0 {
-		summaryJSON = []byte(`{}`)
-	}
-
-	if _, err := s.db.Exec(ctx, `
-		insert into draft_revisions (
-			site_id,
-			workspace_id,
-			scope,
-			page_id,
-			prompt,
-			draft,
-			generation_prompt,
-			generation_summary,
-			created_by
-		)
-		values (
-			$1::uuid,
-			$2::uuid,
-			$3,
-			nullif($4, '')::uuid,
-			$5,
-			$6,
-			$7,
-			$8,
-			nullif($9, '')::uuid
-		)
-	`, siteID, workspaceID, revision.Scope, revision.PageID, revision.Prompt, revisionJSON, revision.GenerationPrompt, summaryJSON, revision.CreatedBy); err != nil {
-		return fmt.Errorf("capture draft revision: %w", err)
-	}
-	return nil
-}
-
-func (s *Service) loadLatestDraftRevision(ctx context.Context, workspaceID string, siteID string) (draftRevisionRecord, error) {
-	var revision draftRevisionRecord
-	var pageID string
-	var draftJSON []byte
-	var summaryJSON []byte
-	if err := s.db.QueryRow(ctx, `
-		select id::text,
-		       scope,
-		       coalesce(page_id::text, ''),
-		       coalesce(prompt, ''),
-		       draft,
-		       coalesce(generation_prompt, ''),
-		       generation_summary
-		from draft_revisions
-		where site_id = $1::uuid
-		  and workspace_id = $2::uuid
-		order by created_at desc, id desc
-		limit 1
-	`, siteID, workspaceID).Scan(
-		&revision.ID,
-		&revision.Scope,
-		&pageID,
-		&revision.Prompt,
-		&draftJSON,
-		&revision.GenerationPrompt,
-		&summaryJSON,
-	); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return draftRevisionRecord{}, ErrNoDraftRevision
-		}
-		return draftRevisionRecord{}, fmt.Errorf("load draft revision: %w", err)
-	}
-
-	if err := json.Unmarshal(draftJSON, &revision.Draft); err != nil {
-		return draftRevisionRecord{}, fmt.Errorf("decode draft revision: %w", err)
-	}
-	revision.PageID = pageID
-	revision.GenerationSummaryJSON = summaryJSON
-	return revision, nil
 }
 
 func (s *Service) deleteDraftRevision(ctx context.Context, revisionID string) error {

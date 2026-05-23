@@ -39,6 +39,9 @@ type Generator interface {
 	RepromptSite(ctx context.Context, workspaceID string, userID string, siteID string, input RepromptInput) (GenerateResult, error)
 	RepromptPage(ctx context.Context, workspaceID string, userID string, siteID string, pageID string, input RepromptInput) (GenerateResult, error)
 	UndoLastDraftRevision(ctx context.Context, workspaceID string, siteID string) (siteconfig.SiteDraft, error)
+	ListRepromptHistory(ctx context.Context, workspaceID string, siteID string) ([]RepromptHistoryEntry, error)
+	LoadDraftRevision(ctx context.Context, workspaceID string, siteID string, revisionID string) (DraftRevision, error)
+	RevertReprompt(ctx context.Context, workspaceID string, siteID string, repromptID string) (siteconfig.SiteDraft, error)
 }
 
 type ProgressGenerator interface {
@@ -105,6 +108,9 @@ func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.
 	mux.Handle("GET /api/generation/jobs/{jobId}", requireUser(http.HandlerFunc(h.getJob)))
 	mux.Handle("POST /api/sites/{siteId}/reprompt", requireUser(http.HandlerFunc(h.repromptSite)))
 	mux.Handle("POST /api/sites/{siteId}/pages/{pageId}/reprompt", requireUser(http.HandlerFunc(h.repromptPage)))
+	mux.Handle("GET /api/sites/{siteId}/reprompts", requireUser(http.HandlerFunc(h.listReprompts)))
+	mux.Handle("POST /api/sites/{siteId}/reprompts/{repromptId}/revert", requireUser(http.HandlerFunc(h.revertReprompt)))
+	mux.Handle("GET /api/sites/{siteId}/revisions/{revisionId}", requireUser(http.HandlerFunc(h.getDraftRevision)))
 	mux.Handle("POST /api/sites/{siteId}/undo", requireUser(http.HandlerFunc(h.undoSite)))
 }
 
@@ -349,6 +355,65 @@ func (h *Handler) undoSite(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"draft": draft})
 }
 
+func (h *Handler) listReprompts(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	if siteID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_site_id", "site id is required")
+		return
+	}
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+	reprompts, err := h.service.ListRepromptHistory(r.Context(), scope.WorkspaceID, siteID)
+	if err != nil {
+		h.writeGenerationError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"reprompts": reprompts})
+}
+
+func (h *Handler) revertReprompt(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	repromptID := r.PathValue("repromptId")
+	if siteID == "" || repromptID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_reprompt_resource", "site and reprompt ids are required")
+		return
+	}
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+	draft, err := h.service.RevertReprompt(r.Context(), scope.WorkspaceID, siteID, repromptID)
+	if err != nil {
+		h.writeGenerationError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"draft": draft})
+}
+
+func (h *Handler) getDraftRevision(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	revisionID := r.PathValue("revisionId")
+	if siteID == "" || revisionID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_revision_resource", "site and revision ids are required")
+		return
+	}
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+	revision, err := h.service.LoadDraftRevision(r.Context(), scope.WorkspaceID, siteID, revisionID)
+	if err != nil {
+		h.writeGenerationError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"revision": revision})
+}
+
 func (h *Handler) getJob(w http.ResponseWriter, r *http.Request) {
 	if h.jobs == nil {
 		writeError(w, http.StatusNotImplemented, "generation_jobs_unavailable", "generation jobs are not configured")
@@ -541,6 +606,8 @@ func generationErrorDetails(err error) (code string, message string, status int)
 		return "draft_scope_not_found", "the requested draft scope was not found", http.StatusNotFound
 	case errors.Is(err, ErrNoDraftRevision):
 		return "draft_revision_not_found", "there is no draft revision to restore", http.StatusNotFound
+	case errors.Is(err, ErrRepromptNotFound):
+		return "reprompt_not_found", "the requested reprompt history entry was not found", http.StatusNotFound
 	case errors.Is(err, billing.ErrPlanLimitExceeded):
 		return "plan_limit_exceeded", err.Error(), http.StatusForbidden
 	default:

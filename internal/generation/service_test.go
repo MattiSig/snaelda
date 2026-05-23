@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MattiSig/snaelda/internal/siteconfig"
 	"github.com/MattiSig/snaelda/internal/sites"
@@ -218,11 +219,14 @@ func TestRepromptSiteReplacesDraftAndCapturesUndoRevision(t *testing.T) {
 	if result.Draft.Site.ID != initial.Draft.Site.ID {
 		t.Fatalf("expected site identity to stay stable, got %#v", result.Draft.Site)
 	}
-	if len(store.revisions) != 1 {
-		t.Fatalf("expected one captured draft revision, got %#v", store.revisions)
+	if len(store.revisions) != 2 {
+		t.Fatalf("expected before/after revisions, got %#v", store.revisions)
 	}
 	if store.revisions[0].Draft.Site.ID != initial.Draft.Site.ID {
 		t.Fatalf("expected captured draft revision to match initial draft, got %#v", store.revisions[0])
+	}
+	if len(store.repromptHistory) != 1 || store.repromptHistory[0].Scope != "site" {
+		t.Fatalf("expected site reprompt history entry, got %#v", store.repromptHistory)
 	}
 	if store.prompts[result.Draft.Site.ID] != "Make it warmer, add pricing, and include a proper contact form." {
 		t.Fatalf("expected prompt metadata to update, got %#v", store.prompts)
@@ -261,8 +265,11 @@ func TestRepromptPageReplacesOnlySelectedPage(t *testing.T) {
 	if updatedPage.ID != targetPage.ID || updatedPage.Slug != targetPage.Slug {
 		t.Fatalf("expected targeted page identity to stay stable, got %#v", updatedPage)
 	}
-	if len(store.revisions) != 1 || store.revisions[0].PageID != targetPage.ID {
+	if len(store.revisions) != 2 || store.revisions[0].PageID != targetPage.ID {
 		t.Fatalf("expected page-scoped draft revision, got %#v", store.revisions)
+	}
+	if len(store.repromptHistory) != 1 || store.repromptHistory[0].TargetID != targetPage.ID {
+		t.Fatalf("expected page reprompt history entry, got %#v", store.repromptHistory)
 	}
 }
 
@@ -357,11 +364,14 @@ func TestUndoLastDraftRevisionRestoresPreviousDraft(t *testing.T) {
 	if restored.Site.ID != initial.Draft.Site.ID || restored.Site.Slug != initial.Draft.Site.Slug {
 		t.Fatalf("expected restored draft identity to match initial draft, got %#v", restored.Site)
 	}
-	if len(store.revisions) != 0 {
-		t.Fatalf("expected revision stack to pop after undo, got %#v", store.revisions)
+	if len(store.revisions) != 2 {
+		t.Fatalf("expected immutable revisions to remain after undo, got %#v", store.revisions)
 	}
 	if store.prompts[initial.Draft.Site.ID] != "A calm portfolio site for a photography studio that needs a gallery." {
 		t.Fatalf("expected prompt metadata to restore, got %#v", store.prompts)
+	}
+	if len(store.repromptHistory) != 1 || store.repromptHistory[0].UndoneAt == nil {
+		t.Fatalf("expected reprompt history entry to be marked undone, got %#v", store.repromptHistory)
 	}
 }
 
@@ -575,6 +585,7 @@ type fakeGenerationStore struct {
 	summary         map[string]map[string]any
 	summaryJSON     map[string][]byte
 	revisions       []draftRevisionRecord
+	repromptHistory []RepromptHistoryEntry
 	saveDraftErrors []error
 	saveDraftCalls  int
 	completeJobErr  error
@@ -625,8 +636,28 @@ func (s *fakeGenerationStore) LoadDraft(_ context.Context, siteID string) (sitec
 	return draft, nil
 }
 
-func (s *fakeGenerationStore) Query(context.Context, string, ...any) (pgx.Rows, error) {
-	return nil, errors.New("not implemented")
+func (s *fakeGenerationStore) Query(_ context.Context, sql string, _ ...any) (pgx.Rows, error) {
+	switch {
+	case strings.Contains(sql, "from reprompt_history"):
+		rows := make([][]any, 0, len(s.repromptHistory))
+		for _, entry := range s.repromptHistory {
+			rows = append(rows, []any{
+				entry.ID,
+				entry.Scope,
+				entry.TargetID,
+				entry.Prompt,
+				entry.ChangeSummary,
+				entry.PreviousRevision,
+				entry.ResultRevision,
+				entry.JobID,
+				entry.CreatedAt,
+				entry.UndoneAt,
+			})
+		}
+		return &fakeGenerationRows{rows: rows}, nil
+	default:
+		return &fakeGenerationRows{err: errors.New("not implemented")}, nil
+	}
 }
 
 func (s *fakeGenerationStore) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
@@ -646,24 +677,53 @@ func (s *fakeGenerationStore) QueryRow(_ context.Context, sql string, args ...an
 			return fakeGenerationRow{err: pgx.ErrNoRows}
 		}
 		return fakeGenerationRow{values: []any{s.prompts[siteID], s.summaryJSON[siteID]}}
-	case strings.Contains(sql, "from draft_revisions"):
+	case strings.Contains(sql, "select id::text") && strings.Contains(sql, "from draft_revisions") && !strings.Contains(sql, "draft,"):
 		if len(s.revisions) == 0 {
 			return fakeGenerationRow{err: pgx.ErrNoRows}
 		}
-		revision := s.revisions[len(s.revisions)-1]
-		draftJSON, err := json.Marshal(revision.Draft)
-		if err != nil {
-			return fakeGenerationRow{err: err}
+		return fakeGenerationRow{values: []any{s.revisions[len(s.revisions)-1].ID}}
+	case strings.Contains(sql, "from draft_revisions"):
+		revisionID := args[0].(string)
+		for _, revision := range s.revisions {
+			if revision.ID != revisionID {
+				continue
+			}
+			draftJSON, err := json.Marshal(revision.Draft)
+			if err != nil {
+				return fakeGenerationRow{err: err}
+			}
+			return fakeGenerationRow{values: []any{
+				revision.ID,
+				revision.Scope,
+				revision.PageID,
+				revision.Prompt,
+				draftJSON,
+				revision.GenerationPrompt,
+				revision.GenerationSummaryJSON,
+				revision.CreatedAt,
+			}}
 		}
-		return fakeGenerationRow{values: []any{
-			"revision-1",
-			revision.Scope,
-			revision.PageID,
-			revision.Prompt,
-			draftJSON,
-			revision.GenerationPrompt,
-			revision.GenerationSummaryJSON,
-		}}
+		return fakeGenerationRow{err: pgx.ErrNoRows}
+	case strings.Contains(sql, "from reprompt_history"):
+		repromptID := args[0].(string)
+		for _, entry := range s.repromptHistory {
+			if entry.ID != repromptID {
+				continue
+			}
+			return fakeGenerationRow{values: []any{
+				entry.ID,
+				entry.Scope,
+				entry.TargetID,
+				entry.Prompt,
+				entry.ChangeSummary,
+				entry.PreviousRevision,
+				entry.ResultRevision,
+				entry.JobID,
+				entry.CreatedAt,
+				entry.UndoneAt,
+			}}
+		}
+		return fakeGenerationRow{err: pgx.ErrNoRows}
 	default:
 		return fakeGenerationRow{err: pgx.ErrNoRows}
 	}
@@ -713,20 +773,47 @@ func (s *fakeGenerationStore) Exec(_ context.Context, sql string, args ...any) (
 		s.summaryJSON[siteID] = append([]byte(nil), args[1].([]byte)...)
 		return pgconn.NewCommandTag("UPDATE 1"), nil
 	case strings.Contains(sql, "insert into draft_revisions"):
-		draftJSON := args[5].([]byte)
+		draftJSON := args[6].([]byte)
 		var draft siteconfig.SiteDraft
 		if err := json.Unmarshal(draftJSON, &draft); err != nil {
 			return pgconn.CommandTag{}, err
 		}
 		s.revisions = append(s.revisions, draftRevisionRecord{
-			Scope:                 args[2].(string),
-			PageID:                args[3].(string),
-			Prompt:                args[4].(string),
+			ID:                    args[0].(string),
+			Scope:                 args[3].(string),
+			PageID:                args[4].(string),
+			Prompt:                args[5].(string),
 			Draft:                 draft,
-			GenerationPrompt:      args[6].(string),
-			GenerationSummaryJSON: append([]byte(nil), args[7].([]byte)...),
+			GenerationPrompt:      args[7].(string),
+			GenerationSummaryJSON: append([]byte(nil), args[8].([]byte)...),
+			CreatedAt:             time.Now().UTC(),
 		})
 		return pgconn.NewCommandTag("INSERT 1"), nil
+	case strings.Contains(sql, "insert into reprompt_history"):
+		entry := RepromptHistoryEntry{
+			ID:               args[0].(string),
+			Scope:            args[3].(string),
+			TargetID:         args[4].(string),
+			Prompt:           args[5].(string),
+			PreviousRevision: args[6].(string),
+			ResultRevision:   args[7].(string),
+			JobID:            args[8].(string),
+			ChangeSummary:    args[9].(string),
+			CreatedAt:        time.Now().UTC(),
+		}
+		s.repromptHistory = append([]RepromptHistoryEntry{entry}, s.repromptHistory...)
+		return pgconn.NewCommandTag("INSERT 1"), nil
+	case strings.Contains(sql, "update reprompt_history"):
+		repromptID := args[0].(string)
+		now := time.Now().UTC()
+		for index := range s.repromptHistory {
+			if s.repromptHistory[index].ID != repromptID {
+				continue
+			}
+			s.repromptHistory[index].UndoneAt = &now
+			return pgconn.NewCommandTag("UPDATE 1"), nil
+		}
+		return pgconn.NewCommandTag("UPDATE 0"), nil
 	case strings.Contains(sql, "delete from draft_revisions"):
 		if len(s.revisions) > 0 {
 			s.revisions = s.revisions[:len(s.revisions)-1]
@@ -758,9 +845,66 @@ func (r fakeGenerationRow) Scan(dest ...any) error {
 			*target = value.(bool)
 		case *[]byte:
 			*target = append([]byte(nil), value.([]byte)...)
+		case *time.Time:
+			*target = value.(time.Time)
+		case **time.Time:
+			if value == nil {
+				*target = nil
+				continue
+			}
+			timestamp := value.(*time.Time)
+			if timestamp == nil {
+				*target = nil
+				continue
+			}
+			copyValue := *timestamp
+			*target = &copyValue
 		default:
 			return errors.New("unsupported scan target")
 		}
 	}
 	return nil
 }
+
+type fakeGenerationRows struct {
+	rows  [][]any
+	index int
+	err   error
+}
+
+func (r *fakeGenerationRows) Close() {}
+
+func (r *fakeGenerationRows) Err() error { return r.err }
+
+func (r *fakeGenerationRows) CommandTag() pgconn.CommandTag { return pgconn.CommandTag{} }
+
+func (r *fakeGenerationRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
+
+func (r *fakeGenerationRows) Next() bool {
+	if r.err != nil {
+		return false
+	}
+	if r.index >= len(r.rows) {
+		return false
+	}
+	r.index++
+	return true
+}
+
+func (r *fakeGenerationRows) Scan(dest ...any) error {
+	if r.index == 0 || r.index > len(r.rows) {
+		return errors.New("scan called without row")
+	}
+	return fakeGenerationRow{values: r.rows[r.index-1]}.Scan(dest...)
+}
+
+func (r *fakeGenerationRows) Values() ([]any, error) {
+	if r.index == 0 || r.index > len(r.rows) {
+		return nil, errors.New("values called without row")
+	}
+	return r.rows[r.index-1], nil
+}
+
+func (r *fakeGenerationRows) RawValues() [][]byte { return nil }
+
+func (r *fakeGenerationRows) Conn() *pgx.Conn { return nil }
