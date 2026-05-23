@@ -21,13 +21,15 @@ const (
 )
 
 type BlockDefinition struct {
-	Type          string                                                `json:"type"`
-	Version       string                                                `json:"version"`
-	DisplayName   string                                                `json:"displayName"`
-	Category      BlockCategory                                         `json:"category"`
-	DefaultProps  map[string]any                                        `json:"defaultProps,omitempty"`
-	EditorSchema  []EditorField                                         `json:"editorSchema,omitempty"`
-	ValidateProps func(path string, props map[string]any, c *collector) `json:"-"`
+	Type          string                                                                    `json:"type"`
+	Version       string                                                                    `json:"version"`
+	DisplayName   string                                                                    `json:"displayName"`
+	Category      BlockCategory                                                             `json:"category"`
+	DefaultProps  map[string]any                                                            `json:"defaultProps,omitempty"`
+	EditorSchema  []EditorField                                                             `json:"editorSchema,omitempty"`
+	PropSchema    map[string]any                                                            `json:"-"`
+	MigrateProps  func(previousVersion string, previousProps map[string]any) map[string]any `json:"-"`
+	ValidateProps func(path string, props map[string]any, c *collector)                     `json:"-"`
 }
 
 type EditorField struct {

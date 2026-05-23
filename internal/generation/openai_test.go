@@ -51,6 +51,54 @@ func TestOpenAIPlannerBuildPlanParsesStructuredCompletion(t *testing.T) {
 	if requestBody["model"] != "gpt-5-mini" {
 		t.Fatalf("expected model in request, got %#v", requestBody["model"])
 	}
+	responseFormat, ok := requestBody["response_format"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected response_format in request, got %#v", requestBody)
+	}
+	jsonSchema, ok := responseFormat["json_schema"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected json schema payload, got %#v", responseFormat)
+	}
+	schema, ok := jsonSchema["schema"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected schema body, got %#v", jsonSchema)
+	}
+	properties := schema["properties"].(map[string]any)
+	pages := properties["pages"].(map[string]any)
+	pageItems := pages["items"].(map[string]any)
+	pageProps := pageItems["properties"].(map[string]any)
+	blocks := pageProps["blocks"].(map[string]any)
+	blockItems := blocks["items"].(map[string]any)
+	oneOf, ok := blockItems["oneOf"].([]any)
+	if !ok || len(oneOf) == 0 {
+		t.Fatalf("expected block schemas to be specialized, got %#v", blockItems)
+	}
+	var heroSchema map[string]any
+	for _, candidate := range oneOf {
+		schemaItem, ok := candidate.(map[string]any)
+		if !ok {
+			continue
+		}
+		blockProperties, ok := schemaItem["properties"].(map[string]any)
+		if !ok {
+			continue
+		}
+		blockType, ok := blockProperties["type"].(map[string]any)
+		if ok && blockType["const"] == "hero" {
+			heroSchema = schemaItem
+			break
+		}
+	}
+	if heroSchema == nil {
+		t.Fatalf("expected hero schema in block union, got %#v", oneOf)
+	}
+	heroProps := heroSchema["properties"].(map[string]any)["props"].(map[string]any)
+	if heroProps["additionalProperties"] != false {
+		t.Fatalf("expected hero props to reject unknown properties, got %#v", heroProps)
+	}
+	if required, ok := heroProps["required"].([]any); !ok || len(required) == 0 || required[0] != "headline" {
+		t.Fatalf("expected hero props schema to require headline, got %#v", heroProps)
+	}
 	if plan.ThemeSelection.Palette != siteconfig.ThemePalettePlayfulRibbon {
 		t.Fatalf("expected parsed theme selection, got %#v", plan.ThemeSelection)
 	}

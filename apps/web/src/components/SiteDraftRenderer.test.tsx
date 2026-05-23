@@ -4,37 +4,37 @@ import {
   screen,
   waitFor,
   within,
-} from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SiteDraft } from '@/lib/api'
-import { SiteDraftRenderer } from './SiteDraftRenderer'
+} from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SiteDraft } from '@/lib/api';
+import { SiteDraftRenderer } from './SiteDraftRenderer';
 
 beforeEach(() => {
-  vi.restoreAllMocks()
-})
+  vi.restoreAllMocks();
+});
 
 describe('SiteDraftRenderer', () => {
   it('renders visible blocks and resolves draft-page links to anchors', () => {
-    render(<SiteDraftRenderer site={buildDraft()} />)
+    render(<SiteDraftRenderer site={buildDraft()} />);
 
     const navLinks = within(
       screen.getByRole('navigation', { name: 'Site navigation' }),
-    ).getAllByRole('link')
-    expect(navLinks[0]?.getAttribute('href')).toBe('#page-home')
-    expect(navLinks[1]?.getAttribute('href')).toBe('#page-contact')
+    ).getAllByRole('link');
+    expect(navLinks[0]?.getAttribute('href')).toBe('#page-home');
+    expect(navLinks[1]?.getAttribute('href')).toBe('#page-contact');
     expect(
       screen.getByRole('link', { name: 'Book a visit' }).getAttribute('href'),
-    ).toBe('#page-contact')
+    ).toBe('#page-contact');
     expect(
       screen
         .getByAltText('Studio shelves in warm afternoon light')
         .getAttribute('src'),
-    ).toBe('http://localhost:8080/api/assets/asset-hero/content')
-    expect(screen.getByText('Friendly yarn for colder days.')).toBeTruthy()
+    ).toBe('http://localhost:8080/api/assets/asset-hero/content');
+    expect(screen.getByText('Friendly yarn for colder days.')).toBeTruthy();
     expect(
       screen.queryByText('This hidden block should never render.'),
-    ).toBeNull()
-  })
+    ).toBeNull();
+  });
 
   it('resolves published links and narrows rendering to the selected page', () => {
     render(
@@ -45,16 +45,18 @@ describe('SiteDraftRenderer', () => {
         showPageMeta={false}
         siteSlug="loom-light"
       />,
-    )
+    );
 
     const navLinks = within(
       screen.getByRole('navigation', { name: 'Site navigation' }),
-    ).getAllByRole('link')
-    expect(navLinks[0]?.getAttribute('href')).toBe('/public/loom-light')
-    expect(navLinks[1]?.getAttribute('href')).toBe('/public/loom-light/contact')
-    expect(screen.queryByText('Home')).toBeNull()
-    expect(screen.getByText('Contact')).toBeTruthy()
-  })
+    ).getAllByRole('link');
+    expect(navLinks[0]?.getAttribute('href')).toBe('/public/loom-light');
+    expect(navLinks[1]?.getAttribute('href')).toBe(
+      '/public/loom-light/contact',
+    );
+    expect(screen.queryByText('Home')).toBeNull();
+    expect(screen.getByText('Contact')).toBeTruthy();
+  });
 
   it('keeps published links root-relative when rendered on a hosted domain', () => {
     render(
@@ -64,42 +66,42 @@ describe('SiteDraftRenderer', () => {
         siteSlug="loom-light"
         publishedBasePath=""
       />,
-    )
+    );
 
     const navLinks = within(
       screen.getByRole('navigation', { name: 'Site navigation' }),
-    ).getAllByRole('link')
-    expect(navLinks[0]?.getAttribute('href')).toBe('/')
-    expect(navLinks[1]?.getAttribute('href')).toBe('/contact')
+    ).getAllByRole('link');
+    expect(navLinks[0]?.getAttribute('href')).toBe('/');
+    expect(navLinks[1]?.getAttribute('href')).toBe('/contact');
     expect(
       screen.getByRole('link', { name: 'Book a visit' }).getAttribute('href'),
-    ).toBe('/contact')
+    ).toBe('/contact');
     expect(
       screen
         .getByAltText('Studio shelves in warm afternoon light')
         .getAttribute('src'),
     ).toBe(
       'http://localhost:8080/api/public/sites/loom-light/assets/asset-hero',
-    )
-  })
+    );
+  });
 
   it('renders the added MVP content blocks without fallback UI', () => {
-    render(<SiteDraftRenderer site={buildExtendedDraft()} />)
+    render(<SiteDraftRenderer site={buildExtendedDraft()} />);
 
-    expect(screen.queryByText('Unsupported block')).toBeNull()
-    expect(screen.getByText('Selected work')).toBeTruthy()
-    expect(screen.getByText('What clients tend to notice')).toBeTruthy()
-    expect(screen.getByText('Packages and starting points')).toBeTruthy()
+    expect(screen.queryByText('Unsupported block')).toBeNull();
+    expect(screen.getByText('Selected work')).toBeTruthy();
+    expect(screen.getByText('What clients tend to notice')).toBeTruthy();
+    expect(screen.getByText('Packages and starting points')).toBeTruthy();
     expect(
       screen.getByText('Questions people ask before they reach out'),
-    ).toBeTruthy()
-    expect(screen.getByText('People behind the work')).toBeTruthy()
+    ).toBeTruthy();
+    expect(screen.getByText('People behind the work')).toBeTruthy();
     expect(
       screen
         .getAllByRole('link', { name: 'Contact' })
         .some((link) => link.getAttribute('href') === '#page-contact'),
-    ).toBe(true)
-  })
+    ).toBe(true);
+  });
 
   it('submits contact form blocks through the public forms API', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
@@ -109,29 +111,29 @@ describe('SiteDraftRenderer', () => {
         status: 'accepted',
         message: 'Thanks. Your message is on its way.',
       }),
-    })
-    vi.stubGlobal('fetch', fetchMock)
+    });
+    vi.stubGlobal('fetch', fetchMock);
 
-    render(<SiteDraftRenderer site={buildContactFormDraft()} />)
+    render(<SiteDraftRenderer site={buildContactFormDraft()} />);
 
     fireEvent.change(screen.getByLabelText('Email *'), {
       target: { value: 'ada@example.com' },
-    })
+    });
     fireEvent.change(screen.getByLabelText('Message *'), {
       target: { value: 'Need a warmer site direction.' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Send inquiry' }))
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send inquiry' }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(1)
-    })
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
     expect(fetchMock.mock.calls[0]?.[0].toString()).toContain(
       '/api/public/forms/site-1/block-contact/submit',
-    )
+    );
     expect(
       screen.getByText('Thanks. Your message is on its way.'),
-    ).toBeTruthy()
-  })
+    ).toBeTruthy();
+  });
 
   it('supports block wrappers for editor chrome without rendering hidden blocks', () => {
     render(
@@ -143,11 +145,32 @@ describe('SiteDraftRenderer', () => {
           </div>
         )}
       />,
-    )
+    );
 
-    expect(screen.getAllByTestId('editor-block')).toHaveLength(2)
-  })
-})
+    expect(screen.getAllByTestId('editor-block')).toHaveLength(2);
+  });
+
+  it('sanitizes unsafe rendered hrefs to inert fallbacks', () => {
+    const draft = buildDraft();
+    draft.navigation.primary[1] = {
+      label: 'Bad nav',
+      href: 'javascript:alert(1)',
+    };
+    draft.pages[0]!.blocks[0]!.props.primaryCta = {
+      label: 'Unsafe CTA',
+      href: 'data:text/html;base64,PHNjcmlwdD4=',
+    };
+
+    render(<SiteDraftRenderer site={draft} />);
+
+    expect(
+      screen.getByRole('link', { name: 'Bad nav' }).getAttribute('href'),
+    ).toBe('#');
+    expect(
+      screen.getByRole('link', { name: 'Unsafe CTA' }).getAttribute('href'),
+    ).toBe('#');
+  });
+});
 
 function buildDraft(): SiteDraft {
   return {
@@ -262,7 +285,7 @@ function buildDraft(): SiteDraft {
         ],
       },
     ],
-  }
+  };
 }
 
 function buildExtendedDraft(): SiteDraft {
@@ -391,7 +414,7 @@ function buildExtendedDraft(): SiteDraft {
         blocks: [],
       },
     ],
-  }
+  };
 }
 
 function buildContactFormDraft(): SiteDraft {
@@ -432,5 +455,5 @@ function buildContactFormDraft(): SiteDraft {
         ],
       },
     ],
-  }
+  };
 }

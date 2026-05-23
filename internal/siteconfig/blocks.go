@@ -3,12 +3,43 @@ package siteconfig
 import (
 	"fmt"
 	"net/mail"
+	"strconv"
 	"strings"
 )
 
 const BlockVersionV1 = "1.0.0"
 
 func heroBlockDefinition() BlockDefinition {
+	editorSchema := []EditorField{
+		{Name: "eyebrow", Label: "Eyebrow", Control: "text"},
+		{Name: "headline", Label: "Headline", Control: "text"},
+		{Name: "subheadline", Label: "Subheadline", Control: "textarea"},
+		{
+			Name:    "primaryCta",
+			Label:   "Primary CTA",
+			Control: "link",
+			Fields: []EditorField{
+				{Name: "label", Label: "Label", Control: "text"},
+				{Name: "href", Label: "Link", Control: "text", Placeholder: "/contact"},
+			},
+		},
+		{
+			Name:    "secondaryCta",
+			Label:   "Secondary CTA",
+			Control: "link",
+			Fields: []EditorField{
+				{Name: "label", Label: "Label", Control: "text"},
+				{Name: "href", Label: "Link", Control: "text", Placeholder: "/about"},
+			},
+		},
+		{
+			Name:        "image",
+			Label:       "Hero image",
+			Control:     "asset",
+			Description: "Pick an uploaded image for split or supporting hero layouts.",
+		},
+		{Name: "layout", Label: "Layout", Control: "select", Options: []string{"centered", "split-left", "split-right"}},
+	}
 	return BlockDefinition{
 		Type:        "hero",
 		Version:     BlockVersionV1,
@@ -18,41 +49,20 @@ func heroBlockDefinition() BlockDefinition {
 			"headline": "A focused website starts here",
 			"layout":   "centered",
 		},
-		EditorSchema: []EditorField{
-			{Name: "eyebrow", Label: "Eyebrow", Control: "text"},
-			{Name: "headline", Label: "Headline", Control: "text"},
-			{Name: "subheadline", Label: "Subheadline", Control: "textarea"},
-			{
-				Name:    "primaryCta",
-				Label:   "Primary CTA",
-				Control: "link",
-				Fields: []EditorField{
-					{Name: "label", Label: "Label", Control: "text"},
-					{Name: "href", Label: "Link", Control: "text", Placeholder: "/contact"},
-				},
-			},
-			{
-				Name:    "secondaryCta",
-				Label:   "Secondary CTA",
-				Control: "link",
-				Fields: []EditorField{
-					{Name: "label", Label: "Label", Control: "text"},
-					{Name: "href", Label: "Link", Control: "text", Placeholder: "/about"},
-				},
-			},
-			{
-				Name:        "image",
-				Label:       "Hero image",
-				Control:     "asset",
-				Description: "Pick an uploaded image for split or supporting hero layouts.",
-			},
-			{Name: "layout", Label: "Layout", Control: "select", Options: []string{"centered", "split-left", "split-right"}},
-		},
+		EditorSchema:  editorSchema,
+		PropSchema:    generationPropsSchema(editorSchema, "headline"),
+		MigrateProps:  migrateBlockPropsPassthrough,
 		ValidateProps: validateHeroProps,
 	}
 }
 
 func textSectionBlockDefinition() BlockDefinition {
+	editorSchema := []EditorField{
+		{Name: "heading", Label: "Heading", Control: "text"},
+		{Name: "body", Label: "Body", Control: "textarea"},
+		{Name: "alignment", Label: "Alignment", Control: "select", Options: []string{"left", "center", "right"}},
+		{Name: "width", Label: "Width", Control: "select", Options: []string{"narrow", "default", "wide"}},
+	}
 	return BlockDefinition{
 		Type:        "text_section",
 		Version:     BlockVersionV1,
@@ -64,17 +74,34 @@ func textSectionBlockDefinition() BlockDefinition {
 			"alignment": "left",
 			"width":     "default",
 		},
-		EditorSchema: []EditorField{
-			{Name: "heading", Label: "Heading", Control: "text"},
-			{Name: "body", Label: "Body", Control: "textarea"},
-			{Name: "alignment", Label: "Alignment", Control: "select", Options: []string{"left", "center", "right"}},
-			{Name: "width", Label: "Width", Control: "select", Options: []string{"narrow", "default", "wide"}},
-		},
+		EditorSchema:  editorSchema,
+		PropSchema:    generationPropsSchema(editorSchema, "heading", "body"),
+		MigrateProps:  migrateBlockPropsPassthrough,
 		ValidateProps: validateTextSectionProps,
 	}
 }
 
 func imageTextBlockDefinition() BlockDefinition {
+	editorSchema := []EditorField{
+		{Name: "heading", Label: "Heading", Control: "text"},
+		{Name: "body", Label: "Body", Control: "textarea"},
+		{
+			Name:        "image",
+			Label:       "Image",
+			Control:     "asset",
+			Description: "Choose one uploaded image from the site asset library.",
+		},
+		{
+			Name:    "cta",
+			Label:   "CTA",
+			Control: "link",
+			Fields: []EditorField{
+				{Name: "label", Label: "Label", Control: "text"},
+				{Name: "href", Label: "Link", Control: "text", Placeholder: "/contact"},
+			},
+		},
+		{Name: "imagePosition", Label: "Image position", Control: "select", Options: []string{"left", "right"}},
+	}
 	return BlockDefinition{
 		Type:        "image_text",
 		Version:     BlockVersionV1,
@@ -85,31 +112,29 @@ func imageTextBlockDefinition() BlockDefinition {
 			"body":          "Pair a short message with a supporting image.",
 			"imagePosition": "right",
 		},
-		EditorSchema: []EditorField{
-			{Name: "heading", Label: "Heading", Control: "text"},
-			{Name: "body", Label: "Body", Control: "textarea"},
-			{
-				Name:        "image",
-				Label:       "Image",
-				Control:     "asset",
-				Description: "Choose one uploaded image from the site asset library.",
-			},
-			{
-				Name:    "cta",
-				Label:   "CTA",
-				Control: "link",
-				Fields: []EditorField{
-					{Name: "label", Label: "Label", Control: "text"},
-					{Name: "href", Label: "Link", Control: "text", Placeholder: "/contact"},
-				},
-			},
-			{Name: "imagePosition", Label: "Image position", Control: "select", Options: []string{"left", "right"}},
-		},
+		EditorSchema:  editorSchema,
+		PropSchema:    generationPropsSchema(editorSchema, "heading", "body"),
+		MigrateProps:  migrateBlockPropsPassthrough,
 		ValidateProps: validateImageTextProps,
 	}
 }
 
 func featuresGridBlockDefinition() BlockDefinition {
+	editorSchema := []EditorField{
+		{Name: "heading", Label: "Heading", Control: "text"},
+		{Name: "intro", Label: "Intro", Control: "textarea"},
+		{
+			Name:    "items",
+			Label:   "Items",
+			Control: "repeater",
+			ItemFields: []EditorField{
+				{Name: "title", Label: "Title", Control: "text"},
+				{Name: "body", Label: "Body", Control: "textarea"},
+				{Name: "icon", Label: "Icon label", Control: "text"},
+			},
+		},
+		{Name: "columns", Label: "Columns", Control: "select", ValueType: "integer", Options: []string{"2", "3", "4"}},
+	}
 	return BlockDefinition{
 		Type:        "features_grid",
 		Version:     BlockVersionV1,
@@ -122,26 +147,28 @@ func featuresGridBlockDefinition() BlockDefinition {
 			},
 			"columns": 3,
 		},
-		EditorSchema: []EditorField{
-			{Name: "heading", Label: "Heading", Control: "text"},
-			{Name: "intro", Label: "Intro", Control: "textarea"},
-			{
-				Name:    "items",
-				Label:   "Items",
-				Control: "repeater",
-				ItemFields: []EditorField{
-					{Name: "title", Label: "Title", Control: "text"},
-					{Name: "body", Label: "Body", Control: "textarea"},
-					{Name: "icon", Label: "Icon label", Control: "text"},
-				},
-			},
-			{Name: "columns", Label: "Columns", Control: "select", ValueType: "integer", Options: []string{"2", "3", "4"}},
-		},
+		EditorSchema:  editorSchema,
+		PropSchema:    generationPropsSchema(editorSchema, "heading", "items"),
+		MigrateProps:  migrateBlockPropsPassthrough,
 		ValidateProps: validateFeaturesGridProps,
 	}
 }
 
 func ctaBandBlockDefinition() BlockDefinition {
+	editorSchema := []EditorField{
+		{Name: "heading", Label: "Heading", Control: "text"},
+		{Name: "body", Label: "Body", Control: "textarea"},
+		{
+			Name:    "cta",
+			Label:   "CTA",
+			Control: "link",
+			Fields: []EditorField{
+				{Name: "label", Label: "Label", Control: "text"},
+				{Name: "href", Label: "Link", Control: "text", Placeholder: "/contact"},
+			},
+		},
+		{Name: "variant", Label: "Variant", Control: "select", Options: []string{"primary", "secondary", "accent"}},
+	}
 	return BlockDefinition{
 		Type:        "cta_band",
 		Version:     BlockVersionV1,
@@ -152,25 +179,38 @@ func ctaBandBlockDefinition() BlockDefinition {
 			"body":    "Invite visitors into the next step.",
 			"variant": "primary",
 		},
-		EditorSchema: []EditorField{
-			{Name: "heading", Label: "Heading", Control: "text"},
-			{Name: "body", Label: "Body", Control: "textarea"},
-			{
-				Name:    "cta",
-				Label:   "CTA",
-				Control: "link",
-				Fields: []EditorField{
-					{Name: "label", Label: "Label", Control: "text"},
-					{Name: "href", Label: "Link", Control: "text", Placeholder: "/contact"},
-				},
-			},
-			{Name: "variant", Label: "Variant", Control: "select", Options: []string{"primary", "secondary", "accent"}},
-		},
+		EditorSchema:  editorSchema,
+		PropSchema:    generationPropsSchema(editorSchema, "heading", "body"),
+		MigrateProps:  migrateBlockPropsPassthrough,
 		ValidateProps: validateCTABandProps,
 	}
 }
 
 func contactFormBlockDefinition() BlockDefinition {
+	editorSchema := []EditorField{
+		{Name: "heading", Label: "Heading", Control: "text"},
+		{Name: "intro", Label: "Intro", Control: "textarea"},
+		{Name: "submitLabel", Label: "Submit label", Control: "text"},
+		{
+			Name:    "fields",
+			Label:   "Form fields",
+			Control: "repeater",
+			ItemFields: []EditorField{
+				{Name: "name", Label: "Field name", Control: "text", Placeholder: "email"},
+				{Name: "label", Label: "Label", Control: "text"},
+				{Name: "type", Label: "Field type", Control: "select", Options: []string{"name", "email", "phone", "message", "select"}},
+				{Name: "required", Label: "Required", Control: "checkbox"},
+				{
+					Name:        "options",
+					Label:       "Select options",
+					Control:     "string_list",
+					Description: "One option per line. Only used when the field type is select.",
+				},
+			},
+		},
+		{Name: "successMessage", Label: "Success message", Control: "textarea"},
+		{Name: "notificationEmail", Label: "Notification email", Control: "text"},
+	}
 	return BlockDefinition{
 		Type:        "contact_form",
 		Version:     BlockVersionV1,
@@ -202,35 +242,34 @@ func contactFormBlockDefinition() BlockDefinition {
 			},
 			"successMessage": "Thanks. Your message is on its way.",
 		},
-		EditorSchema: []EditorField{
-			{Name: "heading", Label: "Heading", Control: "text"},
-			{Name: "intro", Label: "Intro", Control: "textarea"},
-			{Name: "submitLabel", Label: "Submit label", Control: "text"},
-			{
-				Name:    "fields",
-				Label:   "Form fields",
-				Control: "repeater",
-				ItemFields: []EditorField{
-					{Name: "name", Label: "Field name", Control: "text", Placeholder: "email"},
-					{Name: "label", Label: "Label", Control: "text"},
-					{Name: "type", Label: "Field type", Control: "select", Options: []string{"name", "email", "phone", "message", "select"}},
-					{Name: "required", Label: "Required", Control: "checkbox"},
-					{
-						Name:        "options",
-						Label:       "Select options",
-						Control:     "string_list",
-						Description: "One option per line. Only used when the field type is select.",
-					},
-				},
-			},
-			{Name: "successMessage", Label: "Success message", Control: "textarea"},
-			{Name: "notificationEmail", Label: "Notification email", Control: "text"},
-		},
+		EditorSchema:  editorSchema,
+		PropSchema:    generationPropsSchema(editorSchema, "heading", "submitLabel", "fields"),
+		MigrateProps:  migrateBlockPropsPassthrough,
 		ValidateProps: validateContactFormProps,
 	}
 }
 
 func galleryBlockDefinition() BlockDefinition {
+	editorSchema := []EditorField{
+		{Name: "heading", Label: "Heading", Control: "text"},
+		{Name: "intro", Label: "Intro", Control: "textarea"},
+		{Name: "layout", Label: "Layout", Control: "select", Options: []string{"grid", "masonry", "spotlight"}},
+		{
+			Name:    "images",
+			Label:   "Images",
+			Control: "repeater",
+			ItemFields: []EditorField{
+				{Name: "title", Label: "Title", Control: "text"},
+				{Name: "caption", Label: "Caption", Control: "textarea"},
+				{
+					Name:        "image",
+					Label:       "Image",
+					Control:     "asset",
+					Description: "Choose one uploaded image from the site asset library.",
+				},
+			},
+		},
+	}
 	return BlockDefinition{
 		Type:        "gallery",
 		Version:     BlockVersionV1,
@@ -246,31 +285,29 @@ func galleryBlockDefinition() BlockDefinition {
 			},
 			"layout": "grid",
 		},
-		EditorSchema: []EditorField{
-			{Name: "heading", Label: "Heading", Control: "text"},
-			{Name: "intro", Label: "Intro", Control: "textarea"},
-			{Name: "layout", Label: "Layout", Control: "select", Options: []string{"grid", "masonry", "spotlight"}},
-			{
-				Name:    "images",
-				Label:   "Images",
-				Control: "repeater",
-				ItemFields: []EditorField{
-					{Name: "title", Label: "Title", Control: "text"},
-					{Name: "caption", Label: "Caption", Control: "textarea"},
-					{
-						Name:        "image",
-						Label:       "Image",
-						Control:     "asset",
-						Description: "Choose one uploaded image from the site asset library.",
-					},
-				},
-			},
-		},
+		EditorSchema:  editorSchema,
+		PropSchema:    generationPropsSchema(editorSchema, "heading", "images"),
+		MigrateProps:  migrateBlockPropsPassthrough,
 		ValidateProps: validateGalleryProps,
 	}
 }
 
 func testimonialsBlockDefinition() BlockDefinition {
+	editorSchema := []EditorField{
+		{Name: "heading", Label: "Heading", Control: "text"},
+		{Name: "intro", Label: "Intro", Control: "textarea"},
+		{
+			Name:    "items",
+			Label:   "Testimonials",
+			Control: "repeater",
+			ItemFields: []EditorField{
+				{Name: "quote", Label: "Quote", Control: "textarea"},
+				{Name: "name", Label: "Name", Control: "text"},
+				{Name: "role", Label: "Role", Control: "text"},
+				{Name: "avatar", Label: "Avatar", Control: "asset"},
+			},
+		},
+	}
 	return BlockDefinition{
 		Type:        "testimonials",
 		Version:     BlockVersionV1,
@@ -286,26 +323,45 @@ func testimonialsBlockDefinition() BlockDefinition {
 				},
 			},
 		},
-		EditorSchema: []EditorField{
-			{Name: "heading", Label: "Heading", Control: "text"},
-			{Name: "intro", Label: "Intro", Control: "textarea"},
-			{
-				Name:    "items",
-				Label:   "Testimonials",
-				Control: "repeater",
-				ItemFields: []EditorField{
-					{Name: "quote", Label: "Quote", Control: "textarea"},
-					{Name: "name", Label: "Name", Control: "text"},
-					{Name: "role", Label: "Role", Control: "text"},
-					{Name: "avatar", Label: "Avatar", Control: "asset"},
-				},
-			},
-		},
+		EditorSchema:  editorSchema,
+		PropSchema:    generationPropsSchema(editorSchema, "heading", "items"),
+		MigrateProps:  migrateBlockPropsPassthrough,
 		ValidateProps: validateTestimonialsProps,
 	}
 }
 
 func pricingPackagesBlockDefinition() BlockDefinition {
+	editorSchema := []EditorField{
+		{Name: "heading", Label: "Heading", Control: "text"},
+		{Name: "intro", Label: "Intro", Control: "textarea"},
+		{
+			Name:    "plans",
+			Label:   "Plans",
+			Control: "repeater",
+			ItemFields: []EditorField{
+				{Name: "name", Label: "Name", Control: "text"},
+				{Name: "price", Label: "Price", Control: "text"},
+				{Name: "description", Label: "Description", Control: "textarea"},
+				{
+					Name:    "features",
+					Label:   "Features",
+					Control: "repeater",
+					ItemFields: []EditorField{
+						{Name: "text", Label: "Feature", Control: "text"},
+					},
+				},
+				{
+					Name:    "cta",
+					Label:   "CTA",
+					Control: "link",
+					Fields: []EditorField{
+						{Name: "label", Label: "Label", Control: "text"},
+						{Name: "href", Label: "Link", Control: "text", Placeholder: "/contact"},
+					},
+				},
+			},
+		},
+	}
 	return BlockDefinition{
 		Type:        "pricing_packages",
 		Version:     BlockVersionV1,
@@ -325,42 +381,27 @@ func pricingPackagesBlockDefinition() BlockDefinition {
 				},
 			},
 		},
-		EditorSchema: []EditorField{
-			{Name: "heading", Label: "Heading", Control: "text"},
-			{Name: "intro", Label: "Intro", Control: "textarea"},
-			{
-				Name:    "plans",
-				Label:   "Plans",
-				Control: "repeater",
-				ItemFields: []EditorField{
-					{Name: "name", Label: "Name", Control: "text"},
-					{Name: "price", Label: "Price", Control: "text"},
-					{Name: "description", Label: "Description", Control: "textarea"},
-					{
-						Name:    "features",
-						Label:   "Features",
-						Control: "repeater",
-						ItemFields: []EditorField{
-							{Name: "text", Label: "Feature", Control: "text"},
-						},
-					},
-					{
-						Name:    "cta",
-						Label:   "CTA",
-						Control: "link",
-						Fields: []EditorField{
-							{Name: "label", Label: "Label", Control: "text"},
-							{Name: "href", Label: "Link", Control: "text", Placeholder: "/contact"},
-						},
-					},
-				},
-			},
-		},
+		EditorSchema:  editorSchema,
+		PropSchema:    generationPropsSchema(editorSchema, "heading", "plans"),
+		MigrateProps:  migrateBlockPropsPassthrough,
 		ValidateProps: validatePricingPackagesProps,
 	}
 }
 
 func faqBlockDefinition() BlockDefinition {
+	editorSchema := []EditorField{
+		{Name: "heading", Label: "Heading", Control: "text"},
+		{Name: "intro", Label: "Intro", Control: "textarea"},
+		{
+			Name:    "items",
+			Label:   "Questions",
+			Control: "repeater",
+			ItemFields: []EditorField{
+				{Name: "question", Label: "Question", Control: "text"},
+				{Name: "answer", Label: "Answer", Control: "textarea"},
+			},
+		},
+	}
 	return BlockDefinition{
 		Type:        "faq",
 		Version:     BlockVersionV1,
@@ -375,24 +416,38 @@ func faqBlockDefinition() BlockDefinition {
 				},
 			},
 		},
-		EditorSchema: []EditorField{
-			{Name: "heading", Label: "Heading", Control: "text"},
-			{Name: "intro", Label: "Intro", Control: "textarea"},
-			{
-				Name:    "items",
-				Label:   "Questions",
-				Control: "repeater",
-				ItemFields: []EditorField{
-					{Name: "question", Label: "Question", Control: "text"},
-					{Name: "answer", Label: "Answer", Control: "textarea"},
-				},
-			},
-		},
+		EditorSchema:  editorSchema,
+		PropSchema:    generationPropsSchema(editorSchema, "heading", "items"),
+		MigrateProps:  migrateBlockPropsPassthrough,
 		ValidateProps: validateFAQProps,
 	}
 }
 
 func teamProfileCardsBlockDefinition() BlockDefinition {
+	editorSchema := []EditorField{
+		{Name: "heading", Label: "Heading", Control: "text"},
+		{Name: "intro", Label: "Intro", Control: "textarea"},
+		{
+			Name:    "people",
+			Label:   "People",
+			Control: "repeater",
+			ItemFields: []EditorField{
+				{Name: "name", Label: "Name", Control: "text"},
+				{Name: "role", Label: "Role", Control: "text"},
+				{Name: "bio", Label: "Bio", Control: "textarea"},
+				{Name: "photo", Label: "Photo", Control: "asset"},
+				{
+					Name:    "links",
+					Label:   "Links",
+					Control: "repeater",
+					ItemFields: []EditorField{
+						{Name: "label", Label: "Label", Control: "text"},
+						{Name: "href", Label: "Link", Control: "text", Placeholder: "/about"},
+					},
+				},
+			},
+		},
+	}
 	return BlockDefinition{
 		Type:        "team_profile_cards",
 		Version:     BlockVersionV1,
@@ -414,35 +469,28 @@ func teamProfileCardsBlockDefinition() BlockDefinition {
 				},
 			},
 		},
-		EditorSchema: []EditorField{
-			{Name: "heading", Label: "Heading", Control: "text"},
-			{Name: "intro", Label: "Intro", Control: "textarea"},
-			{
-				Name:    "people",
-				Label:   "People",
-				Control: "repeater",
-				ItemFields: []EditorField{
-					{Name: "name", Label: "Name", Control: "text"},
-					{Name: "role", Label: "Role", Control: "text"},
-					{Name: "bio", Label: "Bio", Control: "textarea"},
-					{Name: "photo", Label: "Photo", Control: "asset"},
-					{
-						Name:    "links",
-						Label:   "Links",
-						Control: "repeater",
-						ItemFields: []EditorField{
-							{Name: "label", Label: "Label", Control: "text"},
-							{Name: "href", Label: "Link", Control: "text", Placeholder: "/about"},
-						},
-					},
-				},
-			},
-		},
+		EditorSchema:  editorSchema,
+		PropSchema:    generationPropsSchema(editorSchema, "heading", "people"),
+		MigrateProps:  migrateBlockPropsPassthrough,
 		ValidateProps: validateTeamProfileCardsProps,
 	}
 }
 
 func statsBlockDefinition() BlockDefinition {
+	editorSchema := []EditorField{
+		{Name: "heading", Label: "Heading", Control: "text"},
+		{Name: "intro", Label: "Intro", Control: "textarea"},
+		{
+			Name:    "items",
+			Label:   "Stats",
+			Control: "repeater",
+			ItemFields: []EditorField{
+				{Name: "value", Label: "Value", Control: "text"},
+				{Name: "label", Label: "Label", Control: "text"},
+				{Name: "description", Label: "Description", Control: "textarea"},
+			},
+		},
+	}
 	return BlockDefinition{
 		Type:        "stats",
 		Version:     BlockVersionV1,
@@ -456,25 +504,31 @@ func statsBlockDefinition() BlockDefinition {
 				map[string]any{"value": "24/7", "label": "Support available"},
 			},
 		},
-		EditorSchema: []EditorField{
-			{Name: "heading", Label: "Heading", Control: "text"},
-			{Name: "intro", Label: "Intro", Control: "textarea"},
-			{
-				Name:    "items",
-				Label:   "Stats",
-				Control: "repeater",
-				ItemFields: []EditorField{
-					{Name: "value", Label: "Value", Control: "text"},
-					{Name: "label", Label: "Label", Control: "text"},
-					{Name: "description", Label: "Description", Control: "textarea"},
-				},
-			},
-		},
+		EditorSchema:  editorSchema,
+		PropSchema:    generationPropsSchema(editorSchema, "heading", "items"),
+		MigrateProps:  migrateBlockPropsPassthrough,
 		ValidateProps: validateStatsProps,
 	}
 }
 
 func collectionListBlockDefinition() BlockDefinition {
+	editorSchema := []EditorField{
+		{Name: "heading", Label: "Heading", Control: "text"},
+		{Name: "intro", Label: "Intro", Control: "textarea"},
+		{Name: "collection", Label: "Collection", Control: "collection-picker"},
+		{Name: "limit", Label: "Items to show", Control: "number"},
+		{Name: "layout", Label: "Layout", Control: "select", Options: []string{"grid", "list"}},
+		{Name: "showFilters", Label: "Show filter chips", Control: "boolean"},
+		{
+			Name:    "cta",
+			Label:   "CTA",
+			Control: "link",
+			Fields: []EditorField{
+				{Name: "label", Label: "Label", Control: "text"},
+				{Name: "href", Label: "Link", Control: "text", Placeholder: "/services"},
+			},
+		},
+	}
 	return BlockDefinition{
 		Type:        "collection_list",
 		Version:     BlockVersionV1,
@@ -486,28 +540,22 @@ func collectionListBlockDefinition() BlockDefinition {
 			"limit":       6,
 			"showFilters": false,
 		},
-		EditorSchema: []EditorField{
-			{Name: "heading", Label: "Heading", Control: "text"},
-			{Name: "intro", Label: "Intro", Control: "textarea"},
-			{Name: "collection", Label: "Collection", Control: "collection-picker"},
-			{Name: "limit", Label: "Items to show", Control: "number"},
-			{Name: "layout", Label: "Layout", Control: "select", Options: []string{"grid", "list"}},
-			{Name: "showFilters", Label: "Show filter chips", Control: "boolean"},
-			{
-				Name:    "cta",
-				Label:   "CTA",
-				Control: "link",
-				Fields: []EditorField{
-					{Name: "label", Label: "Label", Control: "text"},
-					{Name: "href", Label: "Link", Control: "text", Placeholder: "/services"},
-				},
-			},
-		},
+		EditorSchema:  editorSchema,
+		PropSchema:    generationPropsSchema(editorSchema),
+		MigrateProps:  migrateBlockPropsPassthrough,
 		ValidateProps: validateCollectionListProps,
 	}
 }
 
 func collectionIndexBlockDefinition() BlockDefinition {
+	editorSchema := []EditorField{
+		{Name: "heading", Label: "Heading", Control: "text"},
+		{Name: "intro", Label: "Intro", Control: "textarea"},
+		{Name: "sort", Label: "Default sort", Control: "select", Options: []string{"manual", "newest", "oldest", "title"}},
+		{Name: "layout", Label: "Layout", Control: "select", Options: []string{"grid", "list"}},
+		{Name: "showSort", Label: "Allow visitors to sort", Control: "boolean"},
+		{Name: "showFilters", Label: "Show filter chips", Control: "boolean"},
+	}
 	return BlockDefinition{
 		Type:        "collection_index",
 		Version:     BlockVersionV1,
@@ -518,19 +566,18 @@ func collectionIndexBlockDefinition() BlockDefinition {
 			"sort":     "manual",
 			"showSort": false,
 		},
-		EditorSchema: []EditorField{
-			{Name: "heading", Label: "Heading", Control: "text"},
-			{Name: "intro", Label: "Intro", Control: "textarea"},
-			{Name: "sort", Label: "Default sort", Control: "select", Options: []string{"manual", "newest", "oldest", "title"}},
-			{Name: "layout", Label: "Layout", Control: "select", Options: []string{"grid", "list"}},
-			{Name: "showSort", Label: "Allow visitors to sort", Control: "boolean"},
-			{Name: "showFilters", Label: "Show filter chips", Control: "boolean"},
-		},
+		EditorSchema:  editorSchema,
+		PropSchema:    generationPropsSchema(editorSchema),
+		MigrateProps:  migrateBlockPropsPassthrough,
 		ValidateProps: validateCollectionIndexProps,
 	}
 }
 
 func collectionDetailBlockDefinition() BlockDefinition {
+	editorSchema := []EditorField{
+		{Name: "heading", Label: "Heading", Control: "text", Description: "Optional override; defaults to the entry title"},
+		{Name: "layout", Label: "Layout", Control: "select", Options: []string{"default", "narrow", "wide"}},
+	}
 	return BlockDefinition{
 		Type:        "collection_detail",
 		Version:     BlockVersionV1,
@@ -539,15 +586,44 @@ func collectionDetailBlockDefinition() BlockDefinition {
 		DefaultProps: map[string]any{
 			"layout": "default",
 		},
-		EditorSchema: []EditorField{
-			{Name: "heading", Label: "Heading", Control: "text", Description: "Optional override; defaults to the entry title"},
-			{Name: "layout", Label: "Layout", Control: "select", Options: []string{"default", "narrow", "wide"}},
-		},
+		EditorSchema:  editorSchema,
+		PropSchema:    generationPropsSchema(editorSchema),
+		MigrateProps:  migrateBlockPropsPassthrough,
 		ValidateProps: validateCollectionDetailProps,
 	}
 }
 
 func footerBlockDefinition() BlockDefinition {
+	editorSchema := []EditorField{
+		{Name: "showBrand", Label: "Show business name and logo", Control: "checkbox"},
+		{Name: "tagline", Label: "Tagline", Control: "textarea"},
+		{
+			Name:    "contact",
+			Label:   "Contact details",
+			Control: "object",
+			Fields: []EditorField{
+				{Name: "address", Label: "Address", Control: "textarea"},
+				{Name: "phone", Label: "Phone", Control: "text"},
+				{Name: "email", Label: "Email", Control: "text"},
+				{
+					Name:        "hours",
+					Label:       "Opening hours",
+					Control:     "string_list",
+					Description: "One line per schedule entry, for example Mon-Fri 09:00-17:00.",
+				},
+			},
+		},
+		{Name: "copyright", Label: "Copyright", Control: "text"},
+		{
+			Name:    "socialLinks",
+			Label:   "Social links",
+			Control: "repeater",
+			ItemFields: []EditorField{
+				{Name: "label", Label: "Label", Control: "text"},
+				{Name: "href", Label: "Link", Control: "text", Placeholder: "https://instagram.com/example"},
+			},
+		},
+	}
 	return BlockDefinition{
 		Type:        "footer",
 		Version:     BlockVersionV1,
@@ -561,37 +637,119 @@ func footerBlockDefinition() BlockDefinition {
 			},
 			"copyright": "Copyright 2026 Site name",
 		},
-		EditorSchema: []EditorField{
-			{Name: "showBrand", Label: "Show business name and logo", Control: "checkbox"},
-			{Name: "tagline", Label: "Tagline", Control: "textarea"},
-			{
-				Name:    "contact",
-				Label:   "Contact details",
-				Control: "object",
-				Fields: []EditorField{
-					{Name: "address", Label: "Address", Control: "textarea"},
-					{Name: "phone", Label: "Phone", Control: "text"},
-					{Name: "email", Label: "Email", Control: "text"},
-					{
-						Name:        "hours",
-						Label:       "Opening hours",
-						Control:     "string_list",
-						Description: "One line per schedule entry, for example Mon-Fri 09:00-17:00.",
-					},
-				},
-			},
-			{Name: "copyright", Label: "Copyright", Control: "text"},
-			{
-				Name:    "socialLinks",
-				Label:   "Social links",
-				Control: "repeater",
-				ItemFields: []EditorField{
-					{Name: "label", Label: "Label", Control: "text"},
-					{Name: "href", Label: "Link", Control: "text", Placeholder: "https://instagram.com/example"},
-				},
-			},
-		},
+		EditorSchema:  editorSchema,
+		PropSchema:    generationPropsSchema(editorSchema, "copyright"),
+		MigrateProps:  migrateBlockPropsPassthrough,
 		ValidateProps: validateFooterProps,
+	}
+}
+
+func generationPropsSchema(fields []EditorField, required ...string) map[string]any {
+	properties := make(map[string]any, len(fields))
+	for _, field := range fields {
+		properties[field.Name] = generationFieldSchema(field)
+	}
+	schema := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"properties":           properties,
+	}
+	if len(required) > 0 {
+		schema["required"] = required
+	}
+	return schema
+}
+
+func generationFieldSchema(field EditorField) map[string]any {
+	switch field.Control {
+	case "textarea", "text", "collection-picker":
+		return map[string]any{"type": "string"}
+	case "select":
+		if field.ValueType == "integer" {
+			values := make([]int, 0, len(field.Options))
+			for _, option := range field.Options {
+				if parsed, err := strconv.Atoi(option); err == nil {
+					values = append(values, parsed)
+				}
+			}
+			schema := map[string]any{"type": "integer"}
+			if len(values) > 0 {
+				schema["enum"] = values
+			}
+			return schema
+		}
+		schema := map[string]any{"type": "string"}
+		if len(field.Options) > 0 {
+			schema["enum"] = field.Options
+		}
+		return schema
+	case "number":
+		return map[string]any{"type": "integer"}
+	case "boolean", "checkbox":
+		return map[string]any{"type": "boolean"}
+	case "string_list":
+		return map[string]any{
+			"type":  "array",
+			"items": map[string]any{"type": "string"},
+		}
+	case "asset":
+		return map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"assetId": map[string]any{"type": "string"},
+				"alt":     map[string]any{"type": "string"},
+			},
+			"required": []string{"assetId", "alt"},
+		}
+	case "link":
+		fields := field.Fields
+		if len(fields) == 0 {
+			fields = []EditorField{
+				{Name: "label", Control: "text"},
+				{Name: "href", Control: "text"},
+			}
+		}
+		return generationPropsSchema(fields, "label", "href")
+	case "object":
+		return generationPropsSchema(field.Fields)
+	case "repeater":
+		return map[string]any{
+			"type":  "array",
+			"items": generationPropsSchema(field.ItemFields),
+		}
+	default:
+		return map[string]any{}
+	}
+}
+
+func migrateBlockPropsPassthrough(_ string, previousProps map[string]any) map[string]any {
+	return cloneBlockProps(previousProps)
+}
+
+func cloneBlockProps(previousProps map[string]any) map[string]any {
+	if previousProps == nil {
+		return map[string]any{}
+	}
+	clone := make(map[string]any, len(previousProps))
+	for key, value := range previousProps {
+		clone[key] = cloneBlockPropValue(value)
+	}
+	return clone
+}
+
+func cloneBlockPropValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return cloneBlockProps(typed)
+	case []any:
+		cloned := make([]any, len(typed))
+		for index, item := range typed {
+			cloned[index] = cloneBlockPropValue(item)
+		}
+		return cloned
+	default:
+		return typed
 	}
 }
 

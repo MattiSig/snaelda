@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -20,6 +21,7 @@ type Handler struct {
 	billingDB  billing.AccessStore
 	service    Generator
 	authorizer Authorizer
+	limiter    *GenerationRateLimiter
 	logger     *slog.Logger
 }
 
@@ -56,6 +58,8 @@ type repromptRequest struct {
 	Prompt string `json:"prompt"`
 }
 
+const maxGenerationPromptCharacters = 4000
+
 func NewHandler(db DB, cfg HandlerConfig) *Handler {
 	options := []ServiceOption{}
 	if cfg.StarterImagery != nil {
@@ -78,6 +82,7 @@ func NewHandler(db DB, cfg HandlerConfig) *Handler {
 		billingDB:  db,
 		service:    NewService(db, cfg.Planner, options...),
 		authorizer: authorization.New(db),
+		limiter:    NewGenerationRateLimiter(db, logger),
 		logger:     logger,
 	}
 }
@@ -135,6 +140,10 @@ func (h *Handler) generate(w http.ResponseWriter, r *http.Request) {
 	userID := ""
 	if session.User != nil {
 		userID = session.User.ID
+	}
+	if err := h.guardGenerationRequest(r.Context(), workspaceID, userID, "site", payload.Prompt); err != nil {
+		h.writeGenerationError(w, r, err)
+		return
 	}
 	result, err := h.service.Generate(r.Context(), workspaceID, userID, GenerateInput{
 		Name:              strings.TrimSpace(payload.Name),
@@ -205,6 +214,10 @@ func (h *Handler) repromptSite(w http.ResponseWriter, r *http.Request) {
 	if session.User != nil {
 		userID = session.User.ID
 	}
+	if err := h.guardGenerationRequest(r.Context(), scope.WorkspaceID, userID, "site_reprompt", payload.Prompt); err != nil {
+		h.writeGenerationError(w, r, err)
+		return
+	}
 	result, err := h.service.RepromptSite(r.Context(), scope.WorkspaceID, userID, siteID, RepromptInput{
 		Prompt: strings.TrimSpace(payload.Prompt),
 	})
@@ -251,6 +264,10 @@ func (h *Handler) repromptPage(w http.ResponseWriter, r *http.Request) {
 	if session.User != nil {
 		userID = session.User.ID
 	}
+	if err := h.guardGenerationRequest(r.Context(), scope.WorkspaceID, userID, "page_reprompt", payload.Prompt); err != nil {
+		h.writeGenerationError(w, r, err)
+		return
+	}
 	result, err := h.service.RepromptPage(r.Context(), scope.WorkspaceID, userID, siteID, pageID, RepromptInput{
 		Prompt: strings.TrimSpace(payload.Prompt),
 	})
@@ -283,15 +300,30 @@ func (h *Handler) undoSite(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"draft": draft})
 }
 
+func (h *Handler) guardGenerationRequest(ctx context.Context, workspaceID string, userID string, scope string, prompt string) error {
+	prompt = strings.TrimSpace(prompt)
+	if len(prompt) > maxGenerationPromptCharacters {
+		return fmt.Errorf("%w: %d", ErrPromptTooLong, maxGenerationPromptCharacters)
+	}
+	if h.limiter != nil && !h.limiter.Allow(ctx, workspaceID, userID, scope) {
+		return ErrGenerationRateLimited
+	}
+	return nil
+}
+
 func (h *Handler) writeGenerationError(w http.ResponseWriter, r *http.Request, err error) {
 	var validationErr siteconfig.ValidationError
 	switch {
 	case errors.Is(err, ErrPromptRequired):
 		writeError(w, http.StatusBadRequest, "generation_prompt_required", "a prompt is required to generate a draft")
+	case errors.Is(err, ErrPromptTooLong):
+		writeError(w, http.StatusBadRequest, "generation_prompt_too_long", "prompt is too long")
 	case errors.Is(err, ErrSiteSlugInvalid):
 		writeError(w, http.StatusBadRequest, "invalid_site_slug", "site slug must use lowercase words separated by hyphens")
 	case errors.Is(err, ErrSiteSlugConflict):
 		writeError(w, http.StatusConflict, "site_slug_conflict", "site slug is already in use")
+	case errors.Is(err, ErrGenerationRateLimited):
+		writeError(w, http.StatusTooManyRequests, "rate_limited", "too many generation requests; please wait before trying again")
 	case errors.As(err, &validationErr):
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"error": map[string]string{

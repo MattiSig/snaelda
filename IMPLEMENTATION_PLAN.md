@@ -4,6 +4,7 @@ Refreshed 2026-05-21 from 16 spec-vs-code audits plus the newly-authored `specs/
 
 ## Recently Confirmed Complete
 
+- [x] Generation hardening (spec 7): the OpenAI planner now sends a strict block-union JSON schema built from per-block prop fragments in `internal/siteconfig/blocks.go`, replacing the old `additionalProperties: true` hole in generated block props. Page reprompt is now model-first, using the AI-authored page when available and only falling back to deterministic templates when planning fails or returns nothing usable. Generation requests now pass through a durable `generation_attempts` limiter with per-user and per-workspace burst/day windows plus a prompt-length cost guard in `internal/generation/handler.go`, and `BlockDefinition` now carries per-type `MigrateProps` scaffolding so future block-version migrations have a first-class home. The frontend renderer also now sanitizes outbound hrefs before rendering, so even malformed drafts degrade to `#` instead of trusting unsafe protocols client-side.
 - [x] Custom-domain management foundation (specs 13, 10): `internal/domains` now supports `POST/PATCH/DELETE /api/sites/:siteId/domains` on top of the existing read path, with paid-plan enforcement via billing entitlements, hostname validation, DNS-TXT verification using `_snaelda-verify.{hostname}`, and safe refusal of hosted `subdomain` records. Domain list responses now expose pending verification instructions plus active-domain public URLs, and active custom domains become the preferred live URL in the builder. The publish/runtime cache now shares a domain cache between `internal/publishing` and `internal/domains`, so attach/verify/delete invalidates stale hostname lookups immediately. The builder publish panel now includes a production-facing custom-domain manager with add, verify, remove, DNS instructions, and paid-plan lock messaging.
 - [x] Theme token vocabulary now matches spec 11 end to end. `internal/siteconfig/theme_presets.go` emits `sectionPaddingX` + `sectionPaddingY` instead of the old single `sectionSpacing`, while `DetectThemeSelection` and the validator stay backward-compatible with legacy snapshots that still carry `sectionSpacing`. The public renderer and published `assets/theme.css` now use the spec-facing CSS variable families (`--color-*`, `--font-*`, `--radius-*`, `--space-sectionPaddingX/Y`) instead of the old `--site-*` contract, and theme CSS now exposes `headingWeight` / `bodyWeight` alongside the existing font-family tokens.
 - [x] `once_over_intake_ready` email sends are now idempotent on Stripe webhook event ID (spec 18 hardening). `internal/email/helpers.go` accepts an idempotency key for the once-over intake-ready template, `internal/billing/once_over.go` passes `once_over_intake_ready:{event_id}`, and billing tests assert the key is present so webhook replays do not double-send through providers that honor idempotency headers.
@@ -95,13 +96,6 @@ Entire spec is greenfield. None of it is implemented yet.
   - Lightweight periodic suggestions in the builder shell (e.g., "Add an FAQ section?") driven by a low-frequency model call over the current draft.
 
 ## Hardening
-
-- [ ] Generation hardening (spec 7).
-  - Tighten per-block prop schemas at `internal/generation/openai.go:354` (currently `additionalProperties: true`); add JSON-schema fragments per block type in `internal/siteconfig/blocks.go`.
-  - Invert page-reprompt behavior in `internal/generation/service.go:1158-1178` so the model is primary and template is fallback (currently template overwrites the AI plan).
-  - Add per-user / per-workspace generation rate limit + cost guard in `internal/generation/handler.go` using the durable pattern from `form_submission_attempts`.
-  - Scaffold `migrateFromPrevious` per block type so future block versions ship without breaking snapshots.
-  - Add a frontend URL safety pass in `apps/web/src/components/SiteDraftRenderer.tsx:1352-1397` rather than trusting backend allowlist alone.
 
 - [ ] Align sessions route naming (specs 17, 10).
   - Spec 17 says `GET /api/sessions/current` and `POST /api/sessions/attach-email`; code uses `/me` and `/claim`. Update the spec to match shipped reality (code is already wired and tested).

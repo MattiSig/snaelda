@@ -266,6 +266,66 @@ func TestRepromptPageReplacesOnlySelectedPage(t *testing.T) {
 	}
 }
 
+func TestBuildPageRepromptPlanPrefersModelPlanOverTemplateFallback(t *testing.T) {
+	service := Service{
+		planner: func(_ context.Context, _ generationInputContext, _ generationPlanFeedback) (generationPlan, error) {
+			return generationPlan{
+				Pages: []generationPagePlan{{
+					Title: "AI Pricing",
+					Slug:  "/pricing",
+					SEO: siteconfig.SEOConfig{
+						Title:       "AI pricing",
+						Description: "Model-authored pricing page",
+					},
+					Blocks: []generationBlockPlan{{
+						Type:    "pricing_packages",
+						Purpose: "Present clear package options",
+						Props: map[string]any{
+							"heading": "Straightforward packages",
+							"plans": []any{
+								map[string]any{
+									"name":        "Starter",
+									"price":       "$500",
+									"description": "Short engagement",
+									"features":    []any{map[string]any{"text": "One main deliverable"}},
+								},
+							},
+						},
+					}},
+				}},
+			}, nil
+		},
+	}
+
+	draft := siteconfig.SiteDraft{
+		Site: siteconfig.DraftSite{
+			ID:   "site-1",
+			Name: "North Light Studio",
+			Slug: "north-light-studio",
+			SEO:  siteconfig.SEOConfig{Description: "Studio site"},
+		},
+		Pages: []siteconfig.PageDraft{{
+			ID:    "page-1",
+			Title: "Services",
+			Slug:  "/services",
+		}},
+	}
+
+	plan, err := service.buildPageRepromptPlan(context.Background(), draft, draft.Pages[0], "Turn this into a pricing page.")
+	if err != nil {
+		t.Fatalf("build page reprompt plan: %v", err)
+	}
+	if plan.Title != "AI Pricing" {
+		t.Fatalf("expected model-authored title to win, got %#v", plan)
+	}
+	if len(plan.Blocks) != 1 || plan.Blocks[0].Type != "pricing_packages" {
+		t.Fatalf("expected model-authored blocks to win, got %#v", plan.Blocks)
+	}
+	if plan.Slug != "/services" {
+		t.Fatalf("expected page slug identity to stay stable, got %#v", plan)
+	}
+}
+
 func TestUndoLastDraftRevisionRestoresPreviousDraft(t *testing.T) {
 	store := newFakeGenerationStore()
 	service := Service{

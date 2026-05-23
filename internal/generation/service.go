@@ -19,10 +19,12 @@ import (
 )
 
 var (
-	ErrPromptRequired   = errors.New("generation prompt is required")
-	ErrSiteSlugInvalid  = errors.New("site slug is invalid")
-	ErrSiteSlugConflict = errors.New("site slug is already in use")
-	ErrNoDraftRevision  = errors.New("no draft revision available")
+	ErrPromptRequired        = errors.New("generation prompt is required")
+	ErrPromptTooLong         = errors.New("generation prompt is too long")
+	ErrSiteSlugInvalid       = errors.New("site slug is invalid")
+	ErrSiteSlugConflict      = errors.New("site slug is already in use")
+	ErrNoDraftRevision       = errors.New("no draft revision available")
+	ErrGenerationRateLimited = errors.New("generation is rate limited")
 )
 
 const maxGenerationValidationAttempts = 2
@@ -1209,6 +1211,8 @@ func (s *Service) buildPageRepromptPlan(
 	page siteconfig.PageDraft,
 	prompt string,
 ) (generationPagePlan, error) {
+	fallback := fallbackPageRepromptPlan(draft, page, prompt)
+
 	plan, err := s.buildPlan(ctx, generationInputContext{
 		SiteID:   draft.Site.ID,
 		PageID:   page.ID,
@@ -1217,9 +1221,24 @@ func (s *Service) buildPageRepromptPlan(
 		Scope:    "page",
 	}, generationPlanFeedback{})
 	if err != nil {
-		return generationPagePlan{}, fmt.Errorf("build page reprompt plan: %w", err)
+		return fallback, nil
 	}
 
+	if len(plan.Pages) > 0 {
+		pagePlan := repairSecondaryPage(draft.Site.Name, draft.Site.SEO.Description, plan.Pages[0], map[string]bool{
+			page.Slug: true,
+		})
+		if len(pagePlan.Blocks) > 0 {
+			pagePlan.Title = firstNonEmpty(pagePlan.Title, page.Title)
+			pagePlan.Slug = page.Slug
+			return pagePlan, nil
+		}
+	}
+
+	return fallback, nil
+}
+
+func fallbackPageRepromptPlan(draft siteconfig.SiteDraft, page siteconfig.PageDraft, prompt string) generationPagePlan {
 	profile := profilePrompt(prompt)
 	primaryCTAHref := "/contact"
 	if profile.WantsWorkshops {
@@ -1241,15 +1260,9 @@ func (s *Service) buildPageRepromptPlan(
 	default:
 		pagePlan = servicesPagePlan(draft.Site.Name, profile)
 	}
-
-	if len(plan.Pages) > 0 {
-		pagePlan = repairSecondaryPage(draft.Site.Name, draft.Site.SEO.Description, plan.Pages[0], map[string]bool{
-			page.Slug: true,
-		})
-	}
 	pagePlan.Title = firstNonEmpty(pagePlan.Title, page.Title)
 	pagePlan.Slug = page.Slug
-	return pagePlan, nil
+	return pagePlan
 }
 
 func profilePrompt(prompt string) promptProfile {

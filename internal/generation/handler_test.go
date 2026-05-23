@@ -198,6 +198,61 @@ func TestGenerateReturnsPlanLimitExceeded(t *testing.T) {
 	}
 }
 
+func TestGenerateRejectsOverlongPrompt(t *testing.T) {
+	service := &fakeGenerator{}
+	handler := Handler{
+		service:    service,
+		authorizer: fakeWorkspaceAuthorizer{},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/generate", strings.NewReader(`{"prompt":"`+strings.Repeat("a", maxGenerationPromptCharacters+1)+`"}`)).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	res := httptest.NewRecorder()
+
+	handler.generate(res, req)
+
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, res.Code)
+	}
+}
+
+func TestGenerateReturnsRateLimitedWhenBurstIsExhausted(t *testing.T) {
+	service := &fakeGenerator{}
+	store := newFakeGenerationAttemptStore()
+	now := time.Date(2026, 5, 23, 9, 0, 0, 0, time.UTC)
+	for attempt := 0; attempt < 6; attempt++ {
+		store.attempts = append(store.attempts, generationAttempt{
+			workspaceID: "workspace-1",
+			userID:      "user-1",
+			scope:       "site",
+			attemptedAt: now,
+		})
+	}
+	handler := Handler{
+		service:    service,
+		authorizer: fakeWorkspaceAuthorizer{},
+		limiter:    NewGenerationRateLimiter(store, nil).WithClock(fakeClock{now: now}),
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/generate", strings.NewReader(`{"prompt":"test"}`)).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	res := httptest.NewRecorder()
+
+	handler.generate(res, req)
+
+	if res.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected status %d, got %d", http.StatusTooManyRequests, res.Code)
+	}
+}
+
 func TestRepromptSiteReturnsCreatedDraft(t *testing.T) {
 	service := &fakeGenerator{
 		result: GenerateResult{
@@ -408,4 +463,12 @@ func intPtr(value int) *int {
 
 func timePtr(value time.Time) *time.Time {
 	return &value
+}
+
+type fakeClock struct {
+	now time.Time
+}
+
+func (c fakeClock) Now() time.Time {
+	return c.now
 }

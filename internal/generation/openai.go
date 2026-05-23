@@ -327,6 +327,28 @@ func summarizeDraftForTheme(draft siteconfig.SiteDraft) map[string]any {
 }
 
 func generationPlanSchema() map[string]any {
+	blockDefinitions := siteconfig.DefaultBlockRegistry().Definitions()
+	blockSchemas := make([]map[string]any, 0, len(blockDefinitions))
+	for _, definition := range blockDefinitions {
+		propsSchema := definition.PropSchema
+		if len(propsSchema) == 0 {
+			propsSchema = map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+			}
+		}
+		blockSchemas = append(blockSchemas, map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"required":             []string{"type", "purpose", "props"},
+			"properties": map[string]any{
+				"type":    map[string]any{"type": "string", "const": definition.Type},
+				"purpose": map[string]any{"type": "string"},
+				"props":   propsSchema,
+			},
+		})
+	}
+
 	return map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
@@ -349,17 +371,7 @@ func generationPlanSchema() map[string]any {
 						"blocks": map[string]any{
 							"type": "array",
 							"items": map[string]any{
-								"type":                 "object",
-								"additionalProperties": false,
-								"required":             []string{"type", "purpose", "props"},
-								"properties": map[string]any{
-									"type":    map[string]any{"type": "string"},
-									"purpose": map[string]any{"type": "string"},
-									"props": map[string]any{
-										"type":                 "object",
-										"additionalProperties": true,
-									},
-								},
+								"oneOf": blockSchemas,
 							},
 						},
 						"seo": map[string]any{
