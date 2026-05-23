@@ -548,6 +548,15 @@ func (r *statusRecorder) Write(body []byte) (int, error) {
 	return r.ResponseWriter.Write(body)
 }
 
+// Flush forwards to the underlying ResponseWriter so SSE handlers can stream
+// progress events. Without this method the http.Flusher type assertion in
+// streamGenerate fails because the embedded interface hides Flush.
+func (r *statusRecorder) Flush() {
+	if flusher, ok := r.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
 func (s *Server) newPublishedArtifactsS3Store() (publishing.ArtifactStore, error) {
 	awsConfig, err := awscfg.LoadDefaultConfig(
 		context.Background(),

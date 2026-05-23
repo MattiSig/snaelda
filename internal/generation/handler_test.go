@@ -341,6 +341,33 @@ func TestUndoSiteReturnsRestoredDraft(t *testing.T) {
 	}
 }
 
+func TestStreamGenerateDetachesRunContextFromClientConnection(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/generate", nil).WithContext(ctx)
+	res := httptest.NewRecorder()
+	handler := Handler{}
+
+	runCtxErr := make(chan error, 1)
+	handler.streamGenerate(res, req, func(runCtx context.Context, sink ProgressSink) (GenerateResult, error) {
+		runCtxErr <- runCtx.Err()
+		return GenerateResult{
+			JobID: "job-1",
+			Draft: validGenerationDraft(),
+		}, nil
+	})
+
+	select {
+	case err := <-runCtxErr:
+		if err != nil {
+			t.Fatalf("expected detached context to stay active, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for stream run context")
+	}
+}
+
 func validGenerationDraft() siteconfig.SiteDraft {
 	return siteconfig.SiteDraft{
 		Site: siteconfig.DraftSite{

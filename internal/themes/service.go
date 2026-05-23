@@ -2,10 +2,12 @@ package themes
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/MattiSig/snaelda/internal/generation"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
 	"github.com/MattiSig/snaelda/internal/sites"
 	"github.com/jackc/pgx/v5"
@@ -48,6 +50,7 @@ type themeRegenerator interface {
 }
 
 type Service struct {
+	db         DB
 	reader     draftReader
 	writer     draftWriter
 	metadata   generationMetadataReader
@@ -75,6 +78,7 @@ type ServiceConfig struct {
 
 func NewService(db DB, cfg ServiceConfig) *Service {
 	return &Service{
+		db:         db,
 		reader:     sites.NewPostgresReader(db),
 		writer:     sites.NewPostgresWriter(db),
 		metadata:   sites.NewPostgresReader(db),
@@ -143,9 +147,14 @@ func (s *Service) Update(ctx context.Context, workspaceID string, siteID string,
 }
 
 func (s *Service) Regenerate(ctx context.Context, workspaceID string, siteID string) (ThemeState, error) {
+	return s.RegenerateWithProgress(ctx, workspaceID, siteID, nil)
+}
+
+func (s *Service) RegenerateWithProgress(ctx context.Context, workspaceID string, siteID string, sink generation.ProgressSink) (ThemeState, error) {
 	if s.regenerate == nil {
 		return ThemeState{}, ErrThemeRegenerationOff
 	}
+	s.pruneGenerationJobs(ctx)
 
 	draft, err := s.reader.LoadDraft(ctx, siteID)
 	if errors.Is(err, sites.ErrNotFound) {
@@ -165,20 +174,62 @@ func (s *Service) Regenerate(ctx context.Context, workspaceID string, siteID str
 		prompt = fmt.Sprintf("Create a distinct, production-safe theme for %s.", draft.Site.Name)
 	}
 
+	jobID := ""
+	if sink != nil {
+		jobID, err = s.createGenerationJob(ctx, workspaceID, siteID, prompt)
+		if err != nil {
+			return ThemeState{}, err
+		}
+		sink.OnJobCreated(jobID)
+		if err := s.emitGenerationProgress(ctx, jobID, "prompt.normalize", sink); err != nil {
+			_ = s.failGenerationJob(ctx, jobID, err)
+			return ThemeState{}, err
+		}
+		if err := s.emitGenerationProgress(ctx, jobID, "plan.theme", sink); err != nil {
+			_ = s.failGenerationJob(ctx, jobID, err)
+			return ThemeState{}, err
+		}
+	}
+
 	selection, err := s.regenerate.RegenerateThemeSelection(ctx, prompt, draft)
 	if err != nil {
+		if jobID != "" {
+			_ = s.failGenerationJob(ctx, jobID, err)
+		}
 		return ThemeState{}, err
 	}
 	if err := validateSelection(selection); err != nil {
+		if jobID != "" {
+			_ = s.failGenerationJob(ctx, jobID, err)
+		}
 		return ThemeState{}, err
+	}
+	if jobID != "" {
+		if err := s.emitGenerationProgress(ctx, jobID, "validate.repair", sink); err != nil {
+			_ = s.failGenerationJob(ctx, jobID, err)
+			return ThemeState{}, err
+		}
+		if err := s.emitGenerationProgress(ctx, jobID, "persist", sink); err != nil {
+			_ = s.failGenerationJob(ctx, jobID, err)
+			return ThemeState{}, err
+		}
 	}
 
 	draft.Theme = siteconfig.BuildThemeWithBrand(selection, draft.Brand)
 	if err := s.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
+		if jobID != "" {
+			_ = s.failGenerationJob(ctx, jobID, err)
+		}
 		return ThemeState{}, err
 	}
 
-	return themeStateFromDraft(draft), nil
+	state := themeStateFromDraft(draft)
+	if jobID != "" {
+		if err := s.completeGenerationJob(ctx, jobID, siteID, state); err != nil {
+			return ThemeState{}, err
+		}
+	}
+	return state, nil
 }
 
 func themeStateFromDraft(draft siteconfig.SiteDraft) ThemeState {
@@ -219,4 +270,141 @@ func hasThemeOption(options []siteconfig.ThemeOption, id string) bool {
 		}
 	}
 	return false
+}
+
+func (s *Service) pruneGenerationJobs(ctx context.Context) {
+	if s == nil || s.db == nil {
+		return
+	}
+	_, _ = s.db.Exec(ctx, `
+		delete from generation_jobs
+		where coalesce(completed_at, started_at, created_at) < now() - interval '1 hour'
+		  and state in ('succeeded', 'failed', 'canceled')
+	`)
+}
+
+func (s *Service) createGenerationJob(ctx context.Context, workspaceID string, siteID string, prompt string) (string, error) {
+	if s == nil || s.db == nil {
+		return "", errors.New("theme generation jobs unavailable")
+	}
+	payloadJSON, err := json.Marshal(map[string]any{
+		"scope":  "theme",
+		"siteId": siteID,
+		"prompt": prompt,
+	})
+	if err != nil {
+		return "", fmt.Errorf("encode theme generation payload: %w", err)
+	}
+
+	var jobID string
+	if err := s.db.QueryRow(ctx, `
+		insert into generation_jobs (site_id, workspace_id, kind, state, status, prompt, input_context, payload)
+		values ($1::uuid, $2::uuid, $3, 'pending', 'queued', $4, $5, $5)
+		returning id::text
+	`, siteID, workspaceID, generation.JobKindThemeRegenerate, prompt, payloadJSON).Scan(&jobID); err != nil {
+		return "", fmt.Errorf("create theme generation job: %w", err)
+	}
+	return jobID, nil
+}
+
+func (s *Service) emitGenerationProgress(ctx context.Context, jobID string, stepName string, sink generation.ProgressSink) error {
+	if s == nil || s.db == nil || strings.TrimSpace(jobID) == "" {
+		return nil
+	}
+	step := generation.StepForJob(generation.JobKindThemeRegenerate, stepName)
+	if step == nil {
+		return nil
+	}
+	if _, err := s.db.Exec(ctx, `
+		update generation_jobs
+		set state = 'running',
+		    status = 'running',
+		    current_step = $1,
+		    error_reason = null,
+		    started_at = coalesce(started_at, now()),
+		    completed_at = null,
+		    updated_at = now()
+		where id = $2::uuid
+	`, step.Name, jobID); err != nil {
+		return fmt.Errorf("update theme generation progress: %w", err)
+	}
+	if sink != nil {
+		sink.OnProgress(*step)
+	}
+	return nil
+}
+
+func (s *Service) completeGenerationJob(ctx context.Context, jobID string, siteID string, state ThemeState) error {
+	if s == nil || s.db == nil || strings.TrimSpace(jobID) == "" {
+		return nil
+	}
+	outputJSON, err := json.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("encode theme generation output: %w", err)
+	}
+	if _, err := s.db.Exec(ctx, `
+		update generation_jobs
+		set site_id = $1::uuid,
+		    state = 'succeeded',
+		    status = 'completed',
+		    output_plan = $2,
+		    current_step = 'persist',
+		    error = null,
+		    error_reason = null,
+		    completed_at = now(),
+		    updated_at = now()
+		where id = $3::uuid
+	`, siteID, outputJSON, jobID); err != nil {
+		return fmt.Errorf("mark theme generation job complete: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) failGenerationJob(ctx context.Context, jobID string, cause error) error {
+	if s == nil || s.db == nil || strings.TrimSpace(jobID) == "" {
+		return nil
+	}
+	errorJSON, err := json.Marshal(map[string]string{
+		"reason":  themeFailureReason(cause),
+		"message": cause.Error(),
+	})
+	if err != nil {
+		return fmt.Errorf("encode theme generation error: %w", err)
+	}
+	if _, err := s.db.Exec(ctx, `
+		update generation_jobs
+		set state = 'failed',
+		    status = 'failed',
+		    error = $1,
+		    error_reason = $2,
+		    completed_at = now(),
+		    updated_at = now()
+		where id = $3::uuid
+	`, errorJSON, themeFailureReason(cause), jobID); err != nil {
+		return fmt.Errorf("mark theme generation job failed: %w", err)
+	}
+	return nil
+}
+
+func themeFailureReason(err error) string {
+	switch {
+	case errors.Is(err, ErrNotFound):
+		return "site_not_found"
+	case errors.Is(err, ErrThemePaletteInvalid):
+		return "invalid_theme_palette"
+	case errors.Is(err, ErrThemeFontPresetInvalid):
+		return "invalid_theme_font_preset"
+	case errors.Is(err, ErrThemeSpacingInvalid):
+		return "invalid_theme_section_spacing"
+	case errors.Is(err, ErrThemeRadiusInvalid):
+		return "invalid_theme_radius"
+	case errors.Is(err, ErrThemeButtonStyleInvalid):
+		return "invalid_theme_button_style"
+	case errors.Is(err, ErrThemeImageStyleInvalid):
+		return "invalid_theme_image_style"
+	case errors.Is(err, ErrThemeRegenerationOff):
+		return "theme_regeneration_unavailable"
+	default:
+		return "theme_regeneration_failed"
+	}
 }

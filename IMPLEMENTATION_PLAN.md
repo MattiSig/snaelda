@@ -74,9 +74,9 @@ Refreshed 2026-05-21 from 16 spec-vs-code audits plus the newly-authored `specs/
 
 Entire spec is greenfield. None of it is implemented yet.
 
-- [ ] Generation-progress streaming.
-  - SSE/job-tracking endpoint backed by a new `generation_jobs` table; emit the 8 spec-defined step labels from `internal/generation/service.go`.
-  - Builder consumer in `apps/web/src/routes/` to render progress on the anonymous-prompt and site-reprompt paths.
+- [x] Generation-progress streaming.
+  - SSE/job-tracking endpoint backed by a new `generation_jobs` table; emit the spec-defined step labels from `internal/generation/service.go`, keep jobs alive if the SSE client disconnects, and fall back to `GET /api/generation/jobs/:jobId` polling from the frontend.
+  - Builder consumers now render streamed progress on the anonymous-prompt, site-reprompt, page-reprompt, and theme-regeneration paths, with the shared `GenerationProgressCard` adapting to shorter step sets when imagery/copy phases are skipped.
 
 - [ ] Reprompt history + diff view.
   - New `reprompt_history` table capturing prompt, before/after draft hash, scope (site/page/block), and timestamp.

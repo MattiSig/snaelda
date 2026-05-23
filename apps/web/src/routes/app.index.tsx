@@ -1,6 +1,7 @@
-import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
+import { Link, createFileRoute, useNavigate, useRouterState } from '@tanstack/react-router'
 import type { FormEvent } from 'react'
 import { useEffect, useRef, useState } from 'react'
+import { GenerationProgressCard, type GenerationProgressItem } from '@/components/GenerationProgressCard'
 import { Ellipsis, PencilLine, Settings, Sparkles, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,8 +9,8 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   APIError,
   createSite,
-  generateSite,
   listSites,
+  streamGenerateSite,
   type SiteSummary,
 } from '@/lib/api'
 import { actions, emptyState, form, paddedPanel, ribbonPanel, siteCard, text } from '@/lib/styles'
@@ -19,11 +20,23 @@ export const Route = createFileRoute('/app/')({
   component: SitesIndex,
 })
 
+const generationSteps: GenerationProgressItem[] = [
+  { step: 'prompt.normalize', label: 'Reading your prompt' },
+  { step: 'plan.pages', label: 'Planning pages and structure' },
+  { step: 'plan.theme', label: 'Picking colors and typography' },
+  { step: 'plan.blocks', label: 'Choosing blocks for each page' },
+  { step: 'assets.fetch', label: 'Finding starter imagery' },
+  { step: 'copy.write', label: 'Writing copy' },
+  { step: 'validate.repair', label: 'Checking and repairing' },
+  { step: 'persist', label: 'Saving your draft' },
+]
+
 function SitesIndex() {
   const navigate = useNavigate()
-  const promptFromUrl = typeof window !== 'undefined'
-    ? new URLSearchParams(window.location.search).get('prompt') || ''
-    : ''
+  const locationSearch = useRouterState({ select: (state) => state.location.search })
+  const routeSearch = locationSearch as Record<string, unknown>
+  const promptFromUrl =
+    typeof routeSearch.prompt === 'string' ? routeSearch.prompt : ''
   const [sites, setSites] = useState<SiteSummary[]>([])
   const [name, setName] = useState('')
   const [prompt, setPrompt] = useState('')
@@ -33,6 +46,9 @@ function SitesIndex() {
   const [openActionsSiteId, setOpenActionsSiteId] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [isAutoGenerating, setIsAutoGenerating] = useState(Boolean(promptFromUrl))
+  const [generationPrompt, setGenerationPrompt] = useState('')
+  const [generationStep, setGenerationStep] = useState('')
+  const [generationStepTotal, setGenerationStepTotal] = useState(0)
   const hasAutoSubmitted = useRef(false)
   const actionsMenuRef = useRef<HTMLDivElement | null>(null)
 
@@ -70,11 +86,22 @@ function SitesIndex() {
     setName('')
     const timer = setTimeout(async () => {
       setIsSubmitting(true)
+      setGenerationPrompt(promptFromUrl)
+      setGenerationStep('')
+      setGenerationStepTotal(0)
       try {
-        const response = await generateSite({ name: '', prompt: promptFromUrl })
+        const response = await streamGenerateSite(
+          { name: '', prompt: promptFromUrl },
+          {
+            onProgress: (step) => {
+              setGenerationStep(step.step)
+              setGenerationStepTotal(step.total)
+            },
+          },
+        )
         await navigate({
           to: '/app/sites/$siteId/preview',
-          params: { siteId: response.draft.site.id },
+          params: { siteId: response.siteId },
         })
       } catch (error) {
         setErrorMessage(
@@ -82,6 +109,9 @@ function SitesIndex() {
         )
         setIsSubmitting(false)
         setIsAutoGenerating(false)
+        setGenerationPrompt('')
+        setGenerationStep('')
+        setGenerationStepTotal(0)
       }
     }, 300)
     return () => clearTimeout(timer)
@@ -132,39 +162,60 @@ function SitesIndex() {
     event.preventDefault()
     setIsSubmitting(true)
     setErrorMessage('')
+    setGenerationPrompt('')
+    setGenerationStep('')
+    setGenerationStepTotal(0)
 
     try {
       const isGenerated = prompt.trim() !== ''
-      const response = isGenerated
-        ? await generateSite({ name, prompt })
-        : await createSite({ name, prompt })
+      if (isGenerated) {
+        setGenerationPrompt(prompt)
+        const response = await streamGenerateSite(
+          { name, prompt },
+          {
+            onProgress: (step) => {
+              setGenerationStep(step.step)
+              setGenerationStepTotal(step.total)
+            },
+          },
+        )
+        setIsCreateOpen(false)
+        await navigate({
+          to: '/app/sites/$siteId/preview',
+          params: { siteId: response.siteId },
+        })
+        return
+      }
+      const response = await createSite({ name, prompt })
       setIsCreateOpen(false)
       await navigate({
-        to: isGenerated ? '/app/sites/$siteId/preview' : '/app/sites/$siteId',
+        to: '/app/sites/$siteId',
         params: { siteId: response.draft.site.id },
+        search: { panel: undefined },
       })
     } catch (error) {
       setErrorMessage(
         error instanceof APIError ? error.message : 'Could not create site',
       )
       setIsSubmitting(false)
+      setGenerationPrompt('')
+      setGenerationStep('')
+      setGenerationStepTotal(0)
     }
   }
 
-  if (isAutoGenerating && !errorMessage) {
+  if ((isAutoGenerating || (isSubmitting && generationPrompt)) && !errorMessage) {
     return (
-      <section className={cn(paddedPanel, 'rounded-[12px]')}>
-        <div className="grid gap-3">
-          <p className={text.eyebrow}>New site</p>
-          <h1 className={text.sectionTitle}>Weaving your draft...</h1>
-          <p className={text.p}>
-            Snaelda is generating your first draft. This usually takes about a minute.
-          </p>
-          <p className={cn(text.p, 'text-[var(--paper-muted)] italic')}>
-            "{promptFromUrl}"
-          </p>
-        </div>
-      </section>
+      <GenerationProgressCard
+        eyebrow="New site"
+        title="Weaving your draft..."
+        description="Snaelda is generating your first draft. This usually takes about a minute."
+        prompt={generationPrompt || promptFromUrl}
+        steps={generationSteps}
+        activeStep={generationStep}
+        activeTotal={generationStepTotal}
+        showSkeleton={generationStep === 'plan.blocks' || generationStep === 'assets.fetch' || generationStep === 'copy.write' || generationStep === 'validate.repair' || generationStep === 'persist'}
+      />
     )
   }
 
@@ -191,6 +242,27 @@ function SitesIndex() {
             New site
           </Button>
         </div>
+
+        {errorMessage && !isCreateOpen ? (
+          <div className="mb-5 rounded-[12px] border border-[color-mix(in_oklch,var(--thread-gold)_60%,var(--border))] bg-[color-mix(in_oklch,var(--thread-gold)_10%,var(--surface-1))] p-4">
+            <p className="m-0 text-sm font-bold text-[var(--paper)]">Could not start a new site</p>
+            <p className="mt-2 m-0 text-sm text-[var(--paper-muted)]">{errorMessage}</p>
+            <div className="mt-3 flex flex-wrap gap-3">
+              <Button asChild type="button" size="sm" variant="outline">
+                <Link to="/app/billing">Manage plan</Link>
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="plain"
+                className={actions.inlineLink}
+                onClick={() => setErrorMessage('')}
+              >
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         {isLoading ? (
           <p className={text.p}>Loading drafts...</p>
@@ -244,7 +316,7 @@ function SitesIndex() {
                     <Link
                       to="/app/sites/$siteId"
                       params={{ siteId: site.id }}
-                      search={{ panel: 'site' }}
+                      search={{ panel: 'settings' }}
                     >
                       <Settings className="size-4" />
                     </Link>

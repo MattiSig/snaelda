@@ -78,7 +78,7 @@ func TestEnrichDraftWithStarterImageryFillsHeroSlot(t *testing.T) {
 	}
 
 	draft := siteconfig.SiteDraft{
-		Site: siteconfig.DraftSite{ID: "site-1", Name: "Studio", Slug: "studio", Status: "draft"},
+		Site:  siteconfig.DraftSite{ID: "site-1", Name: "Studio", Slug: "studio", Status: "draft"},
 		Theme: siteconfig.ThemePreset(siteconfig.ThemePaletteCalmNordic),
 		Navigation: siteconfig.NavigationConfig{
 			Primary: []siteconfig.NavigationItem{{Label: "Home", PageID: "page-1"}},
@@ -140,7 +140,7 @@ func TestEnrichDraftWithStarterImageryDeduplicatesPhotos(t *testing.T) {
 	}
 
 	draft := siteconfig.SiteDraft{
-		Site: siteconfig.DraftSite{ID: "site-1", Name: "Studio", Slug: "studio", Status: "draft"},
+		Site:  siteconfig.DraftSite{ID: "site-1", Name: "Studio", Slug: "studio", Status: "draft"},
 		Theme: siteconfig.ThemePreset(siteconfig.ThemePaletteCalmNordic),
 		Navigation: siteconfig.NavigationConfig{
 			Primary: []siteconfig.NavigationItem{{Label: "Home", PageID: "page-1"}},
@@ -195,7 +195,7 @@ func TestEnrichDraftWithStarterImageryFallsBackOnPickFailure(t *testing.T) {
 	}
 
 	draft := siteconfig.SiteDraft{
-		Site: siteconfig.DraftSite{ID: "site-1", Name: "Studio", Slug: "studio", Status: "draft"},
+		Site:  siteconfig.DraftSite{ID: "site-1", Name: "Studio", Slug: "studio", Status: "draft"},
 		Theme: siteconfig.ThemePreset(siteconfig.ThemePaletteCalmNordic),
 		Navigation: siteconfig.NavigationConfig{
 			Primary: []siteconfig.NavigationItem{{Label: "Home", PageID: "page-1"}},

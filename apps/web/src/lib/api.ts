@@ -290,6 +290,30 @@ export type SiteRepromptResponse = {
   draft: SiteDraft;
 };
 
+export type GenerationProgressStep = {
+  step: string;
+  label: string;
+  index: number;
+  total: number;
+};
+
+export type GenerationJob = {
+  id: string;
+  kind: string;
+  state: "pending" | "running" | "succeeded" | "failed" | "canceled";
+  currentStep?: GenerationProgressStep;
+  siteId?: string;
+  errorReason?: string;
+  startedAt?: string;
+  completedAt?: string;
+};
+
+export type GenerationStreamResult = {
+  jobId: string;
+  siteId: string;
+  draftId: string;
+};
+
 export type PublishSiteResponse = {
   version: SiteVersion;
   hostname: string;
@@ -609,6 +633,181 @@ async function publicAPIRequest<T>(
   return response.json() as Promise<T>;
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function streamAPIRequest(
+  path: string,
+  init: RequestInit,
+  {
+    onJobCreated,
+    onProgress,
+  }: {
+    onJobCreated?: (jobId: string) => void;
+    onProgress?: (step: GenerationProgressStep) => void;
+  } = {},
+  retryOnUnauthorized = true,
+): Promise<GenerationStreamResult> {
+  const method = (init.method ?? "GET").toUpperCase();
+  const response = await fetch(new URL(path, getAPIBaseURL()), {
+    ...init,
+    credentials: "include",
+    headers: {
+      Accept: "text/event-stream",
+      ...buildCSRFHeaders(method),
+      ...init.headers,
+    },
+  });
+
+  if (!response.ok) {
+    if (
+      response.status === 401 &&
+      retryOnUnauthorized &&
+      path !== "/api/auth/login" &&
+      path !== "/api/auth/magic-link" &&
+      path !== "/api/auth/refresh"
+    ) {
+      await refreshAuthSession();
+      return streamAPIRequest(path, init, { onJobCreated, onProgress }, false);
+    }
+
+    const payload = await response.json().catch(() => null);
+    throw new APIError(response.status, payload);
+  }
+
+  if (!response.body) {
+    throw new APIError(500, {
+      error: {
+        code: "generation_stream_missing",
+        message: "Generation progress stream was unavailable.",
+      },
+    });
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let jobId = "";
+  let completed: GenerationStreamResult | null = null;
+
+  async function handleEventBlock(block: string) {
+    const lines = block
+      .split(/\r?\n/)
+      .map((line) => line.trimEnd())
+      .filter(Boolean);
+    let eventName = "message";
+    const dataLines: string[] = [];
+    for (const line of lines) {
+      if (line.startsWith(":")) {
+        continue;
+      }
+      if (line.startsWith("event:")) {
+        eventName = line.slice("event:".length).trim();
+        continue;
+      }
+      if (line.startsWith("data:")) {
+        dataLines.push(line.slice("data:".length).trim());
+      }
+    }
+    if (dataLines.length === 0) {
+      return;
+    }
+    const payload = JSON.parse(dataLines.join("\n")) as Record<string, unknown>;
+    if (eventName === "job") {
+      jobId = String(payload.jobId ?? "");
+      if (jobId && onJobCreated) {
+        onJobCreated(jobId);
+      }
+      return;
+    }
+    if (eventName === "progress") {
+      onProgress?.(payload as unknown as GenerationProgressStep);
+      return;
+    }
+    if (eventName === "complete") {
+      completed = {
+        jobId: String(payload.jobId ?? jobId),
+        siteId: String(payload.siteId ?? ""),
+        draftId: String(payload.draftId ?? payload.siteId ?? ""),
+      };
+      return;
+    }
+    if (eventName === "failed") {
+      const status = Number(payload.status ?? 500);
+      throw new APIError(Number.isFinite(status) ? status : 500, {
+        error: {
+          code: String(payload.reason ?? "generation_failed"),
+          message: String(
+            payload.message ?? "We could not finish. Please try again.",
+          ),
+        },
+      });
+    }
+  }
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const blocks = buffer.split(/\r?\n\r?\n/);
+    buffer = blocks.pop() ?? "";
+    for (const block of blocks) {
+      await handleEventBlock(block);
+      if (completed) {
+        return completed;
+      }
+    }
+  }
+
+  if (buffer.trim()) {
+    await handleEventBlock(buffer);
+  }
+  if (completed) {
+    return completed;
+  }
+  if (!jobId) {
+    throw new APIError(500, {
+      error: {
+        code: "generation_stream_interrupted",
+        message: "The generation connection dropped before progress could resume.",
+      },
+    });
+  }
+
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const { job } = await getGenerationJob(jobId);
+    if (job.currentStep) {
+      onProgress?.(job.currentStep);
+    }
+    if (job.state === "succeeded") {
+      return {
+        jobId,
+        siteId: job.siteId ?? "",
+        draftId: job.siteId ?? "",
+      };
+    }
+    if (job.state === "failed" || job.state === "canceled") {
+      throw new APIError(500, {
+        error: {
+          code: job.errorReason || "generation_failed",
+          message: "We could not finish. Please try again.",
+        },
+      });
+    }
+    await sleep(2000);
+  }
+
+  throw new APIError(500, {
+    error: {
+      code: "generation_poll_timeout",
+      message: "Generation took too long to confirm. Please try again.",
+    },
+  });
+}
+
 export async function getCurrentSession() {
   return apiFetch<SessionResponse>("/api/sessions/me").then(
     (response) => response.session,
@@ -776,6 +975,33 @@ export async function generateSite(input: {
   });
 }
 
+export async function streamGenerateSite(
+  input: {
+    name?: string;
+    prompt: string;
+    slug?: string;
+    preferredLanguage?: string;
+    optionalHints?: Record<string, string>;
+    brand?: BrandConfig;
+  },
+  handlers?: {
+    onJobCreated?: (jobId: string) => void;
+    onProgress?: (step: GenerationProgressStep) => void;
+  },
+) {
+  return streamAPIRequest(
+    "/api/sites/generate",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    },
+    handlers,
+  );
+}
+
 export async function repromptSite(siteId: string, input: { prompt: string }) {
   return apiFetch<SiteRepromptResponse>(`/api/sites/${siteId}/reprompt`, {
     method: "POST",
@@ -784,6 +1010,27 @@ export async function repromptSite(siteId: string, input: { prompt: string }) {
     },
     body: JSON.stringify(input),
   });
+}
+
+export async function streamRepromptSite(
+  siteId: string,
+  input: { prompt: string },
+  handlers?: {
+    onJobCreated?: (jobId: string) => void;
+    onProgress?: (step: GenerationProgressStep) => void;
+  },
+) {
+  return streamAPIRequest(
+    `/api/sites/${siteId}/reprompt`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    },
+    handlers,
+  );
 }
 
 export async function repromptPage(
@@ -801,6 +1048,32 @@ export async function repromptPage(
       body: JSON.stringify(input),
     },
   );
+}
+
+export async function streamRepromptPage(
+  siteId: string,
+  pageId: string,
+  input: { prompt: string },
+  handlers?: {
+    onJobCreated?: (jobId: string) => void;
+    onProgress?: (step: GenerationProgressStep) => void;
+  },
+) {
+  return streamAPIRequest(
+    `/api/sites/${siteId}/pages/${pageId}/reprompt`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    },
+    handlers,
+  );
+}
+
+export async function getGenerationJob(jobId: string) {
+  return apiFetch<{ job: GenerationJob }>(`/api/generation/jobs/${jobId}`);
 }
 
 export async function undoSiteReprompt(siteId: string) {
@@ -847,6 +1120,23 @@ export async function regenerateSiteTheme(siteId: string) {
   return apiFetch<ThemeState>(`/api/sites/${siteId}/theme/regenerate`, {
     method: "POST",
   });
+}
+
+export async function streamRegenerateSiteTheme(
+  siteId: string,
+  handlers?: {
+    onJobCreated?: (jobId: string) => void;
+    onProgress?: (step: GenerationProgressStep) => void;
+  },
+) {
+  await streamAPIRequest(
+    `/api/sites/${siteId}/theme/regenerate`,
+    {
+      method: "POST",
+    },
+    handlers,
+  );
+  return getSiteTheme(siteId);
 }
 
 export async function createAssetUploadURL(input: {

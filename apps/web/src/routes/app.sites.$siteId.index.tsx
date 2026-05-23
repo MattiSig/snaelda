@@ -1,7 +1,8 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
-import { PuckBuilder } from "@/components/PuckBuilder";
+import { GenerationProgressCard, type GenerationProgressItem } from "@/components/GenerationProgressCard";
+import { PuckBuilder, type BuilderSection } from "@/components/PuckBuilder";
 import { Button } from "@/components/ui/button";
 
 import { Input } from "@/components/ui/input";
@@ -34,11 +35,11 @@ import {
   listSiteAssets,
   listSiteVersions,
   publishSite,
-  regenerateSiteTheme,
-  repromptPage,
-  repromptSite,
   rollbackSiteVersion,
   reorderBlocks,
+  streamRepromptPage,
+  streamRegenerateSiteTheme,
+  streamRepromptSite,
   reorderPages,
   updateSiteNavigation,
   type NavigationItemInput,
@@ -70,16 +71,63 @@ type NavigationDraftState = {
   footer: NavigationItemInput[];
 };
 
+const siteRepromptSteps: GenerationProgressItem[] = [
+  { step: "prompt.normalize", label: "Reading your prompt" },
+  { step: "plan.pages", label: "Planning pages and structure" },
+  { step: "plan.theme", label: "Picking colors and typography" },
+  { step: "plan.blocks", label: "Choosing blocks for each page" },
+  { step: "assets.fetch", label: "Finding starter imagery" },
+  { step: "copy.write", label: "Writing copy" },
+  { step: "validate.repair", label: "Checking and repairing" },
+  { step: "persist", label: "Saving your draft" },
+];
+
+const pageRepromptSteps: GenerationProgressItem[] = [
+  { step: "prompt.normalize", label: "Reading your prompt" },
+  { step: "plan.blocks", label: "Choosing blocks for each page" },
+  { step: "copy.write", label: "Writing copy" },
+  { step: "validate.repair", label: "Checking and repairing" },
+  { step: "persist", label: "Saving your draft" },
+];
+
+const themeRegenerateSteps: GenerationProgressItem[] = [
+  { step: "prompt.normalize", label: "Reading your prompt" },
+  { step: "plan.theme", label: "Picking colors and typography" },
+  { step: "validate.repair", label: "Checking and repairing" },
+  { step: "persist", label: "Saving your draft" },
+];
+
+const validSections: BuilderSection[] = [
+  "content",
+  "pages",
+  "theme",
+  "seo",
+  "navigation",
+  "assets",
+  "inquiries",
+  "publish",
+  "settings",
+];
+
+const legacyPanelToSection: Record<string, BuilderSection> = {
+  page: "pages",
+  site: "settings",
+  theme: "theme",
+  publish: "publish",
+};
+
 export const Route = createFileRoute("/app/sites/$siteId/")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    panel:
-      search.panel === "page" ||
-      search.panel === "site" ||
-      search.panel === "theme" ||
-      search.panel === "publish"
-        ? search.panel
-        : undefined,
-  }),
+  validateSearch: (search: Record<string, unknown>) => {
+    const raw = typeof search.panel === "string" ? search.panel : undefined;
+    if (!raw) {
+      return { panel: undefined };
+    }
+    if (validSections.includes(raw as BuilderSection)) {
+      return { panel: raw as BuilderSection };
+    }
+    const mapped = legacyPanelToSection[raw];
+    return { panel: mapped };
+  },
   component: SiteDetail,
 });
 
@@ -164,10 +212,17 @@ function SiteDetail() {
   const [themeStatusMessage, setThemeStatusMessage] = useState("");
   const [isSavingTheme, setIsSavingTheme] = useState(false);
   const [isRegeneratingTheme, setIsRegeneratingTheme] = useState(false);
+  const [themeProgressStep, setThemeProgressStep] = useState("");
+  const [themeProgressStepTotal, setThemeProgressStepTotal] = useState(0);
   const [isSavingNavigation, setIsSavingNavigation] = useState(false);
   const [isUploadingAsset, setIsUploadingAsset] = useState(false);
   const [isRepromptingSite, setIsRepromptingSite] = useState(false);
   const [isRepromptingPage, setIsRepromptingPage] = useState(false);
+  const [repromptProgressStep, setRepromptProgressStep] = useState("");
+  const [repromptProgressStepTotal, setRepromptProgressStepTotal] = useState(0);
+  const [repromptProgressScope, setRepromptProgressScope] = useState<
+    "site" | "page" | ""
+  >("");
   const [isUndoingReprompt, setIsUndoingReprompt] = useState(false);
   const [activeSubmissionId, setActiveSubmissionId] = useState("");
   const [publishErrorMessage, setPublishErrorMessage] = useState("");
@@ -836,10 +891,17 @@ function SiteDetail() {
     setIsRegeneratingTheme(true);
     setThemeErrorMessage("");
     setThemeStatusMessage("");
+    setThemeProgressStep("");
+    setThemeProgressStepTotal(0);
     clearBlockedAction();
 
     try {
-      const response = await regenerateSiteTheme(siteId);
+      const response = await streamRegenerateSiteTheme(siteId, {
+        onProgress: (step) => {
+          setThemeProgressStep(step.step);
+          setThemeProgressStepTotal(step.total);
+        },
+      });
       setThemeSelection(response.selection);
       setThemeOptions(response.options);
       setDraft((current) =>
@@ -857,6 +919,8 @@ function SiteDetail() {
           ? error.message
           : "Could not regenerate theme",
       );
+      setThemeProgressStep("");
+      setThemeProgressStepTotal(0);
     } finally {
       setIsRegeneratingTheme(false);
     }
@@ -1106,12 +1170,24 @@ function SiteDetail() {
   async function handleSiteReprompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsRepromptingSite(true);
+    setRepromptProgressStep("");
+    setRepromptProgressStepTotal(0);
+    setRepromptProgressScope("site");
     setRepromptErrorMessage("");
     setRepromptStatusMessage("");
     clearBlockedAction();
 
     try {
-      await repromptSite(siteId, { prompt: siteReprompt });
+      await streamRepromptSite(
+        siteId,
+        { prompt: siteReprompt },
+        {
+          onProgress: (step) => {
+            setRepromptProgressStep(step.step);
+            setRepromptProgressStepTotal(step.total);
+          },
+        },
+      );
       await refreshDraftState();
       setSiteReprompt("");
       setPageReprompt("");
@@ -1125,6 +1201,9 @@ function SiteDetail() {
       );
     } finally {
       setIsRepromptingSite(false);
+      setRepromptProgressStep("");
+      setRepromptProgressStepTotal(0);
+      setRepromptProgressScope("");
     }
   }
 
@@ -1135,15 +1214,28 @@ function SiteDetail() {
     }
 
     setIsRepromptingPage(true);
+    setRepromptProgressStep("");
+    setRepromptProgressStepTotal(0);
+    setRepromptProgressScope("page");
     setRepromptErrorMessage("");
     setRepromptStatusMessage("");
     clearBlockedAction();
 
     try {
-      const response = await repromptPage(siteId, selectedPage.id, {
-        prompt: pageReprompt,
-      });
-      applyDraftUpdate(response.draft, selectedPage.id);
+      await streamRepromptPage(
+        siteId,
+        selectedPage.id,
+        {
+          prompt: pageReprompt,
+        },
+        {
+          onProgress: (step) => {
+            setRepromptProgressStep(step.step);
+            setRepromptProgressStepTotal(step.total);
+          },
+        },
+      );
+      await refreshDraftState(selectedPage.id, selectedBlock?.id);
       setPageReprompt("");
       setRepromptStatusMessage(
         `${selectedPage.title} was regenerated. The previous draft is available through undo.`,
@@ -1155,6 +1247,9 @@ function SiteDetail() {
       );
     } finally {
       setIsRepromptingPage(false);
+      setRepromptProgressStep("");
+      setRepromptProgressStepTotal(0);
+      setRepromptProgressScope("");
     }
   }
 
@@ -1449,196 +1544,249 @@ function SiteDetail() {
     </div>
   ) : null;
 
-  const sitePanelContent = (
-    <div className="grid gap-4 2xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-      {billingPromptNotice ? (
-        <div className="2xl:col-span-2">{billingPromptNotice}</div>
-      ) : null}
+  const pagesPanelContent = (
+    <div className="grid gap-4">
       <section className={workspaceSection}>
-        <div>
-          <p className={text.eyebrow}>Generation brief</p>
-          <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
-            Review the current prompt baseline
-          </h2>
-          <p className={cn(text.p, "mt-2 text-sm")}>
-            This is the stored brief and summary behind the current draft
-            direction. Use it as the reference point before replacing the site.
+        <div className="grid gap-1">
+          <p className={text.eyebrow}>Edit page</p>
+          <h3 className="m-0 text-[1.1rem] font-extrabold leading-[1.05] text-[var(--paper)]">
+            {selectedPage ? selectedPage.title : "No page selected"}
+          </h3>
+          <p className={cn(text.p, "text-sm")}>
+            Change the title, URL slug, publish status, and navigation visibility for the selected page. Pick a different page from the header.
           </p>
         </div>
-
-        {generationMetadata ? (
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-            <div className={form.field}>
-              <label htmlFor="stored-generation-prompt" className={text.label}>
-                Stored site prompt
-              </label>
-              <Textarea
-                id="stored-generation-prompt"
-                rows={6}
-                value={generationMetadata.prompt}
-                readOnly
-              />
-              <div className={actions.row}>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={!generationMetadata.prompt}
-                  onClick={() => setSiteReprompt(generationMetadata.prompt)}
+        {selectedPage ? (
+          <form className={form.grid} onSubmit={handleSavePage}>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className={form.field}>
+                <label htmlFor="pages-edit-title" className={text.label}>
+                  Page title
+                </label>
+                <Input
+                  id="pages-edit-title"
+                  value={pageTitle}
+                  onChange={(event) => setPageTitle(event.target.value)}
+                  required
+                />
+              </div>
+              <div className={form.field}>
+                <label htmlFor="pages-edit-slug" className={text.label}>
+                  Page path
+                </label>
+                <Input
+                  id="pages-edit-slug"
+                  value={pageSlug}
+                  onChange={(event) => setPageSlug(event.target.value)}
+                  required
+                />
+              </div>
+              <div className={form.field}>
+                <label htmlFor="pages-edit-status" className={text.label}>
+                  Page status
+                </label>
+                <Select
+                  id="pages-edit-status"
+                  value={pageStatus}
+                  onChange={(event) =>
+                    setPageStatus(event.target.value === "published" ? "published" : "draft")
+                  }
                 >
-                  Load into rebuild prompt
-                </Button>
+                  <option value="draft">Draft</option>
+                  <option value="published">Published</option>
+                </Select>
               </div>
             </div>
-
-            <div className="grid gap-4">
-              <div className={workspaceInset}>
-                <p className={text.label}>Theme preset</p>
-                <p className="mt-2 text-lg font-black text-[var(--paper)]">
-                  {generationMetadata.themePreset || "Not captured"}
-                </p>
-                {typeof generationMetadata.validationRetryCount === "number" ? (
-                  <p className="mt-2 text-sm text-[var(--paper-muted)]">
-                    Validation retries:{" "}
-                    {generationMetadata.validationRetryCount}
-                  </p>
-                ) : null}
-              </div>
-
-              <div className={workspaceInset}>
-                <p className={text.label}>Assets the prompt expected</p>
-                {generationMetadata.assetsNeeded?.length ? (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {generationMetadata.assetsNeeded.map((item) => (
-                      <span
-                        key={item}
-                        className="rounded-full border border-border bg-[var(--surface-1)] px-3 py-1.5 text-sm text-[var(--paper)]"
-                      >
-                        {item}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-2 text-sm text-[var(--paper-muted)]">
-                    No starter assets were recorded for this draft.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className={emptyState}>
-            <p className={text.p}>
-              No generation metadata was stored for this draft yet.
-            </p>
-          </div>
-        )}
-
-        <div className={workspaceInset}>
-          <p className={text.label}>Generation assumptions</p>
-          {generationMetadata?.assumptions?.length ? (
-            <ul className="mt-3 grid gap-2 text-sm text-[var(--paper-muted)]">
-              {generationMetadata.assumptions.map((item) => (
-                <li key={item} className="list-disc pl-1 ml-5">
-                  {item}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-2 text-sm text-[var(--paper-muted)]">
-              No assumptions were captured for this draft.
-            </p>
-          )}
-        </div>
-      </section>
-
-      <section className={workspaceSection}>
-        <div>
-          <p className={text.eyebrow}>Prompt iteration</p>
-          <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
-            Replace draft direction
-          </h2>
-          <p className={cn(text.p, "mt-2 text-sm")}>
-            Re-prompts replace the chosen scope. They do not merge block edits
-            back together, so use undo when the new draft misses the mark.
-          </p>
-        </div>
-
-        <div className="grid gap-4 xl:grid-cols-2">
-          <form className={form.grid} onSubmit={handleSiteReprompt}>
-            <label htmlFor="site-reprompt" className={text.label}>
-              Whole site prompt
+            <label className={form.toggle}>
+              <input
+                type="checkbox"
+                className="size-4 accent-[var(--thread-teal)]"
+                checked={pageIncludeInNavigation}
+                onChange={(event) => setPageIncludeInNavigation(event.target.checked)}
+              />
+              Show this page in the main navigation
             </label>
-            <Textarea
-              id="site-reprompt"
-              rows={4}
-              value={siteReprompt}
-              placeholder="Make the site warmer, tighten the copy, add pricing, and lean harder into workshops."
-              onChange={(event) => setSiteReprompt(event.target.value)}
-            />
-            <p className={form.hint}>
-              Regenerates the broader site while keeping its identity and draft
-              history.
-            </p>
-            <Button
-              type="submit"
-              size="sm"
-              disabled={isRepromptingSite || siteReprompt.trim() === ""}
-            >
-              {isRepromptingSite ? "Rebuilding site..." : "Rebuild whole site"}
-            </Button>
-          </form>
-
-          <form className={form.grid} onSubmit={handlePageReprompt}>
-            <label htmlFor="page-reprompt" className={text.label}>
-              {selectedPage
-                ? `${selectedPage.title} page prompt`
-                : "Page prompt"}
-            </label>
-            <Textarea
-              id="page-reprompt"
-              rows={4}
-              value={pageReprompt}
-              placeholder="Turn this page into a tighter pricing overview with clearer package framing and fewer sections."
-              onChange={(event) => setPageReprompt(event.target.value)}
-            />
-            <p className={form.hint}>
-              Regenerates only the selected page while keeping its route and
-              place in the draft.
-            </p>
-            <div className={actions.row}>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={
-                  !selectedPage ||
-                  isRepromptingPage ||
-                  pageReprompt.trim() === ""
-                }
-              >
-                {isRepromptingPage ? "Rebuilding page..." : "Rebuild page"}
+            {pageErrorMessage ? (
+              <p className={text.error}>{pageErrorMessage}</p>
+            ) : null}
+            {pageStatusMessage ? (
+              <p className={text.success}>{pageStatusMessage}</p>
+            ) : null}
+            <div className={actions.rowLarge}>
+              <Button type="submit" disabled={isSavingPage}>
+                {isSavingPage ? "Saving page..." : "Save page changes"}
               </Button>
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={isUndoingReprompt}
-                onClick={handleUndoReprompt}
+                disabled={isSavingPage || draft.pages.findIndex((p) => p.id === selectedPage.id) <= 0}
+                onClick={() => handleMovePage(selectedPage.id, -1)}
               >
-                {isUndoingReprompt ? "Restoring..." : "Undo last rebuild"}
+                Move earlier
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={
+                  isSavingPage ||
+                  draft.pages.findIndex((p) => p.id === selectedPage.id) >= draft.pages.length - 1
+                }
+                onClick={() => handleMovePage(selectedPage.id, 1)}
+              >
+                Move later
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={isDeletingPage}
+                onClick={handleDeletePage}
+              >
+                {isDeletingPage ? "Deleting page..." : "Delete page"}
               </Button>
             </div>
           </form>
+        ) : (
+          <div className={emptyState}>
+            <p className={text.p}>
+              No page selected. Pick a page from the header above, or add one below.
+            </p>
+          </div>
+        )}
+      </section>
+      <section className={workspaceSection}>
+        <div>
+          <p className={text.eyebrow}>Pages</p>
+          <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
+            Add another page
+          </h2>
         </div>
 
-        {repromptErrorMessage ? (
-          <p className={text.error}>{repromptErrorMessage}</p>
-        ) : null}
-        {repromptStatusMessage ? (
-          <p className={text.success}>{repromptStatusMessage}</p>
-        ) : null}
-      </section>
+        <form className={form.grid} onSubmit={handleCreatePage}>
+          <label htmlFor="new-page-title" className={text.label}>
+            Page title
+          </label>
+          <Input
+            id="new-page-title"
+            value={newPageTitle}
+            onChange={(event) => setNewPageTitle(event.target.value)}
+            placeholder="Pricing"
+            required
+          />
 
+          <label htmlFor="new-page-slug" className={text.label}>
+            Page path
+          </label>
+          <Input
+            id="new-page-slug"
+            value={newPageSlug}
+            onChange={(event) => setNewPageSlug(event.target.value)}
+            placeholder="/pricing"
+          />
+
+          <label className={form.toggle}>
+            <input
+              type="checkbox"
+              className="size-4 accent-[var(--thread-teal)]"
+              checked={newPageIncludeInNavigation}
+              onChange={(event) =>
+                setNewPageIncludeInNavigation(event.target.checked)
+              }
+            />
+            Include this page in the main navigation
+          </label>
+
+          <Button
+            type="submit"
+            size="sm"
+            disabled={isCreatingPage || draft.pages.length >= 10}
+          >
+            {isCreatingPage ? "Adding page..." : "Add page"}
+          </Button>
+
+          <p className={form.hint}>
+            {draft.pages.length >= 10
+              ? "This draft already has the 10-page MVP limit."
+              : `${draft.pages.length} of 10 pages currently in this draft.`}
+          </p>
+        </form>
+      </section>
+    </div>
+  );
+
+  const seoPanelContent = (
+    <div className="grid gap-4">
+      <section className={workspaceSection}>
+        <div className="grid gap-1">
+          <p className={text.eyebrow}>SEO</p>
+          <h3 className="m-0 text-[1.1rem] font-extrabold leading-[1.05] text-[var(--paper)]">
+            {selectedPage ? `Search snippet for ${selectedPage.title}` : "Pick a page"}
+          </h3>
+          <p className={cn(text.p, "text-sm")}>
+            What this page shows up as in Google results and when shared. Empty fields fall back to the page title and the first text block.
+          </p>
+        </div>
+        {selectedPage ? (
+          <form className={form.grid} onSubmit={handleSavePage}>
+            <div className={form.field}>
+              <label htmlFor="seo-edit-title" className={text.label}>
+                Search title
+              </label>
+              <Input
+                id="seo-edit-title"
+                value={pageSEOTitle}
+                onChange={(event) => setPageSEOTitle(event.target.value)}
+                placeholder="Leave blank to reuse the page title"
+              />
+            </div>
+            <div className={form.field}>
+              <label htmlFor="seo-edit-description" className={text.label}>
+                Search description
+              </label>
+              <Textarea
+                id="seo-edit-description"
+                rows={4}
+                value={pageSEODescription}
+                onChange={(event) => setPageSEODescription(event.target.value)}
+                placeholder="Summarize what someone should expect before they click."
+              />
+            </div>
+            <div className="grid gap-2 rounded-[12px] border border-border bg-[color-mix(in_oklch,var(--surface-1)_42%,transparent)] p-4">
+              <p className={text.label}>Snippet preview</p>
+              <p className="m-0 break-words text-[var(--paper-muted)]">
+                {`${draft.site.slug}.local${selectedPage.slug === "/" ? "" : selectedPage.slug}`}
+              </p>
+              <p className="m-0 truncate text-[1.05rem] font-extrabold text-[var(--paper)]">
+                {pageSEOTitle.trim() || selectedPage.title}
+              </p>
+              <p className={cn(text.p, "m-0 text-sm")}>
+                {pageSEODescription.trim() ||
+                  "No description yet. A good description is around 150 characters and tells the reader exactly what they will find on this page."}
+              </p>
+            </div>
+            {pageErrorMessage ? <p className={text.error}>{pageErrorMessage}</p> : null}
+            {pageStatusMessage ? <p className={text.success}>{pageStatusMessage}</p> : null}
+            <div className={actions.rowLarge}>
+              <Button type="submit" disabled={isSavingPage}>
+                {isSavingPage ? "Saving..." : "Save SEO for this page"}
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <div className={emptyState}>
+            <p className={text.p}>
+              Pick a page from the header to edit its search title and description.
+            </p>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+
+  const navigationPanelContent = (
+    <div className="grid gap-4">
       <section className={workspaceSection}>
         <div>
           <p className={text.eyebrow}>Navigation</p>
@@ -2016,65 +2164,11 @@ function SiteDetail() {
           <p className={text.success}>{navigationStatusMessage}</p>
         ) : null}
       </section>
+    </div>
+  );
 
-      <section className={workspaceSection}>
-        <div>
-          <p className={text.eyebrow}>Pages</p>
-          <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
-            Add another page
-          </h2>
-        </div>
-
-        <form className={form.grid} onSubmit={handleCreatePage}>
-          <label htmlFor="new-page-title" className={text.label}>
-            Page title
-          </label>
-          <Input
-            id="new-page-title"
-            value={newPageTitle}
-            onChange={(event) => setNewPageTitle(event.target.value)}
-            placeholder="Pricing"
-            required
-          />
-
-          <label htmlFor="new-page-slug" className={text.label}>
-            Page path
-          </label>
-          <Input
-            id="new-page-slug"
-            value={newPageSlug}
-            onChange={(event) => setNewPageSlug(event.target.value)}
-            placeholder="/pricing"
-          />
-
-          <label className={form.toggle}>
-            <input
-              type="checkbox"
-              className="size-4 accent-[var(--thread-teal)]"
-              checked={newPageIncludeInNavigation}
-              onChange={(event) =>
-                setNewPageIncludeInNavigation(event.target.checked)
-              }
-            />
-            Include this page in the main navigation
-          </label>
-
-          <Button
-            type="submit"
-            size="sm"
-            disabled={isCreatingPage || draft.pages.length >= 10}
-          >
-            {isCreatingPage ? "Adding page..." : "Add page"}
-          </Button>
-
-          <p className={form.hint}>
-            {draft.pages.length >= 10
-              ? "This draft already has the 10-page MVP limit."
-              : `${draft.pages.length} of 10 pages currently in this draft.`}
-          </p>
-        </form>
-      </section>
-
+  const assetsPanelContent = (
+    <div className="grid gap-4">
       <section className={workspaceSection}>
         <div>
           <p className={text.eyebrow}>Assets</p>
@@ -2201,7 +2295,310 @@ function SiteDetail() {
           )}
         </div>
       </section>
+    </div>
+  );
 
+  const inquiriesPanelContent = (
+    <div className="grid gap-4">
+      <section className={workspaceWideSection}>
+        <div>
+          <p className={text.eyebrow}>Inquiries</p>
+          <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
+            Review contact form submissions
+          </h2>
+        </div>
+
+        {submissionErrorMessage ? (
+          <p className={text.error}>{submissionErrorMessage}</p>
+        ) : null}
+        {submissionStatusMessage ? (
+          <p className={text.success}>{submissionStatusMessage}</p>
+        ) : null}
+
+        <div className="grid gap-3">
+          {formSubmissions.length > 0 ? (
+            formSubmissions.map((submission) => (
+              <article
+                key={submission.id}
+                className={cn(workspaceInset, "grid gap-3")}
+              >
+                <div className="flex items-start justify-between gap-3 max-sm:flex-col">
+                  <div>
+                    <strong className="block text-[var(--paper)]">
+                      {String(
+                        submission.payload["name"] ||
+                          submission.payload["email"] ||
+                          "New inquiry",
+                      )}
+                    </strong>
+                    <small className="text-[var(--paper-muted)]">
+                      {submission.pageTitle || "Stored submission"} ·{" "}
+                      {formatTimestamp(submission.createdAt)}
+                    </small>
+                  </div>
+                  <Select
+                    value={submission.status}
+                    disabled={activeSubmissionId === submission.id}
+                    onChange={(event) =>
+                      handleUpdateSubmissionStatus(
+                        submission.id,
+                        event.target.value as FormSubmissionStatus,
+                      )
+                    }
+                  >
+                    <option value="new">New</option>
+                    <option value="reviewed">Reviewed</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="spam">Spam</option>
+                  </Select>
+                </div>
+
+                <div className="grid gap-2">
+                  {Object.entries(submission.payload).map(([key, value]) => (
+                    <div key={key} className="grid gap-1">
+                      <strong className="text-sm uppercase tracking-[0.08em] text-[var(--paper-muted)]">
+                        {formatSubmissionKey(key)}
+                      </strong>
+                      <p className="m-0 whitespace-pre-wrap text-[var(--paper)]">
+                        {String(value)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            ))
+          ) : (
+            <div className={emptyState}>
+              <p className={text.p}>
+                {hasContactForm
+                  ? "No submissions yet. Published and preview contact forms will start listing messages here."
+                  : "Add a contact form block to start collecting inquiries."}
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+
+  const settingsPanelContent = (
+    <div className="grid gap-4">
+      {billingPromptNotice}
+      <section className={workspaceSection}>
+        <div>
+          <p className={text.eyebrow}>Generation brief</p>
+          <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
+            Review the current prompt baseline
+          </h2>
+          <p className={cn(text.p, "mt-2 text-sm")}>
+            This is the stored brief and summary behind the current draft
+            direction. Use it as the reference point before replacing the site.
+          </p>
+        </div>
+
+        {generationMetadata ? (
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+            <div className={form.field}>
+              <label htmlFor="stored-generation-prompt" className={text.label}>
+                Stored site prompt
+              </label>
+              <Textarea
+                id="stored-generation-prompt"
+                rows={6}
+                value={generationMetadata.prompt}
+                readOnly
+              />
+              <div className={actions.row}>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={!generationMetadata.prompt}
+                  onClick={() => setSiteReprompt(generationMetadata.prompt)}
+                >
+                  Load into rebuild prompt
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid gap-4">
+              <div className={workspaceInset}>
+                <p className={text.label}>Theme preset</p>
+                <p className="mt-2 text-lg font-black text-[var(--paper)]">
+                  {generationMetadata.themePreset || "Not captured"}
+                </p>
+                {typeof generationMetadata.validationRetryCount === "number" ? (
+                  <p className="mt-2 text-sm text-[var(--paper-muted)]">
+                    Validation retries:{" "}
+                    {generationMetadata.validationRetryCount}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className={workspaceInset}>
+                <p className={text.label}>Assets the prompt expected</p>
+                {generationMetadata.assetsNeeded?.length ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {generationMetadata.assetsNeeded.map((item) => (
+                      <span
+                        key={item}
+                        className="rounded-full border border-border bg-[var(--surface-1)] px-3 py-1.5 text-sm text-[var(--paper)]"
+                      >
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-[var(--paper-muted)]">
+                    No starter assets were recorded for this draft.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className={emptyState}>
+            <p className={text.p}>
+              No generation metadata was stored for this draft yet.
+            </p>
+          </div>
+        )}
+
+        <div className={workspaceInset}>
+          <p className={text.label}>Generation assumptions</p>
+          {generationMetadata?.assumptions?.length ? (
+            <ul className="mt-3 grid gap-2 text-sm text-[var(--paper-muted)]">
+              {generationMetadata.assumptions.map((item) => (
+                <li key={item} className="list-disc pl-1 ml-5">
+                  {item}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm text-[var(--paper-muted)]">
+              No assumptions were captured for this draft.
+            </p>
+          )}
+        </div>
+      </section>
+      <section className={workspaceSection}>
+        <div>
+          <p className={text.eyebrow}>Prompt iteration</p>
+          <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
+            Replace draft direction
+          </h2>
+          <p className={cn(text.p, "mt-2 text-sm")}>
+            Re-prompts replace the chosen scope. They do not merge block edits
+            back together, so use undo when the new draft misses the mark.
+          </p>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-2">
+          <form className={form.grid} onSubmit={handleSiteReprompt}>
+            <label htmlFor="site-reprompt" className={text.label}>
+              Whole site prompt
+            </label>
+            <Textarea
+              id="site-reprompt"
+              rows={4}
+              value={siteReprompt}
+              placeholder="Make the site warmer, tighten the copy, add pricing, and lean harder into workshops."
+              onChange={(event) => setSiteReprompt(event.target.value)}
+            />
+            <p className={form.hint}>
+              Regenerates the broader site while keeping its identity and draft
+              history.
+            </p>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={isRepromptingSite || siteReprompt.trim() === ""}
+            >
+              {isRepromptingSite ? "Rebuilding site..." : "Rebuild whole site"}
+            </Button>
+          </form>
+
+          <form className={form.grid} onSubmit={handlePageReprompt}>
+            <label htmlFor="page-reprompt" className={text.label}>
+              {selectedPage
+                ? `${selectedPage.title} page prompt`
+                : "Page prompt"}
+            </label>
+            <Textarea
+              id="page-reprompt"
+              rows={4}
+              value={pageReprompt}
+              placeholder="Turn this page into a tighter pricing overview with clearer package framing and fewer sections."
+              onChange={(event) => setPageReprompt(event.target.value)}
+            />
+            <p className={form.hint}>
+              Regenerates only the selected page while keeping its route and
+              place in the draft.
+            </p>
+            <div className={actions.row}>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={
+                  !selectedPage ||
+                  isRepromptingPage ||
+                  pageReprompt.trim() === ""
+                }
+              >
+                {isRepromptingPage ? "Rebuilding page..." : "Rebuild page"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={isUndoingReprompt}
+                onClick={handleUndoReprompt}
+              >
+                {isUndoingReprompt ? "Restoring..." : "Undo last rebuild"}
+              </Button>
+            </div>
+          </form>
+        </div>
+
+        {isRepromptingSite || isRepromptingPage ? (
+          <GenerationProgressCard
+            eyebrow="Prompt iteration"
+            title={
+              repromptProgressScope === "page"
+                ? "Rebuilding the selected page..."
+                : "Rebuilding the site direction..."
+            }
+            description={
+              repromptProgressScope === "page"
+                ? "Snaelda is replacing the selected page while keeping its route and draft position."
+                : "Snaelda is rewriting the broader draft while keeping the current site identity."
+            }
+            prompt={
+              repromptProgressScope === "page" ? pageReprompt : siteReprompt
+            }
+            steps={
+              repromptProgressScope === "page"
+                ? pageRepromptSteps
+                : siteRepromptSteps
+            }
+            activeStep={repromptProgressStep}
+            activeTotal={repromptProgressStepTotal}
+            showSkeleton={
+              repromptProgressStep === "plan.blocks" ||
+              repromptProgressStep === "copy.write" ||
+              repromptProgressStep === "validate.repair" ||
+              repromptProgressStep === "persist"
+            }
+          />
+        ) : null}
+
+        {repromptErrorMessage ? (
+          <p className={text.error}>{repromptErrorMessage}</p>
+        ) : null}
+        {repromptStatusMessage ? (
+          <p className={text.success}>{repromptStatusMessage}</p>
+        ) : null}
+      </section>
       <section className={workspaceSection}>
         <div>
           <p className={text.eyebrow}>Site details</p>
@@ -2335,85 +2732,6 @@ function SiteDetail() {
           </div>
         </form>
       </section>
-
-      <section className={workspaceWideSection}>
-        <div>
-          <p className={text.eyebrow}>Inquiries</p>
-          <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
-            Review contact form submissions
-          </h2>
-        </div>
-
-        {submissionErrorMessage ? (
-          <p className={text.error}>{submissionErrorMessage}</p>
-        ) : null}
-        {submissionStatusMessage ? (
-          <p className={text.success}>{submissionStatusMessage}</p>
-        ) : null}
-
-        <div className="grid gap-3">
-          {formSubmissions.length > 0 ? (
-            formSubmissions.map((submission) => (
-              <article
-                key={submission.id}
-                className={cn(workspaceInset, "grid gap-3")}
-              >
-                <div className="flex items-start justify-between gap-3 max-sm:flex-col">
-                  <div>
-                    <strong className="block text-[var(--paper)]">
-                      {String(
-                        submission.payload["name"] ||
-                          submission.payload["email"] ||
-                          "New inquiry",
-                      )}
-                    </strong>
-                    <small className="text-[var(--paper-muted)]">
-                      {submission.pageTitle || "Stored submission"} ·{" "}
-                      {formatTimestamp(submission.createdAt)}
-                    </small>
-                  </div>
-                  <Select
-                    value={submission.status}
-                    disabled={activeSubmissionId === submission.id}
-                    onChange={(event) =>
-                      handleUpdateSubmissionStatus(
-                        submission.id,
-                        event.target.value as FormSubmissionStatus,
-                      )
-                    }
-                  >
-                    <option value="new">New</option>
-                    <option value="reviewed">Reviewed</option>
-                    <option value="resolved">Resolved</option>
-                    <option value="spam">Spam</option>
-                  </Select>
-                </div>
-
-                <div className="grid gap-2">
-                  {Object.entries(submission.payload).map(([key, value]) => (
-                    <div key={key} className="grid gap-1">
-                      <strong className="text-sm uppercase tracking-[0.08em] text-[var(--paper-muted)]">
-                        {formatSubmissionKey(key)}
-                      </strong>
-                      <p className="m-0 whitespace-pre-wrap text-[var(--paper)]">
-                        {String(value)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </article>
-            ))
-          ) : (
-            <div className={emptyState}>
-              <p className={text.p}>
-                {hasContactForm
-                  ? "No submissions yet. Published and preview contact forms will start listing messages here."
-                  : "Add a contact form block to start collecting inquiries."}
-              </p>
-            </div>
-          )}
-        </div>
-      </section>
     </div>
   );
 
@@ -2431,7 +2749,18 @@ function SiteDetail() {
           </p>
         </div>
 
-        {themeSelection && themeOptions ? (
+        {isRegeneratingTheme ? (
+          <GenerationProgressCard
+            eyebrow="Theme"
+            title="Reweaving the theme..."
+            description="Snaelda is regenerating colors and typography from the current site brief."
+            steps={themeRegenerateSteps}
+            activeStep={themeProgressStep}
+            activeTotal={themeProgressStepTotal}
+            previewTitle="Theme preview"
+            idlePreviewText="We'll refresh the live preview as soon as the new palette is ready."
+          />
+        ) : themeSelection && themeOptions ? (
           <form className={form.grid} onSubmit={handleSaveTheme}>
             <div className={workspaceInset}>
               <div className="grid grid-cols-2 gap-3 max-lg:grid-cols-1">
@@ -3021,14 +3350,6 @@ function SiteDetail() {
       blockStatusMessage={blockStatusMessage}
       pageErrorMessage={pageErrorMessage}
       pageStatusMessage={pageStatusMessage}
-      pageTitle={pageTitle}
-      pageSlug={pageSlug}
-      pageStatus={pageStatus}
-      pageSEOTitle={pageSEOTitle}
-      pageSEODescription={pageSEODescription}
-      pageIncludeInNavigation={pageIncludeInNavigation}
-      isSavingPage={isSavingPage}
-      isDeletingPage={isDeletingPage}
       isPublishing={isPublishing}
       pages={draft.pages}
       onSelectPage={handleSelectPage}
@@ -3038,24 +3359,24 @@ function SiteDetail() {
       onDuplicateBlock={handleDuplicateBlock}
       onDeleteBlock={handleDeleteBlock}
       onMoveBlock={handleMoveBlock}
-      onMovePage={handleMovePage}
-      onDeletePage={handleDeletePage}
       onChangeNewBlockType={setNewBlockType}
-      onSavePage={handleSavePage}
-      onSetPageTitle={setPageTitle}
-      onSetPageSlug={setPageSlug}
-      onSetPageStatus={setPageStatus}
-      onSetPageSEOTitle={setPageSEOTitle}
-      onSetPageSEODescription={setPageSEODescription}
-      onSetPageIncludeInNavigation={setPageIncludeInNavigation}
       onReorderBlocks={handleReorderBlocks}
       onDropPaletteBlock={handleDropPaletteBlock}
-      sitePanelContent={sitePanelContent}
+      pagesPanelContent={pagesPanelContent}
+      seoPanelContent={seoPanelContent}
+      navigationPanelContent={navigationPanelContent}
+      assetsPanelContent={assetsPanelContent}
+      inquiriesPanelContent={inquiriesPanelContent}
+      settingsPanelContent={settingsPanelContent}
       themePanelContent={themePanelContent}
       publishPanelContent={publishPanelContent}
-      initialWorkspacePanel={
-        (search.panel as "page" | "site" | "theme" | "publish" | undefined) ??
-        null
+      section={search.panel ?? "content"}
+      onSectionChange={(nextSection) =>
+        navigate({
+          to: ".",
+          search: { panel: nextSection === "content" ? undefined : nextSection },
+          replace: true,
+        })
       }
     />
   );

@@ -116,6 +116,9 @@ func (p *OpenAIPlanner) BuildPlan(ctx context.Context, input generationInputCont
 	if p == nil {
 		return defaultGenerationPlanBuilder(ctx, input, feedback)
 	}
+	if feedback.ReportProgress != nil {
+		feedback.ReportProgress("plan.pages")
+	}
 
 	payload := map[string]any{
 		"scope":             firstNonEmpty(strings.TrimSpace(input.Scope), "site"),
@@ -144,6 +147,10 @@ func (p *OpenAIPlanner) BuildPlan(ctx context.Context, input generationInputCont
 		Strict: true,
 	}, &responsePayload); err != nil {
 		return generationPlan{}, err
+	}
+	if feedback.ReportProgress != nil {
+		feedback.ReportProgress("plan.theme")
+		feedback.ReportProgress("plan.blocks")
 	}
 
 	plan := generationPlan{
@@ -371,7 +378,7 @@ func generationPlanSchema() map[string]any {
 						"blocks": map[string]any{
 							"type": "array",
 							"items": map[string]any{
-								"oneOf": blockSchemas,
+								"anyOf": blockSchemas,
 							},
 						},
 						"seo": map[string]any{

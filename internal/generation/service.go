@@ -65,6 +65,7 @@ type GenerateResult struct {
 type generationPlanFeedback struct {
 	Attempt          int
 	ValidationIssues []siteconfig.Issue
+	ReportProgress   func(stepName string)
 }
 
 type generationPlanBuilder func(context.Context, generationInputContext, generationPlanFeedback) (generationPlan, error)
@@ -149,10 +150,15 @@ func NewService(db DB, planner generationPlanBuilder, options ...ServiceOption) 
 }
 
 func (s *Service) Generate(ctx context.Context, workspaceID string, userID string, input GenerateInput) (GenerateResult, error) {
+	return s.GenerateWithProgress(ctx, workspaceID, userID, input, nil)
+}
+
+func (s *Service) GenerateWithProgress(ctx context.Context, workspaceID string, userID string, input GenerateInput, sink ProgressSink) (GenerateResult, error) {
 	prompt := strings.TrimSpace(input.Prompt)
 	if prompt == "" {
 		return GenerateResult{}, ErrPromptRequired
 	}
+	s.pruneGenerationJobs(ctx)
 
 	inputContext := generationInputContext{
 		NameHint:          strings.TrimSpace(input.Name),
@@ -162,17 +168,28 @@ func (s *Service) Generate(ctx context.Context, workspaceID string, userID strin
 		OptionalHints:     cloneStringMap(input.OptionalHints),
 		Brand:             input.Brand,
 	}
-	jobID, err := s.createGenerationJob(ctx, workspaceID, userID, inputContext)
+	jobID, err := s.createGenerationJob(ctx, workspaceID, userID, JobKindSite, inputContext)
 	if err != nil {
 		return GenerateResult{}, err
 	}
+	tracker := newProgressTracker(s, jobID, JobKindSite, ProgressStepsForKind(JobKindSite, s.imagery.available()), sink)
+	if sink != nil {
+		sink.OnJobCreated(jobID)
+	}
+	if err := tracker.emit(ctx, "prompt.normalize"); err != nil {
+		return GenerateResult{}, err
+	}
 
-	plan, draft, validationRetryCount, err := s.generateDraftWithRetry(ctx, workspaceID, inputContext)
+	plan, draft, validationRetryCount, err := s.generateDraftWithRetry(ctx, workspaceID, inputContext, tracker)
 	if err != nil {
 		_ = s.failGenerationJob(ctx, jobID, err)
 		return GenerateResult{}, err
 	}
 
+	if err := tracker.emit(ctx, "persist"); err != nil {
+		_ = s.failGenerationJob(ctx, jobID, err)
+		return GenerateResult{}, err
+	}
 	if enriched, ok := s.enrichDraftWithStarterImagery(ctx, workspaceID, userID, draft, prompt); ok {
 		draft = enriched
 	}
@@ -211,10 +228,15 @@ func (s *Service) Generate(ctx context.Context, workspaceID string, userID strin
 }
 
 func (s *Service) RepromptSite(ctx context.Context, workspaceID string, userID string, siteID string, input RepromptInput) (GenerateResult, error) {
+	return s.RepromptSiteWithProgress(ctx, workspaceID, userID, siteID, input, nil)
+}
+
+func (s *Service) RepromptSiteWithProgress(ctx context.Context, workspaceID string, userID string, siteID string, input RepromptInput, sink ProgressSink) (GenerateResult, error) {
 	prompt := strings.TrimSpace(input.Prompt)
 	if prompt == "" {
 		return GenerateResult{}, ErrPromptRequired
 	}
+	s.pruneGenerationJobs(ctx)
 
 	currentDraft, err := s.reader.LoadDraft(ctx, siteID)
 	if err != nil {
@@ -242,17 +264,28 @@ func (s *Service) RepromptSite(ctx context.Context, workspaceID string, userID s
 		Prompt:   prompt,
 		Scope:    "site",
 	}
-	jobID, err := s.createGenerationJob(ctx, workspaceID, userID, inputContext)
+	jobID, err := s.createGenerationJob(ctx, workspaceID, userID, JobKindSiteReprompt, inputContext)
 	if err != nil {
 		return GenerateResult{}, err
 	}
+	tracker := newProgressTracker(s, jobID, JobKindSiteReprompt, ProgressStepsForKind(JobKindSiteReprompt, s.imagery.available()), sink)
+	if sink != nil {
+		sink.OnJobCreated(jobID)
+	}
+	if err := tracker.emit(ctx, "prompt.normalize"); err != nil {
+		return GenerateResult{}, err
+	}
 
-	plan, nextDraft, validationRetryCount, err := s.generateDraftWithRetry(ctx, workspaceID, inputContext)
+	plan, nextDraft, validationRetryCount, err := s.generateDraftWithRetry(ctx, workspaceID, inputContext, tracker)
 	if err != nil {
 		_ = s.failGenerationJob(ctx, jobID, err)
 		return GenerateResult{}, err
 	}
 
+	if err := tracker.emit(ctx, "persist"); err != nil {
+		_ = s.failGenerationJob(ctx, jobID, err)
+		return GenerateResult{}, err
+	}
 	nextDraft = applySiteIdentity(nextDraft, currentDraft)
 	if err := s.writer.SaveDraft(ctx, workspaceID, nextDraft); err != nil {
 		_ = s.failGenerationJob(ctx, jobID, err)
@@ -299,10 +332,15 @@ func (s *Service) RepromptSite(ctx context.Context, workspaceID string, userID s
 }
 
 func (s *Service) RepromptPage(ctx context.Context, workspaceID string, userID string, siteID string, pageID string, input RepromptInput) (GenerateResult, error) {
+	return s.RepromptPageWithProgress(ctx, workspaceID, userID, siteID, pageID, input, nil)
+}
+
+func (s *Service) RepromptPageWithProgress(ctx context.Context, workspaceID string, userID string, siteID string, pageID string, input RepromptInput, sink ProgressSink) (GenerateResult, error) {
 	prompt := strings.TrimSpace(input.Prompt)
 	if prompt == "" {
 		return GenerateResult{}, ErrPromptRequired
 	}
+	s.pruneGenerationJobs(ctx)
 
 	currentDraft, err := s.reader.LoadDraft(ctx, siteID)
 	if err != nil {
@@ -337,13 +375,32 @@ func (s *Service) RepromptPage(ctx context.Context, workspaceID string, userID s
 		Prompt:   prompt,
 		Scope:    "page",
 	}
-	jobID, err := s.createGenerationJob(ctx, workspaceID, userID, inputContext)
+	jobID, err := s.createGenerationJob(ctx, workspaceID, userID, JobKindPageReprompt, inputContext)
 	if err != nil {
+		return GenerateResult{}, err
+	}
+	tracker := newProgressTracker(s, jobID, JobKindPageReprompt, ProgressStepsForKind(JobKindPageReprompt, false), sink)
+	if sink != nil {
+		sink.OnJobCreated(jobID)
+	}
+	if err := tracker.emit(ctx, "prompt.normalize"); err != nil {
+		return GenerateResult{}, err
+	}
+	if err := tracker.emit(ctx, "plan.blocks"); err != nil {
+		_ = s.failGenerationJob(ctx, jobID, err)
 		return GenerateResult{}, err
 	}
 
 	pagePlan, err := s.buildPageRepromptPlan(ctx, currentDraft, page, prompt)
 	if err != nil {
+		_ = s.failGenerationJob(ctx, jobID, err)
+		return GenerateResult{}, err
+	}
+	if err := tracker.emit(ctx, "copy.write"); err != nil {
+		_ = s.failGenerationJob(ctx, jobID, err)
+		return GenerateResult{}, err
+	}
+	if err := tracker.emit(ctx, "validate.repair"); err != nil {
 		_ = s.failGenerationJob(ctx, jobID, err)
 		return GenerateResult{}, err
 	}
@@ -353,6 +410,10 @@ func (s *Service) RepromptPage(ctx context.Context, workspaceID string, userID s
 	nextDraft.Pages[pageIndex] = replaceDraftPage(page, pagePlan)
 	nextDraft.Navigation = syncRepromptNavigation(currentDraft.Navigation, nextDraft.Pages)
 
+	if err := tracker.emit(ctx, "persist"); err != nil {
+		_ = s.failGenerationJob(ctx, jobID, err)
+		return GenerateResult{}, err
+	}
 	if err := s.writer.SaveDraft(ctx, workspaceID, nextDraft); err != nil {
 		_ = s.failGenerationJob(ctx, jobID, err)
 		return GenerateResult{}, err
@@ -433,7 +494,12 @@ func (s *Service) UndoLastDraftRevision(ctx context.Context, workspaceID string,
 	return s.reader.LoadDraft(ctx, siteID)
 }
 
-func defaultGenerationPlanBuilder(_ context.Context, input generationInputContext, _ generationPlanFeedback) (generationPlan, error) {
+func defaultGenerationPlanBuilder(_ context.Context, input generationInputContext, feedback generationPlanFeedback) (generationPlan, error) {
+	if feedback.ReportProgress != nil {
+		feedback.ReportProgress("plan.pages")
+		feedback.ReportProgress("plan.theme")
+		feedback.ReportProgress("plan.blocks")
+	}
 	return buildGenerationPlan(input.NameHint, input.Prompt), nil
 }
 
@@ -534,16 +600,37 @@ func propsHaveDifferentAssets(before map[string]any, after map[string]any) bool 
 	return false
 }
 
-func (s *Service) generateDraftWithRetry(ctx context.Context, workspaceID string, input generationInputContext) (generationPlan, siteconfig.SiteDraft, int, error) {
+func (s *Service) generateDraftWithRetry(ctx context.Context, workspaceID string, input generationInputContext, tracker *progressTracker) (generationPlan, siteconfig.SiteDraft, int, error) {
 	feedback := generationPlanFeedback{}
 	for attempt := 1; attempt <= maxGenerationValidationAttempts; attempt++ {
 		feedback.Attempt = attempt
+		feedback.ReportProgress = func(stepName string) {
+			if tracker == nil {
+				return
+			}
+			if err := tracker.emit(ctx, stepName); err != nil && s.logger != nil {
+				s.logger.Warn("emit generation progress", "jobId", tracker.jobID, "step", stepName, "error", err.Error())
+			}
+		}
 
 		plan, err := s.buildPlan(ctx, input, feedback)
 		if err != nil {
 			return generationPlan{}, siteconfig.SiteDraft{}, attempt - 1, fmt.Errorf("build generation plan: %w", err)
 		}
 		plan = repairGenerationPlan(plan)
+		if tracker != nil && len(plan.AssetsNeeded) > 0 && s.imagery.available() {
+			if err := tracker.emit(ctx, "assets.fetch"); err != nil {
+				return generationPlan{}, siteconfig.SiteDraft{}, attempt - 1, err
+			}
+		}
+		if tracker != nil {
+			if err := tracker.emit(ctx, "copy.write"); err != nil {
+				return generationPlan{}, siteconfig.SiteDraft{}, attempt - 1, err
+			}
+			if err := tracker.emit(ctx, "validate.repair"); err != nil {
+				return generationPlan{}, siteconfig.SiteDraft{}, attempt - 1, err
+			}
+		}
 
 		slugValue, err := s.createSlug(ctx, workspaceID, input.SlugHint, plan.SiteName)
 		if err != nil {
@@ -653,7 +740,7 @@ type promptProfile struct {
 	WantsTeam         bool
 }
 
-func (s *Service) createGenerationJob(ctx context.Context, workspaceID string, userID string, input generationInputContext) (string, error) {
+func (s *Service) createGenerationJob(ctx context.Context, workspaceID string, userID string, kind JobKind, input generationInputContext) (string, error) {
 	inputJSON, err := json.Marshal(input)
 	if err != nil {
 		return "", fmt.Errorf("encode generation input context: %w", err)
@@ -661,10 +748,10 @@ func (s *Service) createGenerationJob(ctx context.Context, workspaceID string, u
 
 	var jobID string
 	if err := s.db.QueryRow(ctx, `
-		insert into generation_jobs (workspace_id, status, prompt, input_context, created_by)
-		values ($1, 'running', $2, $3, nullif($4, '')::uuid)
+		insert into generation_jobs (workspace_id, kind, state, status, prompt, input_context, payload, created_by)
+		values ($1, $2, 'pending', 'queued', $3, $4, $4, nullif($5, '')::uuid)
 		returning id::text
-	`, workspaceID, input.Prompt, inputJSON, userID).Scan(&jobID); err != nil {
+	`, workspaceID, kind, input.Prompt, inputJSON, userID).Scan(&jobID); err != nil {
 		return "", fmt.Errorf("create generation job: %w", err)
 	}
 	return jobID, nil
@@ -679,9 +766,13 @@ func (s *Service) completeGenerationJob(ctx context.Context, jobID string, siteI
 	if _, err := s.db.Exec(ctx, `
 		update generation_jobs
 		set site_id = $1::uuid,
+		    state = 'succeeded',
 		    status = 'completed',
 		    output_plan = $2,
+		    current_step = 'persist',
 		    error = null,
+		    error_reason = null,
+		    completed_at = now(),
 		    updated_at = now()
 		where id = $3::uuid
 	`, siteID, outputJSON, jobID); err != nil {
@@ -708,11 +799,14 @@ func (s *Service) failGenerationJob(ctx context.Context, jobID string, cause err
 
 	if _, err := s.db.Exec(ctx, `
 		update generation_jobs
-		set status = 'failed',
+		set state = 'failed',
+		    status = 'failed',
 		    error = $1,
+		    error_reason = $2,
+		    completed_at = now(),
 		    updated_at = now()
-		where id = $2::uuid
-	`, errorJSON, jobID); err != nil {
+		where id = $3::uuid
+	`, errorJSON, generationFailureReason(cause), jobID); err != nil {
 		return fmt.Errorf("mark generation job failed: %w", err)
 	}
 	return nil

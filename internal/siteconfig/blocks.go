@@ -644,10 +644,16 @@ func footerBlockDefinition() BlockDefinition {
 	}
 }
 
-func generationPropsSchema(fields []EditorField, required ...string) map[string]any {
+func generationPropsSchema(fields []EditorField, _ ...string) map[string]any {
+	// OpenAI Structured Outputs (strict mode) requires every property in
+	// `properties` to be listed in `required`. We include every field name so
+	// the schema is acceptable; the model can still emit empty strings or empty
+	// arrays for fields that are semantically optional in the editor.
 	properties := make(map[string]any, len(fields))
+	required := make([]string, 0, len(fields))
 	for _, field := range fields {
 		properties[field.Name] = generationFieldSchema(field)
+		required = append(required, field.Name)
 	}
 	schema := map[string]any{
 		"type":                 "object",

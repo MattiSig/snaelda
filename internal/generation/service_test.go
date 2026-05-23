@@ -671,6 +671,11 @@ func (s *fakeGenerationStore) QueryRow(_ context.Context, sql string, args ...an
 
 func (s *fakeGenerationStore) Exec(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 	switch {
+	case strings.Contains(sql, "update generation_jobs") && strings.Contains(sql, "state = 'running'"):
+		job := s.jobs[args[2].(string)]
+		job.Status = "running"
+		s.jobs[job.ID] = job
+		return pgconn.NewCommandTag("UPDATE 1"), nil
 	case strings.Contains(sql, "update generation_jobs") && strings.Contains(sql, "status = 'completed'"):
 		if s.completeJobErr != nil {
 			return pgconn.CommandTag{}, s.completeJobErr
@@ -684,7 +689,7 @@ func (s *fakeGenerationStore) Exec(_ context.Context, sql string, args ...any) (
 		s.jobs[job.ID] = job
 		return pgconn.NewCommandTag("UPDATE 1"), nil
 	case strings.Contains(sql, "update generation_jobs") && strings.Contains(sql, "status = 'failed'"):
-		job := s.jobs[args[1].(string)]
+		job := s.jobs[args[2].(string)]
 		job.Status = "failed"
 		if err := json.Unmarshal(args[0].([]byte), &job.Error); err != nil {
 			return pgconn.CommandTag{}, err

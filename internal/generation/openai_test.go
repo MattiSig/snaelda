@@ -69,12 +69,12 @@ func TestOpenAIPlannerBuildPlanParsesStructuredCompletion(t *testing.T) {
 	pageProps := pageItems["properties"].(map[string]any)
 	blocks := pageProps["blocks"].(map[string]any)
 	blockItems := blocks["items"].(map[string]any)
-	oneOf, ok := blockItems["oneOf"].([]any)
-	if !ok || len(oneOf) == 0 {
+	anyOf, ok := blockItems["anyOf"].([]any)
+	if !ok || len(anyOf) == 0 {
 		t.Fatalf("expected block schemas to be specialized, got %#v", blockItems)
 	}
 	var heroSchema map[string]any
-	for _, candidate := range oneOf {
+	for _, candidate := range anyOf {
 		schemaItem, ok := candidate.(map[string]any)
 		if !ok {
 			continue
@@ -90,14 +90,25 @@ func TestOpenAIPlannerBuildPlanParsesStructuredCompletion(t *testing.T) {
 		}
 	}
 	if heroSchema == nil {
-		t.Fatalf("expected hero schema in block union, got %#v", oneOf)
+		t.Fatalf("expected hero schema in block union, got %#v", anyOf)
 	}
 	heroProps := heroSchema["properties"].(map[string]any)["props"].(map[string]any)
 	if heroProps["additionalProperties"] != false {
 		t.Fatalf("expected hero props to reject unknown properties, got %#v", heroProps)
 	}
-	if required, ok := heroProps["required"].([]any); !ok || len(required) == 0 || required[0] != "headline" {
-		t.Fatalf("expected hero props schema to require headline, got %#v", heroProps)
+	requiredAny, ok := heroProps["required"].([]any)
+	if !ok || len(requiredAny) == 0 {
+		t.Fatalf("expected hero props schema to require fields, got %#v", heroProps)
+	}
+	hasHeadline := false
+	for _, item := range requiredAny {
+		if str, ok := item.(string); ok && str == "headline" {
+			hasHeadline = true
+			break
+		}
+	}
+	if !hasHeadline {
+		t.Fatalf("expected hero props required to include headline, got %#v", requiredAny)
 	}
 	if plan.ThemeSelection.Palette != siteconfig.ThemePalettePlayfulRibbon {
 		t.Fatalf("expected parsed theme selection, got %#v", plan.ThemeSelection)

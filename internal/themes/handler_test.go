@@ -10,6 +10,7 @@ import (
 
 	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/authorization"
+	"github.com/MattiSig/snaelda/internal/generation"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
 )
 
@@ -37,6 +38,22 @@ func (s *stubThemeService) Regenerate(_ context.Context, workspaceID string, sit
 	s.workspace = workspaceID
 	s.siteID = siteID
 	s.regenCall = true
+	return s.state, s.err
+}
+
+func (s *stubThemeService) RegenerateWithProgress(_ context.Context, workspaceID string, siteID string, sink generation.ProgressSink) (ThemeState, error) {
+	s.workspace = workspaceID
+	s.siteID = siteID
+	s.regenCall = true
+	if sink != nil {
+		sink.OnJobCreated("job-1")
+		sink.OnProgress(generation.ProgressStep{
+			Name:  "plan.theme",
+			Label: "Picking colors and typography",
+			Index: 2,
+			Total: 4,
+		})
+	}
 	return s.state, s.err
 }
 
@@ -148,5 +165,44 @@ func TestRegenerateThemeUsesScopedWorkspace(t *testing.T) {
 	}
 	if !service.regenCall || service.workspace != "workspace-1" || service.siteID != "site_demo" {
 		t.Fatalf("expected scoped regenerate call, got regen=%t workspace=%q site=%q", service.regenCall, service.workspace, service.siteID)
+	}
+}
+
+func TestRegenerateThemeStreamsProgressEvents(t *testing.T) {
+	service := &stubThemeService{
+		state: ThemeState{
+			Theme:     siteconfig.ThemePreset(siteconfig.ThemePalettePlayfulRibbon),
+			Selection: siteconfig.DetectThemeSelection(siteconfig.ThemePreset(siteconfig.ThemePalettePlayfulRibbon)),
+			Options:   siteconfig.DefaultThemeEditorCatalog(),
+		},
+	}
+	handler := Handler{
+		service:    service,
+		authorizer: stubThemeAuthorizer{},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/site_demo/theme/regenerate", nil).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: authorization.RoleOwner,
+	}))
+	req.Header.Set("Accept", "text/event-stream")
+	req.SetPathValue("siteId", "site_demo")
+	res := httptest.NewRecorder()
+
+	handler.regenerate(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	body := res.Body.String()
+	if !strings.Contains(body, "event: job") {
+		t.Fatalf("expected job event in stream, got %q", body)
+	}
+	if !strings.Contains(body, "event: progress") {
+		t.Fatalf("expected progress event in stream, got %q", body)
+	}
+	if !strings.Contains(body, "event: complete") {
+		t.Fatalf("expected complete event in stream, got %q", body)
 	}
 }
