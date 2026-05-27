@@ -11,6 +11,13 @@ const BlockVersionV1 = "1.0.0"
 
 func heroBlockDefinition() BlockDefinition {
 	editorSchema := []EditorField{
+		{
+			Name:        "variant",
+			Label:       "Variant",
+			Control:     "select",
+			Options:     []string{"standard", "full-page"},
+			Description: "Choose 'full-page' for an immersive hero that fills the entire viewport on first load.",
+		},
 		{Name: "eyebrow", Label: "Eyebrow", Control: "text"},
 		{Name: "headline", Label: "Headline", Control: "text"},
 		{Name: "subheadline", Label: "Subheadline", Control: "textarea"},
@@ -36,9 +43,9 @@ func heroBlockDefinition() BlockDefinition {
 			Name:        "image",
 			Label:       "Hero image",
 			Control:     "asset",
-			Description: "Pick an uploaded image for split or supporting hero layouts.",
+			Description: "Pick an uploaded image for split, supporting, or full-page hero layouts. Required for full-page variant.",
 		},
-		{Name: "layout", Label: "Layout", Control: "select", Options: []string{"centered", "split-left", "split-right"}},
+		{Name: "layout", Label: "Layout", Control: "select", Options: []string{"centered", "split-left", "split-right"}, Description: "Applies to the standard variant. Ignored when variant is full-page."},
 	}
 	return BlockDefinition{
 		Type:        "hero",
@@ -46,6 +53,7 @@ func heroBlockDefinition() BlockDefinition {
 		DisplayName: "Hero",
 		Category:    BlockCategoryHero,
 		DefaultProps: map[string]any{
+			"variant":  "standard",
 			"headline": "A focused website starts here",
 			"layout":   "centered",
 		},
@@ -760,7 +768,8 @@ func cloneBlockPropValue(value any) any {
 }
 
 func validateHeroProps(path string, props map[string]any, c *collector) {
-	requireKnownProps(path, props, c, "eyebrow", "headline", "subheadline", "primaryCta", "secondaryCta", "image", "layout")
+	requireKnownProps(path, props, c, "variant", "eyebrow", "headline", "subheadline", "primaryCta", "secondaryCta", "image", "layout")
+	optionalEnum(path, props, "variant", c, "standard", "full-page")
 	optionalString(path, props, "eyebrow", 80, c)
 	requireString(path, props, "headline", 1, 120, c)
 	optionalString(path, props, "subheadline", 280, c)

@@ -208,6 +208,34 @@ func TestLoginSetsHTTPOnlyCookieAndReturnsUser(t *testing.T) {
 	}
 }
 
+func TestCSRFCookieUsesAppBaseDomainForProductionSubdomains(t *testing.T) {
+	handler := NewHandler(HandlerConfig{
+		AppBaseURL:   "https://www.snaelda.io",
+		CookieSecure: true,
+	})
+
+	cookie := handler.csrfCookie("csrf-token", 3600)
+
+	if cookie.Domain != "snaelda.io" {
+		t.Fatalf("expected csrf cookie domain snaelda.io, got %q", cookie.Domain)
+	}
+	if cookie.HttpOnly {
+		t.Fatal("expected csrf cookie to be readable by the frontend")
+	}
+}
+
+func TestCSRFCookieKeepsHostOnlyScopeForLocalhost(t *testing.T) {
+	handler := NewHandler(HandlerConfig{
+		AppBaseURL: "http://localhost:3000",
+	})
+
+	cookie := handler.csrfCookie("csrf-token", 3600)
+
+	if cookie.Domain != "" {
+		t.Fatalf("expected host-only csrf cookie for localhost, got %q", cookie.Domain)
+	}
+}
+
 func TestRefreshRotatesRefreshCookieAndReturnsUser(t *testing.T) {
 	store := &fakeAuthStore{}
 	handler := NewHandler(HandlerConfig{

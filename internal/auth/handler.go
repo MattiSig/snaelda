@@ -1295,7 +1295,7 @@ func (h *Handler) guestCookie(value string, maxAge int) *http.Cookie {
 }
 
 func (h *Handler) csrfCookie(value string, maxAge int) *http.Cookie {
-	return &http.Cookie{
+	cookie := &http.Cookie{
 		Name:     CSRFCookieName,
 		Value:    value,
 		Path:     "/",
@@ -1304,6 +1304,25 @@ func (h *Handler) csrfCookie(value string, maxAge int) *http.Cookie {
 		Secure:   h.cookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	}
+	if domain := h.csrfCookieDomain(); domain != "" {
+		cookie.Domain = domain
+	}
+	return cookie
+}
+
+func (h *Handler) csrfCookieDomain() string {
+	appURL, err := url.Parse(strings.TrimSpace(h.appBaseURL))
+	if err != nil {
+		return ""
+	}
+	hostname := strings.ToLower(appURL.Hostname())
+	if hostname == "" || hostname == "localhost" || strings.HasSuffix(hostname, ".localhost") {
+		return ""
+	}
+	if strings.Contains(hostname, ".") {
+		return strings.TrimPrefix(hostname, "www.")
+	}
+	return ""
 }
 
 func newRefreshToken() (string, error) {

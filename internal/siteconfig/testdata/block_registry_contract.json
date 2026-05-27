@@ -547,9 +547,20 @@
       "category": "hero",
       "defaultProps": {
         "headline": "A focused website starts here",
-        "layout": "centered"
+        "layout": "centered",
+        "variant": "standard"
       },
       "editorSchema": [
+        {
+          "name": "variant",
+          "label": "Variant",
+          "control": "select",
+          "description": "Choose 'full-page' for an immersive hero that fills the entire viewport on first load.",
+          "options": [
+            "standard",
+            "full-page"
+          ]
+        },
         {
           "name": "eyebrow",
           "label": "Eyebrow",
@@ -605,12 +616,13 @@
           "name": "image",
           "label": "Hero image",
           "control": "asset",
-          "description": "Pick an uploaded image for split or supporting hero layouts."
+          "description": "Pick an uploaded image for split, supporting, or full-page hero layouts. Required for full-page variant."
         },
         {
           "name": "layout",
           "label": "Layout",
           "control": "select",
+          "description": "Applies to the standard variant. Ignored when variant is full-page.",
           "options": [
             "centered",
             "split-left",
@@ -1204,7 +1216,8 @@
             "version": "1.0.0",
             "props": {
               "headline": "A focused website starts here",
-              "layout": "centered"
+              "layout": "centered",
+              "variant": "standard"
             },
             "settings": {}
           },

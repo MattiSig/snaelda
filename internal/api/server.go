@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -385,7 +386,7 @@ func (s *Server) cors(next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		case origin != "" && origin == s.config.AppBaseURL:
+		case origin != "" && s.privateOriginAllowed(origin):
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, X-CSRF-Token")
@@ -409,7 +410,7 @@ func (s *Server) csrf(next http.Handler) http.Handler {
 			return
 		}
 
-		if origin := strings.TrimSpace(r.Header.Get("Origin")); origin != "" && origin != s.config.AppBaseURL {
+		if origin := strings.TrimSpace(r.Header.Get("Origin")); origin != "" && !s.privateOriginAllowed(origin) {
 			writeError(w, http.StatusForbidden, "invalid_origin", "request origin is not allowed")
 			return
 		}
@@ -456,6 +457,36 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) privateOriginAllowed(origin string) bool {
+	return privateOriginAllowed(origin, s.config.AppBaseURL)
+}
+
+func privateOriginAllowed(origin string, appBaseURL string) bool {
+	originURL, err := url.Parse(strings.TrimSpace(origin))
+	if err != nil || originURL.Scheme == "" || originURL.Host == "" {
+		return false
+	}
+	appURL, err := url.Parse(strings.TrimSpace(appBaseURL))
+	if err != nil || appURL.Scheme == "" || appURL.Host == "" {
+		return false
+	}
+	if originURL.Scheme != appURL.Scheme || originURL.Port() != appURL.Port() {
+		return false
+	}
+
+	originHost := strings.ToLower(originURL.Hostname())
+	appHost := strings.ToLower(appURL.Hostname())
+	if originHost == appHost {
+		return true
+	}
+	if appHost == "localhost" || strings.HasSuffix(appHost, ".localhost") {
+		return false
+	}
+
+	baseHost := strings.TrimPrefix(appHost, "www.")
+	return originHost == baseHost || originHost == "www."+baseHost
 }
 
 func isPublicRoute(r *http.Request) bool {

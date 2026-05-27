@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { SiteDraftRenderer } from "@/components/SiteDraftRenderer";
 import { APIError, getPreviewDraft, type SiteDraft } from "@/lib/api";
-import { layout, paddedPanel, preview, text } from "@/lib/styles";
 
 export const Route = createFileRoute("/preview/$token")({
   component: TokenPreview,
@@ -40,46 +39,46 @@ function TokenPreview() {
 
   if (errorMessage) {
     return (
-      <main className={layout.pageShell}>
-        <section className={paddedPanel}>
-          <div className={preview.toolbar}>
-            <p className={text.eyebrow}>Shared preview</p>
-          </div>
-          <article className="mt-5 rounded-[16px] border border-border bg-[var(--surface-2)] p-6">
-            <h1 className={text.h2}>Preview unavailable</h1>
-            <p className={text.p}>{errorMessage}</p>
-          </article>
-        </section>
-      </main>
+      <div
+        role="alert"
+        className="grid min-h-screen place-items-center bg-[var(--background)] px-6 py-12 text-[var(--paper)]"
+      >
+        <div className="grid max-w-[44ch] gap-3 text-center">
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--paper-muted)]">
+            Preview unavailable
+          </p>
+          <p className="m-0 font-serif text-[clamp(1.5rem,2.6vw,2rem)] font-bold leading-[1.15]">
+            {errorMessage}
+          </p>
+        </div>
+      </div>
     );
   }
 
   if (!draft) {
     return (
-      <main className={layout.pageShell}>
-        <section className={paddedPanel}>
-          <div className={preview.toolbar}>
-            <p className={text.eyebrow}>Shared preview</p>
-          </div>
-          <article className="mt-5 rounded-[16px] border border-border bg-[var(--surface-2)] p-6">
-            <p className={text.p}>Loading preview...</p>
-          </article>
-        </section>
-      </main>
+      <div
+        aria-busy="true"
+        className="grid min-h-screen place-items-center bg-[var(--background)] text-[var(--paper-muted)]"
+      >
+        <p className="m-0 text-sm">Loading preview…</p>
+      </div>
     );
   }
 
   return (
-    <main className={layout.pageShell}>
-      <section className={paddedPanel}>
-        <div className={preview.toolbar}>
-          <div>
-            <p className={text.eyebrow}>Shared preview</p>
-            <strong>{draft.site.name}</strong>
-          </div>
-        </div>
-        <SiteDraftRenderer site={draft} eyebrow="Shared preview" />
-      </section>
-    </main>
+    <div className="relative min-h-screen w-full">
+      <SiteDraftRenderer
+        site={draft}
+        eyebrow="Draft preview"
+        showPageMeta={false}
+      />
+      <div
+        aria-label="This is a draft preview"
+        className="pointer-events-none fixed bottom-5 right-5 z-50 rounded-full border border-[color-mix(in_oklch,var(--thread-gold)_42%,transparent)] bg-[color-mix(in_oklch,var(--surface-1)_88%,transparent)] px-3.5 py-1.5 text-[0.7rem] font-bold uppercase tracking-[0.16em] text-[var(--thread-gold)] backdrop-blur-md"
+      >
+        Draft preview
+      </div>
+    </div>
   );
 }

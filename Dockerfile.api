@@ -1,0 +1,34 @@
+FROM node:25-bookworm AS web-deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY apps/web/package.json apps/web/package.json
+RUN npm ci
+
+FROM web-deps AS web-build
+COPY apps/web apps/web
+COPY internal/siteconfig/testdata internal/siteconfig/testdata
+RUN npm run web:build
+
+FROM golang:1.26.1-bookworm AS go-build
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd cmd
+COPY internal internal
+RUN CGO_ENABLED=0 GOOS=linux go build -o /out/api ./cmd/api && \
+    CGO_ENABLED=0 GOOS=linux go build -o /out/db ./cmd/db
+
+FROM node:25-bookworm-slim
+WORKDIR /app
+ENV NODE_ENV=production
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY package.json package-lock.json ./
+COPY apps/web/package.json apps/web/package.json
+RUN npm ci
+COPY --from=web-build /app/apps/web/src apps/web/src
+COPY apps/web/tsconfig.json apps/web/tsconfig.json
+COPY --from=go-build /out/api /app/api
+COPY --from=go-build /out/db /app/db
+COPY internal/platform/database/migrations internal/platform/database/migrations
+EXPOSE 8080
+CMD ["/app/api"]

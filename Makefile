@@ -1,6 +1,6 @@
 COMPOSE_ENV_FILES := $(if $(wildcard .env.local),--env-file .env.local,) $(if $(wildcard .env),--env-file .env,)
 
-.PHONY: api db-up db-down db-migrate db-seed dev-up storage-up storage-down test
+.PHONY: api db-up db-down db-migrate db-seed dev-up storage-up storage-down stripe-setup test
 
 api:
 	go run ./cmd/api
@@ -25,6 +25,9 @@ db-migrate:
 
 db-seed:
 	go run ./cmd/db seed
+
+stripe-setup:
+	go run ./cmd/stripe-setup $(STRIPE_SETUP_ARGS)
 
 test:
 	go test ./...

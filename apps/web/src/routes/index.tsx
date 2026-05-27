@@ -90,12 +90,8 @@ function Home() {
   const { hostedPublic, published } = Route.useLoaderData()
   const search = Route.useSearch()
   const [prompt, setPrompt] = useState('')
-  const [restoreKey, setRestoreKey] = useState('')
   const [restoreMessage, setRestoreMessage] = useState('')
-  const [showEnterMenu, setShowEnterMenu] = useState(false)
-  const [showRestore, setShowRestore] = useState(false)
   const [isStartingWorkspace, setIsStartingWorkspace] = useState(false)
-  const [isRestoring, setIsRestoring] = useState(false)
 
   useEffect(() => {
     const incomingRestoreKey = extractRecoveryKey(search.restore || '')
@@ -106,8 +102,6 @@ function Home() {
     restoreWorkspace(incomingRestoreKey)
       .then(() => navigate({ to: '/app' }))
       .catch((error) => {
-        setShowEnterMenu(true)
-        setShowRestore(true)
         setRestoreMessage(
           error instanceof APIError ? error.message : 'Could not restore that workspace',
         )
@@ -128,7 +122,6 @@ function Home() {
         error instanceof APIError ? error.message : 'Could not start a workspace',
       )
       setIsStartingWorkspace(false)
-      setShowEnterMenu(true)
     }
   }
 
@@ -158,98 +151,12 @@ function Home() {
               <img src="/logo.png" alt="" className="size-7 rounded-full object-contain" />
               Small-site workshop
             </div>
-            <div className="relative">
-              <Button
-                type="button"
-                variant="outline"
-                aria-expanded={showEnterMenu}
-                onClick={() => setShowEnterMenu((current) => !current)}
-                className="rounded-full border-[color-mix(in_oklch,var(--thread-violet)_32%,var(--border))] bg-[color-mix(in_oklch,var(--surface-1)_80%,transparent)] px-5 text-[var(--paper)] hover:border-[var(--thread-gold)] hover:bg-[color-mix(in_oklch,var(--surface-2)_92%,transparent)] hover:text-[var(--thread-gold)]"
-              >
-                Enter
-              </Button>
-              {showEnterMenu ? (
-                <div className="absolute right-0 top-full z-20 mt-3 w-[min(24rem,calc(100vw-3rem))] rounded-[22px] border border-[color-mix(in_oklch,var(--border)_60%,transparent)] bg-[color-mix(in_oklch,var(--surface-1)_94%,black)] p-4 shadow-[0_28px_80px_-24px_oklch(14%_0.05_336_/_0.88)] backdrop-blur-sm">
-                  <div className="space-y-3 text-left">
-                    <section className="rounded-[16px] bg-[color-mix(in_oklch,var(--surface-2)_76%,black)] p-4">
-                      <p className="text-sm font-semibold text-[var(--paper)]">Email</p>
-                      <p className="mt-1 text-sm leading-6 text-[var(--paper-muted)]">
-                        Send yourself a one-time magic link and pick up an existing workspace.
-                      </p>
-                      <Button asChild className="mt-3 w-full">
-                        <Link to="/login">Continue by email</Link>
-                      </Button>
-                    </section>
-
-                    <section className="rounded-[16px] bg-[color-mix(in_oklch,var(--surface-2)_54%,black)] p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-[var(--paper)]">Restore session</p>
-                          <p className="mt-1 text-sm leading-6 text-[var(--paper-muted)]">
-                            Paste a saved recovery link or key.
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setShowRestore((current) => !current)}
-                          className="text-sm font-semibold text-[var(--thread-gold)] transition-colors hover:text-[var(--paper)]"
-                        >
-                          {showRestore ? 'Hide' : 'Open'}
-                        </button>
-                      </div>
-                      {showRestore ? (
-                        <form
-                          className="mt-3 flex flex-col gap-3"
-                          onSubmit={async (event: FormEvent) => {
-                            event.preventDefault()
-                            setIsRestoring(true)
-                            setRestoreMessage('')
-                            try {
-                              await restoreWorkspace(extractRecoveryKey(restoreKey))
-                              await navigate({ to: '/app' })
-                            } catch (error) {
-                              setRestoreMessage(
-                                error instanceof APIError ? error.message : 'Could not restore that workspace',
-                              )
-                              setIsRestoring(false)
-                            }
-                          }}
-                        >
-                          <input
-                            value={restoreKey}
-                            onChange={(event) => setRestoreKey(event.target.value)}
-                            placeholder="Paste a restore link or recovery key"
-                            className="min-h-12 w-full rounded-[14px] border border-transparent bg-[color-mix(in_oklch,var(--surface-1)_72%,var(--background))] px-4 text-sm text-[var(--paper)] outline-none placeholder:text-[color-mix(in_oklch,var(--paper-muted)_62%,transparent)]"
-                          />
-                          <Button type="submit" variant="outline" disabled={isRestoring || restoreKey.trim() === ''}>
-                            {isRestoring ? 'Restoring...' : 'Restore session'}
-                          </Button>
-                          {restoreMessage ? (
-                            <p className="text-sm text-[var(--thread-gold)]">{restoreMessage}</p>
-                          ) : null}
-                        </form>
-                      ) : null}
-                    </section>
-
-                    <section className="rounded-[16px] bg-[color-mix(in_oklch,var(--thread-violet)_12%,var(--surface-0))] p-4">
-                      <p className="text-sm font-semibold text-[var(--paper)]">Get started as guest</p>
-                      <p className="mt-1 text-sm leading-6 text-[var(--paper-muted)]">
-                        Jump straight into a fresh workspace, with your prompt if you already wrote one.
-                      </p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={isStartingWorkspace}
-                        onClick={() => handleGuestStart(prompt)}
-                        className="mt-3 w-full border-[color-mix(in_oklch,var(--thread-gold)_34%,var(--border))] bg-transparent hover:bg-[color-mix(in_oklch,var(--surface-2)_88%,transparent)]"
-                      >
-                        {isStartingWorkspace ? 'Opening workspace...' : 'Continue as guest'}
-                      </Button>
-                    </section>
-                  </div>
-                </div>
-              ) : null}
-            </div>
+            <Link
+              to="/login"
+              className="text-sm font-semibold text-[var(--paper-muted)] underline-offset-4 transition-colors hover:text-[var(--thread-gold)] hover:underline"
+            >
+              Log in
+            </Link>
           </div>
 
           <h1 className='max-w-4xl text-[clamp(3.2rem,8vw,4.9rem)] font-bold leading-[0.92] tracking-[-0.03em] text-[color-mix(in_oklch,var(--thread-violet)_72%,white)] [font-family:"Literata","Iowan_Old_Style","Palatino_Linotype",serif]'>
@@ -259,6 +166,12 @@ function Home() {
             Snaelda turns your ideas into beautifully crafted, hand-woven websites.
             No sterile templates, just your story brought to life.
           </p>
+
+          {restoreMessage ? (
+            <p className="mt-6 max-w-2xl text-sm text-[var(--thread-gold)]" role="alert">
+              {restoreMessage}
+            </p>
+          ) : null}
 
           <form
             className="group relative mt-10 flex w-full max-w-2xl flex-col items-stretch gap-4 rounded-[18px] border border-[color-mix(in_oklch,var(--border)_60%,transparent)] bg-[color-mix(in_oklch,var(--surface-2)_92%,transparent)] p-4 shadow-[0_20px_60px_-15px_oklch(16%_0.05_336_/_0.55)] transition-colors duration-300 focus-within:border-[var(--thread-teal)] md:flex-row md:items-center"
@@ -285,6 +198,24 @@ function Home() {
               {isStartingWorkspace ? 'Opening workspace...' : 'Weave My Site'}
             </Button>
           </form>
+
+          <p className="mt-4 text-xs text-[color-mix(in_oklch,var(--paper-muted)_70%,transparent)]">
+            By continuing, you agree to our{' '}
+            <Link
+              to="/terms"
+              className="font-semibold text-[var(--paper-muted)] underline underline-offset-4 hover:text-[var(--paper)]"
+            >
+              Terms of Use
+            </Link>{' '}
+            and{' '}
+            <Link
+              to="/privacy"
+              className="font-semibold text-[var(--paper-muted)] underline underline-offset-4 hover:text-[var(--paper)]"
+            >
+              Privacy Policy
+            </Link>
+            .
+          </p>
 
           <div className="relative mt-16 w-full max-w-5xl overflow-hidden rounded-[18px] border border-[color-mix(in_oklch,var(--border)_56%,transparent)] shadow-[0_30px_80px_-20px_oklch(16%_0.05_336_/_0.6)]">
             <img
@@ -339,6 +270,12 @@ function Home() {
             </Link>
             <Link to="/login" className="transition-colors hover:text-[var(--paper)]">
               Support
+            </Link>
+            <Link to="/terms" className="transition-colors hover:text-[var(--paper)]">
+              Terms
+            </Link>
+            <Link to="/privacy" className="transition-colors hover:text-[var(--paper)]">
+              Privacy
             </Link>
           </nav>
           <Button

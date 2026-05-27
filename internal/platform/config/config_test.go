@@ -84,6 +84,21 @@ func TestLoadUsesLocalStorageDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadUsesRailwayPortWhenHTTPAddrMissing(t *testing.T) {
+	t.Setenv("APP_ENV", "test")
+	t.Setenv("HTTP_ADDR", "")
+	t.Setenv("PORT", "4242")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	if cfg.HTTPAddr != ":4242" {
+		t.Fatalf("expected PORT-derived HTTP addr, got %q", cfg.HTTPAddr)
+	}
+}
+
 func TestLoadAllowsStorageOverrides(t *testing.T) {
 	t.Setenv("APP_ENV", "test")
 	t.Setenv("S3_ENDPOINT", "http://storage.example.test")

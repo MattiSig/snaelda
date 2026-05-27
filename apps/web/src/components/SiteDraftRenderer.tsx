@@ -111,11 +111,31 @@ export function SiteDraftRenderer({
     siteCollections.map((collection) => [collection.id, collection] as const),
   );
 
+  const firstRenderedPage = renderedPages[0];
+  const firstVisibleBlock = firstRenderedPage?.blocks.find(
+    (block) => !block.settings?.hidden,
+  );
+  const headerOverlapsHero =
+    firstVisibleBlock?.type === 'hero' &&
+    asText(firstVisibleBlock.props.variant) === 'full-page';
+
   return (
     <div className={preview.shell} style={buildSiteThemeStyle(site.theme)}>
-      <header className={preview.header}>
+      <header
+        className={cn(
+          preview.header,
+          'relative z-10',
+          headerOverlapsHero && 'border-transparent',
+        )}
+      >
         <div className={preview.headerInner}>
-          <a className={preview.headerBrand} href={homeHref}>
+          <a
+            className={cn(
+              preview.headerBrand,
+              headerOverlapsHero && 'text-[#F9F7F2]',
+            )}
+            href={homeHref}
+          >
             <HeaderBrand
               brand={site.brand}
               siteName={site.site.name}
@@ -127,7 +147,11 @@ export function SiteDraftRenderer({
             {site.navigation.primary.map((item) => (
               <a
                 key={`${item.label}-${item.pageId ?? item.href ?? ''}`}
-                className={preview.navLink}
+                className={cn(
+                  preview.navLink,
+                  headerOverlapsHero &&
+                    'text-[color-mix(in_oklch,#F9F7F2_85%,transparent)] hover:text-[#F9F7F2]',
+                )}
                 href={resolveNavigationHref(
                   item,
                   pageAnchors,
@@ -318,6 +342,7 @@ function renderSiteBlock({
         <HeroBlock
           key={block.id}
           props={block.props}
+          isFirst={blockIndex === 0}
           resolveHref={(href) =>
             resolvePageHref(
               href,
@@ -524,11 +549,13 @@ const bodyClass =
 
 function HeroBlock({
   props,
+  isFirst,
   resolveHref,
   linkMode,
   siteSlug,
 }: {
   props: Record<string, unknown>;
+  isFirst: boolean;
   resolveHref: (href: string) => string;
   linkMode: 'anchors' | 'published';
   siteSlug?: string;
@@ -536,6 +563,25 @@ function HeroBlock({
   const primary = asObject(props.primaryCta);
   const secondary = asObject(props.secondaryCta);
   const image = asImageRef(props.image);
+  const variant = asText(props.variant) === 'full-page' ? 'full-page' : 'standard';
+
+  if (variant === 'full-page') {
+    return (
+      <FullPageHeroBlock
+        eyebrow={asText(props.eyebrow)}
+        headline={asText(props.headline)}
+        subheadline={asText(props.subheadline)}
+        primary={primary}
+        secondary={secondary}
+        image={image}
+        isFirst={isFirst}
+        resolveHref={resolveHref}
+        linkMode={linkMode}
+        siteSlug={siteSlug}
+      />
+    );
+  }
+
   const layout = asText(props.layout) || 'centered';
   const hasImage = image !== null;
   const isSplit = hasImage && layout !== 'centered';
@@ -610,6 +656,106 @@ function HeroBlock({
                 isSplit && layout === 'split-left' && 'lg:order-1',
               )}
             />
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FullPageHeroBlock({
+  eyebrow,
+  headline,
+  subheadline,
+  primary,
+  secondary,
+  image,
+  isFirst,
+  resolveHref,
+  linkMode,
+  siteSlug,
+}: {
+  eyebrow: string | null;
+  headline: string | null;
+  subheadline: string | null;
+  primary: Record<string, unknown> | null;
+  secondary: Record<string, unknown> | null;
+  image: { assetId: string; alt: string } | null;
+  isFirst: boolean;
+  resolveHref: (href: string) => string;
+  linkMode: 'anchors' | 'published';
+  siteSlug?: string;
+}) {
+  return (
+    <section
+      data-fullpage-hero="true"
+      className={cn(
+        'relative isolate flex min-h-screen w-full overflow-hidden',
+        // When this hero is the first block on the page, pull it up so it
+        // covers the page header area and reads as a true full viewport on load.
+        isFirst && '-mt-[var(--preview-header-height,88px)] pt-[var(--preview-header-height,88px)]',
+      )}
+    >
+      {image ? (
+        <AssetImage
+          image={image}
+          linkMode={linkMode}
+          siteSlug={siteSlug}
+          className="absolute inset-0 -z-20 h-full w-full object-cover"
+        />
+      ) : (
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 -z-20 h-full w-full"
+          style={{
+            background:
+              'radial-gradient(circle at 30% 20%, color-mix(in oklch, var(--color-primary) 60%, var(--color-background)) 0%, var(--color-background) 70%)',
+          }}
+        />
+      )}
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 -z-10 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.55)_0%,rgba(0,0,0,0.15)_35%,rgba(0,0,0,0.25)_60%,rgba(0,0,0,0.75)_100%)]"
+      />
+      <div className="relative mx-auto flex w-full max-w-[1180px] flex-col justify-end px-[max(1.25rem,4vw)] pb-[clamp(48px,8vw,96px)] pt-[clamp(72px,12vw,160px)]">
+        <div className="grid max-w-[40ch] gap-5 text-[#F9F7F2] [text-wrap:balance]">
+          {eyebrow ? (
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-[color-mix(in_oklch,#F9F7F2_82%,transparent)]">
+              {eyebrow}
+            </p>
+          ) : null}
+          <h1 className="[font-family:var(--font-heading)] text-[clamp(2.8rem,7vw,6rem)] [font-weight:var(--font-headingWeight,700)] leading-[0.95] tracking-[-0.02em] text-[#F9F7F2] drop-shadow-[0_2px_24px_rgba(0,0,0,0.35)]">
+            {headline}
+          </h1>
+          {subheadline ? (
+            <p className="max-w-[46ch] text-[1.15rem] leading-[1.55] text-[color-mix(in_oklch,#F9F7F2_88%,transparent)] drop-shadow-[0_1px_12px_rgba(0,0,0,0.3)]">
+              {subheadline}
+            </p>
+          ) : null}
+          {primary || secondary ? (
+            <div className={cn(preview.actionRow, 'mt-3')}>
+              {primary ? (
+                <Button asChild variant="plain" className={preview.button}>
+                  <a href={resolveHref(asText(primary.href) || '#')}>
+                    {asText(primary.label) ?? 'Continue'}
+                  </a>
+                </Button>
+              ) : null}
+              {secondary ? (
+                <Button
+                  asChild
+                  variant="plain"
+                  className={cn(
+                    preview.button,
+                    'border-[color-mix(in_oklch,#F9F7F2_55%,transparent)] bg-transparent text-[#F9F7F2] shadow-none hover:bg-[color-mix(in_oklch,#F9F7F2_12%,transparent)]',
+                  )}
+                >
+                  <a href={resolveHref(asText(secondary.href) || '#')}>
+                    {asText(secondary.label) ?? 'Learn more'}
+                  </a>
+                </Button>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </div>

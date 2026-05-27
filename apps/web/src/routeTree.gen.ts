@@ -9,9 +9,11 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as RestoreRouteImport } from './routes/restore'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as SplatRouteImport } from './routes/$'
@@ -33,6 +35,11 @@ import { Route as AppSitesSiteIdPreviewRouteImport } from './routes/app.sites.$s
 import { Route as AppSitesSiteIdCollectionsRouteImport } from './routes/app.sites.$siteId.collections'
 import { Route as AppSitesSiteIdAnalyticsRouteImport } from './routes/app.sites.$siteId.analytics'
 
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
@@ -46,6 +53,11 @@ const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
 const RestoreRoute = RestoreRouteImport.update({
   id: '/restore',
   path: '/restore',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -157,9 +169,11 @@ export interface FileRoutesByFullPath {
   '/$': typeof SplatRoute
   '/app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/restore': typeof RestoreRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/terms': typeof TermsRoute
   '/app/billing': typeof AppBillingRouteWithChildren
   '/preview/$token': typeof PreviewTokenRoute
   '/public/$siteSlug': typeof PublicSiteSlugRouteWithChildren
@@ -181,9 +195,11 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/restore': typeof RestoreRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/terms': typeof TermsRoute
   '/preview/$token': typeof PreviewTokenRoute
   '/app': typeof AppIndexRoute
   '/app/billing/cancel': typeof AppBillingCancelRoute
@@ -204,9 +220,11 @@ export interface FileRoutesById {
   '/$': typeof SplatRoute
   '/app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/restore': typeof RestoreRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/terms': typeof TermsRoute
   '/app/billing': typeof AppBillingRouteWithChildren
   '/preview/$token': typeof PreviewTokenRoute
   '/public/$siteSlug': typeof PublicSiteSlugRouteWithChildren
@@ -231,9 +249,11 @@ export interface FileRouteTypes {
     | '/$'
     | '/app'
     | '/login'
+    | '/privacy'
     | '/restore'
     | '/robots.txt'
     | '/sitemap.xml'
+    | '/terms'
     | '/app/billing'
     | '/preview/$token'
     | '/public/$siteSlug'
@@ -255,9 +275,11 @@ export interface FileRouteTypes {
     | '/'
     | '/$'
     | '/login'
+    | '/privacy'
     | '/restore'
     | '/robots.txt'
     | '/sitemap.xml'
+    | '/terms'
     | '/preview/$token'
     | '/app'
     | '/app/billing/cancel'
@@ -277,9 +299,11 @@ export interface FileRouteTypes {
     | '/$'
     | '/app'
     | '/login'
+    | '/privacy'
     | '/restore'
     | '/robots.txt'
     | '/sitemap.xml'
+    | '/terms'
     | '/app/billing'
     | '/preview/$token'
     | '/public/$siteSlug'
@@ -303,15 +327,24 @@ export interface RootRouteChildren {
   SplatRoute: typeof SplatRoute
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
+  PrivacyRoute: typeof PrivacyRoute
   RestoreRoute: typeof RestoreRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  TermsRoute: typeof TermsRoute
   PreviewTokenRoute: typeof PreviewTokenRoute
   PublicSiteSlugRoute: typeof PublicSiteSlugRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sitemap.xml': {
       id: '/sitemap.xml'
       path: '/sitemap.xml'
@@ -331,6 +364,13 @@ declare module '@tanstack/react-router' {
       path: '/restore'
       fullPath: '/restore'
       preLoaderRoute: typeof RestoreRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -547,9 +587,11 @@ const rootRouteChildren: RootRouteChildren = {
   SplatRoute: SplatRoute,
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
+  PrivacyRoute: PrivacyRoute,
   RestoreRoute: RestoreRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  TermsRoute: TermsRoute,
   PreviewTokenRoute: PreviewTokenRoute,
   PublicSiteSlugRoute: PublicSiteSlugRouteWithChildren,
 }

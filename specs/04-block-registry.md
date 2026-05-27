@@ -12,13 +12,21 @@ Purpose: top section with headline, subheadline, CTA, and optional image.
 
 Props:
 
+- variant — `standard` (default) or `full-page`
 - eyebrow
 - headline
 - subheadline
 - primary CTA
 - secondary CTA
 - image asset
-- layout variant
+- layout variant — applies to the `standard` variant only; values: `centered`, `split-left`, `split-right`
+
+Variants:
+
+- `standard`: the headline-led hero with optional supporting image. The `layout` prop controls whether the image is centered below the headline (`centered`) or sits beside it (`split-left`, `split-right`).
+- `full-page`: an immersive hero that fills exactly the visitor's viewport on first load (100vh). The image becomes the background; the eyebrow, headline, subheadline, and CTAs sit over a darkening gradient at the bottom. When this hero is the first block on a page, it covers the page header so the viewport opens fully on the hero. An image is strongly recommended; the renderer falls back to a themed gradient if one is missing. The `layout` prop is ignored in this variant.
+
+Generation should pick `full-page` for image-led brands (photographers, restaurants, hotels, florists, galleries, salons, ceramics studios, wedding planners, tattoo artists, cafes, food, travel, fashion) or when the prompt asks for a bold, atmospheric opener. Headlines should stay short (3–7 words) and subheadlines to a single sentence so the overlay reads cleanly.
 
 ### 2. Text Section
 
@@ -273,6 +281,7 @@ For MVP:
 
 ```ts
 const heroSchema = z.object({
+  variant: z.enum(["standard", "full-page"]).default("standard"),
   eyebrow: z.string().max(80).optional(),
   headline: z.string().min(1).max(120),
   subheadline: z.string().max(280).optional(),

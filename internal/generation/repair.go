@@ -325,6 +325,7 @@ func repairBlockPlan(block generationBlockPlan, pageTitle string, pageGoal strin
 
 func repairHeroProps(props map[string]any, pageTitle string, pageSlug string) map[string]any {
 	repaired := map[string]any{
+		"variant":  readEnum(props, "variant", "standard", "standard", "full-page"),
 		"headline": firstNonEmpty(readGeneratedText(props, "headline", 120), pageTitle),
 		"layout":   readEnum(props, "layout", "split-left", "centered", "split-left", "split-right"),
 	}

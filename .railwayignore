@@ -1,0 +1,10 @@
+.git
+node_modules
+apps/web/node_modules
+apps/web/.output
+.playwright-mcp
+.impeccable
+var
+*.png
+!logo.png
+/api

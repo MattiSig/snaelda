@@ -184,7 +184,9 @@ func (s *stripeWrapper) ConstructWebhookEvent(payload []byte, header string) (We
 	if s.secret == "" {
 		return WebhookEvent{}, fmt.Errorf("stripe webhook secret is not configured")
 	}
-	event, err := webhook.ConstructEvent(payload, header, s.secret)
+	event, err := webhook.ConstructEventWithOptions(payload, header, s.secret, webhook.ConstructEventOptions{
+		IgnoreAPIVersionMismatch: true,
+	})
 	if err != nil {
 		return WebhookEvent{}, err
 	}

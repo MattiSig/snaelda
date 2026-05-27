@@ -1,0 +1,18 @@
+FROM node:25-bookworm AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY apps/web/package.json apps/web/package.json
+RUN npm ci
+COPY apps/web apps/web
+COPY internal/siteconfig/testdata internal/siteconfig/testdata
+RUN npm run web:build
+
+FROM node:25-bookworm-slim
+WORKDIR /app
+ENV NODE_ENV=production
+COPY package.json package-lock.json ./
+COPY apps/web/package.json apps/web/package.json
+RUN npm ci --omit=dev
+COPY --from=build /app/apps/web/.output apps/web/.output
+EXPOSE 3000
+CMD ["npm", "run", "web:start"]

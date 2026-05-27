@@ -12,47 +12,47 @@ import (
 )
 
 type Config struct {
-	AppEnv                 string
-	HTTPAddr               string
-	AppBaseURL             string
-	APIBaseURL             string
-	PublicBaseURL          string
-	PublicBaseDomain       string
-	StripeSecretKey        string
-	StripeWebhookSecret    string
-	StripePriceBasic       string
-	StripePricePro         string
-	StripePriceOnceOver    string
-	BillingSuccessURL      string
-	BillingCancelURL       string
-	BillingPortalReturnURL string
-	EmailTransport         string
-	EmailFromAddress       string
-	EmailFromName          string
-	EmailReplyTo           string
-	ResendAPIKey           string
-	MailpitSMTPAddr        string
-	OpenAIAPIKey           string
-	OpenAIModel            string
-	PexelsAPIKey           string
-	DatabaseURL            string
-	AuthJWTSecret          string
-	AuthIssuer             string
-	AuthAudience           string
-	AuthAccessTokenTTL     time.Duration
-	AuthRefreshTokenTTL    time.Duration
-	AuthCookieSecure       bool
-	PreviewTokenTTL              time.Duration
-	PublishedArtifactsDir        string
-	PublishedArtifactsBackend    string
-	PublishedArtifactsS3Bucket   string
-	PublishedArtifactsS3Prefix   string
-	S3Endpoint                   string
-	S3Bucket               string
-	S3Region               string
-	S3AccessKeyID          string
-	S3SecretAccessKey      string
-	S3ForcePathStyle       bool
+	AppEnv                     string
+	HTTPAddr                   string
+	AppBaseURL                 string
+	APIBaseURL                 string
+	PublicBaseURL              string
+	PublicBaseDomain           string
+	StripeSecretKey            string
+	StripeWebhookSecret        string
+	StripePriceBasic           string
+	StripePricePro             string
+	StripePriceOnceOver        string
+	BillingSuccessURL          string
+	BillingCancelURL           string
+	BillingPortalReturnURL     string
+	EmailTransport             string
+	EmailFromAddress           string
+	EmailFromName              string
+	EmailReplyTo               string
+	ResendAPIKey               string
+	MailpitSMTPAddr            string
+	OpenAIAPIKey               string
+	OpenAIModel                string
+	PexelsAPIKey               string
+	DatabaseURL                string
+	AuthJWTSecret              string
+	AuthIssuer                 string
+	AuthAudience               string
+	AuthAccessTokenTTL         time.Duration
+	AuthRefreshTokenTTL        time.Duration
+	AuthCookieSecure           bool
+	PreviewTokenTTL            time.Duration
+	PublishedArtifactsDir      string
+	PublishedArtifactsBackend  string
+	PublishedArtifactsS3Bucket string
+	PublishedArtifactsS3Prefix string
+	S3Endpoint                 string
+	S3Bucket                   string
+	S3Region                   string
+	S3AccessKeyID              string
+	S3SecretAccessKey          string
+	S3ForcePathStyle           bool
 }
 
 func Load() (Config, error) {
@@ -84,46 +84,46 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
-		AppEnv:                 appEnv,
-		HTTPAddr:               env.get("HTTP_ADDR", ":8080"),
-		AppBaseURL:             env.get("APP_BASE_URL", "http://localhost:3000"),
-		APIBaseURL:             env.get("API_BASE_URL", "http://localhost:8080"),
-		PublicBaseURL:          env.get("PUBLIC_BASE_URL", "http://localhost:3000"),
-		StripeSecretKey:        strings.TrimSpace(env.lookup("STRIPE_SECRET_KEY")),
-		StripeWebhookSecret:    strings.TrimSpace(env.lookup("STRIPE_WEBHOOK_SECRET")),
-		StripePriceBasic:       strings.TrimSpace(env.lookup("STRIPE_PRICE_BASIC")),
-		StripePricePro:         strings.TrimSpace(env.lookup("STRIPE_PRICE_PRO")),
-		StripePriceOnceOver:    strings.TrimSpace(env.lookup("STRIPE_PRICE_ONCE_OVER")),
-		BillingSuccessURL:      strings.TrimSpace(env.get("BILLING_SUCCESS_URL", "http://localhost:3000/app/billing/success")),
-		BillingCancelURL:       strings.TrimSpace(env.get("BILLING_CANCEL_URL", "http://localhost:3000/app/billing/cancel")),
-		BillingPortalReturnURL: strings.TrimSpace(env.get("BILLING_PORTAL_RETURN_URL", "http://localhost:3000/app/billing")),
-		EmailTransport:         strings.ToLower(strings.TrimSpace(env.get("EMAIL_TRANSPORT", "stdout"))),
-		EmailFromAddress:       strings.TrimSpace(env.get("EMAIL_FROM_ADDRESS", "hi@snaelda.app")),
-		EmailFromName:          strings.TrimSpace(env.get("EMAIL_FROM_NAME", "Snaelda")),
-		EmailReplyTo:           strings.TrimSpace(env.lookup("EMAIL_REPLY_TO")),
-		ResendAPIKey:           strings.TrimSpace(env.lookup("RESEND_API_KEY")),
-		MailpitSMTPAddr:        strings.TrimSpace(env.get("MAILPIT_SMTP_ADDR", "localhost:1025")),
-		OpenAIAPIKey:           strings.TrimSpace(env.lookup("OPENAI_API_KEY")),
-		OpenAIModel:            env.get("OPENAI_MODEL", "gpt-5-mini"),
-		PexelsAPIKey:           strings.TrimSpace(env.lookup("PEXELS_API_KEY")),
-		DatabaseURL:            env.lookup("DATABASE_URL"),
-		AuthJWTSecret:          env.get("AUTH_JWT_SECRET", "development-auth-secret-change-me"),
-		AuthIssuer:             env.get("AUTH_ISSUER", "snaelda-api"),
-		AuthAudience:           env.get("AUTH_AUDIENCE", "snaelda-web"),
-		AuthAccessTokenTTL:     accessTokenTTL,
-		AuthRefreshTokenTTL:    refreshTokenTTL,
-		AuthCookieSecure:       cookieSecure,
-		PreviewTokenTTL:              previewTokenTTL,
-		PublishedArtifactsDir:        env.get("PUBLISHED_ARTIFACTS_DIR", "var/published-artifacts"),
-		PublishedArtifactsBackend:    strings.ToLower(strings.TrimSpace(env.lookup("PUBLISHED_ARTIFACTS_BACKEND"))),
-		PublishedArtifactsS3Bucket:   strings.TrimSpace(env.lookup("PUBLISHED_ARTIFACTS_S3_BUCKET")),
-		PublishedArtifactsS3Prefix:   strings.TrimSpace(env.get("PUBLISHED_ARTIFACTS_S3_PREFIX", "published-artifacts")),
-		S3Endpoint:                   env.get("S3_ENDPOINT", "http://localhost:8333"),
-		S3Bucket:               env.get("S3_BUCKET", "snaelda-local"),
-		S3Region:               env.get("S3_REGION", "us-east-1"),
-		S3AccessKeyID:          env.get("S3_ACCESS_KEY_ID", "snaelda"),
-		S3SecretAccessKey:      env.get("S3_SECRET_ACCESS_KEY", "snaelda-secret"),
-		S3ForcePathStyle:       forcePathStyle,
+		AppEnv:                     appEnv,
+		HTTPAddr:                   resolveHTTPAddr(env),
+		AppBaseURL:                 env.get("APP_BASE_URL", "http://localhost:3000"),
+		APIBaseURL:                 env.get("API_BASE_URL", "http://localhost:8080"),
+		PublicBaseURL:              env.get("PUBLIC_BASE_URL", "http://localhost:3000"),
+		StripeSecretKey:            strings.TrimSpace(env.lookup("STRIPE_SECRET_KEY")),
+		StripeWebhookSecret:        strings.TrimSpace(env.lookup("STRIPE_WEBHOOK_SECRET")),
+		StripePriceBasic:           strings.TrimSpace(env.lookup("STRIPE_PRICE_BASIC")),
+		StripePricePro:             strings.TrimSpace(env.lookup("STRIPE_PRICE_PRO")),
+		StripePriceOnceOver:        strings.TrimSpace(env.lookup("STRIPE_PRICE_ONCE_OVER")),
+		BillingSuccessURL:          strings.TrimSpace(env.get("BILLING_SUCCESS_URL", "http://localhost:3000/app/billing/success")),
+		BillingCancelURL:           strings.TrimSpace(env.get("BILLING_CANCEL_URL", "http://localhost:3000/app/billing/cancel")),
+		BillingPortalReturnURL:     strings.TrimSpace(env.get("BILLING_PORTAL_RETURN_URL", "http://localhost:3000/app/billing")),
+		EmailTransport:             strings.ToLower(strings.TrimSpace(env.get("EMAIL_TRANSPORT", "stdout"))),
+		EmailFromAddress:           strings.TrimSpace(env.get("EMAIL_FROM_ADDRESS", "hi@snaelda.app")),
+		EmailFromName:              strings.TrimSpace(env.get("EMAIL_FROM_NAME", "Snaelda")),
+		EmailReplyTo:               strings.TrimSpace(env.lookup("EMAIL_REPLY_TO")),
+		ResendAPIKey:               strings.TrimSpace(env.lookup("RESEND_API_KEY")),
+		MailpitSMTPAddr:            strings.TrimSpace(env.get("MAILPIT_SMTP_ADDR", "localhost:1025")),
+		OpenAIAPIKey:               strings.TrimSpace(env.lookup("OPENAI_API_KEY")),
+		OpenAIModel:                env.get("OPENAI_MODEL", "gpt-5-mini"),
+		PexelsAPIKey:               strings.TrimSpace(env.lookup("PEXELS_API_KEY")),
+		DatabaseURL:                env.lookup("DATABASE_URL"),
+		AuthJWTSecret:              env.get("AUTH_JWT_SECRET", "development-auth-secret-change-me"),
+		AuthIssuer:                 env.get("AUTH_ISSUER", "snaelda-api"),
+		AuthAudience:               env.get("AUTH_AUDIENCE", "snaelda-web"),
+		AuthAccessTokenTTL:         accessTokenTTL,
+		AuthRefreshTokenTTL:        refreshTokenTTL,
+		AuthCookieSecure:           cookieSecure,
+		PreviewTokenTTL:            previewTokenTTL,
+		PublishedArtifactsDir:      env.get("PUBLISHED_ARTIFACTS_DIR", "var/published-artifacts"),
+		PublishedArtifactsBackend:  strings.ToLower(strings.TrimSpace(env.lookup("PUBLISHED_ARTIFACTS_BACKEND"))),
+		PublishedArtifactsS3Bucket: strings.TrimSpace(env.lookup("PUBLISHED_ARTIFACTS_S3_BUCKET")),
+		PublishedArtifactsS3Prefix: strings.TrimSpace(env.get("PUBLISHED_ARTIFACTS_S3_PREFIX", "published-artifacts")),
+		S3Endpoint:                 env.get("S3_ENDPOINT", "http://localhost:8333"),
+		S3Bucket:                   env.get("S3_BUCKET", "snaelda-local"),
+		S3Region:                   env.get("S3_REGION", "us-east-1"),
+		S3AccessKeyID:              env.get("S3_ACCESS_KEY_ID", "snaelda"),
+		S3SecretAccessKey:          env.get("S3_SECRET_ACCESS_KEY", "snaelda-secret"),
+		S3ForcePathStyle:           forcePathStyle,
 	}
 
 	if cfg.AppEnv == "" {
@@ -274,6 +274,19 @@ func resolvePublicBaseDomain(publicBaseURL string, override string) (string, err
 
 func normalizeHostname(value string) string {
 	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(value)), ".")
+}
+
+func resolveHTTPAddr(env environment) string {
+	if addr := strings.TrimSpace(env.lookup("HTTP_ADDR")); addr != "" {
+		return addr
+	}
+	if port := strings.TrimSpace(env.lookup("PORT")); port != "" {
+		if strings.HasPrefix(port, ":") {
+			return port
+		}
+		return ":" + port
+	}
+	return ":8080"
 }
 
 func (e environment) lookup(key string) string {

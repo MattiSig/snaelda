@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { Link, createFileRoute } from '@tanstack/react-router'
 import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -65,6 +65,23 @@ function Login() {
         <Button type="submit" disabled={isSubmitting}>
           {isSubmitting ? 'Sending link...' : 'Send magic link'}
         </Button>
+        <p className="text-xs text-[var(--paper-muted)]">
+          By continuing, you agree to our{' '}
+          <Link
+            to="/terms"
+            className="font-semibold underline underline-offset-4 hover:text-[var(--paper)]"
+          >
+            Terms of Use
+          </Link>{' '}
+          and{' '}
+          <Link
+            to="/privacy"
+            className="font-semibold underline underline-offset-4 hover:text-[var(--paper)]"
+          >
+            Privacy Policy
+          </Link>
+          .
+        </p>
       </form>
     </main>
   )

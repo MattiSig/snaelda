@@ -28,8 +28,7 @@ export function resolveHostedPublicSiteContext(input: {
   const hostname = normalizeHost(input.hostname)
 
   return {
-    isHostedPublic:
-      hostname !== '' && hostname !== normalizeHost(getAppBaseURLHost()),
+    isHostedPublic: hostname !== '' && !getAppBaseURLHosts().has(hostname),
     hostname,
     pagePath: normalizePagePath(input.pagePath),
   }
@@ -39,7 +38,13 @@ export function getAppBaseURL() {
   const meta = import.meta as ImportMeta & {
     env?: Record<string, string | undefined>
   }
-  return meta.env?.VITE_APP_BASE_URL ?? 'http://localhost:3000'
+  if (meta.env?.VITE_APP_BASE_URL) {
+    return meta.env.VITE_APP_BASE_URL
+  }
+  if (typeof process !== 'undefined' && process.env?.VITE_APP_BASE_URL) {
+    return process.env.VITE_APP_BASE_URL
+  }
+  return 'http://localhost:3000'
 }
 
 export function getAppBaseURLHost() {
@@ -48,6 +53,22 @@ export function getAppBaseURLHost() {
   } catch {
     return 'localhost:3000'
   }
+}
+
+export function getAppBaseURLHosts() {
+  const host = normalizeHost(getAppBaseURLHost())
+  const hosts = new Set<string>()
+  if (host === '') {
+    return hosts
+  }
+  hosts.add(host)
+
+  const [hostname, port = ''] = host.split(':', 2)
+  if (!hostname.startsWith('www.') && hostname.includes('.')) {
+    hosts.add(`www.${hostname}${port ? `:${port}` : ''}`)
+  }
+
+  return hosts
 }
 
 export function normalizeHost(value: string) {

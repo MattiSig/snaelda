@@ -20,7 +20,11 @@ coverage.out
 *.test
 *.prof
 /api
+/stripe-setup
 vendor/
+
+# Local tooling artifacts
+.impeccable/
 
 # Node / frontend
 node_modules/

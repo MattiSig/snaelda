@@ -299,6 +299,50 @@ func TestPrivateRoutesAllowCSRFCorsHeaderForBuilderOrigin(t *testing.T) {
 	}
 }
 
+func TestPrivateRoutesAllowCSRFCorsHeaderForWWWBuilderOrigin(t *testing.T) {
+	server := NewServer(ServerConfig{
+		Config: config.Config{
+			AppEnv:     "test",
+			HTTPAddr:   "127.0.0.1:0",
+			AppBaseURL: "https://snaelda.io",
+		},
+		Logger: slog.New(slog.DiscardHandler),
+	})
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/auth/logout", nil)
+	req.Header.Set("Origin", "https://www.snaelda.io")
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+
+	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "https://www.snaelda.io" {
+		t.Fatalf("expected www builder origin in CORS allowlist, got %q", got)
+	}
+}
+
+func TestPrivateWriteRoutesAllowCSRFForWWWBuilderOrigin(t *testing.T) {
+	server := NewServer(ServerConfig{
+		Config: config.Config{
+			AppEnv:     "test",
+			HTTPAddr:   "127.0.0.1:0",
+			AppBaseURL: "https://snaelda.io",
+		},
+		Logger: slog.New(slog.DiscardHandler),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	req.Header.Set("Origin", "https://www.snaelda.io")
+	req.Header.Set("X-CSRF-Token", "csrf-token")
+	req.AddCookie(&http.Cookie{Name: auth.CSRFCookieName, Value: "csrf-token"})
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+
+	if res.Code == http.StatusForbidden {
+		t.Fatalf("expected csrf origin check to allow www builder origin, got status %d", res.Code)
+	}
+}
+
 func TestPrivateReadRoutesDisableCaching(t *testing.T) {
 	server := NewServer(ServerConfig{
 		Config: config.Config{

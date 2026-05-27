@@ -14,7 +14,7 @@ import { DefaultCatchBoundary } from "~/components/DefaultCatchBoundary";
 import { NotFound } from "~/components/NotFound";
 import type { HostedPublicSiteContext } from "~/lib/public-site";
 import { topbar } from "~/lib/styles";
-import appCss from "~/styles/app.css?url";
+import "~/styles/app.css";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -31,7 +31,6 @@ export const Route = createRootRoute({
       },
     ],
     links: [
-      { rel: "stylesheet", href: appCss },
       { rel: "icon", href: "/logo.png", type: "image/png" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       {
@@ -82,8 +81,11 @@ function RootDocument({ children }: { children: ReactNode }) {
   const showChrome =
     !hostedPublic?.isHostedPublic &&
     pathname !== "/" &&
+    pathname !== "/terms" &&
+    pathname !== "/privacy" &&
     !pathname.startsWith("/app") &&
-    !pathname.startsWith("/public/");
+    !pathname.startsWith("/public/") &&
+    !pathname.startsWith("/preview/");
 
   function toggleColorMode() {
     if (forceDark) {
