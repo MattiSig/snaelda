@@ -28,6 +28,7 @@ type Handler struct {
 
 type HandlerConfig struct {
 	Planner        generationPlanBuilder
+	BlockSuggester BlockSuggester
 	StarterImagery *StarterImagery
 	AssetImporter  AssetImporter
 	Logger         *slog.Logger
@@ -38,6 +39,7 @@ type Generator interface {
 	Generate(ctx context.Context, workspaceID string, userID string, input GenerateInput) (GenerateResult, error)
 	RepromptSite(ctx context.Context, workspaceID string, userID string, siteID string, input RepromptInput) (GenerateResult, error)
 	RepromptPage(ctx context.Context, workspaceID string, userID string, siteID string, pageID string, input RepromptInput) (GenerateResult, error)
+	SuggestBlock(ctx context.Context, workspaceID string, userID string, siteID string, blockID string, input BlockSuggestInput) (GenerateResult, error)
 	UndoLastDraftRevision(ctx context.Context, workspaceID string, siteID string) (siteconfig.SiteDraft, error)
 	ListRepromptHistory(ctx context.Context, workspaceID string, siteID string) ([]RepromptHistoryEntry, error)
 	LoadDraftRevision(ctx context.Context, workspaceID string, siteID string, revisionID string) (DraftRevision, error)
@@ -72,6 +74,12 @@ type repromptRequest struct {
 	Prompt string `json:"prompt"`
 }
 
+type blockSuggestRequest struct {
+	Action      string `json:"action"`
+	Tone        string `json:"tone,omitempty"`
+	Instruction string `json:"instruction,omitempty"`
+}
+
 const maxGenerationPromptCharacters = 4000
 
 func NewHandler(db DB, cfg HandlerConfig) *Handler {
@@ -87,6 +95,9 @@ func NewHandler(db DB, cfg HandlerConfig) *Handler {
 	}
 	if cfg.AuditRecorder != nil {
 		options = append(options, WithAuditRecorder(cfg.AuditRecorder))
+	}
+	if cfg.BlockSuggester != nil {
+		options = append(options, WithBlockSuggester(cfg.BlockSuggester))
 	}
 	logger := cfg.Logger
 	if logger == nil {
@@ -108,6 +119,7 @@ func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.
 	mux.Handle("GET /api/generation/jobs/{jobId}", requireUser(http.HandlerFunc(h.getJob)))
 	mux.Handle("POST /api/sites/{siteId}/reprompt", requireUser(http.HandlerFunc(h.repromptSite)))
 	mux.Handle("POST /api/sites/{siteId}/pages/{pageId}/reprompt", requireUser(http.HandlerFunc(h.repromptPage)))
+	mux.Handle("POST /api/sites/{siteId}/blocks/{blockId}/suggest", requireUser(http.HandlerFunc(h.suggestBlock)))
 	mux.Handle("GET /api/sites/{siteId}/reprompts", requireUser(http.HandlerFunc(h.listReprompts)))
 	mux.Handle("POST /api/sites/{siteId}/reprompts/{repromptId}/revert", requireUser(http.HandlerFunc(h.revertReprompt)))
 	mux.Handle("GET /api/sites/{siteId}/revisions/{revisionId}", requireUser(http.HandlerFunc(h.getDraftRevision)))
@@ -332,6 +344,53 @@ func (h *Handler) repromptPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, result)
+}
+
+func (h *Handler) suggestBlock(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	blockID := r.PathValue("blockId")
+	if siteID == "" || blockID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_block_resource", "site and block ids are required")
+		return
+	}
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+	session, _ := builderSessionFromContext(r.Context())
+	if h.billingDB != nil {
+		if err := billing.EnforcePromptLimit(r.Context(), h.billingDB, scope.WorkspaceID); err != nil {
+			h.writeGenerationError(w, r, err)
+			return
+		}
+	}
+
+	var payload blockSuggestRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "request body must be valid JSON")
+		return
+	}
+
+	userID := ""
+	if session.User != nil {
+		userID = session.User.ID
+	}
+	if err := h.guardGenerationRequest(r.Context(), scope.WorkspaceID, userID, "block_suggest", payload.Instruction); err != nil {
+		h.writeGenerationError(w, r, err)
+		return
+	}
+	input := BlockSuggestInput{
+		Action:      payload.Action,
+		Tone:        payload.Tone,
+		Instruction: payload.Instruction,
+	}
+	result, err := h.service.SuggestBlock(r.Context(), scope.WorkspaceID, userID, siteID, blockID, input)
+	if err != nil {
+		h.writeGenerationError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *Handler) undoSite(w http.ResponseWriter, r *http.Request) {
@@ -608,6 +667,16 @@ func generationErrorDetails(err error) (code string, message string, status int)
 		return "draft_revision_not_found", "there is no draft revision to restore", http.StatusNotFound
 	case errors.Is(err, ErrRepromptNotFound):
 		return "reprompt_not_found", "the requested reprompt history entry was not found", http.StatusNotFound
+	case errors.Is(err, ErrBlockSuggestActionUnknown):
+		return "block_suggest_invalid_action", "the requested AI action is not supported on this block", http.StatusBadRequest
+	case errors.Is(err, ErrBlockSuggestToneRequired):
+		return "block_suggest_tone_required", "a supported tone is required to change tone", http.StatusBadRequest
+	case errors.Is(err, ErrBlockSuggestPromptMissing):
+		return "block_suggest_prompt_required", "a rewrite prompt is required", http.StatusBadRequest
+	case errors.Is(err, ErrBlockSuggestUnavailable):
+		return "block_suggest_unavailable", "AI block suggestions are not configured", http.StatusServiceUnavailable
+	case errors.Is(err, ErrBlockSuggestNotFound):
+		return "block_not_found", "the requested block was not found in the draft", http.StatusNotFound
 	case errors.Is(err, billing.ErrPlanLimitExceeded):
 		return "plan_limit_exceeded", err.Error(), http.StatusForbidden
 	default:

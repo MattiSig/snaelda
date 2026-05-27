@@ -1457,6 +1457,42 @@ export async function reorderBlocks(
   );
 }
 
+export type BlockSuggestAction = "tighten" | "expand" | "tone" | "rewrite";
+
+export type BlockSuggestTone =
+  | "friendlier"
+  | "professional"
+  | "playful"
+  | "direct";
+
+export type BlockSuggestInput = {
+  action: BlockSuggestAction;
+  tone?: BlockSuggestTone;
+  instruction?: string;
+};
+
+export type BlockSuggestResponse = {
+  jobId: string;
+  draft: SiteDraft;
+};
+
+export async function suggestBlock(
+  siteId: string,
+  blockId: string,
+  input: BlockSuggestInput,
+) {
+  return apiFetch<BlockSuggestResponse>(
+    `/api/sites/${siteId}/blocks/${blockId}/suggest`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
 export async function publishSite(
   siteId: string,
   input: {

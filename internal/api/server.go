@@ -142,6 +142,7 @@ func (s *Server) Handler() http.Handler {
 	var themeHandlerConfig themes.HandlerConfig
 	if generationPlanner != nil {
 		generationHandlerConfig.Planner = generationPlanner.BuildPlan
+		generationHandlerConfig.BlockSuggester = generationPlanner
 		themeHandlerConfig.Regenerator = generationPlanner
 	}
 

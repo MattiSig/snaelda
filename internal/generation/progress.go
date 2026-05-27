@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MattiSig/snaelda/internal/siteconfig"
@@ -19,6 +20,7 @@ const (
 	JobKindPageReprompt    JobKind = "page_reprompt"
 	JobKindSiteReprompt    JobKind = "site_reprompt"
 	JobKindThemeRegenerate JobKind = "theme_regenerate"
+	JobKindBlockSuggest    JobKind = "block_suggest"
 )
 
 type ProgressStep struct {
@@ -67,6 +69,9 @@ type progressTracker struct {
 	kind    JobKind
 	steps   []ProgressStep
 	sink    ProgressSink
+
+	mu           sync.Mutex
+	highestIndex int
 }
 
 func newProgressTracker(service *Service, jobID string, kind JobKind, steps []ProgressStep, sink ProgressSink) *progressTracker {
@@ -79,6 +84,9 @@ func newProgressTracker(service *Service, jobID string, kind JobKind, steps []Pr
 	}
 }
 
+// emit advances the visible progress step. Calls that target a step earlier in
+// the pipeline than what's already been emitted are dropped, so retry loops in
+// the generation pipeline cannot rewind the UI.
 func (t *progressTracker) emit(ctx context.Context, stepName string) error {
 	if t == nil || t.jobID == "" || stepName == "" {
 		return nil
@@ -87,6 +95,15 @@ func (t *progressTracker) emit(ctx context.Context, stepName string) error {
 	if !ok {
 		return nil
 	}
+
+	t.mu.Lock()
+	if step.Index <= t.highestIndex {
+		t.mu.Unlock()
+		return nil
+	}
+	t.highestIndex = step.Index
+	t.mu.Unlock()
+
 	if _, err := t.service.db.Exec(ctx, `
 		update generation_jobs
 		set kind = $1,
@@ -137,6 +154,13 @@ func ProgressStepsForKind(kind JobKind, includeAssets bool) []ProgressStep {
 				name  string
 				label string
 			}{name: "plan.theme", label: "Picking colors and typography"},
+		)
+	case JobKindBlockSuggest:
+		names = append(names,
+			struct {
+				name  string
+				label string
+			}{name: "plan.blocks", label: "Rewriting block content"},
 		)
 	default:
 		names = append(names,

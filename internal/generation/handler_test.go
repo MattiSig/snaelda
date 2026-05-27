@@ -21,8 +21,10 @@ type fakeGenerator struct {
 	input           GenerateInput
 	siteReprompt    RepromptInput
 	pageReprompt    RepromptInput
+	blockSuggest    BlockSuggestInput
 	siteID          string
 	pageID          string
+	blockID         string
 	revisionID      string
 	repromptID      string
 	result          GenerateResult
@@ -52,6 +54,13 @@ func (g *fakeGenerator) RepromptPage(_ context.Context, _ string, _ string, site
 
 func (g *fakeGenerator) UndoLastDraftRevision(_ context.Context, _ string, _ string) (siteconfig.SiteDraft, error) {
 	return g.undoResult, g.err
+}
+
+func (g *fakeGenerator) SuggestBlock(_ context.Context, _ string, _ string, siteID string, blockID string, input BlockSuggestInput) (GenerateResult, error) {
+	g.siteID = siteID
+	g.blockID = blockID
+	g.blockSuggest = input
+	return g.result, g.err
 }
 
 func (g *fakeGenerator) ListRepromptHistory(_ context.Context, _ string, _ string) ([]RepromptHistoryEntry, error) {
@@ -463,6 +472,112 @@ func TestRevertRepromptReturnsRestoredDraft(t *testing.T) {
 	}
 	if service.repromptID != "reprompt-1" {
 		t.Fatalf("expected reprompt id to reach service, got %#v", service)
+	}
+}
+
+func TestSuggestBlockReturnsUpdatedDraft(t *testing.T) {
+	service := &fakeGenerator{
+		result: GenerateResult{
+			JobID: "job-suggest",
+			Draft: validGenerationDraft(),
+		},
+	}
+	handler := Handler{
+		service:    service,
+		authorizer: fakeWorkspaceAuthorizer{},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/site-1/blocks/block-hero/suggest", strings.NewReader(`{"action":"tighten"}`)).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	req.SetPathValue("siteId", "site-1")
+	req.SetPathValue("blockId", "block-hero")
+	res := httptest.NewRecorder()
+
+	handler.suggestBlock(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusOK, res.Code, res.Body.String())
+	}
+	if service.blockID != "block-hero" {
+		t.Fatalf("expected block id to reach service, got %#v", service.blockID)
+	}
+	if service.blockSuggest.Action != "tighten" {
+		t.Fatalf("expected action to reach service, got %#v", service.blockSuggest)
+	}
+}
+
+func TestSuggestBlockRequiresBothIDs(t *testing.T) {
+	handler := Handler{
+		service:    &fakeGenerator{},
+		authorizer: fakeWorkspaceAuthorizer{},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sites//blocks//suggest", strings.NewReader(`{"action":"tighten"}`)).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	req.SetPathValue("siteId", "")
+	req.SetPathValue("blockId", "")
+	res := httptest.NewRecorder()
+
+	handler.suggestBlock(res, req)
+
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, res.Code)
+	}
+}
+
+func TestSuggestBlockSurfacesActionError(t *testing.T) {
+	service := &fakeGenerator{err: ErrBlockSuggestActionUnknown}
+	handler := Handler{
+		service:    service,
+		authorizer: fakeWorkspaceAuthorizer{},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/site-1/blocks/block-hero/suggest", strings.NewReader(`{"action":"explode"}`)).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	req.SetPathValue("siteId", "site-1")
+	req.SetPathValue("blockId", "block-hero")
+	res := httptest.NewRecorder()
+
+	handler.suggestBlock(res, req)
+
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusBadRequest, res.Code, res.Body.String())
+	}
+}
+
+func TestSuggestBlockSurfacesUnavailable(t *testing.T) {
+	service := &fakeGenerator{err: ErrBlockSuggestUnavailable}
+	handler := Handler{
+		service:    service,
+		authorizer: fakeWorkspaceAuthorizer{},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/site-1/blocks/block-hero/suggest", strings.NewReader(`{"action":"tighten"}`)).WithContext(auth.WithUser(context.Background(), auth.User{
+		ID:            "user-1",
+		Email:         "demo@snaelda.local",
+		WorkspaceID:   "workspace-1",
+		WorkspaceRole: "owner",
+	}))
+	req.SetPathValue("siteId", "site-1")
+	req.SetPathValue("blockId", "block-hero")
+	res := httptest.NewRecorder()
+
+	handler.suggestBlock(res, req)
+
+	if res.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusServiceUnavailable, res.Code, res.Body.String())
 	}
 }
 

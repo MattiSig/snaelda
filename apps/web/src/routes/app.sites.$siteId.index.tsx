@@ -46,11 +46,13 @@ import {
   streamRegenerateSiteTheme,
   streamRepromptSite,
   reorderPages,
+  suggestBlock,
   updateSiteNavigation,
   type NavigationItemInput,
   type AssetRecord,
   type BillingState,
   type BlockDefinition,
+  type BlockSuggestInput,
   type FormSubmissionRecord,
   type FormSubmissionStatus,
   type GenerationMetadata,
@@ -183,6 +185,9 @@ function SiteDetail() {
   const [isDeletingPage, setIsDeletingPage] = useState(false);
   const [isSavingBlock, setIsSavingBlock] = useState(false);
   const [isCreatingBlock, setIsCreatingBlock] = useState(false);
+  const [isSuggestingBlock, setIsSuggestingBlock] = useState(false);
+  const [suggestErrorMessage, setSuggestErrorMessage] = useState("");
+  const [suggestStatusMessage, setSuggestStatusMessage] = useState("");
   const [isMutatingBlocks, setIsMutatingBlocks] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -799,6 +804,38 @@ function SiteDetail() {
       );
     } finally {
       setIsSavingBlock(false);
+    }
+  }
+
+  async function handleSuggestBlock(input: BlockSuggestInput) {
+    if (!selectedPage || !selectedBlock) {
+      return;
+    }
+    setIsSuggestingBlock(true);
+    setSuggestErrorMessage("");
+    setSuggestStatusMessage("");
+    clearBlockedAction();
+    try {
+      const response = await suggestBlock(siteId, selectedBlock.id, input);
+      applyDraftUpdate(response.draft, selectedPage.id, selectedBlock.id);
+      const historyResponse = await listRepromptHistory(siteId).catch(
+        () => null,
+      );
+      if (historyResponse) {
+        setRepromptHistory(historyResponse.reprompts);
+      }
+      setSuggestStatusMessage(
+        suggestionToastForInput(input),
+      );
+    } catch (error) {
+      setBlockedActionFromError(error);
+      setSuggestErrorMessage(
+        error instanceof APIError
+          ? error.message
+          : "Could not rewrite block",
+      );
+    } finally {
+      setIsSuggestingBlock(false);
     }
   }
 
@@ -3464,6 +3501,10 @@ function SiteDetail() {
         onSelectPage={handleSelectPage}
         onSelectBlock={handleSelectBlock}
         onSaveBlock={handleSaveBlock}
+        onSuggestBlock={handleSuggestBlock}
+        isSuggestingBlock={isSuggestingBlock}
+        suggestErrorMessage={suggestErrorMessage}
+        suggestStatusMessage={suggestStatusMessage}
         onCreateBlock={handleCreateBlock}
         onDuplicateBlock={handleDuplicateBlock}
         onDeleteBlock={handleDeleteBlock}
@@ -3639,4 +3680,19 @@ function formatThemeLabel(value: string) {
   return value
     .replace(/([A-Z])/g, " $1")
     .replace(/^./, (char) => char.toUpperCase());
+}
+
+function suggestionToastForInput(input: BlockSuggestInput) {
+  switch (input.action) {
+    case "tighten":
+      return "Tightened block copy.";
+    case "expand":
+      return "Expanded block copy.";
+    case "tone":
+      return `Shifted block tone to ${input.tone ?? "the chosen voice"}.`;
+    case "rewrite":
+      return "Rewrote block from your prompt.";
+    default:
+      return "Block updated with AI.";
+  }
 }

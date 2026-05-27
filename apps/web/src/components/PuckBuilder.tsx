@@ -23,6 +23,7 @@ import { Select } from "@/components/ui/select";
 import {
   type AssetRecord,
   type BlockDefinition,
+  type BlockSuggestInput,
   type SiteDraft,
 } from "@/lib/api";
 import {
@@ -192,6 +193,10 @@ type PuckBuilderProps = {
     props: Record<string, unknown>,
     hidden: boolean,
   ) => Promise<void>;
+  onSuggestBlock?: (input: BlockSuggestInput) => Promise<void>;
+  isSuggestingBlock?: boolean;
+  suggestErrorMessage?: string;
+  suggestStatusMessage?: string;
   onCreateBlock: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onDuplicateBlock: () => Promise<void>;
   onDeleteBlock: () => Promise<void>;
@@ -235,6 +240,10 @@ export function PuckBuilder({
   onSelectPage,
   onSelectBlock,
   onSaveBlock,
+  onSuggestBlock,
+  isSuggestingBlock,
+  suggestErrorMessage,
+  suggestStatusMessage,
   onCreateBlock,
   onDuplicateBlock,
   onDeleteBlock,
@@ -317,6 +326,10 @@ export function PuckBuilder({
               onSelectPage={onSelectPage}
               onSelectBlock={onSelectBlock}
               onSaveBlock={onSaveBlock}
+              onSuggestBlock={onSuggestBlock}
+              isSuggestingBlock={isSuggestingBlock}
+              suggestErrorMessage={suggestErrorMessage}
+              suggestStatusMessage={suggestStatusMessage}
               onCreateBlock={onCreateBlock}
               onDuplicateBlock={onDuplicateBlock}
               onDeleteBlock={onDeleteBlock}
@@ -611,6 +624,10 @@ function ContentWorkspace({
   onSelectPage,
   onSelectBlock,
   onSaveBlock,
+  onSuggestBlock,
+  isSuggestingBlock,
+  suggestErrorMessage,
+  suggestStatusMessage,
   onCreateBlock,
   onDuplicateBlock,
   onDeleteBlock,
@@ -641,6 +658,10 @@ function ContentWorkspace({
     props: Record<string, unknown>,
     hidden: boolean,
   ) => Promise<void>;
+  onSuggestBlock?: (input: BlockSuggestInput) => Promise<void>;
+  isSuggestingBlock?: boolean;
+  suggestErrorMessage?: string;
+  suggestStatusMessage?: string;
   onCreateBlock: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onDuplicateBlock: () => Promise<void>;
   onDeleteBlock: () => Promise<void>;
@@ -905,6 +926,10 @@ function ContentWorkspace({
         blockRegistry={blockRegistry}
         newBlockType={newBlockType}
         onSaveBlock={onSaveBlock}
+        onSuggestBlock={onSuggestBlock}
+        isSuggestingBlock={isSuggestingBlock}
+        suggestErrorMessage={suggestErrorMessage}
+        suggestStatusMessage={suggestStatusMessage}
         onCreateBlock={onCreateBlock}
         onDuplicateBlock={onDuplicateBlock}
         onDeleteBlock={onDeleteBlock}
@@ -1139,6 +1164,10 @@ function InspectorPanel({
   blockRegistry,
   newBlockType,
   onSaveBlock,
+  onSuggestBlock,
+  isSuggestingBlock,
+  suggestErrorMessage,
+  suggestStatusMessage,
   onCreateBlock,
   onDuplicateBlock,
   onDeleteBlock,
@@ -1163,6 +1192,10 @@ function InspectorPanel({
     props: Record<string, unknown>,
     hidden: boolean,
   ) => Promise<void>;
+  onSuggestBlock?: (input: BlockSuggestInput) => Promise<void>;
+  isSuggestingBlock?: boolean;
+  suggestErrorMessage?: string;
+  suggestStatusMessage?: string;
   onCreateBlock: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onDuplicateBlock: () => Promise<void>;
   onDeleteBlock: () => Promise<void>;
@@ -1196,6 +1229,10 @@ function InspectorPanel({
               statusMessage={blockStatusMessage}
               assetLibrary={uploadedSiteAssets}
               onSave={onSaveBlock}
+              onSuggest={onSuggestBlock}
+              isSuggesting={isSuggestingBlock}
+              suggestErrorMessage={suggestErrorMessage}
+              suggestStatusMessage={suggestStatusMessage}
             />
 
             <div className={actions.row}>

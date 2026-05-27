@@ -76,6 +76,7 @@ type Service struct {
 	reader        draftReader
 	writer        draftWriter
 	planner       generationPlanBuilder
+	suggester     BlockSuggester
 	imagery       *StarterImagery
 	assetImporter AssetImporter
 	logger        *slog.Logger
@@ -113,6 +114,14 @@ func WithLogger(logger *slog.Logger) ServiceOption {
 func WithAuditRecorder(recorder *audit.Recorder) ServiceOption {
 	return func(s *Service) {
 		s.recorder = recorder
+	}
+}
+
+// WithBlockSuggester wires the block-suggest rewriter used by
+// SuggestBlock. When nil, SuggestBlock returns ErrBlockSuggestUnavailable.
+func WithBlockSuggester(suggester BlockSuggester) ServiceOption {
+	return func(s *Service) {
+		s.suggester = suggester
 	}
 }
 

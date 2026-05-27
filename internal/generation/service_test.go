@@ -273,6 +273,170 @@ func TestRepromptPageReplacesOnlySelectedPage(t *testing.T) {
 	}
 }
 
+type fakeBlockSuggester struct {
+	request  BlockSuggestRequest
+	response BlockSuggestResponse
+	err      error
+}
+
+func (f *fakeBlockSuggester) SuggestBlockProps(_ context.Context, request BlockSuggestRequest) (BlockSuggestResponse, error) {
+	f.request = request
+	return f.response, f.err
+}
+
+func TestSuggestBlockRewritesPropsAndRecordsHistory(t *testing.T) {
+	store := newFakeGenerationStore()
+	suggester := &fakeBlockSuggester{
+		response: BlockSuggestResponse{
+			Props: map[string]any{
+				"variant":     "standard",
+				"headline":    "Calm photography for real moments",
+				"subheadline": "A tighter take on the hero copy.",
+				"eyebrow":     "Photography studio",
+				"layout":      "split-left",
+			},
+			ChangeSummary: "Tightened the hero headline.",
+		},
+	}
+	service := Service{
+		db:        store,
+		reader:    store,
+		writer:    store,
+		suggester: suggester,
+	}
+
+	initial, err := service.Generate(context.Background(), "workspace-1", "user-1", GenerateInput{
+		Name:   "North Light Studio",
+		Prompt: "A calm portfolio site for a photography studio that needs a gallery.",
+	})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	targetPage := initial.Draft.Pages[0]
+	targetBlock := targetPage.Blocks[0]
+	if targetBlock.Type != "hero" {
+		t.Fatalf("expected first block to be the hero; got %s", targetBlock.Type)
+	}
+
+	result, err := service.SuggestBlock(context.Background(), "workspace-1", "user-1", initial.Draft.Site.ID, targetBlock.ID, BlockSuggestInput{
+		Action: BlockSuggestActionTighten,
+	})
+	if err != nil {
+		t.Fatalf("suggest block: %v", err)
+	}
+
+	updatedBlock := result.Draft.Pages[0].Blocks[0]
+	if updatedBlock.ID != targetBlock.ID {
+		t.Fatalf("expected block id to stay stable, got %#v", updatedBlock)
+	}
+	if updatedBlock.Type != targetBlock.Type {
+		t.Fatalf("expected block type to stay stable, got %s", updatedBlock.Type)
+	}
+	if updatedBlock.Props["headline"] != "Calm photography for real moments" {
+		t.Fatalf("expected suggested headline to be applied, got %#v", updatedBlock.Props)
+	}
+	if suggester.request.Block.ID != targetBlock.ID {
+		t.Fatalf("expected suggester to receive the target block, got %#v", suggester.request)
+	}
+	if suggester.request.Action != BlockSuggestActionTighten {
+		t.Fatalf("expected action to reach suggester, got %#v", suggester.request)
+	}
+	if suggester.request.Definition.Type != "hero" {
+		t.Fatalf("expected hero definition to reach suggester, got %#v", suggester.request.Definition)
+	}
+	if len(store.revisions) != 2 {
+		t.Fatalf("expected before/after draft revisions, got %#v", store.revisions)
+	}
+	if store.revisions[0].Scope != "block" || store.revisions[0].PageID != targetPage.ID {
+		t.Fatalf("expected first revision to be block-scoped on the target page, got %#v", store.revisions[0])
+	}
+	if len(store.repromptHistory) != 1 {
+		t.Fatalf("expected reprompt history entry, got %#v", store.repromptHistory)
+	}
+	entry := store.repromptHistory[0]
+	if entry.Scope != "block" {
+		t.Fatalf("expected block-scoped reprompt history, got %#v", entry)
+	}
+	if entry.TargetID != targetBlock.ID {
+		t.Fatalf("expected reprompt history target to be the block id, got %#v", entry)
+	}
+	if entry.ChangeSummary != "Tightened the hero headline." {
+		t.Fatalf("expected model summary to land in history, got %#v", entry)
+	}
+}
+
+func TestSuggestBlockRequiresConfiguredSuggester(t *testing.T) {
+	store := newFakeGenerationStore()
+	service := Service{db: store, reader: store, writer: store}
+
+	initial, err := service.Generate(context.Background(), "workspace-1", "user-1", GenerateInput{
+		Name:   "North Light Studio",
+		Prompt: "A calm portfolio site.",
+	})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	_, err = service.SuggestBlock(context.Background(), "workspace-1", "user-1", initial.Draft.Site.ID, initial.Draft.Pages[0].Blocks[0].ID, BlockSuggestInput{Action: BlockSuggestActionTighten})
+	if !errors.Is(err, ErrBlockSuggestUnavailable) {
+		t.Fatalf("expected ErrBlockSuggestUnavailable, got %v", err)
+	}
+}
+
+func TestSuggestBlockRejectsUnknownAction(t *testing.T) {
+	store := newFakeGenerationStore()
+	service := Service{db: store, reader: store, writer: store, suggester: &fakeBlockSuggester{}}
+
+	initial, err := service.Generate(context.Background(), "workspace-1", "user-1", GenerateInput{
+		Name:   "North Light Studio",
+		Prompt: "A calm portfolio site.",
+	})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	_, err = service.SuggestBlock(context.Background(), "workspace-1", "user-1", initial.Draft.Site.ID, initial.Draft.Pages[0].Blocks[0].ID, BlockSuggestInput{Action: "explode"})
+	if !errors.Is(err, ErrBlockSuggestActionUnknown) {
+		t.Fatalf("expected ErrBlockSuggestActionUnknown, got %v", err)
+	}
+}
+
+func TestSuggestBlockRequiresToneForToneAction(t *testing.T) {
+	store := newFakeGenerationStore()
+	service := Service{db: store, reader: store, writer: store, suggester: &fakeBlockSuggester{}}
+
+	initial, err := service.Generate(context.Background(), "workspace-1", "user-1", GenerateInput{
+		Name:   "North Light Studio",
+		Prompt: "A calm portfolio site.",
+	})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	_, err = service.SuggestBlock(context.Background(), "workspace-1", "user-1", initial.Draft.Site.ID, initial.Draft.Pages[0].Blocks[0].ID, BlockSuggestInput{Action: BlockSuggestActionTone})
+	if !errors.Is(err, ErrBlockSuggestToneRequired) {
+		t.Fatalf("expected ErrBlockSuggestToneRequired, got %v", err)
+	}
+}
+
+func TestSuggestBlockReturnsNotFoundForMissingBlock(t *testing.T) {
+	store := newFakeGenerationStore()
+	service := Service{db: store, reader: store, writer: store, suggester: &fakeBlockSuggester{response: BlockSuggestResponse{Props: map[string]any{"headline": "x"}}}}
+
+	initial, err := service.Generate(context.Background(), "workspace-1", "user-1", GenerateInput{
+		Name:   "North Light Studio",
+		Prompt: "A calm portfolio site.",
+	})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	_, err = service.SuggestBlock(context.Background(), "workspace-1", "user-1", initial.Draft.Site.ID, "block-does-not-exist", BlockSuggestInput{Action: BlockSuggestActionTighten})
+	if !errors.Is(err, ErrBlockSuggestNotFound) {
+		t.Fatalf("expected ErrBlockSuggestNotFound, got %v", err)
+	}
+}
+
 func TestBuildPageRepromptPlanPrefersModelPlanOverTemplateFallback(t *testing.T) {
 	service := Service{
 		planner: func(_ context.Context, _ generationInputContext, _ generationPlanFeedback) (generationPlan, error) {

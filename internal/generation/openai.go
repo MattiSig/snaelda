@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MattiSig/snaelda/internal/siteconfig"
@@ -84,6 +85,11 @@ type openAIThemeSelectionPayload struct {
 	ThemeSelection siteconfig.ThemeSelection `json:"themeSelection"`
 }
 
+type openAIBlockSuggestPayload struct {
+	Props         map[string]any `json:"props"`
+	ChangeSummary string         `json:"changeSummary"`
+}
+
 func NewOpenAIPlanner(cfg OpenAIPlannerConfig) (*OpenAIPlanner, error) {
 	apiKey := strings.TrimSpace(cfg.APIKey)
 	if apiKey == "" {
@@ -116,9 +122,34 @@ func (p *OpenAIPlanner) BuildPlan(ctx context.Context, input generationInputCont
 	if p == nil {
 		return defaultGenerationPlanBuilder(ctx, input, feedback)
 	}
-	if feedback.ReportProgress != nil {
-		feedback.ReportProgress("plan.pages")
-	}
+
+	// The OpenAI structured completion runs as a single HTTP call that often
+	// takes 20-60 seconds. The named phases (plan.pages / plan.theme /
+	// plan.blocks) all happen inside that call, so without help the user sees
+	// one step "stuck" for the entire wait and then watches everything jump.
+	// We emit plan.pages immediately, then a background ticker walks through
+	// plan.theme and plan.blocks while the LLM is working. emit() is
+	// idempotent and won't regress the visible step, so the post-HTTP catch-up
+	// is safe whether the ticker reached those steps or not.
+	emit := newOrderedEmitter(feedback.ReportProgress, "plan.pages", "plan.theme", "plan.blocks")
+	emit("plan.pages")
+
+	heartbeatCtx, stopHeartbeat := context.WithCancel(ctx)
+	defer stopHeartbeat()
+	go func() {
+		select {
+		case <-heartbeatCtx.Done():
+			return
+		case <-time.After(7 * time.Second):
+		}
+		emit("plan.theme")
+		select {
+		case <-heartbeatCtx.Done():
+			return
+		case <-time.After(9 * time.Second):
+		}
+		emit("plan.blocks")
+	}()
 
 	payload := map[string]any{
 		"scope":             firstNonEmpty(strings.TrimSpace(input.Scope), "site"),
@@ -148,10 +179,9 @@ func (p *OpenAIPlanner) BuildPlan(ctx context.Context, input generationInputCont
 	}, &responsePayload); err != nil {
 		return generationPlan{}, err
 	}
-	if feedback.ReportProgress != nil {
-		feedback.ReportProgress("plan.theme")
-		feedback.ReportProgress("plan.blocks")
-	}
+	stopHeartbeat()
+	emit("plan.theme")
+	emit("plan.blocks")
 
 	plan := generationPlan{
 		SiteName:       responsePayload.SiteName,
@@ -164,6 +194,37 @@ func (p *OpenAIPlanner) BuildPlan(ctx context.Context, input generationInputCont
 		Assumptions:    responsePayload.Assumptions,
 	}
 	return plan, nil
+}
+
+// newOrderedEmitter wraps a progress callback so each named step is emitted at
+// most once and never out of the declared order. Concurrent callers from the
+// HTTP path and from the heartbeat goroutine are both safe.
+func newOrderedEmitter(report func(string), order ...string) func(string) {
+	if report == nil {
+		return func(string) {}
+	}
+	rank := make(map[string]int, len(order))
+	for i, step := range order {
+		rank[step] = i
+	}
+	var (
+		mu      sync.Mutex
+		highest = -1
+	)
+	return func(step string) {
+		index, ok := rank[step]
+		if !ok {
+			return
+		}
+		mu.Lock()
+		if index <= highest {
+			mu.Unlock()
+			return
+		}
+		highest = index
+		mu.Unlock()
+		report(step)
+	}
 }
 
 func (p *OpenAIPlanner) RegenerateThemeSelection(ctx context.Context, prompt string, draft siteconfig.SiteDraft) (siteconfig.ThemeSelection, error) {
@@ -199,6 +260,65 @@ func (p *OpenAIPlanner) RegenerateThemeSelection(ctx context.Context, prompt str
 	}
 
 	return responsePayload.ThemeSelection, nil
+}
+
+// SuggestBlockProps rewrites a single block's props using the model. The
+// returned props are constrained by the block definition's PropSchema, so the
+// shape always matches the existing block type/version.
+func (p *OpenAIPlanner) SuggestBlockProps(ctx context.Context, request BlockSuggestRequest) (BlockSuggestResponse, error) {
+	if p == nil {
+		return BlockSuggestResponse{}, ErrBlockSuggestUnavailable
+	}
+	propsSchema := request.Definition.PropSchema
+	if len(propsSchema) == 0 {
+		propsSchema = map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+		}
+	}
+
+	payload := map[string]any{
+		"action":           request.Action,
+		"tone":             request.Tone,
+		"instruction":      request.Instruction,
+		"blockType":        request.Block.Type,
+		"blockDisplayName": request.Definition.DisplayName,
+		"currentProps":     request.Block.Props,
+		"pageTitle":        request.PageTitle,
+		"pageSlug":         request.PageSlug,
+		"siteName":         request.SiteName,
+		"siteGoal":         request.SiteGoal,
+		"neighbors":        request.NeighborText,
+	}
+	userJSON, err := json.Marshal(payload)
+	if err != nil {
+		return BlockSuggestResponse{}, fmt.Errorf("encode block suggest payload: %w", err)
+	}
+
+	schema := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"props", "changeSummary"},
+		"properties": map[string]any{
+			"props":         propsSchema,
+			"changeSummary": map[string]any{"type": "string"},
+		},
+	}
+
+	var responsePayload openAIBlockSuggestPayload
+	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
+		Name:   "block_suggest",
+		Schema: schema,
+		System: blockSuggestSystemPrompt,
+		User:   string(userJSON),
+		Strict: true,
+	}, &responsePayload); err != nil {
+		return BlockSuggestResponse{}, err
+	}
+	return BlockSuggestResponse{
+		Props:         responsePayload.Props,
+		ChangeSummary: responsePayload.ChangeSummary,
+	}, nil
 }
 
 type structuredCompletionRequest struct {
@@ -467,7 +587,29 @@ Do not emit HTML, CSS, JavaScript, markdown, embed code, or unsupported block ty
 Keep the page plan tight, usually 1 to 5 pages, and never exceed 10 pages.
 Use "/" for the homepage slug. Use absolute path slugs like "/about" or "/contact" for other pages.
 Theme choices must stay within the provided enums and should reflect Snaelda's warm, crafted, ribbon-led brand direction.
+
+Hero block variants:
+- "standard" (default): the headline-led hero with optional image, layout "centered"/"split-left"/"split-right". Use it for most pages.
+- "full-page": an immersive, viewport-filling hero where the image becomes the page on first load and the headline + CTA sit over it. Pick this when the brand is image-led (photographer, restaurant, hotel, florist, gallery, salon, ceramics studio, wedding planner, tattoo artist, cafe, food, travel, fashion) or when the prompt asks for a bold, atmospheric, magazine-style opener. Always include an "image" with descriptive "alt" text when choosing "full-page", and request a "hero-image" in assetsNeeded. Keep "headline" short (3 to 7 words) and the optional "subheadline" to a single sentence so the overlay stays clean.
+Default the "variant" field to "standard" whenever the prompt does not clearly call for an immersive image-led opener.
+
 When validation feedback is provided, repair the plan instead of repeating the same mistake.`
+
+const blockSuggestSystemPrompt = `You are the per-block AI editor for Snaelda.
+Return JSON only, matching the supplied schema exactly.
+Rewrite the props of a single existing website block according to the requested action.
+Never change the block type, version, or shape — only rewrite the prop values inside the supplied props object.
+Plain text only: no HTML, no Markdown, no scripts, no embed code.
+Keep meaning and the user's underlying offer intact. Improve the copy without inventing facts.
+Honor the action:
+- "tighten": preserve meaning, write shorter; trim filler and double the punch per word.
+- "expand": add useful detail and texture without padding; one or two extra sentences max.
+- "tone": rewrite in the requested tone (friendlier, more professional, more playful, or more direct) while keeping the substance.
+- "rewrite": follow the user's free-form instruction; if it conflicts with the original meaning, prefer the instruction.
+For repeater fields (FAQ items, feature items, plans, etc.) keep the array length unless the action says otherwise.
+For image and link fields, keep the existing values exactly unless the action requires changing them.
+For enum/select fields (layout, variant, alignment, columns, etc.) keep the existing value unless the action explicitly addresses layout.
+Always set "changeSummary" to one short sentence describing what changed in plain English.`
 
 const themeRegenerationSystemPrompt = `You are the structured theme selector for Snaelda.
 Return JSON only, matching the supplied schema exactly.

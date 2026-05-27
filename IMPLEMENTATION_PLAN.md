@@ -1,8 +1,27 @@
 # Implementation Plan
 
-Refreshed 2026-05-21 from 16 spec-vs-code audits plus the newly-authored `specs/20-ai-authoring-ux.md`, and again after landing the brand-entity foundation. The MVP shape is unchanged: anonymous prompt → generated site → editable draft → published hosted subdomain, with optional account claim and Stripe billing. Open items are sorted by priority tier; "Recently Confirmed Complete" preserves shipped history.
+Refreshed 2026-05-27 after landing the AI-suggest dropdowns on blocks (spec 20 — the biggest open AI-first surface), the full-page hero variant, the Stripe setup script, and the first wave of landing/preview/generation UX hardening. Prior refresh (2026-05-21) followed 16 spec-vs-code audits and the newly-authored `specs/20-ai-authoring-ux.md`. The MVP shape is unchanged: anonymous prompt → generated site → editable draft → published hosted subdomain, with optional account claim and Stripe billing. Open items are sorted by priority tier; "Recently Confirmed Complete" preserves shipped history.
+
+## Next Up (re-prioritized 2026-05-27)
+
+Highest-leverage open work, in order:
+
+1. **"Find a better image" on image-bearing blocks** (spec 20) — small surface, reuses `internal/imagery/` Pexels pipeline plus a model-side query rewrite. Strong wow for image-led sites (which our ICP is full of).
+2. **Trial education affordances** (spec 17) — "Continue your draft" landing affordance and first-generation modal explaining L0 trial state. Required by the GTM story; today users hit the cookie-only failure mode silently.
+3. **Generation streaming for perceived speed** (extends spec 20) — switch the OpenAI call to streaming so pages/blocks materialize as the model writes them, instead of a 30-60s dead-wait at `plan.blocks`. Highest perceived-speed win available without changing the model.
+4. **Once-over delivery workflow** (specs 15, 18) — finish the half-built path. Operator UI to mark delivery + trigger `SendOnceOverDelivered`. Unlocks the $99 add-on revenue.
+5. **Page-suggest empty state** (spec 20) — empty-page CTA that asks the model for likely candidates (Pricing, About, Contact). Smaller scope than block-suggest.
+
+Defer: ambient site suggestions (lowest urgency), automated TLS issuance (platform-dependent — Railway/Render/Fly handle this for us).
 
 ## Recently Confirmed Complete
+
+- [x] AI-suggest dropdowns on blocks (spec 20): new `POST /api/sites/:siteId/blocks/:blockId/suggest` endpoint, backed by a new `BlockSuggester` interface implemented by `OpenAIPlanner.SuggestBlockProps` that rewrites only the block's props through a strict structured-output JSON schema derived from the block's existing `PropSchema` (same type/version preserved by construction). The service captures before/after `draft_revisions`, writes a `reprompt_history` row with `scope='block'` and a model-authored `change_summary`, and tracks the work in `generation_jobs` under the new `JobKindBlockSuggest` kind. Migration `000018_block_suggest.sql` extends the `reprompt_history.scope`, `draft_revisions.scope`, and `generation_jobs.kind` check constraints. The builder's `BlockEditor` now surfaces an "Improve with AI" dropdown (Tighten / Expand / Change tone → friendlier/professional/playful/direct / Rewrite from prompt) on text-bearing blocks; the dropdown closes on Esc and click-outside, the local prop state resets to the AI result via React 19's render-time state-derivation pattern, and toast status messages surface success. Wired through `PuckBuilder.tsx` and `apps/web/src/routes/app.sites.$siteId.index.tsx` with paid-plan/billing guard reuse. Backend + frontend tests added; verified end-to-end via Playwright against a freshly generated florist site (hero headline tightened, reprompt history shows the block-scoped entry, no console errors).
+- [x] Full-page hero variant (specs 4, 7): hero blocks now carry a `variant` enum (`standard` / `full-page`) in addition to the existing `layout` field. `internal/siteconfig/blocks.go` validates the new enum, `apps/web/src/components/SiteDraftRenderer.tsx` renders the immersive variant as a true 100vh section that overlaps the page header on first paint (image background, vertical gradient overlay, headline + optional CTAs anchored at the bottom), and the page header recolors to light when the first block is a full-page hero. The OpenAI planner's system prompt teaches the model when to choose `full-page` (image-led brands, magazine-style openers); `repairHeroProps` normalizes the enum on the legacy fallback path. `specs/04-block-registry.md` updated; the block-registry contract golden file regenerated; LLM-aware verified against an Icelandic florist generation.
+- [x] Stripe setup automation: new `cmd/stripe-setup` Go binary creates products + prices (Basic / Pro / Once-over) and the webhook endpoint with exactly the six events `internal/billing/stripe.go` handles, then prints env vars to paste into `.env`. Idempotent via Stripe `lookup_key` (`snaelda_basic_monthly`, `snaelda_pro_monthly`, `snaelda_once_over`) — safe to re-run. Refuses `sk_live_…` keys without `-allow-live` plus a typed "yes" confirmation. Wired into the Makefile as `make stripe-setup`.
+- [x] Immersive preview share route (specs 9, 14): `apps/web/src/routes/preview.$token.tsx` no longer wraps the renderer in editor-style chrome; the `SiteDraftRenderer` renders as the entire page with a small non-blocking "Draft preview" pill pinned to the bottom-right. `apps/web/src/routes/__root.tsx` now excludes `/preview/` (like `/public/` and `/app`) from the app topbar, so the share link experience matches what the recipient will see when the site is published.
+- [x] Generation progress hardening (spec 20): `internal/generation/progress.go` made `progressTracker.emit` monotonic (records highest step index reached, drops backward emits). Fixes the regression where the planner's retry loop would rewind the visible step from `plan.blocks` back to `plan.pages`. `internal/generation/openai.go` adds a heartbeat goroutine that walks through `plan.theme` (+7s) and `plan.blocks` (+16s) during the LLM HTTP call so the UI shows deliberate motion before the LLM returns; `newOrderedEmitter` guarantees idempotent emission so the post-HTTP catch-up is safe.
+- [x] Landing-page simplification (spec 17): the "Enter" dropdown that offered Email / Restore session / Continue as guest sub-choices was replaced with a single subtle "Log in" link in the top-right. The prompt form already lands directly in a trial workspace via `startAnonymousSession()` + `navigate({ to: '/app', search: { prompt }})`. `?restore=` URL auto-restore still works; the restore-failed message now renders inline above the prompt form. Aligns the surface with spec 17's "no signup required" promise.
 
 - [x] Reprompt history + diff view (spec 20): page- and site-scoped reprompts now capture immutable before/after `draft_revisions` plus durable `reprompt_history` rows through `000017_reprompt_history.sql`, with `GET /api/sites/:siteId/reprompts`, `GET /api/sites/:siteId/revisions/:revisionId`, and `POST /api/sites/:siteId/reprompts/:id/revert` layered into `internal/generation`. The legacy `/api/sites/:siteId/undo` path now restores the latest non-undone reprompt checkpoint via the same history plumbing. In the builder, prompt iteration now includes a scoped History panel with whole-site vs selected-page filters, per-entry revert, and a diff modal that compares stored revision snapshots block-by-block before the user keeps or rolls back a rebuild.
 - [x] Generation hardening (spec 7): the OpenAI planner now sends a strict block-union JSON schema built from per-block prop fragments in `internal/siteconfig/blocks.go`, replacing the old `additionalProperties: true` hole in generated block props. Page reprompt is now model-first, using the AI-authored page when available and only falling back to deterministic templates when planning fails or returns nothing usable. Generation requests now pass through a durable `generation_attempts` limiter with per-user and per-workspace burst/day windows plus a prompt-length cost guard in `internal/generation/handler.go`, and `BlockDefinition` now carries per-type `MigrateProps` scaffolding so future block-version migrations have a first-class home. The frontend renderer also now sanitizes outbound hrefs before rendering, so even malformed drafts degrade to `#` instead of trusting unsafe protocols client-side.
@@ -75,26 +94,36 @@ Refreshed 2026-05-21 from 16 spec-vs-code audits plus the newly-authored `specs/
 
 Entire spec is greenfield. None of it is implemented yet.
 
-- [x] Generation-progress streaming.
+- [x] Generation-progress streaming (SSE).
   - SSE/job-tracking endpoint backed by a new `generation_jobs` table; emit the spec-defined step labels from `internal/generation/service.go`, keep jobs alive if the SSE client disconnects, and fall back to `GET /api/generation/jobs/:jobId` polling from the frontend.
   - Builder consumers now render streamed progress on the anonymous-prompt, site-reprompt, page-reprompt, and theme-regeneration paths, with the shared `GenerationProgressCard` adapting to shorter step sets when imagery/copy phases are skipped.
+  - Hardened 2026-05-27: `progressTracker.emit` is now monotonic so the planner's retry loop cannot rewind the visible step; `OpenAIPlanner.BuildPlan` runs a heartbeat goroutine through `plan.theme`/`plan.blocks` during the LLM HTTP call so the UI shows motion before the response arrives.
 
 - [x] Reprompt history + diff view.
   - New `reprompt_history` table plus immutable before/after `draft_revisions` for current site/page rebuild scopes.
   - API: list, revision fetch, and revert endpoints; legacy undo now delegates to the newest non-undone history entry.
   - UI: history panel with scoped filters and a block-by-block diff modal in the builder.
 
-- [ ] AI-suggest dropdowns on blocks.
-  - Per-block "suggest alternatives" affordance hitting a new generation endpoint that returns N variants for the selected block, scoped to its prop schema.
+- [ ] **Stream the OpenAI response itself.** (Next Up #4)
+  - Today's heartbeat masks the 30-60s wait at `plan.blocks` but the LLM call is still non-streaming (`io.ReadAll` on the response body in `internal/generation/openai.go`).
+  - Switching to SSE streaming on the upstream call and incremental JSON parsing would let pages/blocks materialize as the model writes them, instead of all-at-once. Single biggest perceived-speed win available without changing model.
 
-- [ ] "Find a better image" affordance on image-bearing blocks.
-  - Reuse `internal/imagery/` Pexels integration plus model-side query rewriting; surface a picker in the block editor.
+- [x] AI-suggest dropdowns on blocks.
+  - `POST /api/sites/:siteId/blocks/:blockId/suggest` accepts `{action: tighten|expand|tone|rewrite, tone?, instruction?}` and returns the updated draft plus jobId.
+  - Backend constrains the model output to the block's existing `PropSchema` so block type/version cannot change; `OpenAIPlanner.SuggestBlockProps` issues a strict structured-output completion with a per-action system prompt that forbids HTML/Markdown and preserves enums and image/link fields unless the action requires touching them.
+  - `BlockSuggester` interface keeps the service unit-testable without an OpenAI client.
+  - Reprompt history scope expanded to `'block'`; each AI edit captures before/after `draft_revisions` and is individually revertable through the existing `/api/sites/:siteId/reprompts/:id/revert` endpoint. `generation_jobs.kind` now allows `'block_suggest'`. Billing prompt limit and the existing per-scope rate limiter are enforced.
+  - Builder dropdown surfaces Tighten / Expand / Change tone (friendlier / more professional / more playful / more direct) / Rewrite from prompt on text-bearing blocks; Esc + click-outside close the dropdown; local editor state is reset to the AI result via render-time state derivation so the user sees the new copy immediately.
 
-- [ ] Page-suggest empty state.
+- [ ] **"Find a better image" affordance on image-bearing blocks.** (Next Up #2)
+  - Reuse `internal/imagery/` Pexels integration plus model-side query rewriting derived from page name + nearby headline + block intent; surface a picker in the block editor.
+
+- [ ] **Page-suggest empty state.** (Next Up #6)
   - Empty-page CTA that asks the model for likely page candidates (Pricing, About, Contact, etc.) given current site context.
 
 - [ ] Ambient site suggestions.
   - Lightweight periodic suggestions in the builder shell (e.g., "Add an FAQ section?") driven by a low-frequency model call over the current draft.
+  - Lowest urgency — defer until the higher-leverage AI surfaces above are shipped.
 
 ## Hardening
 
@@ -103,11 +132,11 @@ Entire spec is greenfield. None of it is implemented yet.
 
 ## Polish & Follow-Ups
 
-- [ ] Finish the Once-over delivery workflow (specs 15, 18).
+- [ ] Finish the Once-over delivery workflow (specs 15, 18). **(Next Up #5)**
   - `SendOnceOverDelivered` exists but is never called; `UpdateOnceOver` input has no `videoUrl`/`deliveredAt`; `sanitizeOnceOverVideoURL` is dead code.
   - Build an operator/admin route to mark delivery and trigger the email; remove the dead helper or wire it.
 
-- [ ] Trial education affordances (spec 17).
+- [ ] Trial education affordances (spec 17). **(Next Up #3)**
   - "Continue your draft" landing affordance for cookie-detected sessions.
   - First-generation education modal explaining L0 trial state.
   - Add "Already have an account → magic-link login" option to the "Save your workspace" panel.

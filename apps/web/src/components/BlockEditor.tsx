@@ -1,5 +1,6 @@
 import type { FormEvent } from 'react'
-import { useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
+import { Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -10,6 +11,9 @@ import type {
   AssetRecord,
   BlockDefinition,
   BlockEditorField,
+  BlockSuggestAction,
+  BlockSuggestInput,
+  BlockSuggestTone,
   SiteDraft,
 } from '@/lib/api'
 import { actions, emptyState, form, panel, text } from '@/lib/styles'
@@ -25,6 +29,10 @@ type BlockEditorProps = {
   statusMessage: string
   assetLibrary: AssetRecord[]
   onSave: (props: Record<string, unknown>, hidden: boolean) => Promise<void>
+  onSuggest?: (input: BlockSuggestInput) => Promise<void>
+  isSuggesting?: boolean
+  suggestErrorMessage?: string
+  suggestStatusMessage?: string
 }
 
 export function BlockEditor({
@@ -35,11 +43,27 @@ export function BlockEditor({
   statusMessage,
   assetLibrary,
   onSave,
+  onSuggest,
+  isSuggesting = false,
+  suggestErrorMessage = '',
+  suggestStatusMessage = '',
 }: BlockEditorProps) {
   const [props, setProps] = useState<Record<string, unknown>>(() =>
     cloneProps(block.props),
   )
   const [hidden, setHidden] = useState(block.settings?.hidden ?? false)
+
+  // Reset local prop state when the parent hands us a fresh block reference
+  // (e.g. after an AI suggest replaces the block's props in-place). Using
+  // render-time state derivation is React 19's recommended pattern for
+  // "reset state when a prop changes" — it avoids the cascading-renders cost
+  // of doing the same work inside useEffect.
+  const [trackedProps, setTrackedProps] = useState(block.props)
+  if (trackedProps !== block.props) {
+    setTrackedProps(block.props)
+    setProps(cloneProps(block.props))
+    setHidden(block.settings?.hidden ?? false)
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -47,6 +71,7 @@ export function BlockEditor({
   }
 
   const fields = definition?.editorSchema ?? []
+  const textBearing = hasTextBearingFields(fields)
 
   return (
     <form
@@ -69,6 +94,15 @@ export function BlockEditor({
           ) : null}
         </div>
       </div>
+
+      {onSuggest && textBearing ? (
+        <AISuggestPanel
+          onSuggest={onSuggest}
+          isSuggesting={isSuggesting}
+          errorMessage={suggestErrorMessage}
+          statusMessage={suggestStatusMessage}
+        />
+      ) : null}
 
       {fields.length === 0 ? (
         <div className={emptyState}>
@@ -588,6 +622,221 @@ function AssetField({
       </label>
     </div>
   )
+}
+
+const TONE_OPTIONS: { value: BlockSuggestTone; label: string }[] = [
+  { value: 'friendlier', label: 'Friendlier' },
+  { value: 'professional', label: 'More professional' },
+  { value: 'playful', label: 'More playful' },
+  { value: 'direct', label: 'More direct' },
+]
+
+function AISuggestPanel({
+  onSuggest,
+  isSuggesting,
+  errorMessage,
+  statusMessage,
+}: {
+  onSuggest: (input: BlockSuggestInput) => Promise<void>
+  isSuggesting: boolean
+  errorMessage: string
+  statusMessage: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [mode, setMode] =
+    useState<'menu' | 'tone' | 'rewrite'>('menu')
+  const [instruction, setInstruction] = useState('')
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handleDocumentClick(event: MouseEvent) {
+      if (!rootRef.current) return
+      if (!rootRef.current.contains(event.target as Node)) {
+        setOpen(false)
+        setMode('menu')
+      }
+    }
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setOpen(false)
+        setMode('menu')
+      }
+    }
+    document.addEventListener('mousedown', handleDocumentClick)
+    document.addEventListener('keydown', handleKey)
+    return () => {
+      document.removeEventListener('mousedown', handleDocumentClick)
+      document.removeEventListener('keydown', handleKey)
+    }
+  }, [open])
+
+  async function runAction(action: BlockSuggestAction, tone?: BlockSuggestTone) {
+    await onSuggest({ action, tone })
+    setOpen(false)
+    setMode('menu')
+  }
+
+  async function runRewrite(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const trimmed = instruction.trim()
+    if (!trimmed) return
+    await onSuggest({ action: 'rewrite', instruction: trimmed })
+    setInstruction('')
+    setOpen(false)
+    setMode('menu')
+  }
+
+  return (
+    <div
+      ref={rootRef}
+      className="relative -mb-1 flex flex-wrap items-center gap-2"
+    >
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={isSuggesting}
+        onClick={() => {
+          setOpen((current) => !current)
+          setMode('menu')
+        }}
+        aria-expanded={open}
+        aria-haspopup="menu"
+      >
+        <Sparkles className="size-4" aria-hidden />
+        {isSuggesting ? 'Improving…' : 'Improve with AI'}
+      </Button>
+      {statusMessage ? (
+        <span className="text-xs text-[var(--paper-muted)]">{statusMessage}</span>
+      ) : null}
+      {errorMessage ? (
+        <span className="text-xs text-[var(--destructive)]">{errorMessage}</span>
+      ) : null}
+      {open ? (
+        <div
+          role="menu"
+          className="absolute left-0 top-[calc(100%+8px)] z-30 w-[260px] rounded-[12px] border border-border bg-[var(--surface-1)] p-2 shadow-[0_18px_36px_oklch(8%_0.02_336_/_0.32)]"
+        >
+          {mode === 'menu' ? (
+            <div className="grid gap-1">
+              <SuggestRow
+                label="Tighten"
+                description="Shorter, sharper version"
+                disabled={isSuggesting}
+                onClick={() => runAction('tighten')}
+              />
+              <SuggestRow
+                label="Expand"
+                description="Add useful detail without padding"
+                disabled={isSuggesting}
+                onClick={() => runAction('expand')}
+              />
+              <SuggestRow
+                label="Change tone…"
+                description="Friendlier, more professional, etc."
+                disabled={isSuggesting}
+                onClick={() => setMode('tone')}
+              />
+              <SuggestRow
+                label="Rewrite from prompt…"
+                description="Describe the change you want"
+                disabled={isSuggesting}
+                onClick={() => setMode('rewrite')}
+              />
+            </div>
+          ) : null}
+          {mode === 'tone' ? (
+            <div className="grid gap-1">
+              <button
+                type="button"
+                className="px-2 pt-1 pb-2 text-left text-xs uppercase tracking-[0.08em] text-[var(--paper-muted)] hover:text-[var(--paper)]"
+                onClick={() => setMode('menu')}
+              >
+                ← Back
+              </button>
+              {TONE_OPTIONS.map((tone) => (
+                <SuggestRow
+                  key={tone.value}
+                  label={tone.label}
+                  disabled={isSuggesting}
+                  onClick={() => runAction('tone', tone.value)}
+                />
+              ))}
+            </div>
+          ) : null}
+          {mode === 'rewrite' ? (
+            <form className="grid gap-2 p-1" onSubmit={runRewrite}>
+              <button
+                type="button"
+                className="text-left text-xs uppercase tracking-[0.08em] text-[var(--paper-muted)] hover:text-[var(--paper)]"
+                onClick={() => setMode('menu')}
+              >
+                ← Back
+              </button>
+              <Textarea
+                rows={3}
+                placeholder="Make it more about families with kids"
+                value={instruction}
+                onChange={(event) => setInstruction(event.target.value)}
+                disabled={isSuggesting}
+                autoFocus
+              />
+              <Button
+                type="submit"
+                size="sm"
+                disabled={isSuggesting || instruction.trim().length === 0}
+              >
+                {isSuggesting ? 'Rewriting…' : 'Rewrite block'}
+              </Button>
+            </form>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function SuggestRow({
+  label,
+  description,
+  onClick,
+  disabled,
+}: {
+  label: string
+  description?: string
+  onClick: () => void
+  disabled: boolean
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      onClick={onClick}
+      className="grid w-full gap-0.5 rounded-[8px] px-2 py-2 text-left transition-colors hover:bg-[var(--surface-2)] disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      <span className="text-sm font-semibold text-[var(--paper)]">{label}</span>
+      {description ? (
+        <span className="text-xs text-[var(--paper-muted)]">{description}</span>
+      ) : null}
+    </button>
+  )
+}
+
+function hasTextBearingFields(fields: BlockEditorField[]): boolean {
+  return fields.some((field) => {
+    if (field.control === 'text' || field.control === 'textarea') {
+      return true
+    }
+    if (field.control === 'repeater') {
+      return hasTextBearingFields(field.itemFields ?? [])
+    }
+    if (field.control === 'object' || field.control === 'link') {
+      return hasTextBearingFields(field.fields ?? [])
+    }
+    return false
+  })
 }
 
 function coerceValue(field: BlockEditorField, value: string) {
