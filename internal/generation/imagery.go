@@ -40,6 +40,16 @@ func (s *StarterImagery) available() bool {
 	return s != nil && s.provider != nil
 }
 
+// Inner returns the underlying imagery provider so callers that want to bypass
+// the per-run dedupe (e.g. "find a better image" picker) can issue a direct
+// Search/Download.
+func (s *StarterImagery) Inner() imagery.Provider {
+	if s == nil || s.provider == nil {
+		return nil
+	}
+	return s.provider.Inner()
+}
+
 // applyStarterImagery walks the supplied draft and fills image slots that
 // the generator left empty with assets sourced from the configured imagery
 // provider. Failures are logged and the slots are simply left empty so

@@ -24,6 +24,7 @@ import {
   type AssetRecord,
   type BlockDefinition,
   type BlockSuggestInput,
+  type ImageApplyResponse,
   type SiteDraft,
 } from "@/lib/api";
 import {
@@ -197,6 +198,8 @@ type PuckBuilderProps = {
   isSuggestingBlock?: boolean;
   suggestErrorMessage?: string;
   suggestStatusMessage?: string;
+  siteId?: string;
+  onImageApplied?: (response: ImageApplyResponse) => void;
   onCreateBlock: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onDuplicateBlock: () => Promise<void>;
   onDeleteBlock: () => Promise<void>;
@@ -244,6 +247,8 @@ export function PuckBuilder({
   isSuggestingBlock,
   suggestErrorMessage,
   suggestStatusMessage,
+  siteId,
+  onImageApplied,
   onCreateBlock,
   onDuplicateBlock,
   onDeleteBlock,
@@ -330,6 +335,8 @@ export function PuckBuilder({
               isSuggestingBlock={isSuggestingBlock}
               suggestErrorMessage={suggestErrorMessage}
               suggestStatusMessage={suggestStatusMessage}
+              siteId={siteId}
+              onImageApplied={onImageApplied}
               onCreateBlock={onCreateBlock}
               onDuplicateBlock={onDuplicateBlock}
               onDeleteBlock={onDeleteBlock}
@@ -628,6 +635,8 @@ function ContentWorkspace({
   isSuggestingBlock,
   suggestErrorMessage,
   suggestStatusMessage,
+  siteId,
+  onImageApplied,
   onCreateBlock,
   onDuplicateBlock,
   onDeleteBlock,
@@ -662,6 +671,8 @@ function ContentWorkspace({
   isSuggestingBlock?: boolean;
   suggestErrorMessage?: string;
   suggestStatusMessage?: string;
+  siteId?: string;
+  onImageApplied?: (response: ImageApplyResponse) => void;
   onCreateBlock: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onDuplicateBlock: () => Promise<void>;
   onDeleteBlock: () => Promise<void>;
@@ -930,6 +941,8 @@ function ContentWorkspace({
         isSuggestingBlock={isSuggestingBlock}
         suggestErrorMessage={suggestErrorMessage}
         suggestStatusMessage={suggestStatusMessage}
+        siteId={siteId}
+        onImageApplied={onImageApplied}
         onCreateBlock={onCreateBlock}
         onDuplicateBlock={onDuplicateBlock}
         onDeleteBlock={onDeleteBlock}
@@ -1168,6 +1181,8 @@ function InspectorPanel({
   isSuggestingBlock,
   suggestErrorMessage,
   suggestStatusMessage,
+  siteId,
+  onImageApplied,
   onCreateBlock,
   onDuplicateBlock,
   onDeleteBlock,
@@ -1196,6 +1211,8 @@ function InspectorPanel({
   isSuggestingBlock?: boolean;
   suggestErrorMessage?: string;
   suggestStatusMessage?: string;
+  siteId?: string;
+  onImageApplied?: (response: ImageApplyResponse) => void;
   onCreateBlock: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onDuplicateBlock: () => Promise<void>;
   onDeleteBlock: () => Promise<void>;
@@ -1233,6 +1250,8 @@ function InspectorPanel({
               isSuggesting={isSuggestingBlock}
               suggestErrorMessage={suggestErrorMessage}
               suggestStatusMessage={suggestStatusMessage}
+              siteId={siteId}
+              onImageApplied={onImageApplied}
             />
 
             <div className={actions.row}>

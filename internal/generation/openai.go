@@ -262,6 +262,45 @@ func (p *OpenAIPlanner) RegenerateThemeSelection(ctx context.Context, prompt str
 	return responsePayload.ThemeSelection, nil
 }
 
+// RewriteImageQuery asks the model for a sharper Pexels search query than
+// what the user could type from memory, derived from the surrounding site +
+// page + block context. The response is a single short string; never block
+// content. The call is read-only — it never changes the draft.
+func (p *OpenAIPlanner) RewriteImageQuery(ctx context.Context, request ImageQueryRequest) (string, error) {
+	if p == nil {
+		return "", ErrBlockSuggestUnavailable
+	}
+	userJSON, err := json.Marshal(request)
+	if err != nil {
+		return "", fmt.Errorf("encode image query request: %w", err)
+	}
+	schema := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"query"},
+		"properties": map[string]any{
+			"query": map[string]any{
+				"type":      "string",
+				"minLength": 1,
+				"maxLength": 80,
+			},
+		},
+	}
+	var response struct {
+		Query string `json:"query"`
+	}
+	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
+		Name:   "image_query_rewrite",
+		Schema: schema,
+		System: imageQueryRewriterSystemPrompt,
+		User:   string(userJSON),
+		Strict: true,
+	}, &response); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(response.Query), nil
+}
+
 // SuggestBlockProps rewrites a single block's props using the model. The
 // returned props are constrained by the block definition's PropSchema, so the
 // shape always matches the existing block type/version.
@@ -610,6 +649,15 @@ For repeater fields (FAQ items, feature items, plans, etc.) keep the array lengt
 For image and link fields, keep the existing values exactly unless the action requires changing them.
 For enum/select fields (layout, variant, alignment, columns, etc.) keep the existing value unless the action explicitly addresses layout.
 Always set "changeSummary" to one short sentence describing what changed in plain English.`
+
+const imageQueryRewriterSystemPrompt = `You are the image-search query writer for Snaelda's website builder.
+Return JSON only, matching the supplied schema exactly.
+Rewrite the supplied page/block context into a single short photo-search query (under 80 characters) for the Pexels stock-photo library.
+Prefer concrete nouns and a clear setting. Photography lexicon is welcome ("warm natural light", "behind the scenes", "overhead flatlay") but keep it terse.
+Honor the user instruction when one is provided — the instruction trumps inferred subject.
+Do not return brand names, person names, hashtags, quotation marks, or commentary. Just the query string.
+If the page is image-led (florist, photographer, restaurant, hotel, cafe, salon, ceramics studio, etc.) skew the query toward atmospheric, magazine-style results.
+If the page is task-oriented (pricing, contact, FAQ) prefer broader supporting imagery that matches the brand mood.`
 
 const themeRegenerationSystemPrompt = `You are the structured theme selector for Snaelda.
 Return JSON only, matching the supplied schema exactly.

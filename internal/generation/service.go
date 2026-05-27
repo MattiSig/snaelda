@@ -77,6 +77,7 @@ type Service struct {
 	writer        draftWriter
 	planner       generationPlanBuilder
 	suggester     BlockSuggester
+	imageRewriter ImageQueryRewriter
 	imagery       *StarterImagery
 	assetImporter AssetImporter
 	logger        *slog.Logger
@@ -122,6 +123,15 @@ func WithAuditRecorder(recorder *audit.Recorder) ServiceOption {
 func WithBlockSuggester(suggester BlockSuggester) ServiceOption {
 	return func(s *Service) {
 		s.suggester = suggester
+	}
+}
+
+// WithImageQueryRewriter wires the model-side image query rewriter used by
+// SuggestImage. When nil, SuggestImage falls back to the deterministic
+// headline/page-title heuristic.
+func WithImageQueryRewriter(rewriter ImageQueryRewriter) ServiceOption {
+	return func(s *Service) {
+		s.imageRewriter = rewriter
 	}
 }
 

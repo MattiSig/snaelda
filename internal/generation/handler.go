@@ -27,12 +27,13 @@ type Handler struct {
 }
 
 type HandlerConfig struct {
-	Planner        generationPlanBuilder
-	BlockSuggester BlockSuggester
-	StarterImagery *StarterImagery
-	AssetImporter  AssetImporter
-	Logger         *slog.Logger
-	AuditRecorder  *audit.Recorder
+	Planner            generationPlanBuilder
+	BlockSuggester     BlockSuggester
+	ImageQueryRewriter ImageQueryRewriter
+	StarterImagery     *StarterImagery
+	AssetImporter      AssetImporter
+	Logger             *slog.Logger
+	AuditRecorder      *audit.Recorder
 }
 
 type Generator interface {
@@ -40,6 +41,8 @@ type Generator interface {
 	RepromptSite(ctx context.Context, workspaceID string, userID string, siteID string, input RepromptInput) (GenerateResult, error)
 	RepromptPage(ctx context.Context, workspaceID string, userID string, siteID string, pageID string, input RepromptInput) (GenerateResult, error)
 	SuggestBlock(ctx context.Context, workspaceID string, userID string, siteID string, blockID string, input BlockSuggestInput) (GenerateResult, error)
+	SuggestImage(ctx context.Context, workspaceID string, siteID string, blockID string, input ImageSuggestInput) (ImageSuggestResult, error)
+	ApplyImageSuggestion(ctx context.Context, workspaceID string, userID string, siteID string, blockID string, input ImageApplyInput) (ImageApplyResult, error)
 	UndoLastDraftRevision(ctx context.Context, workspaceID string, siteID string) (siteconfig.SiteDraft, error)
 	ListRepromptHistory(ctx context.Context, workspaceID string, siteID string) ([]RepromptHistoryEntry, error)
 	LoadDraftRevision(ctx context.Context, workspaceID string, siteID string, revisionID string) (DraftRevision, error)
@@ -80,6 +83,19 @@ type blockSuggestRequest struct {
 	Instruction string `json:"instruction,omitempty"`
 }
 
+type imageSuggestRequest struct {
+	Path        []string `json:"path"`
+	Instruction string   `json:"instruction,omitempty"`
+}
+
+type imageApplyRequest struct {
+	Path        []string              `json:"path"`
+	Photo       ImageSuggestCandidate `json:"photo"`
+	Alt         string                `json:"alt,omitempty"`
+	Query       string                `json:"query,omitempty"`
+	Instruction string                `json:"instruction,omitempty"`
+}
+
 const maxGenerationPromptCharacters = 4000
 
 func NewHandler(db DB, cfg HandlerConfig) *Handler {
@@ -98,6 +114,9 @@ func NewHandler(db DB, cfg HandlerConfig) *Handler {
 	}
 	if cfg.BlockSuggester != nil {
 		options = append(options, WithBlockSuggester(cfg.BlockSuggester))
+	}
+	if cfg.ImageQueryRewriter != nil {
+		options = append(options, WithImageQueryRewriter(cfg.ImageQueryRewriter))
 	}
 	logger := cfg.Logger
 	if logger == nil {
@@ -120,6 +139,8 @@ func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.
 	mux.Handle("POST /api/sites/{siteId}/reprompt", requireUser(http.HandlerFunc(h.repromptSite)))
 	mux.Handle("POST /api/sites/{siteId}/pages/{pageId}/reprompt", requireUser(http.HandlerFunc(h.repromptPage)))
 	mux.Handle("POST /api/sites/{siteId}/blocks/{blockId}/suggest", requireUser(http.HandlerFunc(h.suggestBlock)))
+	mux.Handle("POST /api/sites/{siteId}/blocks/{blockId}/image-suggest", requireUser(http.HandlerFunc(h.suggestImage)))
+	mux.Handle("POST /api/sites/{siteId}/blocks/{blockId}/image-apply", requireUser(http.HandlerFunc(h.applyImageSuggestion)))
 	mux.Handle("GET /api/sites/{siteId}/reprompts", requireUser(http.HandlerFunc(h.listReprompts)))
 	mux.Handle("POST /api/sites/{siteId}/reprompts/{repromptId}/revert", requireUser(http.HandlerFunc(h.revertReprompt)))
 	mux.Handle("GET /api/sites/{siteId}/revisions/{revisionId}", requireUser(http.HandlerFunc(h.getDraftRevision)))
@@ -386,6 +407,87 @@ func (h *Handler) suggestBlock(w http.ResponseWriter, r *http.Request) {
 		Instruction: payload.Instruction,
 	}
 	result, err := h.service.SuggestBlock(r.Context(), scope.WorkspaceID, userID, siteID, blockID, input)
+	if err != nil {
+		h.writeGenerationError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *Handler) suggestImage(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	blockID := r.PathValue("blockId")
+	if siteID == "" || blockID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_block_resource", "site and block ids are required")
+		return
+	}
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+
+	var payload imageSuggestRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "request body must be valid JSON")
+		return
+	}
+	instruction := strings.TrimSpace(payload.Instruction)
+	if len(instruction) > maxGenerationPromptCharacters {
+		h.writeGenerationError(w, r, fmt.Errorf("%w: %d", ErrPromptTooLong, maxGenerationPromptCharacters))
+		return
+	}
+	result, err := h.service.SuggestImage(r.Context(), scope.WorkspaceID, siteID, blockID, ImageSuggestInput{
+		Path:        payload.Path,
+		Instruction: instruction,
+	})
+	if err != nil {
+		h.writeGenerationError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *Handler) applyImageSuggestion(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	blockID := r.PathValue("blockId")
+	if siteID == "" || blockID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_block_resource", "site and block ids are required")
+		return
+	}
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+	session, _ := builderSessionFromContext(r.Context())
+	if h.billingDB != nil {
+		if err := billing.EnforcePromptLimit(r.Context(), h.billingDB, scope.WorkspaceID); err != nil {
+			h.writeGenerationError(w, r, err)
+			return
+		}
+	}
+
+	var payload imageApplyRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "request body must be valid JSON")
+		return
+	}
+	userID := ""
+	if session.User != nil {
+		userID = session.User.ID
+	}
+	if err := h.guardGenerationRequest(r.Context(), scope.WorkspaceID, userID, "image_apply", payload.Instruction); err != nil {
+		h.writeGenerationError(w, r, err)
+		return
+	}
+	result, err := h.service.ApplyImageSuggestion(r.Context(), scope.WorkspaceID, userID, siteID, blockID, ImageApplyInput{
+		Path:        payload.Path,
+		Photo:       payload.Photo,
+		Alt:         payload.Alt,
+		Query:       payload.Query,
+		Instruction: payload.Instruction,
+	})
 	if err != nil {
 		h.writeGenerationError(w, r, err)
 		return
@@ -677,6 +779,14 @@ func generationErrorDetails(err error) (code string, message string, status int)
 		return "block_suggest_unavailable", "AI block suggestions are not configured", http.StatusServiceUnavailable
 	case errors.Is(err, ErrBlockSuggestNotFound):
 		return "block_not_found", "the requested block was not found in the draft", http.StatusNotFound
+	case errors.Is(err, ErrImageSuggestUnavailable):
+		return "image_suggest_unavailable", "AI image suggestions are not configured", http.StatusServiceUnavailable
+	case errors.Is(err, ErrImageSuggestInvalidPath):
+		return "image_suggest_invalid_path", "the requested image slot is not valid for this block", http.StatusBadRequest
+	case errors.Is(err, ErrImageSuggestNoCandidates):
+		return "image_suggest_no_candidates", "we could not find new images for this block; try a different query", http.StatusNotFound
+	case errors.Is(err, ErrImageSuggestMissingPhoto):
+		return "image_suggest_missing_photo", "the selected image candidate is incomplete", http.StatusBadRequest
 	case errors.Is(err, billing.ErrPlanLimitExceeded):
 		return "plan_limit_exceeded", err.Error(), http.StatusForbidden
 	default:

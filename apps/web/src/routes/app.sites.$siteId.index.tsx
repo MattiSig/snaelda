@@ -54,6 +54,7 @@ import {
   type BlockDefinition,
   type BlockSuggestInput,
   type FormSubmissionRecord,
+  type ImageApplyResponse,
   type FormSubmissionStatus,
   type GenerationMetadata,
   type DraftRevisionRecord,
@@ -836,6 +837,29 @@ function SiteDetail() {
       );
     } finally {
       setIsSuggestingBlock(false);
+    }
+  }
+
+  async function handleImageApplied(response: ImageApplyResponse) {
+    applyDraftUpdate(response.draft, selectedPage?.id, selectedBlock?.id);
+    if (response.asset) {
+      setSiteAssets((current) => {
+        if (current.some((asset) => asset.id === response.asset?.id)) {
+          return current;
+        }
+        return [response.asset as AssetRecord, ...current];
+      });
+    } else {
+      try {
+        const assetResponse = await listSiteAssets(siteId);
+        setSiteAssets(assetResponse.assets);
+      } catch {
+        // best-effort refresh
+      }
+    }
+    const historyResponse = await listRepromptHistory(siteId).catch(() => null);
+    if (historyResponse) {
+      setRepromptHistory(historyResponse.reprompts);
     }
   }
 
@@ -3505,6 +3529,8 @@ function SiteDetail() {
         isSuggestingBlock={isSuggestingBlock}
         suggestErrorMessage={suggestErrorMessage}
         suggestStatusMessage={suggestStatusMessage}
+        siteId={siteId}
+        onImageApplied={handleImageApplied}
         onCreateBlock={handleCreateBlock}
         onDuplicateBlock={handleDuplicateBlock}
         onDeleteBlock={handleDeleteBlock}

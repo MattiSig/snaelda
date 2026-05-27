@@ -18,20 +18,24 @@ import (
 )
 
 type fakeGenerator struct {
-	input           GenerateInput
-	siteReprompt    RepromptInput
-	pageReprompt    RepromptInput
-	blockSuggest    BlockSuggestInput
-	siteID          string
-	pageID          string
-	blockID         string
-	revisionID      string
-	repromptID      string
-	result          GenerateResult
-	undoResult      siteconfig.SiteDraft
-	repromptHistory []RepromptHistoryEntry
-	revision        DraftRevision
-	err             error
+	input            GenerateInput
+	siteReprompt     RepromptInput
+	pageReprompt     RepromptInput
+	blockSuggest     BlockSuggestInput
+	imageSuggest     ImageSuggestInput
+	imageApply       ImageApplyInput
+	imageResult      ImageSuggestResult
+	imageApplyResult ImageApplyResult
+	siteID           string
+	pageID           string
+	blockID          string
+	revisionID       string
+	repromptID       string
+	result           GenerateResult
+	undoResult       siteconfig.SiteDraft
+	repromptHistory  []RepromptHistoryEntry
+	revision         DraftRevision
+	err              error
 }
 
 func (g *fakeGenerator) Generate(_ context.Context, _ string, _ string, input GenerateInput) (GenerateResult, error) {
@@ -61,6 +65,20 @@ func (g *fakeGenerator) SuggestBlock(_ context.Context, _ string, _ string, site
 	g.blockID = blockID
 	g.blockSuggest = input
 	return g.result, g.err
+}
+
+func (g *fakeGenerator) SuggestImage(_ context.Context, _ string, siteID string, blockID string, input ImageSuggestInput) (ImageSuggestResult, error) {
+	g.siteID = siteID
+	g.blockID = blockID
+	g.imageSuggest = input
+	return g.imageResult, g.err
+}
+
+func (g *fakeGenerator) ApplyImageSuggestion(_ context.Context, _ string, _ string, siteID string, blockID string, input ImageApplyInput) (ImageApplyResult, error) {
+	g.siteID = siteID
+	g.blockID = blockID
+	g.imageApply = input
+	return g.imageApplyResult, g.err
 }
 
 func (g *fakeGenerator) ListRepromptHistory(_ context.Context, _ string, _ string) ([]RepromptHistoryEntry, error) {

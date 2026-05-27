@@ -544,6 +544,8 @@ export type SessionResponse = {
 };
 
 const defaultAPIBaseURL = "http://localhost:8080";
+const productionAPIBaseURL = "https://api.snaelda.io";
+const legacyLocalAPIBaseURL = "http://localhost:8080";
 
 export function getAPIBaseURL() {
   try {
@@ -557,7 +559,38 @@ export function getAPIBaseURL() {
   if (typeof process !== "undefined" && process.env?.VITE_API_BASE_URL) {
     return process.env.VITE_API_BASE_URL;
   }
+  if (typeof process !== "undefined" && process.env?.API_BASE_URL) {
+    return process.env.API_BASE_URL;
+  }
+  const runtimeAPIBaseURL = getRuntimeAPIBaseURL();
+  if (runtimeAPIBaseURL) {
+    return runtimeAPIBaseURL;
+  }
   return defaultAPIBaseURL;
+}
+
+function getRuntimeAPIBaseURL() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  return resolveRuntimeAPIBaseURL(window.location);
+}
+
+export function resolveRuntimeAPIBaseURL(location: Pick<Location, "hostname" | "protocol">) {
+  const { hostname, protocol } = location;
+  if (protocol !== "https:" && protocol !== "http:") {
+    return "";
+  }
+  if (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname.endsWith(".localhost")
+  ) {
+    return "";
+  }
+
+  return productionAPIBaseURL;
 }
 
 export async function apiFetch<T>(
@@ -1493,6 +1526,79 @@ export async function suggestBlock(
   );
 }
 
+export type ImageSuggestCandidate = {
+  provider: string;
+  providerId: string;
+  downloadUrl: string;
+  sourceUrl?: string;
+  width?: number;
+  height?: number;
+  contentType?: string;
+  author?: string;
+  authorUrl?: string;
+  license?: string;
+  description?: string;
+};
+
+export type ImageSuggestInput = {
+  path: string[];
+  instruction?: string;
+};
+
+export type ImageSuggestResponse = {
+  query: string;
+  candidates: ImageSuggestCandidate[];
+};
+
+export type ImageApplyInput = {
+  path: string[];
+  photo: ImageSuggestCandidate;
+  alt?: string;
+  query?: string;
+  instruction?: string;
+};
+
+export type ImageApplyResponse = {
+  jobId: string;
+  draft: SiteDraft;
+  asset?: AssetRecord;
+  image?: { assetId: string; alt: string };
+};
+
+export async function suggestBlockImage(
+  siteId: string,
+  blockId: string,
+  input: ImageSuggestInput,
+) {
+  return apiFetch<ImageSuggestResponse>(
+    `/api/sites/${siteId}/blocks/${blockId}/image-suggest`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export async function applyBlockImage(
+  siteId: string,
+  blockId: string,
+  input: ImageApplyInput,
+) {
+  return apiFetch<ImageApplyResponse>(
+    `/api/sites/${siteId}/blocks/${blockId}/image-apply`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
 export async function publishSite(
   siteId: string,
   input: {
@@ -1595,9 +1701,10 @@ export async function getPublishedSite(siteSlug: string, pagePath = "/") {
   }
 
   const suffix = search.size > 0 ? `?${search.toString()}` : "";
-  return publicAPIRequest<PublishedSiteResponse>(
+  const site = await publicAPIRequest<PublishedSiteResponse>(
     `/api/public/sites/${siteSlug}${suffix}`,
   );
+  return normalizePublishedSiteResponse(site);
 }
 
 export async function getPublishedSiteByHostname(
@@ -1609,9 +1716,59 @@ export async function getPublishedSiteByHostname(
     search.set("path", pagePath);
   }
 
-  return publicAPIRequest<PublishedSiteResponse>(
+  const site = await publicAPIRequest<PublishedSiteResponse>(
     `/api/public/render?${search.toString()}`,
   );
+  return normalizePublishedSiteResponse(site);
+}
+
+export function normalizePublishedSiteResponse(
+  site: PublishedSiteResponse,
+): PublishedSiteResponse {
+  return {
+    ...site,
+    page: {
+      ...site.page,
+      html: normalizeLegacyPublishedAPIURLs(site.page.html),
+      ogImageUrl: site.page.ogImageUrl
+        ? normalizeLegacyPublishedAPIURLs(site.page.ogImageUrl)
+        : site.page.ogImageUrl,
+      localBusinessJsonLd: normalizePublishedJSONLD(
+        site.page.localBusinessJsonLd,
+      ),
+    },
+  };
+}
+
+function normalizeLegacyPublishedAPIURLs(value: string) {
+  return value.replaceAll(legacyLocalAPIBaseURL, productionAPIBaseURL);
+}
+
+function normalizePublishedJSONLD(
+  value: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!value) {
+    return value;
+  }
+  return normalizePublishedJSONValue(value) as Record<string, unknown>;
+}
+
+function normalizePublishedJSONValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    return normalizeLegacyPublishedAPIURLs(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizePublishedJSONValue(item));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        normalizePublishedJSONValue(item),
+      ]),
+    );
+  }
+  return value;
 }
 
 export async function getPublishedArtifact(input: {

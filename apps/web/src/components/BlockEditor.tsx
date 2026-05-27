@@ -1,6 +1,6 @@
 import type { FormEvent } from 'react'
 import { useEffect, useState, useRef } from 'react'
-import { Sparkles } from 'lucide-react'
+import { Sparkles, ImagePlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -14,8 +14,11 @@ import type {
   BlockSuggestAction,
   BlockSuggestInput,
   BlockSuggestTone,
+  ImageApplyResponse,
+  ImageSuggestCandidate,
   SiteDraft,
 } from '@/lib/api'
+import { applyBlockImage, suggestBlockImage } from '@/lib/api'
 import { actions, emptyState, form, panel, text } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 
@@ -33,6 +36,8 @@ type BlockEditorProps = {
   isSuggesting?: boolean
   suggestErrorMessage?: string
   suggestStatusMessage?: string
+  siteId?: string
+  onImageApplied?: (response: ImageApplyResponse) => void
 }
 
 export function BlockEditor({
@@ -47,7 +52,18 @@ export function BlockEditor({
   isSuggesting = false,
   suggestErrorMessage = '',
   suggestStatusMessage = '',
+  siteId,
+  onImageApplied,
 }: BlockEditorProps) {
+  const imageSuggestContext: ImageSuggestContext | null =
+    siteId && block.id
+      ? {
+          siteId,
+          blockId: block.id,
+          onApplied: onImageApplied,
+        }
+      : null
+
   const [props, setProps] = useState<Record<string, unknown>>(() =>
     cloneProps(block.props),
   )
@@ -118,6 +134,8 @@ export function BlockEditor({
               field={field}
               value={props[field.name]}
               assetLibrary={assetLibrary}
+              imageSuggest={imageSuggestContext}
+              path={[field.name]}
               onChange={(value) =>
                 setProps((current) =>
                   updateFieldValue(current, field.name, value),
@@ -146,15 +164,25 @@ export function BlockEditor({
   )
 }
 
+type ImageSuggestContext = {
+  siteId: string
+  blockId: string
+  onApplied?: (response: ImageApplyResponse) => void
+}
+
 function FieldRenderer({
   field,
   value,
   assetLibrary,
+  imageSuggest,
+  path,
   onChange,
 }: {
   field: BlockEditorField
   value: unknown
   assetLibrary: AssetRecord[]
+  imageSuggest: ImageSuggestContext | null
+  path: string[]
   onChange: (value: unknown) => void
 }) {
   switch (field.control) {
@@ -221,6 +249,8 @@ function FieldRenderer({
           field={field}
           value={value}
           assetLibrary={assetLibrary}
+          imageSuggest={imageSuggest}
+          path={path}
           onChange={onChange}
           emptyLabel={`Add ${field.label.toLowerCase()}`}
         />
@@ -231,6 +261,8 @@ function FieldRenderer({
           field={field}
           value={value}
           assetLibrary={assetLibrary}
+          imageSuggest={imageSuggest}
+          path={path}
           onChange={onChange}
           emptyLabel={`Add ${field.label.toLowerCase()}`}
         />
@@ -241,6 +273,8 @@ function FieldRenderer({
           field={field}
           value={value}
           assetLibrary={assetLibrary}
+          imageSuggest={imageSuggest}
+          path={path}
           onChange={onChange}
         />
       )
@@ -250,6 +284,8 @@ function FieldRenderer({
           field={field}
           value={value}
           assetLibrary={assetLibrary}
+          imageSuggest={imageSuggest}
+          path={path}
           onChange={onChange}
         />
       )
@@ -301,12 +337,16 @@ function ObjectField({
   field,
   value,
   assetLibrary,
+  imageSuggest,
+  path,
   onChange,
   emptyLabel,
 }: {
   field: BlockEditorField
   value: unknown
   assetLibrary: AssetRecord[]
+  imageSuggest: ImageSuggestContext | null
+  path: string[]
   onChange: (value: unknown) => void
   emptyLabel: string
 }) {
@@ -363,6 +403,8 @@ function ObjectField({
               field={nestedField}
               value={objectValue[nestedField.name]}
               assetLibrary={assetLibrary}
+              imageSuggest={imageSuggest}
+              path={[...path, nestedField.name]}
               onChange={(nextValue) =>
                 onChange(
                   updateFieldValue(objectValue, nestedField.name, nextValue),
@@ -380,11 +422,15 @@ function RepeaterField({
   field,
   value,
   assetLibrary,
+  imageSuggest,
+  path,
   onChange,
 }: {
   field: BlockEditorField
   value: unknown
   assetLibrary: AssetRecord[]
+  imageSuggest: ImageSuggestContext | null
+  path: string[]
   onChange: (value: unknown) => void
 }) {
   const items = asObjectArray(value)
@@ -450,6 +496,8 @@ function RepeaterField({
                   field={nestedField}
                   value={item[nestedField.name]}
                   assetLibrary={assetLibrary}
+                  imageSuggest={imageSuggest}
+                  path={[...path, String(index), nestedField.name]}
                   onChange={(nextValue) =>
                     onChange(
                       items.map((candidate, candidateIndex) =>
@@ -477,11 +525,15 @@ function AssetField({
   field,
   value,
   assetLibrary,
+  imageSuggest,
+  path,
   onChange,
 }: {
   field: BlockEditorField
   value: unknown
   assetLibrary: AssetRecord[]
+  imageSuggest: ImageSuggestContext | null
+  path: string[]
   onChange: (value: unknown) => void
 }) {
   const objectValue = asObject(value)
@@ -508,16 +560,36 @@ function AssetField({
             </small>
           ) : null}
         </div>
-        {objectValue ? (
-          <Button
-            type="button"
-            variant="plain"
-            className={actions.inlineLink}
-            onClick={() => onChange(undefined)}
-          >
-            Clear image
-          </Button>
-        ) : null}
+        <div className="flex items-center gap-3 max-sm:w-full max-sm:justify-between">
+          {imageSuggest ? (
+            <FindBetterImageButton
+              context={imageSuggest}
+              path={path}
+              currentAlt={altText}
+              onApplied={(response) => {
+                if (response.image) {
+                  onChange(
+                    cleanObject({
+                      assetId: response.image.assetId,
+                      alt: response.image.alt,
+                    }),
+                  )
+                }
+                imageSuggest.onApplied?.(response)
+              }}
+            />
+          ) : null}
+          {objectValue ? (
+            <Button
+              type="button"
+              variant="plain"
+              className={actions.inlineLink}
+              onClick={() => onChange(undefined)}
+            >
+              Clear image
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <label className={form.field}>
@@ -821,6 +893,292 @@ function SuggestRow({
         <span className="text-xs text-[var(--paper-muted)]">{description}</span>
       ) : null}
     </button>
+  )
+}
+
+function FindBetterImageButton({
+  context,
+  path,
+  currentAlt,
+  onApplied,
+}: {
+  context: ImageSuggestContext
+  path: string[]
+  currentAlt: string
+  onApplied: (response: ImageApplyResponse) => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => setOpen(true)}
+      >
+        <ImagePlus className="size-4" aria-hidden />
+        Find a better image
+      </Button>
+      {open ? (
+        <ImagePickerModal
+          context={context}
+          path={path}
+          currentAlt={currentAlt}
+          onClose={() => setOpen(false)}
+          onApplied={(response) => {
+            onApplied(response)
+            setOpen(false)
+          }}
+        />
+      ) : null}
+    </>
+  )
+}
+
+function ImagePickerModal({
+  context,
+  path,
+  currentAlt,
+  onClose,
+  onApplied,
+}: {
+  context: ImageSuggestContext
+  path: string[]
+  currentAlt: string
+  onClose: () => void
+  onApplied: (response: ImageApplyResponse) => void
+}) {
+  const [instruction, setInstruction] = useState('')
+  const [query, setQuery] = useState('')
+  const [candidates, setCandidates] = useState<ImageSuggestCandidate[]>([])
+  const [searching, setSearching] = useState(true)
+  const [applyingId, setApplyingId] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState('')
+
+  useEffect(() => {
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [onClose])
+
+  // The initial fetch runs once when the picker opens. We start with
+  // searching=true so no synchronous setState happens inside the effect; the
+  // result lands via the promise's then/catch microtask.
+  useEffect(() => {
+    let cancelled = false
+    suggestBlockImage(context.siteId, context.blockId, { path, instruction: '' })
+      .then((response) => {
+        if (cancelled) return
+        setQuery(response.query)
+        setCandidates(response.candidates)
+        if (response.candidates.length === 0) {
+          setErrorMessage(
+            'No images matched that query. Try a different instruction.',
+          )
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : 'Could not load image suggestions.',
+        )
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSearching(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+    // The initial fetch should only fire when the picker first mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function runSuggest() {
+    setSearching(true)
+    setErrorMessage('')
+    suggestBlockImage(context.siteId, context.blockId, {
+      path,
+      instruction,
+    })
+      .then((response) => {
+        setQuery(response.query)
+        setCandidates(response.candidates)
+        if (response.candidates.length === 0) {
+          setErrorMessage(
+            'No images matched that query. Try a different instruction.',
+          )
+        }
+      })
+      .catch((error) => {
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : 'Could not load image suggestions.',
+        )
+      })
+      .finally(() => {
+        setSearching(false)
+      })
+  }
+
+  async function applyCandidate(candidate: ImageSuggestCandidate) {
+    setApplyingId(candidate.providerId || candidate.downloadUrl)
+    setErrorMessage('')
+    try {
+      const response = await applyBlockImage(context.siteId, context.blockId, {
+        path,
+        photo: candidate,
+        alt: currentAlt || candidate.description || '',
+        query,
+        instruction,
+      })
+      onApplied(response)
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Could not apply the chosen image.',
+      )
+    } finally {
+      setApplyingId(null)
+    }
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Find a better image"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[oklch(8%_0.02_336_/_0.65)] p-4"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose()
+        }
+      }}
+    >
+      <div className="grid max-h-[88vh] w-full max-w-[760px] gap-4 overflow-y-auto rounded-[20px] border border-border bg-[var(--surface-1)] p-6 shadow-[0_36px_72px_oklch(8%_0.02_336_/_0.42)]">
+        <header className="flex items-start justify-between gap-4">
+          <div>
+            <p className={text.eyebrow}>AI image picker</p>
+            <h3 className={text.h2}>Find a better image</h3>
+            {query ? (
+              <p className="mt-1 text-sm text-[var(--paper-muted)]">
+                Searching Pexels for{' '}
+                <span className="font-semibold text-[var(--paper)]">
+                  {query}
+                </span>
+              </p>
+            ) : null}
+          </div>
+          <Button
+            type="button"
+            variant="plain"
+            size="sm"
+            onClick={onClose}
+            aria-label="Close image picker"
+          >
+            Close
+          </Button>
+        </header>
+
+        <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+          <Input
+            type="text"
+            placeholder="Optional: describe what you want (e.g. wedding bouquet close-up)"
+            value={instruction}
+            onChange={(event) => setInstruction(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                runSuggest()
+              }
+            }}
+            disabled={searching}
+          />
+          <Button
+            type="button"
+            size="sm"
+            disabled={searching}
+            onClick={runSuggest}
+          >
+            {searching ? 'Searching…' : 'Search again'}
+          </Button>
+        </div>
+
+        {errorMessage ? (
+          <p className={text.error}>{errorMessage}</p>
+        ) : null}
+
+        {searching && candidates.length === 0 ? (
+          <div className={emptyState}>
+            <p className={text.p}>Looking for fresh images…</p>
+          </div>
+        ) : null}
+
+        {candidates.length > 0 ? (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {candidates.map((candidate) => {
+              const id =
+                candidate.providerId || candidate.downloadUrl
+              const isApplying = applyingId === id
+              return (
+                <button
+                  type="button"
+                  key={id}
+                  onClick={() => void applyCandidate(candidate)}
+                  disabled={isApplying || applyingId !== null}
+                  className="group relative grid gap-2 rounded-[14px] border border-border bg-[var(--surface-2)] p-2 text-left transition-colors hover:border-[var(--paper)] disabled:cursor-not-allowed disabled:opacity-60"
+                  aria-label={
+                    candidate.description ||
+                    `Photo by ${candidate.author || 'a Pexels contributor'}`
+                  }
+                >
+                  <img
+                    src={candidate.downloadUrl}
+                    alt={
+                      candidate.description ||
+                      `Photo by ${candidate.author || 'a Pexels contributor'}`
+                    }
+                    loading="lazy"
+                    className="aspect-[4/3] w-full rounded-[10px] object-cover"
+                  />
+                  <div className="grid gap-0.5 px-1 pb-1">
+                    {candidate.description ? (
+                      <span className="line-clamp-2 text-xs text-[var(--paper)]">
+                        {candidate.description}
+                      </span>
+                    ) : null}
+                    {candidate.author ? (
+                      <span className="text-xs text-[var(--paper-muted)]">
+                        Photo by {candidate.author}
+                      </span>
+                    ) : null}
+                  </div>
+                  {isApplying ? (
+                    <span className="absolute inset-0 flex items-center justify-center rounded-[14px] bg-[oklch(8%_0.02_336_/_0.55)] text-sm font-semibold text-[var(--paper)]">
+                      Applying…
+                    </span>
+                  ) : null}
+                </button>
+              )
+            })}
+          </div>
+        ) : null}
+
+        <p className="text-xs text-[var(--paper-muted)]">
+          Click an image to import it as a site asset and replace this slot.
+          We credit photographers automatically via Pexels.
+        </p>
+      </div>
+    </div>
   )
 }
 
