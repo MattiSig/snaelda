@@ -203,3 +203,37 @@
     }
   }
 }
+
+/* Inline content-editable affordance for the immersive builder. */
+[data-inline-edit="text"] {
+  position: relative;
+  border-radius: 6px;
+  outline: none;
+  cursor: text;
+  transition:
+    background-color 160ms ease-out,
+    box-shadow 160ms ease-out;
+}
+
+[data-inline-edit="text"]:hover {
+  background-color: color-mix(in oklch, var(--color-text) 6%, transparent);
+  box-shadow:
+    inset 0 -1px 0 0 color-mix(in oklch, var(--color-text) 24%, transparent);
+}
+
+[data-inline-edit="text"]:focus {
+  background-color: color-mix(in oklch, var(--color-text) 4%, transparent);
+  box-shadow:
+    0 0 0 2px color-mix(in oklch, var(--thread-violet) 78%, transparent);
+}
+
+[data-inline-edit="text"]:empty::before {
+  content: attr(data-placeholder);
+  color: color-mix(in oklch, var(--color-text) 38%, var(--color-background));
+  font-style: italic;
+  pointer-events: none;
+}
+
+[data-inline-edit="text"]:empty:focus::before {
+  opacity: 0.6;
+}

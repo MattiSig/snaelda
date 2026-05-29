@@ -19,6 +19,10 @@ import { buildDraftAssetURL, buildPublishedAssetURL } from '@/lib/assets';
 import { buildSiteThemeStyle } from '@/lib/site-theme';
 import { preview, text } from '@/lib/styles';
 import { cn } from '@/lib/utils';
+import {
+  InlineEditableImage,
+  InlineEditableText,
+} from '@/components/inline-editor';
 
 type RenderableSite = Pick<
   SiteDraft,
@@ -341,6 +345,7 @@ function renderSiteBlock({
       return (
         <HeroBlock
           key={block.id}
+          blockId={block.id}
           props={block.props}
           isFirst={blockIndex === 0}
           resolveHref={(href) =>
@@ -357,13 +362,26 @@ function renderSiteBlock({
         />
       );
     case 'text_section':
-      return <TextSectionBlock key={block.id} props={block.props} />;
+      return (
+        <TextSectionBlock
+          key={block.id}
+          blockId={block.id}
+          props={block.props}
+        />
+      );
     case 'features_grid':
-      return <FeaturesGridBlock key={block.id} props={block.props} />;
+      return (
+        <FeaturesGridBlock
+          key={block.id}
+          blockId={block.id}
+          props={block.props}
+        />
+      );
     case 'cta_band':
       return (
         <CTABandBlock
           key={block.id}
+          blockId={block.id}
           props={block.props}
           resolveHref={(href) =>
             resolvePageHref(
@@ -390,6 +408,7 @@ function renderSiteBlock({
       return (
         <ImageTextBlock
           key={block.id}
+          blockId={block.id}
           props={block.props}
           resolveHref={(href) =>
             resolvePageHref(
@@ -408,6 +427,7 @@ function renderSiteBlock({
       return (
         <GalleryBlock
           key={block.id}
+          blockId={block.id}
           props={block.props}
           linkMode={linkMode}
           siteSlug={siteSlug}
@@ -417,6 +437,7 @@ function renderSiteBlock({
       return (
         <TestimonialsBlock
           key={block.id}
+          blockId={block.id}
           props={block.props}
           linkMode={linkMode}
           siteSlug={siteSlug}
@@ -426,6 +447,7 @@ function renderSiteBlock({
       return (
         <PricingPackagesBlock
           key={block.id}
+          blockId={block.id}
           props={block.props}
           resolveHref={(href) =>
             resolvePageHref(
@@ -439,13 +461,18 @@ function renderSiteBlock({
         />
       );
     case 'faq':
-      return <FAQBlock key={block.id} props={block.props} />;
+      return (
+        <FAQBlock key={block.id} blockId={block.id} props={block.props} />
+      );
     case 'stats':
-      return <StatsBlock key={block.id} props={block.props} />;
+      return (
+        <StatsBlock key={block.id} blockId={block.id} props={block.props} />
+      );
     case 'team_profile_cards':
       return (
         <TeamProfileCardsBlock
           key={block.id}
+          blockId={block.id}
           props={block.props}
           resolveHref={(href) =>
             resolvePageHref(
@@ -548,12 +575,14 @@ const bodyClass =
   'text-[1.05rem] leading-[1.65] text-[color-mix(in_oklch,var(--color-text)_82%,var(--color-background))]';
 
 function HeroBlock({
+  blockId,
   props,
   isFirst,
   resolveHref,
   linkMode,
   siteSlug,
 }: {
+  blockId: string;
   props: Record<string, unknown>;
   isFirst: boolean;
   resolveHref: (href: string) => string;
@@ -568,6 +597,7 @@ function HeroBlock({
   if (variant === 'full-page') {
     return (
       <FullPageHeroBlock
+        blockId={blockId}
         eyebrow={asText(props.eyebrow)}
         headline={asText(props.headline)}
         subheadline={asText(props.subheadline)}
@@ -595,17 +625,31 @@ function HeroBlock({
         !isSplit && 'max-w-[22ch]',
       )}
     >
-      {asText(props.eyebrow) ? (
-        <p className={text.eyebrow}>{asText(props.eyebrow)}</p>
-      ) : null}
-      <h2 className="[font-family:var(--font-heading)] text-[clamp(2.6rem,6.2vw,5.4rem)] [font-weight:var(--font-headingWeight,700)] leading-[0.96] tracking-[-0.02em] text-[var(--color-text)]">
-        {asText(props.headline)}
-      </h2>
-      {asText(props.subheadline) ? (
-        <p className="max-w-[44ch] text-[1.15rem] leading-[1.6] text-[color-mix(in_oklch,var(--color-text)_78%,var(--color-background))]">
-          {asText(props.subheadline)}
-        </p>
-      ) : null}
+      <InlineEditableText
+        blockId={blockId}
+        path={['eyebrow']}
+        value={asText(props.eyebrow)}
+        placeholder="Eyebrow (optional)"
+        as="p"
+        className={text.eyebrow}
+      />
+      <InlineEditableText
+        blockId={blockId}
+        path={['headline']}
+        value={asText(props.headline)}
+        placeholder="Add a headline that says what you do"
+        as="h2"
+        className="[font-family:var(--font-heading)] text-[clamp(2.6rem,6.2vw,5.4rem)] [font-weight:var(--font-headingWeight,700)] leading-[0.96] tracking-[-0.02em] text-[var(--color-text)]"
+      />
+      <InlineEditableText
+        blockId={blockId}
+        path={['subheadline']}
+        value={asText(props.subheadline)}
+        placeholder="A short subheadline expands on the promise"
+        multiline
+        as="p"
+        className="max-w-[44ch] text-[1.15rem] leading-[1.6] text-[color-mix(in_oklch,var(--color-text)_78%,var(--color-background))]"
+      />
       {primary || secondary ? (
         <div className={cn(preview.actionRow, 'mt-2')}>
           {primary ? (
@@ -642,21 +686,40 @@ function HeroBlock({
           )}
         >
           {content}
-          {image ? (
-            <AssetImage
-              image={image}
-              linkMode={linkMode}
-              siteSlug={siteSlug}
-              className={cn(
-                'w-full rounded-[var(--radius-inner)] object-cover',
-                isSplit
-                  ? 'aspect-[4/5] lg:aspect-auto lg:h-full lg:min-h-[460px]'
-                  : 'aspect-[16/9] max-h-[520px]',
-                isSplit && layout === 'split-right' && 'lg:order-2',
-                isSplit && layout === 'split-left' && 'lg:order-1',
-              )}
-            />
-          ) : null}
+          <InlineEditableImage
+            blockId={blockId}
+            path={['image']}
+            image={image}
+            emptyLabel="Add hero image"
+            className={cn(
+              isSplit && layout === 'split-right' && 'lg:order-2',
+              isSplit && layout === 'split-left' && 'lg:order-1',
+            )}
+          >
+            {image ? (
+              <AssetImage
+                image={image}
+                linkMode={linkMode}
+                siteSlug={siteSlug}
+                className={cn(
+                  'w-full rounded-[var(--radius-inner)] object-cover',
+                  isSplit
+                    ? 'aspect-[4/5] lg:aspect-auto lg:h-full lg:min-h-[460px]'
+                    : 'aspect-[16/9] max-h-[520px]',
+                )}
+              />
+            ) : (
+              <div
+                className={cn(
+                  preview.imagePlaceholder,
+                  'w-full rounded-[var(--radius-inner)]',
+                  isSplit ? 'aspect-[4/5] min-h-[360px]' : 'aspect-[16/9] min-h-[280px]',
+                )}
+              >
+                <span>Click to add a hero image</span>
+              </div>
+            )}
+          </InlineEditableImage>
         </div>
       </div>
     </section>
@@ -664,6 +727,7 @@ function HeroBlock({
 }
 
 function FullPageHeroBlock({
+  blockId,
   eyebrow,
   headline,
   subheadline,
@@ -675,6 +739,7 @@ function FullPageHeroBlock({
   linkMode,
   siteSlug,
 }: {
+  blockId: string;
   eyebrow: string | null;
   headline: string | null;
   subheadline: string | null;
@@ -696,42 +761,63 @@ function FullPageHeroBlock({
         isFirst && '-mt-[var(--preview-header-height,88px)] pt-[var(--preview-header-height,88px)]',
       )}
     >
-      {image ? (
-        <AssetImage
-          image={image}
-          linkMode={linkMode}
-          siteSlug={siteSlug}
-          className="absolute inset-0 -z-20 h-full w-full object-cover"
-        />
-      ) : (
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 -z-20 h-full w-full"
-          style={{
-            background:
-              'radial-gradient(circle at 30% 20%, color-mix(in oklch, var(--color-primary) 60%, var(--color-background)) 0%, var(--color-background) 70%)',
-          }}
-        />
-      )}
+      <InlineEditableImage
+        blockId={blockId}
+        path={['image']}
+        image={image}
+        emptyLabel="Add full-page hero image"
+        className="absolute inset-0 -z-20"
+        rounded={false}
+      >
+        {image ? (
+          <AssetImage
+            image={image}
+            linkMode={linkMode}
+            siteSlug={siteSlug}
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        ) : (
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 h-full w-full"
+            style={{
+              background:
+                'radial-gradient(circle at 30% 20%, color-mix(in oklch, var(--color-primary) 60%, var(--color-background)) 0%, var(--color-background) 70%)',
+            }}
+          />
+        )}
+      </InlineEditableImage>
       <div
         aria-hidden="true"
         className="absolute inset-0 -z-10 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.55)_0%,rgba(0,0,0,0.15)_35%,rgba(0,0,0,0.25)_60%,rgba(0,0,0,0.75)_100%)]"
       />
       <div className="relative mx-auto flex w-full max-w-[1180px] flex-col justify-end px-[max(1.25rem,4vw)] pb-[clamp(48px,8vw,96px)] pt-[clamp(72px,12vw,160px)]">
         <div className="grid max-w-[40ch] gap-5 text-[#F9F7F2] [text-wrap:balance]">
-          {eyebrow ? (
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-[color-mix(in_oklch,#F9F7F2_82%,transparent)]">
-              {eyebrow}
-            </p>
-          ) : null}
-          <h1 className="[font-family:var(--font-heading)] text-[clamp(2.8rem,7vw,6rem)] [font-weight:var(--font-headingWeight,700)] leading-[0.95] tracking-[-0.02em] text-[#F9F7F2] drop-shadow-[0_2px_24px_rgba(0,0,0,0.35)]">
-            {headline}
-          </h1>
-          {subheadline ? (
-            <p className="max-w-[46ch] text-[1.15rem] leading-[1.55] text-[color-mix(in_oklch,#F9F7F2_88%,transparent)] drop-shadow-[0_1px_12px_rgba(0,0,0,0.3)]">
-              {subheadline}
-            </p>
-          ) : null}
+          <InlineEditableText
+            blockId={blockId}
+            path={['eyebrow']}
+            value={eyebrow ?? ''}
+            placeholder="Eyebrow (optional)"
+            as="p"
+            className="text-xs font-bold uppercase tracking-[0.18em] text-[color-mix(in_oklch,#F9F7F2_82%,transparent)]"
+          />
+          <InlineEditableText
+            blockId={blockId}
+            path={['headline']}
+            value={headline ?? ''}
+            placeholder="A bold full-page promise"
+            as="h1"
+            className="[font-family:var(--font-heading)] text-[clamp(2.8rem,7vw,6rem)] [font-weight:var(--font-headingWeight,700)] leading-[0.95] tracking-[-0.02em] text-[#F9F7F2] drop-shadow-[0_2px_24px_rgba(0,0,0,0.35)]"
+          />
+          <InlineEditableText
+            blockId={blockId}
+            path={['subheadline']}
+            value={subheadline ?? ''}
+            placeholder="Add a supporting line"
+            multiline
+            as="p"
+            className="max-w-[46ch] text-[1.15rem] leading-[1.55] text-[color-mix(in_oklch,#F9F7F2_88%,transparent)] drop-shadow-[0_1px_12px_rgba(0,0,0,0.3)]"
+          />
           {primary || secondary ? (
             <div className={cn(preview.actionRow, 'mt-3')}>
               {primary ? (
@@ -763,7 +849,13 @@ function FullPageHeroBlock({
   );
 }
 
-function TextSectionBlock({ props }: { props: Record<string, unknown> }) {
+function TextSectionBlock({
+  blockId,
+  props,
+}: {
+  blockId: string;
+  props: Record<string, unknown>;
+}) {
   const alignment = asText(props.alignment) || 'left';
   const width = asText(props.width) || 'default';
   const widthClass =
@@ -787,15 +879,36 @@ function TextSectionBlock({ props }: { props: Record<string, unknown> }) {
         <div
           className={cn('grid gap-5', widthClass, positionClass, alignClass)}
         >
-          <h3 className={headingClass}>{asText(props.heading)}</h3>
-          <p className={bodyClass}>{asText(props.body)}</p>
+          <InlineEditableText
+            blockId={blockId}
+            path={['heading']}
+            value={asText(props.heading)}
+            placeholder="Section heading"
+            as="h3"
+            className={headingClass}
+          />
+          <InlineEditableText
+            blockId={blockId}
+            path={['body']}
+            value={asText(props.body)}
+            placeholder="Add a paragraph of body copy"
+            multiline
+            as="p"
+            className={bodyClass}
+          />
         </div>
       </div>
     </section>
   );
 }
 
-function FeaturesGridBlock({ props }: { props: Record<string, unknown> }) {
+function FeaturesGridBlock({
+  blockId,
+  props,
+}: {
+  blockId: string;
+  props: Record<string, unknown>;
+}) {
   const columns = asInt(props.columns) ?? 3;
   const colsClass =
     columns === 2
@@ -807,10 +920,23 @@ function FeaturesGridBlock({ props }: { props: Record<string, unknown> }) {
     <section className={preview.panel}>
       <div className={preview.panelInner}>
         <div className={preview.sectionHeading}>
-          <h3 className={headingClass}>{asText(props.heading)}</h3>
-          {asText(props.intro) ? (
-            <p className={bodyClass}>{asText(props.intro)}</p>
-          ) : null}
+          <InlineEditableText
+            blockId={blockId}
+            path={['heading']}
+            value={asText(props.heading)}
+            placeholder="Section heading"
+            as="h3"
+            className={headingClass}
+          />
+          <InlineEditableText
+            blockId={blockId}
+            path={['intro']}
+            value={asText(props.intro)}
+            placeholder="Add an intro paragraph (optional)"
+            multiline
+            as="p"
+            className={bodyClass}
+          />
         </div>
         <div className={cn('grid gap-x-10 gap-y-12', colsClass)}>
           {asArray(props.items).map((item, index) => {
@@ -819,12 +945,23 @@ function FeaturesGridBlock({ props }: { props: Record<string, unknown> }) {
             return (
               <div key={index} className={preview.feature}>
                 {icon ? <p className={text.eyebrow}>{icon}</p> : null}
-                <h4 className="mt-1 [font-family:var(--font-heading)] text-[1.2rem] [font-weight:var(--font-headingWeight,700)] leading-[1.15] text-[var(--color-text)]">
-                  {asText(value?.title)}
-                </h4>
-                <p className="leading-[1.6] text-[color-mix(in_oklch,var(--color-text)_82%,var(--color-background))]">
-                  {asText(value?.body)}
-                </p>
+                <InlineEditableText
+                  blockId={blockId}
+                  path={['items', index, 'title']}
+                  value={asText(value?.title)}
+                  placeholder="Feature title"
+                  as="h4"
+                  className="mt-1 [font-family:var(--font-heading)] text-[1.2rem] [font-weight:var(--font-headingWeight,700)] leading-[1.15] text-[var(--color-text)]"
+                />
+                <InlineEditableText
+                  blockId={blockId}
+                  path={['items', index, 'body']}
+                  value={asText(value?.body)}
+                  placeholder="Short description"
+                  multiline
+                  as="p"
+                  className="leading-[1.6] text-[color-mix(in_oklch,var(--color-text)_82%,var(--color-background))]"
+                />
               </div>
             );
           })}
@@ -835,9 +972,11 @@ function FeaturesGridBlock({ props }: { props: Record<string, unknown> }) {
 }
 
 function CTABandBlock({
+  blockId,
   props,
   resolveHref,
 }: {
+  blockId: string;
   props: Record<string, unknown>;
   resolveHref: (href: string) => string;
 }) {
@@ -858,14 +997,23 @@ function CTABandBlock({
         )}
       >
         <div className="grid max-w-[44ch] gap-3">
-          <h3 className="font-serif text-[clamp(1.75rem,3.2vw,2.8rem)] font-bold leading-[1.05] tracking-tight">
-            {asText(props.heading)}
-          </h3>
-          {asText(props.body) ? (
-            <p className="text-[1.05rem] leading-[1.6] opacity-85">
-              {asText(props.body)}
-            </p>
-          ) : null}
+          <InlineEditableText
+            blockId={blockId}
+            path={['heading']}
+            value={asText(props.heading)}
+            placeholder="Make it easy to take the next step"
+            as="h3"
+            className="font-serif text-[clamp(1.75rem,3.2vw,2.8rem)] font-bold leading-[1.05] tracking-tight"
+          />
+          <InlineEditableText
+            blockId={blockId}
+            path={['body']}
+            value={asText(props.body)}
+            placeholder="One short line of support copy (optional)"
+            multiline
+            as="p"
+            className="text-[1.05rem] leading-[1.6] opacity-85"
+          />
         </div>
         {cta ? (
           <Button asChild variant="plain" className={preview.button}>
@@ -1048,11 +1196,13 @@ function ContactFormBlock({
 }
 
 function ImageTextBlock({
+  blockId,
   props,
   resolveHref,
   linkMode,
   siteSlug,
 }: {
+  blockId: string;
   props: Record<string, unknown>;
   resolveHref: (href: string) => string;
   linkMode: 'anchors' | 'published';
@@ -1067,8 +1217,23 @@ function ImageTextBlock({
         <div
           className={cn('grid gap-5', imagePosition === 'left' && 'lg:order-2')}
         >
-          <h3 className={headingClass}>{asText(props.heading)}</h3>
-          <p className={bodyClass}>{asText(props.body)}</p>
+          <InlineEditableText
+            blockId={blockId}
+            path={['heading']}
+            value={asText(props.heading)}
+            placeholder="Section heading"
+            as="h3"
+            className={headingClass}
+          />
+          <InlineEditableText
+            blockId={blockId}
+            path={['body']}
+            value={asText(props.body)}
+            placeholder="Add a paragraph of body copy"
+            multiline
+            as="p"
+            className={bodyClass}
+          />
           {cta ? (
             <div className="mt-2">
               <Button
@@ -1083,37 +1248,43 @@ function ImageTextBlock({
             </div>
           ) : null}
         </div>
-        {image ? (
-          <AssetImage
-            image={image}
-            linkMode={linkMode}
-            siteSlug={siteSlug}
-            className={cn(
-              'aspect-[4/5] w-full rounded-[var(--radius-inner)] object-cover lg:aspect-auto lg:h-full lg:min-h-[380px]',
-              imagePosition === 'left' && 'lg:order-1',
-            )}
-          />
-        ) : (
-          <div
-            className={cn(
-              preview.imagePlaceholder,
-              'min-h-[300px]',
-              imagePosition === 'left' && 'lg:order-1',
-            )}
-          >
-            <span>Image slot</span>
-          </div>
-        )}
+        <InlineEditableImage
+          blockId={blockId}
+          path={['image']}
+          image={image}
+          emptyLabel="Add image"
+          className={cn(imagePosition === 'left' && 'lg:order-1')}
+        >
+          {image ? (
+            <AssetImage
+              image={image}
+              linkMode={linkMode}
+              siteSlug={siteSlug}
+              className="aspect-[4/5] w-full rounded-[var(--radius-inner)] object-cover lg:aspect-auto lg:h-full lg:min-h-[380px]"
+            />
+          ) : (
+            <div
+              className={cn(
+                preview.imagePlaceholder,
+                'min-h-[300px] w-full rounded-[var(--radius-inner)]',
+              )}
+            >
+              <span>Click to add an image</span>
+            </div>
+          )}
+        </InlineEditableImage>
       </div>
     </section>
   );
 }
 
 function GalleryBlock({
+  blockId,
   props,
   linkMode,
   siteSlug,
 }: {
+  blockId: string;
   props: Record<string, unknown>;
   linkMode: 'anchors' | 'published';
   siteSlug?: string;
@@ -1125,10 +1296,23 @@ function GalleryBlock({
     <section className={preview.panel}>
       <div className={preview.panelInner}>
         <div className={preview.sectionHeading}>
-          <h3 className={headingClass}>{asText(props.heading)}</h3>
-          {asText(props.intro) ? (
-            <p className={bodyClass}>{asText(props.intro)}</p>
-          ) : null}
+          <InlineEditableText
+            blockId={blockId}
+            path={['heading']}
+            value={asText(props.heading)}
+            placeholder="Gallery heading"
+            as="h3"
+            className={headingClass}
+          />
+          <InlineEditableText
+            blockId={blockId}
+            path={['intro']}
+            value={asText(props.intro)}
+            placeholder="Add an intro (optional)"
+            multiline
+            as="p"
+            className={bodyClass}
+          />
         </div>
         <div className={galleryGridClassName(layout)}>
           {images.map((item, index) => {
@@ -1145,39 +1329,55 @@ function GalleryBlock({
                   isSpotlight && 'md:col-span-2 xl:col-span-3',
                 )}
               >
-                {image ? (
-                  <AssetImage
-                    image={image}
-                    linkMode={linkMode}
-                    siteSlug={siteSlug}
-                    className={cn(
-                      'w-full rounded-[var(--radius-inner)] object-cover',
-                      isSpotlight
-                        ? 'aspect-[21/9]'
-                        : layout === 'masonry' && index % 3 === 0
-                          ? 'aspect-[3/4]'
-                          : 'aspect-[4/3]',
-                    )}
-                  />
-                ) : (
-                  <div
-                    className={cn(
-                      preview.imagePlaceholderTall,
-                      isSpotlight && 'min-h-[440px]',
-                    )}
-                  >
-                    <span className="text-sm">{title}</span>
-                  </div>
-                )}
+                <InlineEditableImage
+                  blockId={blockId}
+                  path={['images', index, 'image']}
+                  image={image}
+                  emptyLabel="Add image"
+                >
+                  {image ? (
+                    <AssetImage
+                      image={image}
+                      linkMode={linkMode}
+                      siteSlug={siteSlug}
+                      className={cn(
+                        'w-full rounded-[var(--radius-inner)] object-cover',
+                        isSpotlight
+                          ? 'aspect-[21/9]'
+                          : layout === 'masonry' && index % 3 === 0
+                            ? 'aspect-[3/4]'
+                            : 'aspect-[4/3]',
+                      )}
+                    />
+                  ) : (
+                    <div
+                      className={cn(
+                        preview.imagePlaceholderTall,
+                        isSpotlight && 'min-h-[440px]',
+                      )}
+                    >
+                      <span className="text-sm">{title}</span>
+                    </div>
+                  )}
+                </InlineEditableImage>
                 <figcaption className="grid gap-1">
-                  <span className="text-sm font-medium text-[var(--color-text)]">
-                    {title}
-                  </span>
-                  {caption ? (
-                    <span className="text-sm leading-[1.55] text-[color-mix(in_oklch,var(--color-text)_72%,var(--color-background))]">
-                      {caption}
-                    </span>
-                  ) : null}
+                  <InlineEditableText
+                    blockId={blockId}
+                    path={['images', index, 'title']}
+                    value={asText(value?.title)}
+                    placeholder={`Image ${index + 1}`}
+                    as="span"
+                    className="text-sm font-medium text-[var(--color-text)]"
+                  />
+                  <InlineEditableText
+                    blockId={blockId}
+                    path={['images', index, 'caption']}
+                    value={caption}
+                    placeholder="Caption (optional)"
+                    multiline
+                    as="span"
+                    className="text-sm leading-[1.55] text-[color-mix(in_oklch,var(--color-text)_72%,var(--color-background))]"
+                  />
                 </figcaption>
               </figure>
             );
@@ -1189,10 +1389,12 @@ function GalleryBlock({
 }
 
 function TestimonialsBlock({
+  blockId,
   props,
   linkMode,
   siteSlug,
 }: {
+  blockId: string;
   props: Record<string, unknown>;
   linkMode: 'anchors' | 'published';
   siteSlug?: string;
@@ -1201,10 +1403,23 @@ function TestimonialsBlock({
     <section className={preview.panel}>
       <div className={preview.panelInner}>
         <div className={preview.sectionHeading}>
-          <h3 className={headingClass}>{asText(props.heading)}</h3>
-          {asText(props.intro) ? (
-            <p className={bodyClass}>{asText(props.intro)}</p>
-          ) : null}
+          <InlineEditableText
+            blockId={blockId}
+            path={['heading']}
+            value={asText(props.heading)}
+            placeholder="Testimonials heading"
+            as="h3"
+            className={headingClass}
+          />
+          <InlineEditableText
+            blockId={blockId}
+            path={['intro']}
+            value={asText(props.intro)}
+            placeholder="Add an intro (optional)"
+            multiline
+            as="p"
+            className={bodyClass}
+          />
         </div>
         <div className="grid gap-x-12 gap-y-10 md:grid-cols-2">
           {asArray(props.items).map((item, index) => {
@@ -1212,9 +1427,15 @@ function TestimonialsBlock({
             const avatar = asImageRef(value?.avatar);
             return (
               <figure key={index} className={preview.quoteCard}>
-                <blockquote className="m-0 [font-family:var(--font-heading)] text-[1.35rem] leading-[1.45] text-[var(--color-text)]">
-                  &ldquo;{asText(value?.quote)}&rdquo;
-                </blockquote>
+                <InlineEditableText
+                  blockId={blockId}
+                  path={['items', index, 'quote']}
+                  value={asText(value?.quote)}
+                  placeholder="What did they say?"
+                  multiline
+                  as="blockquote"
+                  className="m-0 [font-family:var(--font-heading)] text-[1.35rem] leading-[1.45] text-[var(--color-text)]"
+                />
                 <figcaption className="flex items-center gap-3">
                   {avatar ? (
                     <AssetImage
@@ -1225,14 +1446,22 @@ function TestimonialsBlock({
                     />
                   ) : null}
                   <div>
-                    <span className="block text-sm font-semibold text-[var(--color-text)]">
-                      {asText(value?.name)}
-                    </span>
-                    {asText(value?.role) ? (
-                      <span className="block text-sm text-[color-mix(in_oklch,var(--color-text)_68%,var(--color-background))]">
-                        {asText(value?.role)}
-                      </span>
-                    ) : null}
+                    <InlineEditableText
+                      blockId={blockId}
+                      path={['items', index, 'name']}
+                      value={asText(value?.name)}
+                      placeholder="Name"
+                      as="span"
+                      className="block text-sm font-semibold text-[var(--color-text)]"
+                    />
+                    <InlineEditableText
+                      blockId={blockId}
+                      path={['items', index, 'role']}
+                      value={asText(value?.role)}
+                      placeholder="Role (optional)"
+                      as="span"
+                      className="block text-sm text-[color-mix(in_oklch,var(--color-text)_68%,var(--color-background))]"
+                    />
                   </div>
                 </figcaption>
               </figure>
@@ -1245,9 +1474,11 @@ function TestimonialsBlock({
 }
 
 function PricingPackagesBlock({
+  blockId,
   props,
   resolveHref,
 }: {
+  blockId: string;
   props: Record<string, unknown>;
   resolveHref: (href: string) => string;
 }) {
@@ -1255,10 +1486,23 @@ function PricingPackagesBlock({
     <section className={preview.panel}>
       <div className={preview.panelInner}>
         <div className={preview.sectionHeading}>
-          <h3 className={headingClass}>{asText(props.heading)}</h3>
-          {asText(props.intro) ? (
-            <p className={bodyClass}>{asText(props.intro)}</p>
-          ) : null}
+          <InlineEditableText
+            blockId={blockId}
+            path={['heading']}
+            value={asText(props.heading)}
+            placeholder="Pricing heading"
+            as="h3"
+            className={headingClass}
+          />
+          <InlineEditableText
+            blockId={blockId}
+            path={['intro']}
+            value={asText(props.intro)}
+            placeholder="Add an intro (optional)"
+            multiline
+            as="p"
+            className={bodyClass}
+          />
         </div>
         <div className={preview.pricingGrid}>
           {asArray(props.plans).map((item, index) => {
@@ -1267,15 +1511,31 @@ function PricingPackagesBlock({
             return (
               <article key={index} className={preview.pricingCard}>
                 <div className="grid gap-2">
-                  <h4 className="[font-family:var(--font-heading)] text-[1.3rem] [font-weight:var(--font-headingWeight,700)] leading-[1.1] text-[var(--color-text)]">
-                    {asText(value?.name)}
-                  </h4>
-                  <p className="m-0 [font-family:var(--font-heading)] text-[1.8rem] [font-weight:var(--font-headingWeight,700)] leading-none text-[var(--color-text)]">
-                    {asText(value?.price)}
-                  </p>
-                  <p className="m-0 text-sm leading-[1.55] text-[color-mix(in_oklch,var(--color-text)_78%,var(--color-background))]">
-                    {asText(value?.description)}
-                  </p>
+                  <InlineEditableText
+                    blockId={blockId}
+                    path={['plans', index, 'name']}
+                    value={asText(value?.name)}
+                    placeholder="Plan name"
+                    as="h4"
+                    className="[font-family:var(--font-heading)] text-[1.3rem] [font-weight:var(--font-headingWeight,700)] leading-[1.1] text-[var(--color-text)]"
+                  />
+                  <InlineEditableText
+                    blockId={blockId}
+                    path={['plans', index, 'price']}
+                    value={asText(value?.price)}
+                    placeholder="$0/mo"
+                    as="p"
+                    className="m-0 [font-family:var(--font-heading)] text-[1.8rem] [font-weight:var(--font-headingWeight,700)] leading-none text-[var(--color-text)]"
+                  />
+                  <InlineEditableText
+                    blockId={blockId}
+                    path={['plans', index, 'description']}
+                    value={asText(value?.description)}
+                    placeholder="Short description"
+                    multiline
+                    as="p"
+                    className="m-0 text-sm leading-[1.55] text-[color-mix(in_oklch,var(--color-text)_78%,var(--color-background))]"
+                  />
                 </div>
                 <ul className={preview.chipList}>
                   {asArray(value?.features).map((feature, featureIndex) => {
@@ -1311,27 +1571,57 @@ function PricingPackagesBlock({
   );
 }
 
-function FAQBlock({ props }: { props: Record<string, unknown> }) {
+function FAQBlock({
+  blockId,
+  props,
+}: {
+  blockId: string;
+  props: Record<string, unknown>;
+}) {
   return (
     <section className={preview.panel}>
       <div className={cn(preview.panelNarrow)}>
         <div className={preview.sectionHeading}>
-          <h3 className={headingClass}>{asText(props.heading)}</h3>
-          {asText(props.intro) ? (
-            <p className={bodyClass}>{asText(props.intro)}</p>
-          ) : null}
+          <InlineEditableText
+            blockId={blockId}
+            path={['heading']}
+            value={asText(props.heading)}
+            placeholder="FAQ heading"
+            as="h3"
+            className={headingClass}
+          />
+          <InlineEditableText
+            blockId={blockId}
+            path={['intro']}
+            value={asText(props.intro)}
+            placeholder="Add an intro (optional)"
+            multiline
+            as="p"
+            className={bodyClass}
+          />
         </div>
         <ul className={preview.faqList}>
           {asArray(props.items).map((item, index) => {
             const value = asObject(item);
             return (
               <li key={index} className={preview.faqItem}>
-                <h4 className="[font-family:var(--font-heading)] text-[1.15rem] [font-weight:var(--font-headingWeight,700)] leading-[1.25] text-[var(--color-text)]">
-                  {asText(value?.question)}
-                </h4>
-                <p className="m-0 leading-[1.65] text-[color-mix(in_oklch,var(--color-text)_82%,var(--color-background))]">
-                  {asText(value?.answer)}
-                </p>
+                <InlineEditableText
+                  blockId={blockId}
+                  path={['items', index, 'question']}
+                  value={asText(value?.question)}
+                  placeholder="Question"
+                  as="h4"
+                  className="[font-family:var(--font-heading)] text-[1.15rem] [font-weight:var(--font-headingWeight,700)] leading-[1.25] text-[var(--color-text)]"
+                />
+                <InlineEditableText
+                  blockId={blockId}
+                  path={['items', index, 'answer']}
+                  value={asText(value?.answer)}
+                  placeholder="Answer"
+                  multiline
+                  as="p"
+                  className="m-0 leading-[1.65] text-[color-mix(in_oklch,var(--color-text)_82%,var(--color-background))]"
+                />
               </li>
             );
           })}
@@ -1341,7 +1631,13 @@ function FAQBlock({ props }: { props: Record<string, unknown> }) {
   );
 }
 
-function StatsBlock({ props }: { props: Record<string, unknown> }) {
+function StatsBlock({
+  blockId,
+  props,
+}: {
+  blockId: string;
+  props: Record<string, unknown>;
+}) {
   const items = asArray(props.items);
   const columnsClass =
     items.length >= 4
@@ -1353,27 +1649,54 @@ function StatsBlock({ props }: { props: Record<string, unknown> }) {
     <section className={preview.panel}>
       <div className={preview.panelInner}>
         <div className={preview.sectionHeading}>
-          <h3 className={headingClass}>{asText(props.heading)}</h3>
-          {asText(props.intro) ? (
-            <p className={bodyClass}>{asText(props.intro)}</p>
-          ) : null}
+          <InlineEditableText
+            blockId={blockId}
+            path={['heading']}
+            value={asText(props.heading)}
+            placeholder="Stats heading"
+            as="h3"
+            className={headingClass}
+          />
+          <InlineEditableText
+            blockId={blockId}
+            path={['intro']}
+            value={asText(props.intro)}
+            placeholder="Add an intro (optional)"
+            multiline
+            as="p"
+            className={bodyClass}
+          />
         </div>
         <div className={cn('grid gap-x-10 gap-y-12', columnsClass)}>
           {items.map((item, index) => {
             const value = asObject(item);
             return (
               <div key={index} className="grid gap-2">
-                <p className="m-0 [font-family:var(--font-heading)] text-[clamp(2rem,4vw,3rem)] [font-weight:var(--font-headingWeight,700)] leading-[1.05] text-[var(--color-text)]">
-                  {asText(value?.value)}
-                </p>
-                <p className={cn(text.eyebrow, 'm-0')}>
-                  {asText(value?.label)}
-                </p>
-                {asText(value?.description) ? (
-                  <p className="m-0 text-sm leading-[1.55] text-[color-mix(in_oklch,var(--color-text)_78%,var(--color-background))]">
-                    {asText(value?.description)}
-                  </p>
-                ) : null}
+                <InlineEditableText
+                  blockId={blockId}
+                  path={['items', index, 'value']}
+                  value={asText(value?.value)}
+                  placeholder="100+"
+                  as="p"
+                  className="m-0 [font-family:var(--font-heading)] text-[clamp(2rem,4vw,3rem)] [font-weight:var(--font-headingWeight,700)] leading-[1.05] text-[var(--color-text)]"
+                />
+                <InlineEditableText
+                  blockId={blockId}
+                  path={['items', index, 'label']}
+                  value={asText(value?.label)}
+                  placeholder="Label"
+                  as="p"
+                  className={cn(text.eyebrow, 'm-0')}
+                />
+                <InlineEditableText
+                  blockId={blockId}
+                  path={['items', index, 'description']}
+                  value={asText(value?.description)}
+                  placeholder="Description (optional)"
+                  multiline
+                  as="p"
+                  className="m-0 text-sm leading-[1.55] text-[color-mix(in_oklch,var(--color-text)_78%,var(--color-background))]"
+                />
               </div>
             );
           })}
@@ -1384,11 +1707,13 @@ function StatsBlock({ props }: { props: Record<string, unknown> }) {
 }
 
 function TeamProfileCardsBlock({
+  blockId,
   props,
   resolveHref,
   linkMode,
   siteSlug,
 }: {
+  blockId: string;
   props: Record<string, unknown>;
   resolveHref: (href: string) => string;
   linkMode: 'anchors' | 'published';
@@ -1398,10 +1723,23 @@ function TeamProfileCardsBlock({
     <section className={preview.panel}>
       <div className={preview.panelInner}>
         <div className={preview.sectionHeading}>
-          <h3 className={headingClass}>{asText(props.heading)}</h3>
-          {asText(props.intro) ? (
-            <p className={bodyClass}>{asText(props.intro)}</p>
-          ) : null}
+          <InlineEditableText
+            blockId={blockId}
+            path={['heading']}
+            value={asText(props.heading)}
+            placeholder="Team heading"
+            as="h3"
+            className={headingClass}
+          />
+          <InlineEditableText
+            blockId={blockId}
+            path={['intro']}
+            value={asText(props.intro)}
+            placeholder="Add an intro (optional)"
+            multiline
+            as="p"
+            className={bodyClass}
+          />
         </div>
         <div className={preview.cardGrid}>
           {asArray(props.people).map((item, index) => {
@@ -1409,34 +1747,57 @@ function TeamProfileCardsBlock({
             const photo = asImageRef(value?.photo);
             return (
               <div key={index} className="grid gap-4">
-                {photo ? (
-                  <AssetImage
-                    image={photo}
-                    linkMode={linkMode}
-                    siteSlug={siteSlug}
-                    className="aspect-[4/5] w-full rounded-[var(--radius-inner)] object-cover"
-                  />
-                ) : (
-                  <div
-                    className={cn(
-                      preview.imagePlaceholder,
-                      'aspect-[4/5] min-h-0',
-                    )}
-                  >
-                    <span>{asText(value?.name) || 'Profile image slot'}</span>
-                  </div>
-                )}
+                <InlineEditableImage
+                  blockId={blockId}
+                  path={['people', index, 'photo']}
+                  image={photo}
+                  emptyLabel="Add photo"
+                >
+                  {photo ? (
+                    <AssetImage
+                      image={photo}
+                      linkMode={linkMode}
+                      siteSlug={siteSlug}
+                      className="aspect-[4/5] w-full rounded-[var(--radius-inner)] object-cover"
+                    />
+                  ) : (
+                    <div
+                      className={cn(
+                        preview.imagePlaceholder,
+                        'aspect-[4/5] min-h-0 w-full rounded-[var(--radius-inner)]',
+                      )}
+                    >
+                      <span>{asText(value?.name) || 'Profile image slot'}</span>
+                    </div>
+                  )}
+                </InlineEditableImage>
                 <div className="grid gap-1">
-                  <h4 className="[font-family:var(--font-heading)] text-[1.2rem] [font-weight:var(--font-headingWeight,700)] leading-[1.15] text-[var(--color-text)]">
-                    {asText(value?.name)}
-                  </h4>
-                  <p className="m-0 text-sm font-medium uppercase tracking-[0.08em] text-[color-mix(in_oklch,var(--color-text)_62%,var(--color-background))]">
-                    {asText(value?.role)}
-                  </p>
+                  <InlineEditableText
+                    blockId={blockId}
+                    path={['people', index, 'name']}
+                    value={asText(value?.name)}
+                    placeholder="Name"
+                    as="h4"
+                    className="[font-family:var(--font-heading)] text-[1.2rem] [font-weight:var(--font-headingWeight,700)] leading-[1.15] text-[var(--color-text)]"
+                  />
+                  <InlineEditableText
+                    blockId={blockId}
+                    path={['people', index, 'role']}
+                    value={asText(value?.role)}
+                    placeholder="Role"
+                    as="p"
+                    className="m-0 text-sm font-medium uppercase tracking-[0.08em] text-[color-mix(in_oklch,var(--color-text)_62%,var(--color-background))]"
+                  />
                 </div>
-                <p className="m-0 leading-[1.6] text-[color-mix(in_oklch,var(--color-text)_82%,var(--color-background))]">
-                  {asText(value?.bio)}
-                </p>
+                <InlineEditableText
+                  blockId={blockId}
+                  path={['people', index, 'bio']}
+                  value={asText(value?.bio)}
+                  placeholder="Short bio"
+                  multiline
+                  as="p"
+                  className="m-0 leading-[1.6] text-[color-mix(in_oklch,var(--color-text)_82%,var(--color-background))]"
+                />
                 {asArray(value?.links).length > 0 ? (
                   <div className="flex flex-wrap gap-x-5 gap-y-2">
                     {asArray(value?.links).map((link, linkIndex) => {

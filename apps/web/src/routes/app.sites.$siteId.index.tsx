@@ -171,7 +171,6 @@ function SiteDetail() {
   const [pageSEOTitle, setPageSEOTitle] = useState("");
   const [pageSEODescription, setPageSEODescription] = useState("");
   const [pageIncludeInNavigation, setPageIncludeInNavigation] = useState(true);
-  const [newBlockType, setNewBlockType] = useState("");
   const [siteAssets, setSiteAssets] = useState<AssetRecord[]>([]);
   const [formSubmissions, setFormSubmissions] = useState<
     FormSubmissionRecord[]
@@ -184,7 +183,6 @@ function SiteDetail() {
   const [isCreatingPage, setIsCreatingPage] = useState(false);
   const [isSavingPage, setIsSavingPage] = useState(false);
   const [isDeletingPage, setIsDeletingPage] = useState(false);
-  const [isSavingBlock, setIsSavingBlock] = useState(false);
   const [isCreatingBlock, setIsCreatingBlock] = useState(false);
   const [isSuggestingBlock, setIsSuggestingBlock] = useState(false);
   const [suggestErrorMessage, setSuggestErrorMessage] = useState("");
@@ -364,9 +362,6 @@ function SiteDetail() {
           }
           setBlockRegistry(draftResponse.blockRegistry);
           setGenerationMetadata(draftResponse.generation);
-          setNewBlockType(
-            (current) => current || draftResponse.blockRegistry[0]?.type || "",
-          );
           setVersions(versionResponse.versions);
           setDomainState(domainResponse);
           setBillingState(billingResponse);
@@ -774,37 +769,167 @@ function SiteDetail() {
     setNavigationStatusMessage("");
   }
 
-  async function handleSaveBlock(
-    props: Record<string, unknown>,
-    hidden: boolean,
+  function handleEditField(
+    blockId: string,
+    path: ReadonlyArray<string | number>,
+    value: unknown,
   ) {
-    if (!selectedPage || !selectedBlock) {
-      return;
-    }
+    if (!draft) return;
+    const ownerPage = draft.pages.find((page) =>
+      page.blocks.some((block) => block.id === blockId),
+    );
+    const block = ownerPage?.blocks.find((b) => b.id === blockId);
+    if (!ownerPage || !block) return;
 
-    setIsSavingBlock(true);
+    const nextProps = setBlockPropPath(block.props, path, value);
+    const hidden = Boolean(block.settings?.hidden);
+
+    // Optimistic local update so the UI commits immediately, then patch on the
+    // server. Failed patches reload the draft so we don't drift.
+    const optimistic = applyBlockUpdate(draft, ownerPage.id, blockId, {
+      props: nextProps,
+      hidden,
+    });
+    setDraft(optimistic);
     setBlockErrorMessage("");
     setBlockStatusMessage("");
-    clearBlockedAction();
 
-    try {
-      const response = await updateBlock(
-        siteId,
-        selectedPage.id,
-        selectedBlock.id,
-        {
-          props,
+    void (async () => {
+      try {
+        const response = await updateBlock(siteId, ownerPage.id, blockId, {
+          props: nextProps,
           hidden,
-        },
-      );
-      applyDraftUpdate(response.draft, selectedPage.id, selectedBlock.id);
-      setBlockStatusMessage("Block changes saved.");
+        });
+        applyDraftUpdate(response.draft, ownerPage.id, blockId);
+      } catch (error) {
+        setBlockErrorMessage(
+          error instanceof APIError ? error.message : "Could not save edit",
+        );
+        // Reload to recover canonical state.
+        try {
+          const fresh = await getSiteDraft(siteId);
+          applyDraftUpdate(fresh.draft, ownerPage.id, blockId);
+        } catch {
+          // best-effort
+        }
+      }
+    })();
+  }
+
+  async function handleToggleHidden(blockId: string, hidden: boolean) {
+    if (!draft) return;
+    const ownerPage = draft.pages.find((page) =>
+      page.blocks.some((block) => block.id === blockId),
+    );
+    const block = ownerPage?.blocks.find((b) => b.id === blockId);
+    if (!ownerPage || !block) return;
+
+    setIsMutatingBlocks(true);
+    setBlockErrorMessage("");
+    setBlockStatusMessage("");
+    try {
+      const response = await updateBlock(siteId, ownerPage.id, blockId, {
+        props: block.props as Record<string, unknown>,
+        hidden,
+      });
+      applyDraftUpdate(response.draft, ownerPage.id, blockId);
+      setBlockStatusMessage(hidden ? "Block hidden." : "Block unhidden.");
     } catch (error) {
       setBlockErrorMessage(
-        error instanceof APIError ? error.message : "Could not save block",
+        error instanceof APIError
+          ? error.message
+          : "Could not change block visibility",
       );
     } finally {
-      setIsSavingBlock(false);
+      setIsMutatingBlocks(false);
+    }
+  }
+
+  async function handleAddBlock(input: {
+    blockType: string;
+    targetIndex: number;
+    initialProps?: Record<string, unknown>;
+  }) {
+    if (!selectedPage) return;
+    setIsCreatingBlock(true);
+    setBlockErrorMessage("");
+    setBlockStatusMessage("");
+    try {
+      const createResponse = await createBlock(siteId, selectedPage.id, {
+        type: input.blockType,
+      });
+
+      const previousPage =
+        draft?.pages.find((p) => p.id === selectedPage.id) ?? null;
+      let nextDraft = createResponse.draft;
+      let nextPage =
+        nextDraft.pages.find((p) => p.id === selectedPage.id) ?? null;
+      const createdBlock = findNewBlock(previousPage, nextPage);
+
+      if (!nextPage || !createdBlock) {
+        applyDraftUpdate(nextDraft, selectedPage.id);
+        setBlockStatusMessage("Block added.");
+        return;
+      }
+
+      // Patch initial props (e.g. picked variant) before reordering.
+      if (input.initialProps) {
+        const mergedProps = {
+          ...(createdBlock.props as Record<string, unknown>),
+          ...input.initialProps,
+        };
+        const patched = await updateBlock(
+          siteId,
+          selectedPage.id,
+          createdBlock.id,
+          {
+            props: mergedProps,
+            hidden: Boolean(createdBlock.settings?.hidden),
+          },
+        );
+        nextDraft = patched.draft;
+        nextPage =
+          nextDraft.pages.find((p) => p.id === selectedPage.id) ?? nextPage;
+      }
+
+      const visibleBlocks = (nextPage?.blocks ?? []).filter(
+        (block) => !block.settings?.hidden,
+      );
+      const visibleOrder = visibleBlocks.map((block) => block.id);
+      const createdVisibleIndex = visibleOrder.findIndex(
+        (id) => id === createdBlock.id,
+      );
+
+      if (createdVisibleIndex !== -1) {
+        const reorderedVisible = [...visibleOrder];
+        reorderedVisible.splice(createdVisibleIndex, 1);
+        reorderedVisible.splice(
+          Math.max(
+            0,
+            Math.min(input.targetIndex, reorderedVisible.length),
+          ),
+          0,
+          createdBlock.id,
+        );
+        const hiddenIDs = (nextPage?.blocks ?? [])
+          .filter((block) => block.settings?.hidden)
+          .map((block) => block.id);
+        const reorderResponse = await reorderBlocks(
+          siteId,
+          selectedPage.id,
+          [...reorderedVisible, ...hiddenIDs],
+        );
+        nextDraft = reorderResponse.draft;
+      }
+
+      applyDraftUpdate(nextDraft, selectedPage.id, createdBlock.id);
+      setBlockStatusMessage("Block added.");
+    } catch (error) {
+      setBlockErrorMessage(
+        error instanceof APIError ? error.message : "Could not add block",
+      );
+    } finally {
+      setIsCreatingBlock(false);
     }
   }
 
@@ -1044,37 +1169,6 @@ function SiteDetail() {
     }
   }
 
-  async function handleCreateBlock(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const blockTypeToCreate = newBlockType || blockRegistry[0]?.type || "";
-    if (!selectedPage || !blockTypeToCreate) {
-      return;
-    }
-
-    setIsCreatingBlock(true);
-    setBlockErrorMessage("");
-    setBlockStatusMessage("");
-
-    try {
-      const response = await createBlock(siteId, selectedPage.id, {
-        type: blockTypeToCreate,
-      });
-      const createdBlock = findNewBlock(
-        draft?.pages.find((page) => page.id === selectedPage.id) ?? null,
-        response.draft.pages.find((page) => page.id === selectedPage.id) ??
-          null,
-      );
-      applyDraftUpdate(response.draft, selectedPage.id, createdBlock?.id);
-      setBlockStatusMessage("Block added to the page.");
-    } catch (error) {
-      setBlockErrorMessage(
-        error instanceof APIError ? error.message : "Could not add block",
-      );
-    } finally {
-      setIsCreatingBlock(false);
-    }
-  }
-
   async function handleDuplicateBlock() {
     if (!selectedPage || !selectedBlock) {
       return;
@@ -1190,71 +1284,6 @@ function SiteDetail() {
       );
     } finally {
       setIsMutatingBlocks(false);
-    }
-  }
-
-  async function handleDropPaletteBlock(
-    blockType: string,
-    targetIndex: number,
-  ) {
-    if (!selectedPage) return;
-    setIsCreatingBlock(true);
-    setBlockErrorMessage("");
-    setBlockStatusMessage("");
-
-    try {
-      const response = await createBlock(siteId, selectedPage.id, {
-        type: blockType,
-      });
-      const previousPage =
-        draft?.pages.find((p) => p.id === selectedPage.id) ?? null;
-      const nextPage =
-        response.draft.pages.find((p) => p.id === selectedPage.id) ?? null;
-      const createdBlock = findNewBlock(previousPage, nextPage);
-      if (!nextPage || !createdBlock) {
-        applyDraftUpdate(response.draft, selectedPage.id, createdBlock?.id);
-        setBlockStatusMessage("Block added to the page.");
-        return;
-      }
-
-      const visibleBlocks = nextPage.blocks.filter(
-        (block) => !block.settings?.hidden,
-      );
-      const visibleOrder = visibleBlocks.map((block) => block.id);
-      const createdVisibleIndex = visibleOrder.findIndex(
-        (blockID) => blockID === createdBlock.id,
-      );
-
-      if (createdVisibleIndex === -1) {
-        applyDraftUpdate(response.draft, selectedPage.id, createdBlock.id);
-        setBlockStatusMessage("Block added to the page.");
-        return;
-      }
-
-      const reorderedVisible = [...visibleOrder];
-      reorderedVisible.splice(createdVisibleIndex, 1);
-      reorderedVisible.splice(
-        Math.max(0, Math.min(targetIndex, reorderedVisible.length)),
-        0,
-        createdBlock.id,
-      );
-
-      const hiddenIDs = nextPage.blocks
-        .filter((block) => block.settings?.hidden)
-        .map((block) => block.id);
-
-      const reordered = await reorderBlocks(siteId, selectedPage.id, [
-        ...reorderedVisible,
-        ...hiddenIDs,
-      ]);
-      applyDraftUpdate(reordered.draft, selectedPage.id, createdBlock.id);
-      setBlockStatusMessage("Block added to the page.");
-    } catch (error) {
-      setBlockErrorMessage(
-        error instanceof APIError ? error.message : "Could not add block",
-      );
-    } finally {
-      setIsCreatingBlock(false);
     }
   }
 
@@ -3508,36 +3537,30 @@ function SiteDetail() {
         blockRegistry={blockRegistry}
         selectedPage={selectedPage}
         selectedBlock={selectedBlock}
-        selectedDefinition={selectedDefinition}
         selectedBlockIndex={selectedBlockIndex}
         blockDefinitions={blockDefinitions}
         uploadedSiteAssets={uploadedSiteAssets}
-        newBlockType={newBlockType}
-        isSavingBlock={isSavingBlock}
         isMutatingBlocks={isMutatingBlocks}
         isCreatingBlock={isCreatingBlock}
         blockErrorMessage={blockErrorMessage}
         blockStatusMessage={blockStatusMessage}
-        pageErrorMessage={pageErrorMessage}
-        pageStatusMessage={pageStatusMessage}
         isPublishing={isPublishing}
         pages={draft.pages}
         onSelectPage={handleSelectPage}
         onSelectBlock={handleSelectBlock}
-        onSaveBlock={handleSaveBlock}
+        onEditField={handleEditField}
+        onToggleHidden={handleToggleHidden}
         onSuggestBlock={handleSuggestBlock}
         isSuggestingBlock={isSuggestingBlock}
         suggestErrorMessage={suggestErrorMessage}
         suggestStatusMessage={suggestStatusMessage}
         siteId={siteId}
         onImageApplied={handleImageApplied}
-        onCreateBlock={handleCreateBlock}
+        onAddBlock={handleAddBlock}
         onDuplicateBlock={handleDuplicateBlock}
         onDeleteBlock={handleDeleteBlock}
         onMoveBlock={handleMoveBlock}
-        onChangeNewBlockType={setNewBlockType}
         onReorderBlocks={handleReorderBlocks}
-        onDropPaletteBlock={handleDropPaletteBlock}
         pagesPanelContent={pagesPanelContent}
         seoPanelContent={seoPanelContent}
         navigationPanelContent={navigationPanelContent}
@@ -3597,6 +3620,98 @@ function findNewBlock(
     nextPage.blocks.at(-1) ??
     null
   );
+}
+
+function setBlockPropPath(
+  source: Record<string, unknown>,
+  path: ReadonlyArray<string | number>,
+  value: unknown,
+): Record<string, unknown> {
+  const cloned = JSON.parse(JSON.stringify(source ?? {})) as Record<
+    string,
+    unknown
+  >;
+  if (path.length === 0) {
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : cloned;
+  }
+  let cursor: unknown = cloned;
+  for (let i = 0; i < path.length - 1; i++) {
+    const segment = path[i];
+    const next = path[i + 1];
+    if (Array.isArray(cursor)) {
+      const index = Number(segment);
+      while ((cursor as unknown[]).length <= index) {
+        (cursor as unknown[]).push(undefined);
+      }
+      if (
+        (cursor as unknown[])[index] === undefined ||
+        (cursor as unknown[])[index] === null
+      ) {
+        (cursor as unknown[])[index] =
+          typeof next === "number" || /^\d+$/.test(String(next)) ? [] : {};
+      }
+      cursor = (cursor as unknown[])[index];
+    } else if (cursor && typeof cursor === "object") {
+      const key = String(segment);
+      const record = cursor as Record<string, unknown>;
+      if (record[key] === undefined || record[key] === null) {
+        record[key] =
+          typeof next === "number" || /^\d+$/.test(String(next)) ? [] : {};
+      }
+      cursor = record[key];
+    }
+  }
+  const lastSegment = path[path.length - 1];
+  if (Array.isArray(cursor)) {
+    const index = Number(lastSegment);
+    while ((cursor as unknown[]).length <= index) {
+      (cursor as unknown[]).push(undefined);
+    }
+    if (value === undefined) {
+      (cursor as unknown[]).splice(index, 1);
+    } else {
+      (cursor as unknown[])[index] = value;
+    }
+  } else if (cursor && typeof cursor === "object") {
+    const key = String(lastSegment);
+    const record = cursor as Record<string, unknown>;
+    if (value === undefined) {
+      delete record[key];
+    } else {
+      record[key] = value;
+    }
+  }
+  return cloned;
+}
+
+function applyBlockUpdate(
+  draft: SiteDraft,
+  pageId: string,
+  blockId: string,
+  patch: { props: Record<string, unknown>; hidden: boolean },
+): SiteDraft {
+  return {
+    ...draft,
+    pages: draft.pages.map((page) => {
+      if (page.id !== pageId) return page;
+      return {
+        ...page,
+        blocks: page.blocks.map((block) => {
+          if (block.id !== blockId) return block;
+          return {
+            ...block,
+            props: patch.props,
+            settings: {
+              ...(block.settings ?? {}),
+              hidden: patch.hidden,
+            },
+          };
+        }),
+      };
+    }),
+  };
 }
 
 function navigationItemsFromDraft(draft: SiteDraft): NavigationDraftState {

@@ -1,7 +1,7 @@
 import {
   Fragment,
-  type FormEvent,
   type ReactNode,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -16,8 +16,13 @@ import {
   Search,
   Settings as SettingsIcon,
 } from "lucide-react";
-import { BlockEditor } from "@/components/BlockEditor";
 import { SiteDraftRenderer } from "@/components/SiteDraftRenderer";
+import {
+  AddBlockInserter,
+  EditableBlockFrame,
+  InlineEditorProvider,
+  type InlineEditorContextValue,
+} from "@/components/inline-editor";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import {
@@ -33,7 +38,7 @@ import {
   reorderEditorCanvasBlocks,
 } from "@/lib/builder-adapter";
 import { buildSiteThemeStyle } from "@/lib/site-theme";
-import { actions, emptyState, form, text } from "@/lib/styles";
+import { emptyState, text } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 
 type DraftPage = SiteDraft["pages"][number];
@@ -60,7 +65,7 @@ const sectionMeta: Record<
     eyebrow: "Content",
     title: "Edit page blocks",
     description:
-      "Drag a block onto the canvas, click any block to edit it, or reorder by dragging the handle.",
+      "Click any text or image to edit it. Use the + between blocks to insert a new one.",
   },
   pages: {
     label: "Pages",
@@ -173,40 +178,39 @@ type PuckBuilderProps = {
   blockRegistry: BlockDefinition[];
   selectedPage: DraftPage | null;
   selectedBlock: DraftBlock | null;
-  selectedDefinition: BlockDefinition | undefined;
   selectedBlockIndex: number;
   blockDefinitions: Map<string, BlockDefinition>;
   uploadedSiteAssets: AssetRecord[];
-  newBlockType: string;
-  isSavingBlock: boolean;
   isMutatingBlocks: boolean;
   isCreatingBlock: boolean;
   blockErrorMessage: string;
   blockStatusMessage: string;
-  pageErrorMessage: string;
-  pageStatusMessage: string;
   isPublishing: boolean;
   pages: DraftPage[];
 
   onSelectPage: (pageId: string) => void;
   onSelectBlock: (blockId: string) => void;
-  onSaveBlock: (
-    props: Record<string, unknown>,
-    hidden: boolean,
-  ) => Promise<void>;
+  onEditField: (
+    blockId: string,
+    path: ReadonlyArray<string | number>,
+    value: unknown,
+  ) => void;
+  onToggleHidden: (blockId: string, hidden: boolean) => Promise<void>;
   onSuggestBlock?: (input: BlockSuggestInput) => Promise<void>;
   isSuggestingBlock?: boolean;
   suggestErrorMessage?: string;
   suggestStatusMessage?: string;
-  siteId?: string;
+  siteId: string;
   onImageApplied?: (response: ImageApplyResponse) => void;
-  onCreateBlock: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onAddBlock: (input: {
+    blockType: string;
+    targetIndex: number;
+    initialProps?: Record<string, unknown>;
+  }) => Promise<void>;
   onDuplicateBlock: () => Promise<void>;
   onDeleteBlock: () => Promise<void>;
   onMoveBlock: (direction: -1 | 1) => Promise<void>;
-  onChangeNewBlockType: (type: string) => void;
   onReorderBlocks: (blockIds: string[]) => Promise<void>;
-  onDropPaletteBlock: (blockType: string, targetIndex: number) => Promise<void>;
 
   pagesPanelContent: ReactNode;
   themePanelContent: ReactNode;
@@ -226,36 +230,30 @@ export function PuckBuilder({
   blockRegistry,
   selectedPage,
   selectedBlock,
-  selectedDefinition,
   selectedBlockIndex,
   blockDefinitions,
   uploadedSiteAssets,
-  newBlockType,
-  isSavingBlock,
   isMutatingBlocks,
   isCreatingBlock,
   blockErrorMessage,
   blockStatusMessage,
-  pageErrorMessage,
-  pageStatusMessage,
   isPublishing,
   pages: draftPages,
   onSelectPage,
   onSelectBlock,
-  onSaveBlock,
+  onEditField,
+  onToggleHidden,
   onSuggestBlock,
   isSuggestingBlock,
   suggestErrorMessage,
   suggestStatusMessage,
   siteId,
   onImageApplied,
-  onCreateBlock,
+  onAddBlock,
   onDuplicateBlock,
   onDeleteBlock,
   onMoveBlock,
-  onChangeNewBlockType,
   onReorderBlocks,
-  onDropPaletteBlock,
   pagesPanelContent,
   themePanelContent,
   seoPanelContent,
@@ -316,34 +314,28 @@ export function PuckBuilder({
               blockRegistry={blockRegistry}
               selectedPage={selectedPage}
               selectedBlock={selectedBlock}
-              selectedDefinition={selectedDefinition}
               selectedBlockIndex={selectedBlockIndex}
               blockDefinitions={blockDefinitions}
               uploadedSiteAssets={uploadedSiteAssets}
-              newBlockType={newBlockType}
-              isSavingBlock={isSavingBlock}
               isMutatingBlocks={isMutatingBlocks}
               isCreatingBlock={isCreatingBlock}
               blockErrorMessage={blockErrorMessage}
               blockStatusMessage={blockStatusMessage}
-              pageErrorMessage={pageErrorMessage}
-              pageStatusMessage={pageStatusMessage}
               onSelectPage={onSelectPage}
               onSelectBlock={onSelectBlock}
-              onSaveBlock={onSaveBlock}
+              onEditField={onEditField}
+              onToggleHidden={onToggleHidden}
               onSuggestBlock={onSuggestBlock}
               isSuggestingBlock={isSuggestingBlock}
               suggestErrorMessage={suggestErrorMessage}
               suggestStatusMessage={suggestStatusMessage}
               siteId={siteId}
               onImageApplied={onImageApplied}
-              onCreateBlock={onCreateBlock}
+              onAddBlock={onAddBlock}
               onDuplicateBlock={onDuplicateBlock}
               onDeleteBlock={onDeleteBlock}
               onMoveBlock={onMoveBlock}
-              onChangeNewBlockType={onChangeNewBlockType}
               onReorderBlocks={onReorderBlocks}
-              onDropPaletteBlock={onDropPaletteBlock}
             />
           ) : (
             <AdminWorkspace
@@ -616,205 +608,200 @@ function ContentWorkspace({
   blockRegistry,
   selectedPage,
   selectedBlock,
-  selectedDefinition,
   selectedBlockIndex,
   blockDefinitions,
   uploadedSiteAssets,
-  newBlockType,
-  isSavingBlock,
   isMutatingBlocks,
   isCreatingBlock,
   blockErrorMessage,
   blockStatusMessage,
-  pageErrorMessage,
-  pageStatusMessage,
   onSelectPage,
   onSelectBlock,
-  onSaveBlock,
+  onEditField,
+  onToggleHidden,
   onSuggestBlock,
   isSuggestingBlock,
   suggestErrorMessage,
   suggestStatusMessage,
   siteId,
   onImageApplied,
-  onCreateBlock,
+  onAddBlock,
   onDuplicateBlock,
   onDeleteBlock,
   onMoveBlock,
-  onChangeNewBlockType,
   onReorderBlocks,
-  onDropPaletteBlock,
 }: {
   draft: SiteDraft;
   blockRegistry: BlockDefinition[];
   selectedPage: DraftPage | null;
   selectedBlock: DraftBlock | null;
-  selectedDefinition: BlockDefinition | undefined;
   selectedBlockIndex: number;
   blockDefinitions: Map<string, BlockDefinition>;
   uploadedSiteAssets: AssetRecord[];
-  newBlockType: string;
-  isSavingBlock: boolean;
   isMutatingBlocks: boolean;
   isCreatingBlock: boolean;
   blockErrorMessage: string;
   blockStatusMessage: string;
-  pageErrorMessage: string;
-  pageStatusMessage: string;
   onSelectPage: (pageId: string) => void;
   onSelectBlock: (blockId: string) => void;
-  onSaveBlock: (
-    props: Record<string, unknown>,
-    hidden: boolean,
-  ) => Promise<void>;
+  onEditField: (
+    blockId: string,
+    path: ReadonlyArray<string | number>,
+    value: unknown,
+  ) => void;
+  onToggleHidden: (blockId: string, hidden: boolean) => Promise<void>;
   onSuggestBlock?: (input: BlockSuggestInput) => Promise<void>;
   isSuggestingBlock?: boolean;
   suggestErrorMessage?: string;
   suggestStatusMessage?: string;
-  siteId?: string;
+  siteId: string;
   onImageApplied?: (response: ImageApplyResponse) => void;
-  onCreateBlock: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onAddBlock: (input: {
+    blockType: string;
+    targetIndex: number;
+    initialProps?: Record<string, unknown>;
+  }) => Promise<void>;
   onDuplicateBlock: () => Promise<void>;
   onDeleteBlock: () => Promise<void>;
   onMoveBlock: (direction: -1 | 1) => Promise<void>;
-  onChangeNewBlockType: (type: string) => void;
   onReorderBlocks: (blockIds: string[]) => Promise<void>;
-  onDropPaletteBlock: (blockType: string, targetIndex: number) => Promise<void>;
 }) {
-  const [dragState, setDragState] = useState<DragState>({ kind: "idle" });
-  const dropIndicatorRef = useRef<DropIndicator | null>(null);
-  const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(
-    null,
-  );
-  const canvasRef = useRef<HTMLDivElement>(null);
-  const dragTypeRef = useRef<"move" | "copy">("move");
   const editorPage = draftToEditorCanvasPage(draft, selectedPage?.id ?? null);
+  const visibleCount = editorPage?.visibleBlocks.length ?? 0;
+  const canMoveUp = selectedBlockIndex > 0;
+  const canMoveDown =
+    selectedPage !== null &&
+    selectedBlockIndex >= 0 &&
+    selectedBlockIndex < selectedPage.blocks.length - 1;
 
-  function handlePaletteDragStart(event: React.DragEvent, blockType: string) {
-    event.dataTransfer.setData("text/plain", `palette:${blockType}`);
-    event.dataTransfer.effectAllowed = "copy";
-    dragTypeRef.current = "copy";
-    setDragState({ kind: "dragging-palette", blockType });
-  }
+  const dragSourceRef = useRef<string | null>(null);
+  const [dropIndicator, setDropIndicator] = useState<number | null>(null);
 
   function handleBlockDragStart(event: React.DragEvent, blockId: string) {
-    event.dataTransfer.setData("text/plain", `reorder:${blockId}`);
-    event.dataTransfer.effectAllowed = "move";
-    dragTypeRef.current = "move";
-    setDragState({ kind: "dragging-block", blockId });
+    event.dataTransfer.setData('text/plain', `reorder:${blockId}`);
+    event.dataTransfer.effectAllowed = 'move';
+    dragSourceRef.current = blockId;
   }
 
-  function handleDragOver(event: React.DragEvent) {
+  function handleDropZoneDragOver(
+    event: React.DragEvent,
+    index: number,
+  ) {
+    if (!dragSourceRef.current) return;
     event.preventDefault();
-    if (!canvasRef.current || !editorPage) return;
-
-    const target = event.target as HTMLElement | null;
-    const dropZone = target?.closest<HTMLElement>("[data-drop-index]");
-    const dropIndexValue = dropZone?.dataset.dropIndex;
-    const nextIndicator =
-      typeof dropIndexValue === "string"
-        ? {
-            index: Number.parseInt(dropIndexValue, 10),
-          }
-        : editorPage.visibleBlocks.length === 0
-          ? { index: 0 }
-          : null;
-
-    if (!nextIndicator || Number.isNaN(nextIndicator.index)) {
-      return;
-    }
-
-    dropIndicatorRef.current = nextIndicator;
-    setDropIndicator(nextIndicator);
-    event.dataTransfer.dropEffect = dragTypeRef.current;
+    event.dataTransfer.dropEffect = 'move';
+    setDropIndicator(index);
   }
 
-  function handleDragLeave(event: React.DragEvent) {
-    if (
-      canvasRef.current &&
-      !canvasRef.current.contains(event.relatedTarget as Node)
-    ) {
-      dropIndicatorRef.current = null;
-      setDropIndicator(null);
-    }
-  }
-
-  async function handleDrop(event: React.DragEvent) {
+  function handleDropZoneDrop(event: React.DragEvent, index: number) {
     event.preventDefault();
-    const target = dropIndicatorRef.current;
-    dropIndicatorRef.current = null;
     setDropIndicator(null);
-    const data = event.dataTransfer.getData("text/plain");
-
-    if (data.startsWith("reorder:")) {
-      const sourceBlockId = data.slice(8);
-      reorderBlock(sourceBlockId, target);
-    } else if (data.startsWith("palette:")) {
-      const paletteBlockType = data.slice(8);
-      if (paletteBlockType) {
-        await onDropPaletteBlock(paletteBlockType, target?.index ?? 0);
-      }
-    }
-
-    setDragState({ kind: "idle" });
-  }
-
-  function reorderBlock(sourceBlockId: string, target: DropIndicator | null) {
-    if (!editorPage || !target) return;
-    const visibleBlockIDs = reorderEditorCanvasBlocks(
+    const sourceId = dragSourceRef.current;
+    dragSourceRef.current = null;
+    if (!sourceId || !editorPage) return;
+    const order = reorderEditorCanvasBlocks(
       editorPage.visibleBlocks,
-      sourceBlockId,
-      target.index,
+      sourceId,
+      index,
     );
-    if (!visibleBlockIDs) {
-      return;
-    }
-    onReorderBlocks(buildCanonicalBlockOrder(editorPage, visibleBlockIDs));
+    if (!order) return;
+    void onReorderBlocks(buildCanonicalBlockOrder(editorPage, order));
   }
 
   function handleDragEnd() {
-    dropIndicatorRef.current = null;
-    setDragState({ kind: "idle" });
+    dragSourceRef.current = null;
     setDropIndicator(null);
   }
 
-  return (
-    <div className="grid min-h-0 overflow-hidden xl:grid-cols-[200px_minmax(0,1fr)_minmax(380px,500px)] 2xl:grid-cols-[220px_minmax(0,1fr)_minmax(420px,560px)]">
-      <BlockPalette
-        blockRegistry={blockRegistry}
-        onDragStart={handlePaletteDragStart}
-      />
+  const inlineContext = useMemo<InlineEditorContextValue>(
+    () => ({
+      enabled: true,
+      siteId,
+      selectedBlockId: selectedBlock?.id ?? null,
+      selectBlock: (blockId) => {
+        if (selectedPage) onSelectPage(selectedPage.id);
+        onSelectBlock(blockId);
+      },
+      editField: onEditField,
+      assetLibrary: uploadedSiteAssets,
+      blockDefinitions,
+      onSuggestBlock,
+      isSuggestingBlock,
+      onImageApplied,
+      onMoveBlock,
+      onDuplicateBlock,
+      onDeleteBlock,
+      onToggleHidden,
+      canMoveUp,
+      canMoveDown,
+    }),
+    [
+      siteId,
+      selectedBlock?.id,
+      selectedPage,
+      onSelectPage,
+      onSelectBlock,
+      onEditField,
+      uploadedSiteAssets,
+      blockDefinitions,
+      onSuggestBlock,
+      isSuggestingBlock,
+      onImageApplied,
+      onMoveBlock,
+      onDuplicateBlock,
+      onDeleteBlock,
+      onToggleHidden,
+      canMoveUp,
+      canMoveDown,
+    ],
+  );
 
-      <section className="flex min-h-0 flex-col overflow-auto border-x border-border bg-[var(--surface-1)] max-xl:border-x-0 max-xl:border-y">
-        <div className="p-4">
+  return (
+    <InlineEditorProvider value={inlineContext}>
+      <section
+        className="flex min-h-0 flex-col overflow-auto bg-[var(--surface-1)]"
+        onClick={() => {
+          // Click outside selected block deselects.
+          if (selectedBlock?.id) {
+            onSelectBlock('');
+          }
+        }}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="flex grow flex-col p-4 max-sm:p-2">
           {selectedPage ? (
             <div className="grid gap-4">
               <div
-                ref={canvasRef}
-                className="relative min-h-[400px] overflow-auto bg-[var(--surface-1)] p-4 max-sm:p-3"
+                className="relative grow overflow-hidden rounded-[12px] border border-border bg-[var(--surface-1)]"
                 style={buildBuilderPreviewStyle(draft.theme)}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onDragEnd={handleDragEnd}
               >
-                {!editorPage || editorPage.visibleBlocks.length === 0 ? (
-                  <div
-                    data-drop-index={0}
-                    className={cn(
-                      emptyState,
-                      "grid min-h-[320px] place-items-center text-center",
-                      dropIndicator?.index === 0 &&
-                        "border-[var(--thread-teal)] bg-[color-mix(in_oklch,var(--surface-1)_74%,var(--thread-teal))]",
-                    )}
-                  >
-                    <div className="grid gap-3">
-                      <p className={text.p}>
-                        This page has no visible blocks yet. Drag a block type
-                        here to start the page, or unhide a block from the
-                        inspector.
+                <div
+                  className="absolute inset-x-0 top-0 h-2 z-30 transition-opacity"
+                  style={{
+                    background:
+                      'linear-gradient(180deg, color-mix(in oklch, var(--thread-violet) 20%, transparent), transparent)',
+                    opacity: dropIndicator !== null ? 1 : 0,
+                  }}
+                  aria-hidden="true"
+                />
+                {(isCreatingBlock || isMutatingBlocks) ? (
+                  <div className="pointer-events-none absolute right-4 top-4 z-30 rounded-full border border-[oklch(98%_0.005_336_/_0.18)] bg-[oklch(12%_0.018_336_/_0.92)] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#F9F7F2] backdrop-blur">
+                    {isCreatingBlock ? 'Adding block…' : 'Saving…'}
+                  </div>
+                ) : null}
+
+                {!editorPage || visibleCount === 0 ? (
+                  <div className="grid min-h-[60vh] place-items-center p-10 text-center">
+                    <div className="grid max-w-[44ch] gap-5">
+                      <p className={cn(text.p, 'mx-auto')}>
+                        This page is empty. Pick a block to begin.
                       </p>
-                      <CanvasDropZone active={dropIndicator?.index === 0} />
+                      <AddBlockInserter
+                        index={0}
+                        blockRegistry={blockRegistry}
+                        onAdd={onAddBlock}
+                        variant="standalone"
+                      />
                     </div>
                   </div>
                 ) : (
@@ -824,56 +811,75 @@ function ContentWorkspace({
                     showPageMeta={false}
                     selectedPageId={selectedPage.id}
                     mode="builder"
-                    renderBlock={({ block, page, blockIndex, children }) => (
-                      <Fragment key={block.id}>
-                        <CanvasDropZone
-                          index={blockIndex}
-                          active={dropIndicator?.index === blockIndex}
-                        />
-                        <CanvasBlockFrame
-                          key={block.id}
-                          block={block}
-                          definition={blockDefinitions.get(
-                            `${block.type}@${block.version}`,
-                          )}
-                          isSelected={block.id === selectedBlock?.id}
-                          isDragging={
-                            dragState.kind === "dragging-block" &&
-                            dragState.blockId === block.id
-                          }
-                          onSelect={() => {
-                            onSelectPage(page.id);
-                            onSelectBlock(block.id);
-                          }}
-                          onDragStart={(event) =>
-                            handleBlockDragStart(event, block.id)
-                          }
-                        >
-                          {children}
-                        </CanvasBlockFrame>
-                        {blockIndex ===
-                        editorPage.visibleBlocks.length - 1 ? (
-                          <CanvasDropZone
-                            index={editorPage.visibleBlocks.length}
-                            active={
-                              dropIndicator?.index ===
-                              editorPage.visibleBlocks.length
+                    renderBlock={({ block, blockIndex, children }) => {
+                      const definition = blockDefinitions.get(
+                        `${block.type}@${block.version}`,
+                      );
+                      return (
+                        <Fragment key={block.id}>
+                          <DropZone
+                            index={blockIndex}
+                            active={dropIndicator === blockIndex}
+                            onDragOver={handleDropZoneDragOver}
+                            onDrop={handleDropZoneDrop}
+                          >
+                            <AddBlockInserter
+                              index={blockIndex}
+                              blockRegistry={blockRegistry}
+                              onAdd={onAddBlock}
+                            />
+                          </DropZone>
+                          <EditableBlockFrame
+                            block={block}
+                            definition={definition}
+                            onDragStart={(event) =>
+                              handleBlockDragStart(event, block.id)
                             }
-                          />
-                        ) : null}
-                      </Fragment>
-                    )}
+                          >
+                            {children}
+                          </EditableBlockFrame>
+                          {blockIndex === visibleCount - 1 ? (
+                            <DropZone
+                              index={visibleCount}
+                              active={dropIndicator === visibleCount}
+                              onDragOver={handleDropZoneDragOver}
+                              onDrop={handleDropZoneDrop}
+                            >
+                              <AddBlockInserter
+                                index={visibleCount}
+                                blockRegistry={blockRegistry}
+                                onAdd={onAddBlock}
+                                variant="standalone"
+                              />
+                            </DropZone>
+                          ) : null}
+                        </Fragment>
+                      );
+                    }}
                   />
                 )}
               </div>
+
+              {blockErrorMessage ? (
+                <p className={text.error}>{blockErrorMessage}</p>
+              ) : null}
+              {blockStatusMessage ? (
+                <p className={text.success}>{blockStatusMessage}</p>
+              ) : null}
+              {suggestErrorMessage ? (
+                <p className={text.error}>{suggestErrorMessage}</p>
+              ) : null}
+              {suggestStatusMessage ? (
+                <p className={text.success}>{suggestStatusMessage}</p>
+              ) : null}
 
               {editorPage?.hiddenBlocks.length ? (
                 <section className="border-t border-border pt-4">
                   <div className="mb-3">
                     <p className={text.eyebrow}>Hidden blocks</p>
-                    <p className={cn(text.p, "mt-1 text-sm")}>
+                    <p className={cn(text.p, 'mt-1 text-sm')}>
                       These blocks stay out of the rendered page until you
-                      unhide them from the inspector.
+                      unhide them.
                     </p>
                   </div>
                   <div className="grid gap-2">
@@ -882,14 +888,16 @@ function ContentWorkspace({
                         key={block.id}
                         type="button"
                         className={cn(
-                          "flex items-center justify-between rounded-[10px] border px-3 py-3 text-left transition-[border-color,transform]",
+                          'flex items-center justify-between rounded-[10px] border px-3 py-3 text-left transition-[border-color,transform]',
                           block.id === selectedBlock?.id
-                            ? "border-[var(--thread-teal)] bg-[color-mix(in_oklch,var(--surface-1)_96%,var(--thread-teal))]"
-                            : "border-border bg-[var(--surface-1)] hover:-translate-y-px hover:border-[var(--thread-coral)]",
+                            ? 'border-[var(--thread-violet)] bg-[color-mix(in_oklch,var(--surface-1)_88%,var(--thread-violet))]'
+                            : 'border-border bg-[var(--surface-1)] hover:-translate-y-px hover:border-[var(--thread-violet)]',
                         )}
-                        onClick={() => {
+                        onClick={(event) => {
+                          event.stopPropagation();
                           onSelectPage(selectedPage.id);
                           onSelectBlock(block.id);
+                          void onToggleHidden(block.id, false);
                         }}
                       >
                         <span>
@@ -899,7 +907,7 @@ function ContentWorkspace({
                             )?.displayName ?? block.type}
                           </strong>
                           <small className="text-[var(--paper-muted)]">
-                            Hidden from preview and publish
+                            Click to unhide
                           </small>
                         </span>
                         <span className="rounded-[999px] border border-border bg-[var(--surface-2)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--paper-muted)]">
@@ -920,455 +928,34 @@ function ContentWorkspace({
           )}
         </div>
       </section>
-
-      <InspectorPanel
-        selectedPage={selectedPage}
-        selectedBlock={selectedBlock}
-        selectedDefinition={selectedDefinition}
-        selectedBlockIndex={selectedBlockIndex}
-        uploadedSiteAssets={uploadedSiteAssets}
-        isSavingBlock={isSavingBlock}
-        isMutatingBlocks={isMutatingBlocks}
-        isCreatingBlock={isCreatingBlock}
-        blockErrorMessage={blockErrorMessage}
-        blockStatusMessage={blockStatusMessage}
-        pageErrorMessage={pageErrorMessage}
-        pageStatusMessage={pageStatusMessage}
-        blockRegistry={blockRegistry}
-        newBlockType={newBlockType}
-        onSaveBlock={onSaveBlock}
-        onSuggestBlock={onSuggestBlock}
-        isSuggestingBlock={isSuggestingBlock}
-        suggestErrorMessage={suggestErrorMessage}
-        suggestStatusMessage={suggestStatusMessage}
-        siteId={siteId}
-        onImageApplied={onImageApplied}
-        onCreateBlock={onCreateBlock}
-        onDuplicateBlock={onDuplicateBlock}
-        onDeleteBlock={onDeleteBlock}
-        onMoveBlock={onMoveBlock}
-        onChangeNewBlockType={onChangeNewBlockType}
-      />
-    </div>
+    </InlineEditorProvider>
   );
 }
 
-function BlockPalette({
-  blockRegistry,
-  onDragStart,
-}: {
-  blockRegistry: BlockDefinition[];
-  onDragStart: (event: React.DragEvent, blockType: string) => void;
-}) {
-  const categories = groupByCategory(blockRegistry);
-
-  return (
-    <aside className="flex flex-col overflow-auto border-r border-border bg-[var(--surface-1)] max-xl:border-r-0 max-xl:border-b">
-      <div className="border-b border-border p-4">
-        <p className={text.eyebrow}>Blocks</p>
-        <h2 className="mt-1 text-[1rem] font-extrabold leading-tight text-[var(--paper)]">
-          Drag onto canvas
-        </h2>
-      </div>
-
-      <div className="grid gap-4 overflow-auto p-3">
-        {Object.entries(categories).map(([category, blocks]) => (
-          <div key={category}>
-            <h3 className={cn(text.label, "mb-2 uppercase tracking-[0.08em]")}>
-              {category}
-            </h3>
-            <div className="grid gap-2">
-              {blocks.map((definition) => (
-                <PaletteBlockCard
-                  key={`${definition.type}@${definition.version}`}
-                  definition={definition}
-                  onDragStart={onDragStart}
-                />
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </aside>
-  );
-}
-
-function PaletteBlockCard({
-  definition,
-  onDragStart,
-}: {
-  definition: BlockDefinition;
-  onDragStart: (event: React.DragEvent, blockType: string) => void;
-}) {
-  const icon = blockTypeIcon[definition.type] ?? "⊞";
-
-  return (
-    <div
-      draggable
-      className="cursor-grab rounded-[10px] border border-border bg-[var(--surface-2)] p-3 transition-[border-color,transform] hover:-translate-y-0.5 hover:border-[var(--thread-teal)] active:cursor-grabbing"
-      onDragStart={(event) => onDragStart(event, definition.type)}
-    >
-      <div className="flex items-center gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-[8px] border border-border bg-[var(--surface-1)] text-lg">
-          {icon}
-        </span>
-        <div>
-          <strong className="block text-sm text-[var(--paper)]">
-            {definition.displayName}
-          </strong>
-          <small className="block text-xs text-[var(--paper-muted)]">
-            {definition.type}
-          </small>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const blockTypeIcon: Record<string, string> = {
-  hero: "★",
-  text_section: "¶",
-  image_text: "▣",
-  features_grid: "☷",
-  gallery: "◫",
-  testimonials: "❝",
-  pricing_packages: "$",
-  cta_band: "➜",
-  contact_form: "✉",
-  faq: "?",
-  team_profile_cards: "👥",
-  footer: "⌂",
-};
-
-function CanvasBlockFrame({
-  block,
-  definition,
-  isSelected,
-  isDragging,
-  onSelect,
-  onDragStart,
+function DropZone({
+  index,
+  active,
+  onDragOver,
+  onDrop,
   children,
 }: {
-  block: DraftBlock;
-  definition?: BlockDefinition;
-  isSelected: boolean;
-  isDragging: boolean;
-  onSelect: () => void;
-  onDragStart: (event: React.DragEvent) => void;
+  index: number;
+  active: boolean;
+  onDragOver: (event: React.DragEvent, index: number) => void;
+  onDrop: (event: React.DragEvent, index: number) => void;
   children: ReactNode;
 }) {
   return (
     <div
-      id={`canvas-block-${block.id}`}
+      data-drop-index={index}
+      onDragOver={(event) => onDragOver(event, index)}
+      onDrop={(event) => onDrop(event, index)}
       className={cn(
-        "group relative transition-[opacity,transform]",
-        isDragging && "opacity-40",
+        'relative transition-colors',
+        active && 'bg-[color-mix(in_oklch,var(--thread-violet)_18%,transparent)]',
       )}
     >
-      <div
-        className={cn(
-          "relative rounded-[var(--radius-panel)]",
-          isSelected &&
-            "shadow-[0_0_0_3px_color-mix(in_oklch,var(--thread-teal)_38%,transparent)]",
-        )}
-      >
-        <div
-          aria-hidden="true"
-          className={cn(
-            "transition-[transform,filter]",
-            isSelected && "scale-[0.997]",
-          )}
-        >
-          {children}
-        </div>
-
-        <button
-          type="button"
-          className={cn(
-            "absolute inset-0 rounded-[var(--radius-panel)] border-2 transition-[border-color,box-shadow]",
-            isSelected
-              ? "border-[var(--thread-teal)]"
-              : "border-transparent hover:border-[color-mix(in_oklch,var(--thread-coral)_55%,transparent)]",
-          )}
-          aria-label={`Edit ${definition?.displayName ?? block.type} block`}
-          onClick={onSelect}
-        />
-
-        <div className="pointer-events-none absolute left-3 right-3 top-3 flex items-start justify-between gap-3">
-          <div className="rounded-full border border-[color-mix(in_oklch,var(--color-border)_78%,transparent)] bg-[color-mix(in_oklch,var(--color-surface)_88%,transparent)] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--color-text)] shadow-[var(--shadow-tight)] backdrop-blur">
-            {definition?.displayName ?? block.type}
-          </div>
-          <div className="pointer-events-auto flex items-center gap-2">
-            {block.settings?.hidden ? (
-              <span className="rounded-full border border-[color-mix(in_oklch,var(--color-border)_78%,transparent)] bg-[color-mix(in_oklch,var(--color-surface)_88%,transparent)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--color-text)] shadow-[var(--shadow-tight)] backdrop-blur">
-                Hidden
-              </span>
-            ) : null}
-            <button
-              type="button"
-              draggable
-              className="rounded-full border border-[color-mix(in_oklch,var(--color-border)_78%,transparent)] bg-[color-mix(in_oklch,var(--color-surface)_88%,transparent)] px-3 py-2 text-[var(--color-text)] shadow-[var(--shadow-tight)] backdrop-blur transition-transform hover:-translate-y-px active:cursor-grabbing"
-              aria-label={`Drag ${definition?.displayName ?? block.type} block`}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-              onDragStart={onDragStart}
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <circle cx="4" cy="3" r="1.2" fill="currentColor" />
-                <circle cx="10" cy="3" r="1.2" fill="currentColor" />
-                <circle cx="4" cy="7" r="1.2" fill="currentColor" />
-                <circle cx="10" cy="7" r="1.2" fill="currentColor" />
-                <circle cx="4" cy="11" r="1.2" fill="currentColor" />
-                <circle cx="10" cy="11" r="1.2" fill="currentColor" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      </div>
+      {children}
     </div>
   );
-}
-
-function CanvasDropZone({
-  index,
-  active,
-}: {
-  index?: number;
-  active: boolean;
-}) {
-  return (
-    <div
-      data-drop-index={index}
-      aria-hidden="true"
-      className="flex h-5 items-center justify-center"
-    >
-      <div
-        className={cn(
-          "flex h-1 w-full items-center justify-center rounded-full bg-transparent transition-[background-color,transform]",
-          active && "bg-[var(--thread-teal)]",
-        )}
-      >
-        <div
-          className={cn(
-            "size-2 rounded-full bg-transparent transition-colors",
-            active && "bg-[var(--thread-gold)]",
-          )}
-        />
-      </div>
-    </div>
-  );
-}
-
-function InspectorPanel({
-  selectedPage,
-  selectedBlock,
-  selectedDefinition,
-  selectedBlockIndex,
-  uploadedSiteAssets,
-  isSavingBlock,
-  isMutatingBlocks,
-  isCreatingBlock,
-  blockErrorMessage,
-  blockStatusMessage,
-  pageErrorMessage,
-  pageStatusMessage,
-  blockRegistry,
-  newBlockType,
-  onSaveBlock,
-  onSuggestBlock,
-  isSuggestingBlock,
-  suggestErrorMessage,
-  suggestStatusMessage,
-  siteId,
-  onImageApplied,
-  onCreateBlock,
-  onDuplicateBlock,
-  onDeleteBlock,
-  onMoveBlock,
-  onChangeNewBlockType,
-}: {
-  selectedPage: DraftPage | null;
-  selectedBlock: DraftBlock | null;
-  selectedDefinition: BlockDefinition | undefined;
-  selectedBlockIndex: number;
-  uploadedSiteAssets: AssetRecord[];
-  isSavingBlock: boolean;
-  isMutatingBlocks: boolean;
-  isCreatingBlock: boolean;
-  blockErrorMessage: string;
-  blockStatusMessage: string;
-  pageErrorMessage: string;
-  pageStatusMessage: string;
-  blockRegistry: BlockDefinition[];
-  newBlockType: string;
-  onSaveBlock: (
-    props: Record<string, unknown>,
-    hidden: boolean,
-  ) => Promise<void>;
-  onSuggestBlock?: (input: BlockSuggestInput) => Promise<void>;
-  isSuggestingBlock?: boolean;
-  suggestErrorMessage?: string;
-  suggestStatusMessage?: string;
-  siteId?: string;
-  onImageApplied?: (response: ImageApplyResponse) => void;
-  onCreateBlock: (event: FormEvent<HTMLFormElement>) => Promise<void>;
-  onDuplicateBlock: () => Promise<void>;
-  onDeleteBlock: () => Promise<void>;
-  onMoveBlock: (direction: -1 | 1) => Promise<void>;
-  onChangeNewBlockType: (type: string) => void;
-}) {
-  return (
-    <aside className="flex flex-col overflow-auto bg-[var(--surface-2)]">
-      <div className="border-b border-border p-4">
-        <p className={text.eyebrow}>Inspector</p>
-        <h2 className="mt-1 text-[1rem] font-extrabold leading-tight text-[var(--paper)]">
-          {selectedBlock
-            ? (selectedDefinition?.displayName ?? "Block")
-            : "Pick a block"}
-        </h2>
-        <p className={cn(text.p, "mt-1 text-sm")}>
-          {selectedBlock
-            ? "Edit content and visibility for the selected block."
-            : "Click a block on the canvas to edit it. Page settings live in the Pages section."}
-        </p>
-      </div>
-      <div className="grid gap-4 overflow-auto p-4">
-        {selectedBlock ? (
-          <>
-            <BlockEditor
-              key={selectedBlock.id}
-              block={selectedBlock}
-              definition={selectedDefinition}
-              isSaving={isSavingBlock}
-              errorMessage={blockErrorMessage}
-              statusMessage={blockStatusMessage}
-              assetLibrary={uploadedSiteAssets}
-              onSave={onSaveBlock}
-              onSuggest={onSuggestBlock}
-              isSuggesting={isSuggestingBlock}
-              suggestErrorMessage={suggestErrorMessage}
-              suggestStatusMessage={suggestStatusMessage}
-              siteId={siteId}
-              onImageApplied={onImageApplied}
-            />
-
-            <div className={actions.row}>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={selectedBlockIndex <= 0 || isMutatingBlocks}
-                onClick={() => onMoveBlock(-1)}
-              >
-                Move up
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={
-                  !selectedPage ||
-                  selectedBlockIndex === selectedPage.blocks.length - 1 ||
-                  isMutatingBlocks
-                }
-                onClick={() => onMoveBlock(1)}
-              >
-                Move down
-              </Button>
-            </div>
-
-            <div className={actions.row}>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={isMutatingBlocks}
-                onClick={onDuplicateBlock}
-              >
-                Duplicate
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={isMutatingBlocks}
-                onClick={onDeleteBlock}
-              >
-                Delete
-              </Button>
-            </div>
-          </>
-        ) : (
-          <div className={emptyState}>
-            <p className={text.p}>
-              Nothing selected. Drop a block from the palette, or click any
-              block on the canvas to edit it.
-            </p>
-          </div>
-        )}
-
-        <div className="grid gap-3 border-t border-border pt-4">
-          <p className={text.eyebrow}>Add block</p>
-          <form className={form.grid} onSubmit={onCreateBlock}>
-            <label htmlFor="inspector-new-block-type" className={text.label}>
-              Block type
-            </label>
-            <Select
-              id="inspector-new-block-type"
-              value={newBlockType}
-              onChange={(event) => onChangeNewBlockType(event.target.value)}
-            >
-              {blockRegistry.map((definition) => (
-                <option
-                  key={`${definition.type}@${definition.version}`}
-                  value={definition.type}
-                >
-                  {definition.displayName}
-                </option>
-              ))}
-            </Select>
-            <Button
-              type="submit"
-              size="sm"
-              disabled={isCreatingBlock || !newBlockType || !selectedPage}
-            >
-              {isCreatingBlock ? "Adding block..." : "Add block to page"}
-            </Button>
-          </form>
-
-          {pageErrorMessage ? (
-            <p className={text.error}>{pageErrorMessage}</p>
-          ) : null}
-          {pageStatusMessage ? (
-            <p className={text.success}>{pageStatusMessage}</p>
-          ) : null}
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-type DragState =
-  | { kind: "idle" }
-  | { kind: "dragging-palette"; blockType: string }
-  | { kind: "dragging-block"; blockId: string };
-
-type DropIndicator = {
-  index: number;
-};
-
-function groupByCategory(
-  registry: BlockDefinition[],
-): Record<string, BlockDefinition[]> {
-  const groups: Record<string, BlockDefinition[]> = {};
-  for (const def of registry) {
-    const category = def.category || "Other";
-    if (!groups[category]) {
-      groups[category] = [];
-    }
-    groups[category].push(def);
-  }
-  return groups;
 }
