@@ -68,7 +68,7 @@ export function SiteDraftRenderer({
   linkMode = 'anchors',
   siteSlug,
   publishedBasePath,
-  mode: _mode = 'default',
+  mode = 'default',
   renderBlock,
   activeEntry,
   activeCollection,
@@ -209,7 +209,12 @@ export function SiteDraftRenderer({
                   </small>
                 </div>
               ) : null}
-              <div className={preview.pageStack}>
+              <div
+                className={cn(
+                  preview.pageStack,
+                  mode === 'builder' && 'pt-12',
+                )}
+              >
                 {page.blocks
                   .filter((block) => !block.settings?.hidden)
                   .map((block, blockIndex) => {
