@@ -61,11 +61,23 @@ const FIELD_TYPES: CollectionFieldType[] = [
 ];
 
 export const Route = createFileRoute("/app/sites/$siteId/collections")({
-  component: CollectionsView,
+  component: CollectionsRouteView,
 });
 
-function CollectionsView() {
+function CollectionsRouteView() {
   const { siteId } = Route.useParams();
+  return <CollectionsPanel siteId={siteId} showBackLink showTitle />;
+}
+
+export function CollectionsPanel({
+  siteId,
+  showBackLink = false,
+  showTitle = false,
+}: {
+  siteId: string;
+  showBackLink?: boolean;
+  showTitle?: boolean;
+}) {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
     "loading",
@@ -153,22 +165,31 @@ function CollectionsView() {
 
   return (
     <div className="grid gap-5">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <Link
-            to="/app/sites/$siteId"
-            params={{ siteId }}
-            search={{ panel: undefined }}
-            className={actions.inlineLink}
-          >
-            <ArrowLeft className="size-4" />
-            Back to builder
-          </Link>
-          <div>
-            <p className={text.eyebrow}>Site collections</p>
-            <h1 className={cn(text.h2, "mt-1")}>Collections</h1>
+      <header
+        className={cn(
+          "flex flex-wrap items-center justify-between gap-3",
+          !showTitle && "justify-end",
+        )}
+      >
+        {showTitle ? (
+          <div className="flex items-center gap-3">
+            {showBackLink ? (
+              <Link
+                to="/app/sites/$siteId"
+                params={{ siteId }}
+                search={{ panel: undefined }}
+                className={actions.inlineLink}
+              >
+                <ArrowLeft className="size-4" />
+                Back to builder
+              </Link>
+            ) : null}
+            <div>
+              <p className={text.eyebrow}>Site collections</p>
+              <h1 className={cn(text.h2, "mt-1")}>Collections</h1>
+            </div>
           </div>
-        </div>
+        ) : null}
         <Button
           type="button"
           size="sm"

@@ -4,7 +4,7 @@ import {
   createFileRoute,
   useRouterState,
 } from '@tanstack/react-router'
-import { BarChart3, ChevronDown, Eye, FolderTree, Home, Link2, LogOut, PencilLine, ShieldCheck } from 'lucide-react'
+import { BarChart3, ChevronDown, Eye, Home, Link2, LogOut, PencilLine, ShieldCheck } from 'lucide-react'
 import type { FormEvent } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -47,7 +47,6 @@ function AppLayout() {
   const isBuilderRoute = /^\/app\/sites\/[^/]+\/?$/.test(pathname)
   const isPreviewRoute = /^\/app\/sites\/[^/]+\/preview\/?$/.test(pathname)
   const isAnalyticsRoute = /^\/app\/sites\/[^/]+\/analytics\/?$/.test(pathname)
-  const isCollectionsRoute = /^\/app\/sites\/[^/]+\/collections\/?$/.test(pathname)
 
   useEffect(() => {
     let isMounted = true
@@ -279,17 +278,6 @@ function AppLayout() {
             </Link>
             {siteId ? (
               <>
-                <Link
-                  to="/app/sites/$siteId/collections"
-                  params={{ siteId }}
-                  className={cn(
-                    actions.inlineLink,
-                    isCollectionsRoute && 'border-[var(--thread-teal)] bg-[var(--surface-3)]',
-                  )}
-                >
-                  <FolderTree className="size-4" />
-                  Collections
-                </Link>
                 <Link
                   to="/app/sites/$siteId/analytics"
                   params={{ siteId }}

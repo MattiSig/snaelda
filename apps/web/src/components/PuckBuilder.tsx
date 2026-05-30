@@ -8,6 +8,7 @@ import {
 import {
   Compass,
   FileText,
+  FolderTree,
   Image as ImageIcon,
   Inbox,
   Layers,
@@ -47,6 +48,7 @@ type DraftBlock = SiteDraft["pages"][number]["blocks"][number];
 export type BuilderSection =
   | "content"
   | "pages"
+  | "collections"
   | "theme"
   | "seo"
   | "navigation"
@@ -74,6 +76,14 @@ const sectionMeta: Record<
     title: "Manage pages in this site",
     description:
       "Rename pages, change routes, toggle navigation visibility, or add and remove pages from the draft.",
+  },
+  collections: {
+    label: "Collections",
+    icon: FolderTree,
+    eyebrow: "Collections",
+    title: "Manage reusable content",
+    description:
+      "Create structured lists like services, projects, or menu items, then publish entries from one place.",
   },
   theme: {
     label: "Theme",
@@ -136,6 +146,7 @@ const sectionMeta: Record<
 const orderedSections: BuilderSection[] = [
   "content",
   "pages",
+  "collections",
   "theme",
   "seo",
   "navigation",
@@ -213,6 +224,7 @@ type PuckBuilderProps = {
   onReorderBlocks: (blockIds: string[]) => Promise<void>;
 
   pagesPanelContent: ReactNode;
+  collectionsPanelContent: ReactNode;
   themePanelContent: ReactNode;
   seoPanelContent: ReactNode;
   navigationPanelContent: ReactNode;
@@ -255,6 +267,7 @@ export function PuckBuilder({
   onMoveBlock,
   onReorderBlocks,
   pagesPanelContent,
+  collectionsPanelContent,
   themePanelContent,
   seoPanelContent,
   navigationPanelContent,
@@ -342,19 +355,21 @@ export function PuckBuilder({
               controls={
                 section === "pages"
                   ? pagesPanelContent
-                  : section === "theme"
-                    ? themePanelContent
-                    : section === "seo"
-                      ? seoPanelContent
-                      : section === "navigation"
-                        ? navigationPanelContent
-                        : section === "assets"
-                          ? assetsPanelContent
-                          : section === "inquiries"
-                            ? inquiriesPanelContent
-                            : section === "publish"
-                              ? publishPanelContent
-                              : settingsPanelContent
+                  : section === "collections"
+                    ? collectionsPanelContent
+                    : section === "theme"
+                      ? themePanelContent
+                      : section === "seo"
+                        ? seoPanelContent
+                        : section === "navigation"
+                          ? navigationPanelContent
+                          : section === "assets"
+                            ? assetsPanelContent
+                            : section === "inquiries"
+                              ? inquiriesPanelContent
+                              : section === "publish"
+                                ? publishPanelContent
+                                : settingsPanelContent
               }
               preview={
                 showPreviewPane ? (

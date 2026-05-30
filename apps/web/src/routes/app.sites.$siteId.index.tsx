@@ -6,6 +6,7 @@ import { PuckBuilder, type BuilderSection } from "@/components/PuckBuilder";
 import { RepromptHistoryPanel } from "@/components/RepromptHistoryPanel";
 import { RevisionDiffModal } from "@/components/RevisionDiffModal";
 import { Button } from "@/components/ui/button";
+import { CollectionsPanel } from "./app.sites.$siteId.collections";
 
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -109,6 +110,7 @@ const themeRegenerateSteps: GenerationProgressItem[] = [
 const validSections: BuilderSection[] = [
   "content",
   "pages",
+  "collections",
   "theme",
   "seo",
   "navigation",
@@ -1897,6 +1899,8 @@ function SiteDetail() {
     </div>
   );
 
+  const collectionsPanelContent = <CollectionsPanel siteId={siteId} />;
+
   const seoPanelContent = (
     <div className="grid gap-4">
       <section className={workspaceSection}>
@@ -3562,6 +3566,7 @@ function SiteDetail() {
         onMoveBlock={handleMoveBlock}
         onReorderBlocks={handleReorderBlocks}
         pagesPanelContent={pagesPanelContent}
+        collectionsPanelContent={collectionsPanelContent}
         seoPanelContent={seoPanelContent}
         navigationPanelContent={navigationPanelContent}
         assetsPanelContent={assetsPanelContent}
