@@ -1,6 +1,6 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { type FormEvent, useEffect, useState } from "react";
-import { ArrowLeft, FolderTree, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, FolderTree, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,6 +12,7 @@ import {
   type FieldDefinition,
   createCollection,
   deleteCollection,
+  draftCollectionFromPrompt,
   listCollections,
   updateCollection,
 } from "@/lib/api";
@@ -85,6 +86,8 @@ export function CollectionsPanel({
   const [errorMessage, setErrorMessage] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showPrompt, setShowPrompt] = useState(false);
+  const [isDrafting, setIsDrafting] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -128,6 +131,25 @@ export function CollectionsPanel({
       setErrorMessage(
         error instanceof APIError ? error.message : "Could not create collection.",
       );
+    }
+  }
+
+  async function handleDraftFromPrompt(prompt: string) {
+    setIsDrafting(true);
+    setErrorMessage("");
+    try {
+      const response = await draftCollectionFromPrompt(siteId, { prompt });
+      setCollections((prev) => [...prev, response.collection]);
+      setSelectedId(response.collection.id);
+      setShowPrompt(false);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof APIError
+          ? error.message
+          : "Could not draft a collection from that prompt.",
+      );
+    } finally {
+      setIsDrafting(false);
     }
   }
 
@@ -190,20 +212,45 @@ export function CollectionsPanel({
             </div>
           </div>
         ) : null}
-        <Button
-          type="button"
-          size="sm"
-          onClick={() => setShowCreate((value) => !value)}
-        >
-          <Plus className="mr-1.5 size-4" />
-          New collection
-        </Button>
+        <div className={actions.row}>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setShowPrompt((value) => !value);
+              if (!showPrompt) setShowCreate(false);
+            }}
+          >
+            <Sparkles className="mr-1.5 size-4" />
+            Prompt up a collection
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              setShowCreate((value) => !value);
+              if (!showCreate) setShowPrompt(false);
+            }}
+          >
+            <Plus className="mr-1.5 size-4" />
+            New collection
+          </Button>
+        </div>
       </header>
 
       {errorMessage ? (
         <section className={paddedPanel}>
           <p className={text.error}>{errorMessage}</p>
         </section>
+      ) : null}
+
+      {showPrompt ? (
+        <PromptCollectionPanel
+          onSubmit={handleDraftFromPrompt}
+          isSubmitting={isDrafting}
+          onCancel={() => setShowPrompt(false)}
+        />
       ) : null}
 
       {showCreate ? <CreateCollectionPanel onSubmit={handleCreate} /> : null}
@@ -349,6 +396,67 @@ function CreateCollectionPanel({
         </div>
         <div className={actions.row}>
           <Button type="submit">Create collection</Button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function PromptCollectionPanel({
+  onSubmit,
+  isSubmitting,
+  onCancel,
+}: {
+  onSubmit: (prompt: string) => void;
+  isSubmitting: boolean;
+  onCancel: () => void;
+}) {
+  const [prompt, setPrompt] = useState("");
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmed = prompt.trim();
+    if (!trimmed) return;
+    onSubmit(trimmed);
+  }
+
+  return (
+    <section className={cn(paddedPanel, "grid gap-3")}>
+      <div className="flex items-center gap-2">
+        <Sparkles className="size-5 text-[var(--thread-gold)]" />
+        <h2 className={text.sectionTitle}>Prompt up a collection</h2>
+      </div>
+      <p className={text.muted}>
+        Describe the list you want — services, projects, menu items, team
+        members. Snaelda picks the labels, slug, and field schema for you.
+      </p>
+      <form className={form.grid} onSubmit={handleSubmit}>
+        <div className={form.field}>
+          <label className={text.label} htmlFor="collection-prompt">
+            Prompt
+          </label>
+          <Textarea
+            id="collection-prompt"
+            value={prompt}
+            placeholder="A menu collection with name, description, price, and a photo. Mark vegan items."
+            rows={3}
+            onChange={(event) => setPrompt(event.target.value)}
+            disabled={isSubmitting}
+            required
+          />
+        </div>
+        <div className={actions.row}>
+          <Button type="submit" disabled={isSubmitting || !prompt.trim()}>
+            {isSubmitting ? "Drafting…" : "Draft collection"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            disabled={isSubmitting}
+          >
+            Cancel
+          </Button>
         </div>
       </form>
     </section>

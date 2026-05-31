@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
 export type ImagePickerContext = {
   siteId: string;
   blockId: string;
-  path: ReadonlyArray<string | number>;
+  path: ReadonlyArray<string>;
   currentAlt: string;
 };
 
@@ -48,7 +48,7 @@ export function ImagePickerModal({
   useEffect(() => {
     let cancelled = false;
     suggestBlockImage(context.siteId, context.blockId, {
-      path: context.path as string[],
+      path: [...context.path],
       instruction: '',
     })
       .then((response) => {
@@ -82,7 +82,7 @@ export function ImagePickerModal({
     setSearching(true);
     setErrorMessage('');
     suggestBlockImage(context.siteId, context.blockId, {
-      path: context.path as string[],
+      path: [...context.path],
       instruction,
     })
       .then((response) => {
@@ -109,7 +109,7 @@ export function ImagePickerModal({
     setErrorMessage('');
     try {
       const response = await applyBlockImage(context.siteId, context.blockId, {
-        path: context.path as string[],
+        path: [...context.path],
         photo: candidate,
         alt: context.currentAlt || candidate.description || '',
         query,

@@ -203,7 +203,11 @@ func (s *Server) Handler() http.Handler {
 			AuditRecorder:   auditRecorder,
 			Logger:          s.logger,
 		}).Mount(mux, s.auth.RequireSession)
-		collections.NewHandler(store).Mount(mux, s.auth.RequireSession)
+		collectionsConfig := collections.HandlerConfig{}
+		if generationPlanner != nil {
+			collectionsConfig.Drafter = collectionDrafterAdapter{planner: generationPlanner}
+		}
+		collections.NewHandlerWithConfig(store, collectionsConfig).Mount(mux, s.auth.RequireSession)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, sites.Module{})
 		mountAuthenticatedPlaceholderModule(mux, s.auth, collections.Module{})
@@ -631,4 +635,29 @@ func firstPositiveDuration(value time.Duration, fallback time.Duration) time.Dur
 		return fallback
 	}
 	return value
+}
+
+// collectionDrafterAdapter lets the OpenAI planner satisfy
+// collections.CollectionDrafter without either package importing the other —
+// each owns its own request/response types and we shuttle values across.
+type collectionDrafterAdapter struct {
+	planner *generation.OpenAIPlanner
+}
+
+func (a collectionDrafterAdapter) DraftCollection(ctx context.Context, request collections.CollectionDraftRequest) (collections.CollectionDraftResponse, error) {
+	resp, err := a.planner.DraftCollection(ctx, generation.CollectionDraftRequest{
+		Prompt:              request.Prompt,
+		SiteName:            request.SiteName,
+		SiteGoal:            request.SiteGoal,
+		ExistingCollections: request.ExistingCollections,
+	})
+	if err != nil {
+		return collections.CollectionDraftResponse{}, err
+	}
+	return collections.CollectionDraftResponse{
+		Slug:          resp.Slug,
+		SingularLabel: resp.SingularLabel,
+		PluralLabel:   resp.PluralLabel,
+		Schema:        resp.Schema,
+	}, nil
 }

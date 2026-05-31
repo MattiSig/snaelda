@@ -21,14 +21,30 @@ type Authorizer interface {
 type Handler struct {
 	mutator    *Mutator
 	authorizer Authorizer
+	drafter    CollectionDrafter
+	reader     Reader
+}
+
+// HandlerConfig is the optional wiring for a Handler. Drafter is wired by the
+// API server when an OpenAI key is configured.
+type HandlerConfig struct {
+	Drafter CollectionDrafter
 }
 
 // NewHandler wires a Handler against the sites DB used by the sites module so
 // collections share the same draft store.
 func NewHandler(db sites.DB) *Handler {
+	return NewHandlerWithConfig(db, HandlerConfig{})
+}
+
+// NewHandlerWithConfig wires a Handler with optional drafter support.
+func NewHandlerWithConfig(db sites.DB, cfg HandlerConfig) *Handler {
+	reader := sites.NewPostgresReader(db)
 	return &Handler{
-		mutator:    NewMutator(sites.NewPostgresReader(db), sites.NewPostgresWriter(db)),
+		mutator:    NewMutator(reader, sites.NewPostgresWriter(db)),
 		authorizer: authorization.New(db),
+		drafter:    cfg.Drafter,
+		reader:     reader,
 	}
 }
 
@@ -36,6 +52,7 @@ func NewHandler(db sites.DB) *Handler {
 func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.Handler) {
 	mux.Handle("GET /api/sites/{siteId}/collections", requireUser(http.HandlerFunc(h.list)))
 	mux.Handle("POST /api/sites/{siteId}/collections", requireUser(http.HandlerFunc(h.create)))
+	mux.Handle("POST /api/sites/{siteId}/collections/draft-from-prompt", requireUser(http.HandlerFunc(h.draftFromPrompt)))
 	mux.Handle("GET /api/sites/{siteId}/collections/{collectionId}", requireUser(http.HandlerFunc(h.get)))
 	mux.Handle("PATCH /api/sites/{siteId}/collections/{collectionId}", requireUser(http.HandlerFunc(h.update)))
 	mux.Handle("DELETE /api/sites/{siteId}/collections/{collectionId}", requireUser(http.HandlerFunc(h.delete)))
@@ -181,6 +198,75 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type draftFromPromptRequest struct {
+	Prompt string `json:"prompt"`
+}
+
+func (h *Handler) draftFromPrompt(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+	if h.drafter == nil {
+		writeError(w, http.StatusServiceUnavailable, "drafter_unavailable", "the AI collection drafter is not configured")
+		return
+	}
+
+	var payload draftFromPromptRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "request body must be valid JSON")
+		return
+	}
+	prompt := strings.TrimSpace(payload.Prompt)
+	if prompt == "" {
+		writeError(w, http.StatusBadRequest, "invalid_prompt", "prompt is required")
+		return
+	}
+	if len(prompt) > 2000 {
+		writeError(w, http.StatusBadRequest, "invalid_prompt", "prompt is too long")
+		return
+	}
+
+	draft, err := h.reader.LoadDraft(r.Context(), siteID)
+	if err != nil {
+		writeCollectionError(w, err)
+		return
+	}
+	existingNames := make([]string, 0, len(draft.Collections))
+	for _, c := range draft.Collections {
+		existingNames = append(existingNames, c.PluralLabel)
+	}
+
+	drafted, err := h.drafter.DraftCollection(r.Context(), CollectionDraftRequest{
+		Prompt:              prompt,
+		SiteName:            draft.Site.Name,
+		SiteGoal:            draft.Site.SEO.Description,
+		ExistingCollections: existingNames,
+	})
+	if err != nil {
+		if errors.Is(err, ErrCollectionDrafterUnavailable) {
+			writeError(w, http.StatusServiceUnavailable, "drafter_unavailable", "the AI collection drafter is not available")
+			return
+		}
+		writeError(w, http.StatusBadGateway, "drafter_failed", err.Error())
+		return
+	}
+
+	collection, err := h.mutator.CreateCollection(r.Context(), scope.WorkspaceID, siteID, CreateCollectionInput{
+		Slug:          strings.TrimSpace(drafted.Slug),
+		SingularLabel: strings.TrimSpace(drafted.SingularLabel),
+		PluralLabel:   strings.TrimSpace(drafted.PluralLabel),
+		Schema:        drafted.Schema,
+	})
+	if err != nil {
+		writeCollectionError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"collection": collection})
 }
 
 func (h *Handler) listEntries(w http.ResponseWriter, r *http.Request) {

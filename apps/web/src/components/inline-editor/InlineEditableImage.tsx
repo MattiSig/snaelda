@@ -223,7 +223,7 @@ export function InlineEditableImage({
           context={{
             siteId: ctx.siteId,
             blockId,
-            path,
+            path: path.map(String),
             currentAlt: image?.alt ?? '',
           }}
           onClose={() => setPickerOpen(false)}

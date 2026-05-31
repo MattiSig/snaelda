@@ -735,6 +735,135 @@ func (p *OpenAIPlanner) SuggestBlockProps(ctx context.Context, request BlockSugg
 	}, nil
 }
 
+// DraftCollection turns a short user prompt into a proposed collection shape
+// (labels, slug, schema). The handler validates and persists the result. The
+// model never sees existing entries.
+func (p *OpenAIPlanner) DraftCollection(ctx context.Context, request CollectionDraftRequest) (CollectionDraftResponse, error) {
+	if p == nil {
+		return CollectionDraftResponse{}, ErrBlockSuggestUnavailable
+	}
+	userJSON, err := json.Marshal(request)
+	if err != nil {
+		return CollectionDraftResponse{}, fmt.Errorf("encode collection draft request: %w", err)
+	}
+	fieldTypeEnum := []string{
+		"text", "long_text", "rich_text", "number", "boolean", "date",
+		"url", "email", "phone", "location", "enum", "enum_multi",
+		"asset", "asset_list",
+	}
+	schema := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"singularLabel", "pluralLabel", "slug", "schema"},
+		"properties": map[string]any{
+			"singularLabel": map[string]any{
+				"type":      "string",
+				"minLength": 1,
+				"maxLength": 60,
+			},
+			"pluralLabel": map[string]any{
+				"type":      "string",
+				"minLength": 1,
+				"maxLength": 60,
+			},
+			"slug": map[string]any{
+				"type":        "string",
+				"pattern":     "^[a-z][a-z0-9-]*$",
+				"description": "URL slug, lowercase words separated by hyphens",
+			},
+			"schema": map[string]any{
+				"type":     "array",
+				"minItems": 1,
+				"maxItems": 12,
+				"items": map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+					"required":             []string{"key", "label", "type"},
+					"properties": map[string]any{
+						"key": map[string]any{
+							"type":        "string",
+							"pattern":     "^[a-z][a-z0-9_]*$",
+							"description": "snake_case field key starting with a letter",
+						},
+						"label":       map[string]any{"type": "string", "minLength": 1, "maxLength": 60},
+						"type":        map[string]any{"type": "string", "enum": fieldTypeEnum},
+						"required":    map[string]any{"type": "boolean"},
+						"description": map[string]any{"type": "string", "maxLength": 200},
+						"options": map[string]any{
+							"type":  "array",
+							"items": map[string]any{"type": "string", "minLength": 1, "maxLength": 60},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	var response openAICollectionDraftPayload
+	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
+		Name:   "collection_draft",
+		Schema: schema,
+		System: collectionDrafterSystemPrompt,
+		User:   string(userJSON),
+		Strict: false,
+	}, &response); err != nil {
+		return CollectionDraftResponse{}, err
+	}
+
+	schemaOut := make([]siteconfig.FieldDefinition, 0, len(response.Schema))
+	for _, field := range response.Schema {
+		schemaOut = append(schemaOut, siteconfig.FieldDefinition{
+			Key:         field.Key,
+			Label:       field.Label,
+			Type:        field.Type,
+			Required:    field.Required,
+			Description: field.Description,
+			Options:     field.Options,
+		})
+	}
+	return CollectionDraftResponse{
+		Slug:          response.Slug,
+		SingularLabel: response.SingularLabel,
+		PluralLabel:   response.PluralLabel,
+		Schema:        schemaOut,
+	}, nil
+}
+
+// CollectionDraftRequest mirrors the collections package's drafter contract.
+// We re-declare it here so the generation package does not import collections
+// (which would create a dependency loop — collections already references
+// generation indirectly via the API server).
+type CollectionDraftRequest struct {
+	Prompt              string   `json:"prompt"`
+	SiteName            string   `json:"siteName,omitempty"`
+	SiteGoal            string   `json:"siteGoal,omitempty"`
+	ExistingCollections []string `json:"existingCollections,omitempty"`
+}
+
+// CollectionDraftResponse is the structured draft returned by the model.
+type CollectionDraftResponse struct {
+	Slug          string                       `json:"slug,omitempty"`
+	SingularLabel string                       `json:"singularLabel"`
+	PluralLabel   string                       `json:"pluralLabel"`
+	Schema        []siteconfig.FieldDefinition `json:"schema"`
+}
+
+type openAICollectionDraftPayload struct {
+	Slug          string                            `json:"slug"`
+	SingularLabel string                            `json:"singularLabel"`
+	PluralLabel   string                            `json:"pluralLabel"`
+	Schema        []openAICollectionDraftFieldEntry `json:"schema"`
+}
+
+type openAICollectionDraftFieldEntry struct {
+	Key         string   `json:"key"`
+	Label       string   `json:"label"`
+	Type        string   `json:"type"`
+	Required    bool     `json:"required,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Options     []string `json:"options,omitempty"`
+}
+
 type structuredCompletionRequest struct {
 	Name   string
 	Schema map[string]any
@@ -1006,6 +1135,28 @@ For repeater fields (FAQ items, feature items, plans, etc.) keep the array lengt
 For image and link fields, keep the existing values exactly unless the action requires changing them.
 For enum/select fields (layout, variant, alignment, columns, etc.) keep the existing value unless the action explicitly addresses layout.
 Always set "changeSummary" to one short sentence describing what changed in plain English.`
+
+const collectionDrafterSystemPrompt = `You are the collection-schema drafter for Snaelda's website builder.
+Return JSON only, matching the supplied schema exactly.
+Translate a short prompt into a structured "collection" — a typed list of entries the user will edit later (services, projects, menu items, team members, FAQs, etc.).
+
+Required output:
+- "singularLabel": singular noun for one entry (e.g. "Service", "Project", "Menu item"), 1-60 chars.
+- "pluralLabel": plural noun (e.g. "Services", "Projects", "Menu"), 1-60 chars.
+- "slug": URL slug derived from pluralLabel, lowercase words separated by hyphens (e.g. "services", "menu-items"). Must start with a letter.
+- "schema": 2-8 fields that describe one entry.
+
+Field rules:
+- "key" must be snake_case starting with a letter (e.g. "title", "price", "lead_chef").
+- "label" is the human-facing name.
+- "type" must be one of: text, long_text, rich_text, number, boolean, date, url, email, phone, location, enum, enum_multi, asset, asset_list.
+- A title-like text field should usually be the first and required. Image fields use "asset". Long descriptions use "long_text".
+- For "enum" / "enum_multi" include a short "options" array (3-6 plausible values).
+- Set "required": true on the 1-3 fields an entry truly needs (typically title and one core attribute).
+- Keep field counts tight — avoid fields the user didn't ask for. No SEO/meta fields, no internal ids, no audit fields. Snaelda adds those automatically.
+
+Avoid duplicating an existing collection (provided in "existingCollections" by plural label) — pick a different angle or a more specific scope if the prompt overlaps.
+Plain text only. No HTML, no Markdown.`
 
 const imageQueryRewriterSystemPrompt = `You are the image-search query writer for Snaelda's website builder.
 Return JSON only, matching the supplied schema exactly.

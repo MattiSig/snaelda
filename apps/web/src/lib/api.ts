@@ -1914,6 +1914,20 @@ export async function createCollection(
   );
 }
 
+export async function draftCollectionFromPrompt(
+  siteId: string,
+  input: { prompt: string },
+) {
+  return apiFetch<{ collection: Collection }>(
+    `/api/sites/${siteId}/collections/draft-from-prompt`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
 export async function updateCollection(
   siteId: string,
   collectionId: string,
