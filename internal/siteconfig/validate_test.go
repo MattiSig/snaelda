@@ -439,6 +439,29 @@ func TestBuildThemeWithBrandIgnoresInvalidBrandColor(t *testing.T) {
 	}
 }
 
+func TestDetectThemeSelectionKeepsPaletteWithBrandDerivedColors(t *testing.T) {
+	selection := DefaultThemeSelection()
+	selection.Palette = ThemePaletteEditorialStudio
+	theme := BuildThemeWithBrand(selection, BrandConfig{PrimaryColor: "#abcdef"})
+
+	detected := DetectThemeSelection(theme)
+	if detected.Palette != ThemePaletteEditorialStudio {
+		t.Fatalf("expected palette detection to survive brand color derivation, got %#v", detected)
+	}
+}
+
+func TestThemeEditorCatalogWithBrandAddsPreviewColors(t *testing.T) {
+	catalog := ThemeEditorCatalogWithBrand(BrandConfig{PrimaryColor: "#abcdef"})
+	if len(catalog.Palettes) != 6 {
+		t.Fatalf("expected six palette options, got %d", len(catalog.Palettes))
+	}
+	for _, option := range catalog.Palettes {
+		if option.PreviewColors["primary"] != "#abcdef" {
+			t.Fatalf("expected branded preview color for %s, got %#v", option.ID, option.PreviewColors)
+		}
+	}
+}
+
 func TestValidateDraftRejectsImageWithoutAlt(t *testing.T) {
 	draft := validDraft()
 	draft.Pages[0].Blocks[0].Props["image"] = map[string]any{

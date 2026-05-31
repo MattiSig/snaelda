@@ -38,12 +38,20 @@ func repairGenerationPlan(plan generationPlan) generationPlan {
 
 func normalizeGeneratedThemePreset(value string) string {
 	switch strings.TrimSpace(value) {
-	case siteconfig.ThemePalettePlayfulRibbon:
-		return siteconfig.ThemePalettePlayfulRibbon
-	case siteconfig.ThemePaletteMeanerDark:
-		return siteconfig.ThemePaletteMeanerDark
-	default:
+	case siteconfig.ThemePaletteCalmNordic:
 		return siteconfig.ThemePaletteCalmNordic
+	case siteconfig.ThemePaletteCleanLocal:
+		return siteconfig.ThemePaletteCleanLocal
+	case siteconfig.ThemePaletteBrightShopfront:
+		return siteconfig.ThemePaletteBrightShopfront
+	case siteconfig.ThemePaletteEditorialStudio:
+		return siteconfig.ThemePaletteEditorialStudio
+	case siteconfig.ThemePaletteHeritageCraft:
+		return siteconfig.ThemePaletteHeritageCraft
+	case siteconfig.ThemePaletteAfterHours:
+		return siteconfig.ThemePaletteAfterHours
+	default:
+		return siteconfig.ThemePaletteCleanLocal
 	}
 }
 

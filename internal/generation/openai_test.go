@@ -23,7 +23,7 @@ func TestOpenAIPlannerBuildPlanParsesStructuredCompletion(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{{
 				"message": map[string]any{
-					"content": `{"siteName":"Ribbon & Pine","siteGoal":"Win more workshop bookings.","themeSelection":{"palette":"playful-ribbon","fontPreset":"studio-sans","sectionSpacing":"snug","radius":"pillowy","buttonStyle":"ink-solid","imageStyle":"paper-cut"},"pages":[{"title":"Home","slug":"/","goal":"Introduce the studio and get visitors to book.","blocks":[{"type":"hero","purpose":"Lead with the main offer","props":{"headline":"Book a warmer workshop site"}}],"seo":{"title":"Ribbon & Pine","description":"Workshop booking website"}}],"assetsNeeded":["hero-image"],"assumptions":["Classes are booked by inquiry."]}`,
+					"content": `{"siteName":"Ribbon & Pine","siteGoal":"Win more workshop bookings.","themeSelection":{"palette":"bright-shopfront","fontPreset":"studio-sans","sectionSpacing":"snug","radius":"pillowy","buttonStyle":"ink-solid","imageStyle":"paper-cut"},"pages":[{"title":"Home","slug":"/","goal":"Introduce the studio and get visitors to book.","blocks":[{"type":"hero","purpose":"Lead with the main offer","props":{"headline":"Book a warmer workshop site"}}],"seo":{"title":"Ribbon & Pine","description":"Workshop booking website"}}],"assetsNeeded":["hero-image"],"assumptions":["Classes are booked by inquiry."]}`,
 				},
 			}},
 		})
@@ -110,10 +110,10 @@ func TestOpenAIPlannerBuildPlanParsesStructuredCompletion(t *testing.T) {
 	if !hasHeadline {
 		t.Fatalf("expected hero props required to include headline, got %#v", requiredAny)
 	}
-	if plan.ThemeSelection.Palette != siteconfig.ThemePalettePlayfulRibbon {
+	if plan.ThemeSelection.Palette != siteconfig.ThemePaletteBrightShopfront {
 		t.Fatalf("expected parsed theme selection, got %#v", plan.ThemeSelection)
 	}
-	if plan.Theme.Tokens.Colors["background"] != "#fff7ee" {
+	if plan.Theme.Tokens.Colors["background"] != "#fff3df" {
 		t.Fatalf("expected theme to be built from selection, got %#v", plan.Theme.Tokens.Colors)
 	}
 	if len(plan.Pages) != 1 || plan.Pages[0].Slug != "/" {
@@ -126,7 +126,7 @@ func TestOpenAIPlannerRegenerateThemeSelectionParsesStructuredCompletion(t *test
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{{
 				"message": map[string]any{
-					"content": `{"themeSelection":{"palette":"meaner-dark","fontPreset":"editorial","sectionSpacing":"airy","radius":"soft","buttonStyle":"ribbon-fill","imageStyle":"woven-tint"}}`,
+					"content": `{"themeSelection":{"palette":"after-hours","fontPreset":"editorial","sectionSpacing":"airy","radius":"soft","buttonStyle":"ribbon-fill","imageStyle":"woven-tint"}}`,
 				},
 			}},
 		})
@@ -159,7 +159,7 @@ func TestOpenAIPlannerRegenerateThemeSelectionParsesStructuredCompletion(t *test
 		t.Fatalf("regenerate theme selection: %v", err)
 	}
 
-	if selection.Palette != siteconfig.ThemePaletteMeanerDark || selection.SectionSpacing != siteconfig.ThemeSpacingAiry {
+	if selection.Palette != siteconfig.ThemePaletteAfterHours || selection.SectionSpacing != siteconfig.ThemeSpacingAiry {
 		t.Fatalf("expected parsed selection, got %#v", selection)
 	}
 }

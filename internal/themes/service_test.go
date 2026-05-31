@@ -63,7 +63,7 @@ func TestLoadReturnsDetectedThemeState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load theme: %v", err)
 	}
-	if state.Selection.Palette != siteconfig.ThemePaletteMeanerDark {
+	if state.Selection.Palette != siteconfig.ThemePaletteAfterHours {
 		t.Fatalf("expected detected palette, got %#v", state.Selection)
 	}
 	if len(state.Options.Palettes) == 0 {
@@ -80,7 +80,7 @@ func TestUpdateRebuildsThemeFromSelection(t *testing.T) {
 	}
 
 	state, err := service.Update(context.Background(), "workspace-1", "site_demo", UpdateInput{
-		Palette:        stringPointer(siteconfig.ThemePalettePlayfulRibbon),
+		Palette:        stringPointer(siteconfig.ThemePaletteBrightShopfront),
 		FontPreset:     stringPointer(siteconfig.ThemeFontStudioSans),
 		SectionSpacing: stringPointer(siteconfig.ThemeSpacingSnug),
 		Radius:         stringPointer(siteconfig.ThemeRadiusPillowy),
@@ -93,10 +93,10 @@ func TestUpdateRebuildsThemeFromSelection(t *testing.T) {
 	if writer.workspaceID != "workspace-1" {
 		t.Fatalf("expected workspace id to reach writer, got %q", writer.workspaceID)
 	}
-	if writer.draft.Theme.Tokens.Colors["background"] != "#fff7ee" {
-		t.Fatalf("expected playful palette background, got %#v", writer.draft.Theme.Tokens.Colors)
+	if writer.draft.Theme.Tokens.Colors["background"] != "#fff3df" {
+		t.Fatalf("expected shopfront palette background, got %#v", writer.draft.Theme.Tokens.Colors)
 	}
-	if state.Selection.Palette != siteconfig.ThemePalettePlayfulRibbon {
+	if state.Selection.Palette != siteconfig.ThemePaletteBrightShopfront {
 		t.Fatalf("expected updated selection, got %#v", state.Selection)
 	}
 	if state.Selection.ButtonStyle != siteconfig.ThemeButtonInkSolid {
@@ -156,7 +156,7 @@ func TestRegenerateRebuildsThemeFromProviderSelection(t *testing.T) {
 	writer := &stubWriter{}
 	regenerator := &stubThemeRegenerator{
 		selection: siteconfig.ThemeSelection{
-			Palette:        siteconfig.ThemePalettePlayfulRibbon,
+			Palette:        siteconfig.ThemePaletteBrightShopfront,
 			FontPreset:     siteconfig.ThemeFontStudioSans,
 			SectionSpacing: siteconfig.ThemeSpacingSnug,
 			Radius:         siteconfig.ThemeRadiusPillowy,
@@ -178,10 +178,10 @@ func TestRegenerateRebuildsThemeFromProviderSelection(t *testing.T) {
 	if regenerator.prompt != "A warm yarn studio site for workshops and dyed skeins." {
 		t.Fatalf("expected generation prompt to reach regenerator, got %q", regenerator.prompt)
 	}
-	if writer.draft.Theme.Tokens.Colors["background"] != "#fff7ee" {
+	if writer.draft.Theme.Tokens.Colors["background"] != "#fff3df" {
 		t.Fatalf("expected regenerated theme to be saved, got %#v", writer.draft.Theme.Tokens.Colors)
 	}
-	if state.Selection.Palette != siteconfig.ThemePalettePlayfulRibbon {
+	if state.Selection.Palette != siteconfig.ThemePaletteBrightShopfront {
 		t.Fatalf("expected regenerated selection, got %#v", state.Selection)
 	}
 }
@@ -207,7 +207,7 @@ func sampleThemeDraft() siteconfig.SiteDraft {
 			Slug:   "nordic-studio",
 			Status: "draft",
 		},
-		Theme:      siteconfig.ThemePreset(siteconfig.ThemePaletteMeanerDark),
+		Theme:      siteconfig.ThemePreset(siteconfig.ThemePaletteAfterHours),
 		Navigation: siteconfig.NavigationConfig{Primary: []siteconfig.NavigationItem{{Label: "Home", PageID: "page_home"}}},
 		Pages: []siteconfig.PageDraft{{
 			ID:    "page_home",

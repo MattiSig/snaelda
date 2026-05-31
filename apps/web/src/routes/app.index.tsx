@@ -1,7 +1,12 @@
 import { Link, createFileRoute, useNavigate, useRouterState } from '@tanstack/react-router'
 import type { FormEvent } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { GenerationProgressCard, type GenerationProgressItem } from '@/components/GenerationProgressCard'
+import {
+  GenerationProgressCard,
+  type GenerationProgressItem,
+  type GenerationShadowPage,
+} from '@/components/GenerationProgressCard'
+import { GenerationIntakeForm } from '@/components/GenerationIntakeForm'
 import { Ellipsis, PencilLine, Settings, Sparkles, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,8 +14,12 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   APIError,
   createSite,
+  fetchClarifyingQuestions,
   listSites,
   streamGenerateSite,
+  type ClarifyingAnswer,
+  type ClarifyingQuestion,
+  type GenerationPartialEvent,
   type SiteSummary,
 } from '@/lib/api'
 import { actions, emptyState, form, paddedPanel, ribbonPanel, siteCard, text } from '@/lib/styles'
@@ -31,6 +40,38 @@ const generationSteps: GenerationProgressItem[] = [
   { step: 'persist', label: 'Saving your draft' },
 ]
 
+function reduceShadowPages(
+  current: GenerationShadowPage[],
+  partial: GenerationPartialEvent,
+): GenerationShadowPage[] {
+  if (partial.kind === 'outline') {
+    const outline = partial.payload as {
+      pages?: Array<{ title?: string; slug?: string; goal?: string }>
+    }
+    if (!outline.pages) {
+      return current
+    }
+    return outline.pages.map((page) => ({
+      title: page.title ?? 'Page',
+      slug: page.slug ?? '',
+      goal: page.goal,
+      blocks: [],
+    }))
+  }
+  if (partial.kind === 'page-content') {
+    const slug = partial.pageSlug ?? ''
+    const page = partial.payload as {
+      blocks?: Array<{ type: string }>
+    }
+    const blocks = (page.blocks ?? []).map((block) => ({
+      type: block.type,
+      hasCopy: true,
+    }))
+    return current.map((p) => (p.slug === slug ? { ...p, blocks } : p))
+  }
+  return current
+}
+
 function SitesIndex() {
   const navigate = useNavigate()
   const locationSearch = useRouterState({ select: (state) => state.location.search })
@@ -49,6 +90,11 @@ function SitesIndex() {
   const [generationPrompt, setGenerationPrompt] = useState('')
   const [generationStep, setGenerationStep] = useState('')
   const [generationStepTotal, setGenerationStepTotal] = useState(0)
+  const [intakeQuestions, setIntakeQuestions] = useState<ClarifyingQuestion[] | null>(null)
+  const [isPreparingIntake, setIsPreparingIntake] = useState(false)
+  const [shadowPages, setShadowPages] = useState<GenerationShadowPage[]>([])
+  const intakePromptRef = useRef('')
+  const intakeNameRef = useRef('')
   const hasAutoSubmitted = useRef(false)
   const actionsMenuRef = useRef<HTMLDivElement | null>(null)
 
@@ -84,38 +130,12 @@ function SitesIndex() {
     hasAutoSubmitted.current = true
     setPrompt(promptFromUrl)
     setName('')
-    const timer = setTimeout(async () => {
-      setIsSubmitting(true)
-      setGenerationPrompt(promptFromUrl)
-      setGenerationStep('')
-      setGenerationStepTotal(0)
-      try {
-        const response = await streamGenerateSite(
-          { name: '', prompt: promptFromUrl },
-          {
-            onProgress: (step) => {
-              setGenerationStep(step.step)
-              setGenerationStepTotal(step.total)
-            },
-          },
-        )
-        await navigate({
-          to: '/app/sites/$siteId/preview',
-          params: { siteId: response.siteId },
-        })
-      } catch (error) {
-        setErrorMessage(
-          error instanceof APIError ? error.message : 'Could not generate site',
-        )
-        setIsSubmitting(false)
-        setIsAutoGenerating(false)
-        setGenerationPrompt('')
-        setGenerationStep('')
-        setGenerationStepTotal(0)
-      }
+    const timer = setTimeout(() => {
+      void startIntake({ promptValue: promptFromUrl, nameValue: '' })
     }, 300)
     return () => clearTimeout(timer)
-  }, [promptFromUrl, isLoading, navigate])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [promptFromUrl, isLoading])
 
   useEffect(() => {
     if (!isCreateOpen) {
@@ -158,34 +178,123 @@ function SitesIndex() {
     }
   }, [openActionsSiteId])
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setIsSubmitting(true)
+  async function startIntake({
+    promptValue,
+    nameValue,
+  }: {
+    promptValue: string
+    nameValue: string
+  }) {
+    const trimmedPrompt = promptValue.trim()
+    if (!trimmedPrompt) {
+      return
+    }
     setErrorMessage('')
-    setGenerationPrompt('')
-    setGenerationStep('')
-    setGenerationStepTotal(0)
-
+    intakePromptRef.current = trimmedPrompt
+    intakeNameRef.current = nameValue
+    setGenerationPrompt(trimmedPrompt)
+    setIsPreparingIntake(true)
+    setIntakeQuestions(null)
     try {
-      const isGenerated = prompt.trim() !== ''
-      if (isGenerated) {
-        setGenerationPrompt(prompt)
-        const response = await streamGenerateSite(
-          { name, prompt },
-          {
-            onProgress: (step) => {
-              setGenerationStep(step.step)
-              setGenerationStepTotal(step.total)
-            },
-          },
-        )
-        setIsCreateOpen(false)
-        await navigate({
-          to: '/app/sites/$siteId/preview',
-          params: { siteId: response.siteId },
+      const response = await fetchClarifyingQuestions({
+        name: nameValue.trim() || undefined,
+        prompt: trimmedPrompt,
+      })
+      if (!response.questions || response.questions.length === 0) {
+        await runGeneration({
+          promptValue: trimmedPrompt,
+          nameValue,
+          interviewAnswers: [],
         })
         return
       }
+      setIntakeQuestions(response.questions)
+      setIsPreparingIntake(false)
+      setIsCreateOpen(false)
+    } catch (error) {
+      setIsPreparingIntake(false)
+      setIsAutoGenerating(false)
+      setGenerationPrompt('')
+      if (error instanceof APIError) {
+        // Network or auth failures should not block generation — fall back to
+        // launching the run without any interview answers.
+        await runGeneration({
+          promptValue: trimmedPrompt,
+          nameValue,
+          interviewAnswers: [],
+        })
+        return
+      }
+      setErrorMessage('Could not prepare the intake questions')
+    }
+  }
+
+  async function runGeneration({
+    promptValue,
+    nameValue,
+    interviewAnswers,
+  }: {
+    promptValue: string
+    nameValue: string
+    interviewAnswers: ClarifyingAnswer[]
+  }) {
+    const trimmedPrompt = promptValue.trim()
+    if (!trimmedPrompt) {
+      return
+    }
+    setIntakeQuestions(null)
+    setIsPreparingIntake(false)
+    setIsSubmitting(true)
+    setGenerationPrompt(trimmedPrompt)
+    setGenerationStep('')
+    setGenerationStepTotal(0)
+    setShadowPages([])
+    setErrorMessage('')
+    try {
+      const response = await streamGenerateSite(
+        {
+          name: nameValue,
+          prompt: trimmedPrompt,
+          interviewAnswers: interviewAnswers.length > 0 ? interviewAnswers : undefined,
+        },
+        {
+          onProgress: (step) => {
+            setGenerationStep(step.step)
+            setGenerationStepTotal(step.total)
+          },
+          onPartial: (partial) => {
+            setShadowPages((current) => reduceShadowPages(current, partial))
+          },
+        },
+      )
+      setIsCreateOpen(false)
+      await navigate({
+        to: '/app/sites/$siteId/preview',
+        params: { siteId: response.siteId },
+      })
+    } catch (error) {
+      setErrorMessage(
+        error instanceof APIError ? error.message : 'Could not generate site',
+      )
+      setIsSubmitting(false)
+      setIsAutoGenerating(false)
+      setGenerationPrompt('')
+      setGenerationStep('')
+      setGenerationStepTotal(0)
+    }
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setErrorMessage('')
+
+    const isGenerated = prompt.trim() !== ''
+    if (isGenerated) {
+      await startIntake({ promptValue: prompt, nameValue: name })
+      return
+    }
+    setIsSubmitting(true)
+    try {
       const response = await createSite({ name, prompt })
       setIsCreateOpen(false)
       await navigate({
@@ -198,23 +307,60 @@ function SitesIndex() {
         error instanceof APIError ? error.message : 'Could not create site',
       )
       setIsSubmitting(false)
-      setGenerationPrompt('')
-      setGenerationStep('')
-      setGenerationStepTotal(0)
     }
   }
 
-  if ((isAutoGenerating || (isSubmitting && generationPrompt)) && !errorMessage) {
+  if (intakeQuestions && intakeQuestions.length > 0 && !errorMessage) {
+    return (
+      <GenerationIntakeForm
+        prompt={generationPrompt || intakePromptRef.current}
+        questions={intakeQuestions}
+        isSubmitting={isSubmitting}
+        onSubmit={(answers) =>
+          runGeneration({
+            promptValue: intakePromptRef.current,
+            nameValue: intakeNameRef.current,
+            interviewAnswers: answers,
+          })
+        }
+        onSkipAll={() =>
+          runGeneration({
+            promptValue: intakePromptRef.current,
+            nameValue: intakeNameRef.current,
+            interviewAnswers: [],
+          })
+        }
+      />
+    )
+  }
+
+  if (
+    (isPreparingIntake || isAutoGenerating || (isSubmitting && generationPrompt)) &&
+    !errorMessage
+  ) {
+    const isPreparing = isPreparingIntake && !isSubmitting
     return (
       <GenerationProgressCard
         eyebrow="New site"
-        title="Weaving your draft..."
-        description="Snaelda is generating your first draft. This usually takes about a minute."
+        title={isPreparing ? 'Reading your prompt...' : 'Weaving your draft...'}
+        description={
+          isPreparing
+            ? 'Snaelda is figuring out whether a quick question or two would sharpen the result.'
+            : 'Snaelda is generating your first draft. This usually takes about a minute.'
+        }
         prompt={generationPrompt || promptFromUrl}
         steps={generationSteps}
-        activeStep={generationStep}
+        activeStep={isPreparing ? 'prompt.normalize' : generationStep}
         activeTotal={generationStepTotal}
-        showSkeleton={generationStep === 'plan.blocks' || generationStep === 'assets.fetch' || generationStep === 'copy.write' || generationStep === 'validate.repair' || generationStep === 'persist'}
+        showSkeleton={
+          !isPreparing &&
+          (generationStep === 'plan.blocks' ||
+            generationStep === 'assets.fetch' ||
+            generationStep === 'copy.write' ||
+            generationStep === 'validate.repair' ||
+            generationStep === 'persist')
+        }
+        shadowPages={isPreparing ? undefined : shadowPages}
       />
     )
   }

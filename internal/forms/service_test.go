@@ -598,7 +598,7 @@ func draftWithContactForm() siteconfig.SiteDraft {
 			Slug:   "loom-light",
 			Status: "draft",
 		},
-		Theme:      siteconfig.ThemePreset(siteconfig.ThemePaletteMeanerDark),
+		Theme:      siteconfig.ThemePreset(siteconfig.ThemePaletteAfterHours),
 		Navigation: siteconfig.NavigationConfig{Primary: []siteconfig.NavigationItem{{Label: "Home", PageID: "page-home"}}},
 		Pages: []siteconfig.PageDraft{{
 			ID:    "page-home",
@@ -651,7 +651,7 @@ func publishedContactSnapshotWithNotification(notificationEmail string) siteconf
 			BusinessName: "Loom & Light",
 			PrimaryColor: "#86d8cf",
 		},
-		Theme:      siteconfig.ThemePreset(siteconfig.ThemePaletteMeanerDark),
+		Theme:      siteconfig.ThemePreset(siteconfig.ThemePaletteAfterHours),
 		Navigation: siteconfig.NavigationConfig{Primary: []siteconfig.NavigationItem{{Label: "Home", PageID: "page-home"}}},
 		Pages:      draft.Pages,
 	}

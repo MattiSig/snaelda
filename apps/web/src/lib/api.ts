@@ -353,6 +353,7 @@ export type ThemeOption = {
   id: string;
   label: string;
   description?: string;
+  previewColors?: Record<string, string>;
 };
 
 export type ThemeSelection = {
@@ -692,15 +693,25 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export type GenerationPartialEvent = {
+  kind: "outline" | "page-content" | "page-blocks" | "block-copy";
+  pageSlug?: string;
+  blockIndex?: number;
+  blockType?: string;
+  payload: unknown;
+};
+
 async function streamAPIRequest(
   path: string,
   init: RequestInit,
   {
     onJobCreated,
     onProgress,
+    onPartial,
   }: {
     onJobCreated?: (jobId: string) => void;
     onProgress?: (step: GenerationProgressStep) => void;
+    onPartial?: (partial: GenerationPartialEvent) => void;
   } = {},
   retryOnUnauthorized = true,
 ): Promise<GenerationStreamResult> {
@@ -724,7 +735,7 @@ async function streamAPIRequest(
       path !== "/api/auth/refresh"
     ) {
       await refreshAuthSession();
-      return streamAPIRequest(path, init, { onJobCreated, onProgress }, false);
+      return streamAPIRequest(path, init, { onJobCreated, onProgress, onPartial }, false);
     }
 
     const payload = await response.json().catch(() => null);
@@ -778,6 +789,10 @@ async function streamAPIRequest(
     }
     if (eventName === "progress") {
       onProgress?.(payload as unknown as GenerationProgressStep);
+      return;
+    }
+    if (eventName === "partial") {
+      onPartial?.(payload as unknown as GenerationPartialEvent);
       return;
     }
     if (eventName === "complete") {
@@ -1013,6 +1028,43 @@ export async function createSite(input: {
   });
 }
 
+export type ClarifyingQuestionKind = "single" | "multi" | "text";
+
+export type ClarifyingQuestion = {
+  id: string;
+  prompt: string;
+  kind: ClarifyingQuestionKind;
+  options?: string[];
+  helper?: string;
+};
+
+export type ClarifyingAnswer = {
+  questionId: string;
+  prompt?: string;
+  selectedOptions?: string[];
+  text?: string;
+  skipped?: boolean;
+};
+
+export type InterviewResponse = {
+  questions: ClarifyingQuestion[];
+};
+
+export async function fetchClarifyingQuestions(input: {
+  name?: string;
+  prompt: string;
+  brand?: BrandConfig;
+  optionalHints?: Record<string, string>;
+}) {
+  return apiFetch<InterviewResponse>("/api/sites/generate/interview", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+}
+
 export async function generateSite(input: {
   name?: string;
   prompt: string;
@@ -1020,6 +1072,7 @@ export async function generateSite(input: {
   preferredLanguage?: string;
   optionalHints?: Record<string, string>;
   brand?: BrandConfig;
+  interviewAnswers?: ClarifyingAnswer[];
 }) {
   return apiFetch<SiteRepromptResponse>("/api/sites/generate", {
     method: "POST",
@@ -1038,10 +1091,12 @@ export async function streamGenerateSite(
     preferredLanguage?: string;
     optionalHints?: Record<string, string>;
     brand?: BrandConfig;
+    interviewAnswers?: ClarifyingAnswer[];
   },
   handlers?: {
     onJobCreated?: (jobId: string) => void;
     onProgress?: (step: GenerationProgressStep) => void;
+    onPartial?: (partial: GenerationPartialEvent) => void;
   },
 ) {
   return streamAPIRequest(
@@ -1073,6 +1128,7 @@ export async function streamRepromptSite(
   handlers?: {
     onJobCreated?: (jobId: string) => void;
     onProgress?: (step: GenerationProgressStep) => void;
+    onPartial?: (partial: GenerationPartialEvent) => void;
   },
 ) {
   return streamAPIRequest(
@@ -1112,6 +1168,7 @@ export async function streamRepromptPage(
   handlers?: {
     onJobCreated?: (jobId: string) => void;
     onProgress?: (step: GenerationProgressStep) => void;
+    onPartial?: (partial: GenerationPartialEvent) => void;
   },
 ) {
   return streamAPIRequest(

@@ -58,7 +58,7 @@ func TestGenerateCreatesDraftAndTracksCompletedJob(t *testing.T) {
 	if store.prompts[result.Draft.Site.ID] == "" {
 		t.Fatalf("expected prompt to be saved, got %#v", store.prompts)
 	}
-	if store.summary[result.Draft.Site.ID]["themePreset"] != "calm-nordic" {
+	if store.summary[result.Draft.Site.ID]["themePreset"] != "clean-local" {
 		t.Fatalf("expected theme preset summary, got %#v", store.summary[result.Draft.Site.ID])
 	}
 }
@@ -282,6 +282,184 @@ type fakeBlockSuggester struct {
 func (f *fakeBlockSuggester) SuggestBlockProps(_ context.Context, request BlockSuggestRequest) (BlockSuggestResponse, error) {
 	f.request = request
 	return f.response, f.err
+}
+
+type fakeChangeSetPlanner struct {
+	request  PageChangeSetRequest
+	response PageChangeSetResponse
+	err      error
+}
+
+func (f *fakeChangeSetPlanner) PlanPageChanges(_ context.Context, request PageChangeSetRequest) (PageChangeSetResponse, error) {
+	f.request = request
+	return f.response, f.err
+}
+
+type fakeClarifyingPlanner struct {
+	request   ClarifyingQuestionsRequest
+	questions []ClarifyingQuestion
+	err       error
+}
+
+func (f *fakeClarifyingPlanner) BuildClarifyingQuestions(_ context.Context, request ClarifyingQuestionsRequest) ([]ClarifyingQuestion, error) {
+	f.request = request
+	return f.questions, f.err
+}
+
+func TestBuildInterviewQuestionsRequiresPrompt(t *testing.T) {
+	service := Service{}
+	if _, err := service.BuildInterviewQuestions(context.Background(), GenerateInput{}); !errors.Is(err, ErrPromptRequired) {
+		t.Fatalf("expected ErrPromptRequired, got %v", err)
+	}
+}
+
+func TestBuildInterviewQuestionsReturnsEmptyWhenPlannerMissing(t *testing.T) {
+	service := Service{}
+	questions, err := service.BuildInterviewQuestions(context.Background(), GenerateInput{Prompt: "A photo studio site."})
+	if err != nil {
+		t.Fatalf("expected no error when planner missing, got %v", err)
+	}
+	if len(questions) != 0 {
+		t.Fatalf("expected zero questions when planner missing, got %#v", questions)
+	}
+}
+
+func TestBuildInterviewQuestionsCapsAtMax(t *testing.T) {
+	planner := &fakeClarifyingPlanner{
+		questions: []ClarifyingQuestion{
+			{ID: "q1", Prompt: "?", Kind: ClarifyingQuestionKindSingle},
+			{ID: "q2", Prompt: "?", Kind: ClarifyingQuestionKindSingle},
+			{ID: "q3", Prompt: "?", Kind: ClarifyingQuestionKindSingle},
+			{ID: "q4", Prompt: "?", Kind: ClarifyingQuestionKindSingle},
+		},
+	}
+	service := Service{clarifyingPlanner: planner}
+	questions, err := service.BuildInterviewQuestions(context.Background(), GenerateInput{Prompt: "A photo studio site."})
+	if err != nil {
+		t.Fatalf("interview: %v", err)
+	}
+	if len(questions) != MaxClarifyingQuestions {
+		t.Fatalf("expected interview to cap at %d questions, got %d", MaxClarifyingQuestions, len(questions))
+	}
+}
+
+type recordingBlockSuggester struct {
+	requests []BlockSuggestRequest
+	response BlockSuggestResponse
+}
+
+func (r *recordingBlockSuggester) SuggestBlockProps(_ context.Context, request BlockSuggestRequest) (BlockSuggestResponse, error) {
+	r.requests = append(r.requests, request)
+	return r.response, nil
+}
+
+func TestRepromptPageAppliesChangeSetAndKeepsBlockIDs(t *testing.T) {
+	store := newFakeGenerationStore()
+	suggester := &recordingBlockSuggester{
+		response: BlockSuggestResponse{
+			Props: map[string]any{
+				"variant":     "standard",
+				"headline":    "Rewritten headline",
+				"subheadline": "Reflects the change-set instruction.",
+				"eyebrow":     "Studio",
+				"layout":      "split-left",
+			},
+			ChangeSummary: "Updated hero copy.",
+		},
+	}
+	planner := &fakeChangeSetPlanner{}
+	service := Service{
+		db:                   store,
+		reader:               store,
+		writer:               store,
+		suggester:            suggester,
+		pageChangeSetPlanner: planner,
+	}
+
+	initial, err := service.Generate(context.Background(), "workspace-1", "user-1", GenerateInput{
+		Name:   "North Light Studio",
+		Prompt: "A calm portfolio site for a photography studio that needs a gallery.",
+	})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	homePage := initial.Draft.Pages[0]
+	if len(homePage.Blocks) < 2 {
+		t.Fatalf("expected at least two blocks on the home page, got %d", len(homePage.Blocks))
+	}
+	heroID := homePage.Blocks[0].ID
+	keepID := homePage.Blocks[1].ID
+
+	planner.response = PageChangeSetResponse{
+		Operations: []PageChangeSetOperation{
+			{Action: PageChangeSetActionEdit, BlockID: heroID, Purpose: "Punch up the hero headline."},
+			{Action: PageChangeSetActionKeep, BlockID: keepID},
+		},
+		ChangeSummary: "Rewrote only the hero.",
+	}
+
+	result, err := service.RepromptPage(context.Background(), "workspace-1", "user-1", initial.Draft.Site.ID, homePage.ID, RepromptInput{
+		Prompt: "Punch up the hero headline.",
+	})
+	if err != nil {
+		t.Fatalf("reprompt page: %v", err)
+	}
+
+	updatedPage := result.Draft.Pages[0]
+	if len(updatedPage.Blocks) != 2 {
+		t.Fatalf("expected change-set to produce 2 blocks, got %d", len(updatedPage.Blocks))
+	}
+	if updatedPage.Blocks[0].ID != heroID {
+		t.Fatalf("expected edited hero to keep its id, got %s want %s", updatedPage.Blocks[0].ID, heroID)
+	}
+	if updatedPage.Blocks[0].Props["headline"] != "Rewritten headline" {
+		t.Fatalf("expected hero props to be rewritten, got %#v", updatedPage.Blocks[0].Props)
+	}
+	if updatedPage.Blocks[1].ID != keepID {
+		t.Fatalf("expected kept block to retain its id, got %s want %s", updatedPage.Blocks[1].ID, keepID)
+	}
+	if len(suggester.requests) != 1 {
+		t.Fatalf("expected exactly one block rewrite (the edit), got %d", len(suggester.requests))
+	}
+	if suggester.requests[0].Block.ID != heroID {
+		t.Fatalf("expected rewrite to target the hero block, got %#v", suggester.requests[0].Block)
+	}
+	if planner.request.Page.Title == "" {
+		t.Fatalf("expected change-set planner to receive page context, got %#v", planner.request.Page)
+	}
+}
+
+func TestRepromptPageFallsBackWhenChangeSetEmpty(t *testing.T) {
+	store := newFakeGenerationStore()
+	planner := &fakeChangeSetPlanner{response: PageChangeSetResponse{}}
+	suggester := &recordingBlockSuggester{
+		response: BlockSuggestResponse{Props: map[string]any{"headline": "x"}},
+	}
+	service := Service{
+		db:                   store,
+		reader:               store,
+		writer:               store,
+		suggester:            suggester,
+		pageChangeSetPlanner: planner,
+	}
+
+	initial, err := service.Generate(context.Background(), "workspace-1", "user-1", GenerateInput{
+		Name:   "North Light Studio",
+		Prompt: "A calm portfolio site for a photography studio that needs a gallery.",
+	})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	if _, err := service.RepromptPage(context.Background(), "workspace-1", "user-1", initial.Draft.Site.ID, initial.Draft.Pages[1].ID, RepromptInput{
+		Prompt: "Make this page about pricing.",
+	}); err != nil {
+		t.Fatalf("reprompt page: %v", err)
+	}
+	if len(suggester.requests) != 0 {
+		t.Fatalf("expected fallback path to skip per-block rewrites, got %d", len(suggester.requests))
+	}
 }
 
 func TestSuggestBlockRewritesPropsAndRecordsHistory(t *testing.T) {
@@ -695,7 +873,7 @@ func TestRepairGenerationPlanRepairsSafeIssues(t *testing.T) {
 	if repaired.SiteGoal != "Turn visitors into confident inquiries." {
 		t.Fatalf("expected sanitized site goal, got %q", repaired.SiteGoal)
 	}
-	if repaired.ThemePreset != siteconfig.ThemePaletteCalmNordic {
+	if repaired.ThemePreset != siteconfig.ThemePaletteCleanLocal {
 		t.Fatalf("expected fallback theme preset, got %q", repaired.ThemePreset)
 	}
 	if len(repaired.AssetsNeeded) != 2 {

@@ -145,6 +145,9 @@ func (s *Server) Handler() http.Handler {
 		generationHandlerConfig.Planner = generationPlanner.BuildPlan
 		generationHandlerConfig.BlockSuggester = generationPlanner
 		generationHandlerConfig.ImageQueryRewriter = generationPlanner
+		generationHandlerConfig.PageChangeSetPlanner = generationPlanner
+		generationHandlerConfig.ClarifyingPlanner = generationPlanner
+		generationHandlerConfig.DecomposedPlanner = generationPlanner
 		themeHandlerConfig.Regenerator = generationPlanner
 	}
 

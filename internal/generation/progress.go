@@ -30,6 +30,25 @@ type ProgressStep struct {
 	Total int    `json:"total"`
 }
 
+// ProgressPartial carries an intermediate fragment of the generated draft
+// (page outline or one completed page including its blocks) so the UI can
+// render a shadow of the upcoming draft as it resolves. Kind drives the
+// payload interpretation:
+//   - "outline"      → Payload is OutlineResult; PageSlug unused.
+//   - "page-content" → Payload is a single page (title, slug, blocks with
+//                      full props); PageSlug identifies the page.
+type ProgressPartial struct {
+	Kind     string `json:"kind"`
+	PageSlug string `json:"pageSlug,omitempty"`
+	Payload  any    `json:"payload"`
+}
+
+// ProgressPartial kind constants.
+const (
+	ProgressPartialKindOutline     = "outline"
+	ProgressPartialKindPageContent = "page-content"
+)
+
 type JobStatus struct {
 	ID          string        `json:"id"`
 	Kind        JobKind       `json:"kind"`
@@ -49,6 +68,7 @@ type ProgressSink interface {
 type progressSinkHandlers struct {
 	onJobCreated func(string)
 	onProgress   func(ProgressStep)
+	onPartial    func(ProgressPartial)
 }
 
 func (h progressSinkHandlers) OnJobCreated(jobID string) {
@@ -61,6 +81,28 @@ func (h progressSinkHandlers) OnProgress(step ProgressStep) {
 	if h.onProgress != nil {
 		h.onProgress(step)
 	}
+}
+
+// emitOutline / emitPageContent implement the partialEventEmitter interface
+// so the decomposed orchestrator can stream structural updates through the
+// same sink that carries ProgressStep events. The methods are no-ops when
+// onPartial is nil.
+func (h progressSinkHandlers) emitOutline(_ context.Context, outline OutlineResult) {
+	if h.onPartial == nil {
+		return
+	}
+	h.onPartial(ProgressPartial{Kind: ProgressPartialKindOutline, Payload: outline})
+}
+
+func (h progressSinkHandlers) emitPageContent(_ context.Context, pageSlug string, page generationPagePlan) {
+	if h.onPartial == nil {
+		return
+	}
+	h.onPartial(ProgressPartial{
+		Kind:     ProgressPartialKindPageContent,
+		PageSlug: pageSlug,
+		Payload:  page,
+	})
 }
 
 type progressTracker struct {

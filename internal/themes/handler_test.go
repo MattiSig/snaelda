@@ -67,7 +67,7 @@ func TestGetThemeReturnsThemeState(t *testing.T) {
 	handler := Handler{
 		service: &stubThemeService{
 			state: ThemeState{
-				Theme:     siteconfig.ThemePreset(siteconfig.ThemePaletteMeanerDark),
+				Theme:     siteconfig.ThemePreset(siteconfig.ThemePaletteAfterHours),
 				Selection: siteconfig.DefaultThemeSelection(),
 				Options:   siteconfig.DefaultThemeEditorCatalog(),
 			},
@@ -92,7 +92,7 @@ func TestGetThemeReturnsThemeState(t *testing.T) {
 	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if payload.Selection.Palette != siteconfig.ThemePaletteMeanerDark {
+	if payload.Selection.Palette != siteconfig.ThemePaletteCleanLocal {
 		t.Fatalf("expected theme selection in response, got %#v", payload.Selection)
 	}
 }
@@ -100,8 +100,8 @@ func TestGetThemeReturnsThemeState(t *testing.T) {
 func TestUpdateThemePassesTrimmedSelection(t *testing.T) {
 	service := &stubThemeService{
 		state: ThemeState{
-			Theme:     siteconfig.ThemePreset(siteconfig.ThemePalettePlayfulRibbon),
-			Selection: siteconfig.DetectThemeSelection(siteconfig.ThemePreset(siteconfig.ThemePalettePlayfulRibbon)),
+			Theme:     siteconfig.ThemePreset(siteconfig.ThemePaletteBrightShopfront),
+			Selection: siteconfig.DetectThemeSelection(siteconfig.ThemePreset(siteconfig.ThemePaletteBrightShopfront)),
 			Options:   siteconfig.DefaultThemeEditorCatalog(),
 		},
 	}
@@ -109,7 +109,7 @@ func TestUpdateThemePassesTrimmedSelection(t *testing.T) {
 		service:    service,
 		authorizer: stubThemeAuthorizer{},
 	}
-	req := httptest.NewRequest(http.MethodPatch, "/api/sites/site_demo/theme", strings.NewReader(`{"palette":" playful-ribbon ","fontPreset":" studio-sans ","sectionSpacing":" snug ","radius":" pillowy ","buttonStyle":" ink-solid ","imageStyle":" paper-cut "}`)).WithContext(auth.WithUser(context.Background(), auth.User{
+	req := httptest.NewRequest(http.MethodPatch, "/api/sites/site_demo/theme", strings.NewReader(`{"palette":" bright-shopfront ","fontPreset":" studio-sans ","sectionSpacing":" snug ","radius":" pillowy ","buttonStyle":" ink-solid ","imageStyle":" paper-cut "}`)).WithContext(auth.WithUser(context.Background(), auth.User{
 		ID:            "user-1",
 		Email:         "demo@snaelda.local",
 		WorkspaceID:   "workspace-1",
@@ -126,7 +126,7 @@ func TestUpdateThemePassesTrimmedSelection(t *testing.T) {
 	if service.workspace != "workspace-1" || service.siteID != "site_demo" {
 		t.Fatalf("expected scoped update call, got workspace=%q site=%q", service.workspace, service.siteID)
 	}
-	if service.updateIn.Palette == nil || *service.updateIn.Palette != siteconfig.ThemePalettePlayfulRibbon {
+	if service.updateIn.Palette == nil || *service.updateIn.Palette != siteconfig.ThemePaletteBrightShopfront {
 		t.Fatalf("expected trimmed palette, got %#v", service.updateIn.Palette)
 	}
 	if service.updateIn.ButtonStyle == nil || *service.updateIn.ButtonStyle != siteconfig.ThemeButtonInkSolid {
@@ -140,8 +140,8 @@ func TestUpdateThemePassesTrimmedSelection(t *testing.T) {
 func TestRegenerateThemeUsesScopedWorkspace(t *testing.T) {
 	service := &stubThemeService{
 		state: ThemeState{
-			Theme:     siteconfig.ThemePreset(siteconfig.ThemePalettePlayfulRibbon),
-			Selection: siteconfig.DetectThemeSelection(siteconfig.ThemePreset(siteconfig.ThemePalettePlayfulRibbon)),
+			Theme:     siteconfig.ThemePreset(siteconfig.ThemePaletteBrightShopfront),
+			Selection: siteconfig.DetectThemeSelection(siteconfig.ThemePreset(siteconfig.ThemePaletteBrightShopfront)),
 			Options:   siteconfig.DefaultThemeEditorCatalog(),
 		},
 	}
@@ -171,8 +171,8 @@ func TestRegenerateThemeUsesScopedWorkspace(t *testing.T) {
 func TestRegenerateThemeStreamsProgressEvents(t *testing.T) {
 	service := &stubThemeService{
 		state: ThemeState{
-			Theme:     siteconfig.ThemePreset(siteconfig.ThemePalettePlayfulRibbon),
-			Selection: siteconfig.DetectThemeSelection(siteconfig.ThemePreset(siteconfig.ThemePalettePlayfulRibbon)),
+			Theme:     siteconfig.ThemePreset(siteconfig.ThemePaletteBrightShopfront),
+			Selection: siteconfig.DetectThemeSelection(siteconfig.ThemePreset(siteconfig.ThemePaletteBrightShopfront)),
 			Options:   siteconfig.DefaultThemeEditorCatalog(),
 		},
 	}

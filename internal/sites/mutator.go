@@ -1199,7 +1199,7 @@ func starterDraft(name string, slugValue string, prompt string) (siteconfig.Site
 		},
 		Theme: siteconfig.ThemeConfig{
 			Version: siteconfig.ThemeVersionV1,
-			Tokens:  siteconfig.ThemePreset(siteconfig.ThemePaletteMeanerDark).Tokens,
+			Tokens:  siteconfig.ThemePreset(siteconfig.ThemePaletteCleanLocal).Tokens,
 		},
 		Navigation: siteconfig.NavigationConfig{
 			Primary: []siteconfig.NavigationItem{

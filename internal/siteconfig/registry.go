@@ -25,6 +25,7 @@ type BlockDefinition struct {
 	Version       string                                                                    `json:"version"`
 	DisplayName   string                                                                    `json:"displayName"`
 	Category      BlockCategory                                                             `json:"category"`
+	Tagline       string                                                                    `json:"tagline,omitempty"`
 	DefaultProps  map[string]any                                                            `json:"defaultProps,omitempty"`
 	EditorSchema  []EditorField                                                             `json:"editorSchema,omitempty"`
 	PropSchema    map[string]any                                                            `json:"-"`

@@ -52,6 +52,7 @@ type GenerateInput struct {
 	PreferredLanguage string
 	OptionalHints     map[string]string
 	Brand             siteconfig.BrandConfig
+	InterviewAnswers  []ClarifyingAnswer
 }
 
 type RepromptInput struct {
@@ -72,16 +73,19 @@ type generationPlanFeedback struct {
 type generationPlanBuilder func(context.Context, generationInputContext, generationPlanFeedback) (generationPlan, error)
 
 type Service struct {
-	db            DB
-	reader        draftReader
-	writer        draftWriter
-	planner       generationPlanBuilder
-	suggester     BlockSuggester
-	imageRewriter ImageQueryRewriter
-	imagery       *StarterImagery
-	assetImporter AssetImporter
-	logger        *slog.Logger
-	recorder      *audit.Recorder
+	db                   DB
+	reader               draftReader
+	writer               draftWriter
+	planner              generationPlanBuilder
+	suggester            BlockSuggester
+	imageRewriter        ImageQueryRewriter
+	pageChangeSetPlanner PageChangeSetPlanner
+	clarifyingPlanner    ClarifyingQuestionPlanner
+	decomposedPlanner    DecomposedPlanner
+	imagery              *StarterImagery
+	assetImporter        AssetImporter
+	logger               *slog.Logger
+	recorder             *audit.Recorder
 }
 
 // ServiceOption customizes the Service constructed by NewService.
@@ -135,6 +139,33 @@ func WithImageQueryRewriter(rewriter ImageQueryRewriter) ServiceOption {
 	}
 }
 
+// WithPageChangeSetPlanner wires the diff-style page reprompt planner. When
+// nil (or when the block suggester is also nil) RepromptPageWithProgress
+// falls back to the legacy whole-page regeneration path.
+func WithPageChangeSetPlanner(planner PageChangeSetPlanner) ServiceOption {
+	return func(s *Service) {
+		s.pageChangeSetPlanner = planner
+	}
+}
+
+// WithClarifyingQuestionPlanner wires the intake-form planner used by
+// BuildInterviewQuestions. When nil, the interview endpoint returns no
+// questions and generation proceeds without an intake step.
+func WithClarifyingQuestionPlanner(planner ClarifyingQuestionPlanner) ServiceOption {
+	return func(s *Service) {
+		s.clarifyingPlanner = planner
+	}
+}
+
+// WithDecomposedPlanner wires the three-step generation pipeline. When set,
+// initial generation prefers the outline → per-page → per-block path over
+// the legacy single BuildPlan call.
+func WithDecomposedPlanner(planner DecomposedPlanner) ServiceOption {
+	return func(s *Service) {
+		s.decomposedPlanner = planner
+	}
+}
+
 func (s *Service) recordAudit(ctx context.Context, event audit.Event) {
 	if s == nil || s.recorder == nil {
 		return
@@ -173,6 +204,33 @@ func (s *Service) Generate(ctx context.Context, workspaceID string, userID strin
 	return s.GenerateWithProgress(ctx, workspaceID, userID, input, nil)
 }
 
+// BuildInterviewQuestions runs the cheapest call in the pipeline: ask the
+// model whether anything would meaningfully sharpen the generated site if
+// the user answered first. Returns an empty list when the planner is not
+// configured or when the model decides nothing is worth asking.
+func (s *Service) BuildInterviewQuestions(ctx context.Context, input GenerateInput) ([]ClarifyingQuestion, error) {
+	prompt := strings.TrimSpace(input.Prompt)
+	if prompt == "" {
+		return nil, ErrPromptRequired
+	}
+	if s.clarifyingPlanner == nil {
+		return nil, nil
+	}
+	questions, err := s.clarifyingPlanner.BuildClarifyingQuestions(ctx, ClarifyingQuestionsRequest{
+		Prompt:        prompt,
+		NameHint:      strings.TrimSpace(input.Name),
+		Brand:         input.Brand,
+		OptionalHints: cloneStringMap(input.OptionalHints),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(questions) > MaxClarifyingQuestions {
+		questions = questions[:MaxClarifyingQuestions]
+	}
+	return questions, nil
+}
+
 func (s *Service) GenerateWithProgress(ctx context.Context, workspaceID string, userID string, input GenerateInput, sink ProgressSink) (GenerateResult, error) {
 	prompt := strings.TrimSpace(input.Prompt)
 	if prompt == "" {
@@ -187,6 +245,7 @@ func (s *Service) GenerateWithProgress(ctx context.Context, workspaceID string, 
 		PreferredLanguage: strings.TrimSpace(input.PreferredLanguage),
 		OptionalHints:     cloneStringMap(input.OptionalHints),
 		Brand:             input.Brand,
+		InterviewAnswers:  input.InterviewAnswers,
 	}
 	jobID, err := s.createGenerationJob(ctx, workspaceID, userID, JobKindSite, inputContext)
 	if err != nil {
@@ -200,7 +259,22 @@ func (s *Service) GenerateWithProgress(ctx context.Context, workspaceID string, 
 		return GenerateResult{}, err
 	}
 
-	plan, draft, validationRetryCount, err := s.generateDraftWithRetry(ctx, workspaceID, inputContext, tracker)
+	var (
+		plan                 generationPlan
+		draft                siteconfig.SiteDraft
+		validationRetryCount int
+	)
+	partialEmitter := partialEmitterFromSink(sink)
+	plan, draft, err = s.generateDraftDecomposed(ctx, workspaceID, inputContext, tracker, partialEmitter)
+	if err != nil {
+		if !errors.Is(err, ErrDecomposedPlannerUnavailable) && s.logger != nil {
+			s.logger.Warn("decomposed generation failed; falling back",
+				"workspaceId", workspaceID,
+				"error", err.Error(),
+			)
+		}
+		plan, draft, validationRetryCount, err = s.generateDraftWithRetry(ctx, workspaceID, inputContext, tracker)
+	}
 	if err != nil {
 		_ = s.failGenerationJob(ctx, jobID, err)
 		return GenerateResult{}, err
@@ -297,7 +371,22 @@ func (s *Service) RepromptSiteWithProgress(ctx context.Context, workspaceID stri
 		return GenerateResult{}, err
 	}
 
-	plan, nextDraft, validationRetryCount, err := s.generateDraftWithRetry(ctx, workspaceID, inputContext, tracker)
+	var (
+		plan                 generationPlan
+		nextDraft            siteconfig.SiteDraft
+		validationRetryCount int
+	)
+	partialEmitter := partialEmitterFromSink(sink)
+	plan, nextDraft, err = s.repromptSiteDecomposed(ctx, workspaceID, currentDraft, prompt, tracker, partialEmitter)
+	if err != nil {
+		if !errors.Is(err, ErrDecomposedPlannerUnavailable) && s.logger != nil {
+			s.logger.Warn("decomposed site reprompt failed; falling back",
+				"siteId", siteID,
+				"error", err.Error(),
+			)
+		}
+		plan, nextDraft, validationRetryCount, err = s.generateDraftWithRetry(ctx, workspaceID, inputContext, tracker)
+	}
 	if err != nil {
 		_ = s.failGenerationJob(ctx, jobID, err)
 		return GenerateResult{}, err
@@ -446,10 +535,22 @@ func (s *Service) RepromptPageWithProgress(ctx context.Context, workspaceID stri
 		return GenerateResult{}, err
 	}
 
-	pagePlan, err := s.buildPageRepromptPlan(ctx, currentDraft, page, prompt)
-	if err != nil {
-		_ = s.failGenerationJob(ctx, jobID, err)
-		return GenerateResult{}, err
+	nextPage, pagePlan, changeSetErr := s.applyPageChangeSet(ctx, currentDraft, page, prompt)
+	if changeSetErr != nil {
+		if !errors.Is(changeSetErr, ErrPageChangeSetUnavailable) && !errors.Is(changeSetErr, ErrPageChangeSetEmpty) && s.logger != nil {
+			s.logger.Warn("page change-set reprompt failed; falling back",
+				"siteId", siteID,
+				"pageId", pageID,
+				"error", changeSetErr.Error(),
+			)
+		}
+		fallbackPlan, err := s.buildPageRepromptPlan(ctx, currentDraft, page, prompt)
+		if err != nil {
+			_ = s.failGenerationJob(ctx, jobID, err)
+			return GenerateResult{}, err
+		}
+		pagePlan = fallbackPlan
+		nextPage = replaceDraftPage(page, fallbackPlan)
 	}
 	if err := tracker.emit(ctx, "copy.write"); err != nil {
 		_ = s.failGenerationJob(ctx, jobID, err)
@@ -462,7 +563,7 @@ func (s *Service) RepromptPageWithProgress(ctx context.Context, workspaceID stri
 
 	nextDraft := currentDraft
 	nextDraft.Pages = append([]siteconfig.PageDraft(nil), currentDraft.Pages...)
-	nextDraft.Pages[pageIndex] = replaceDraftPage(page, pagePlan)
+	nextDraft.Pages[pageIndex] = nextPage
 	nextDraft.Navigation = syncRepromptNavigation(currentDraft.Navigation, nextDraft.Pages)
 
 	if err := tracker.emit(ctx, "persist"); err != nil {
@@ -761,6 +862,7 @@ type generationInputContext struct {
 	PreferredLanguage string                 `json:"preferredLanguage,omitempty"`
 	OptionalHints     map[string]string      `json:"optionalHints,omitempty"`
 	Brand             siteconfig.BrandConfig `json:"brand,omitempty"`
+	InterviewAnswers  []ClarifyingAnswer     `json:"interviewAnswers,omitempty"`
 }
 
 type generationPlan struct {
@@ -1020,7 +1122,7 @@ func (m siteMetadata) themePreset() string {
 	if preset, ok := m.Summary["themePreset"].(string); ok && preset != "" {
 		return preset
 	}
-	return siteconfig.ThemePaletteCalmNordic
+	return siteconfig.ThemePaletteCleanLocal
 }
 
 func (m siteMetadata) assetsNeeded() []string {
@@ -1371,7 +1473,7 @@ func profilePrompt(prompt string) promptProfile {
 	profile := promptProfile{
 		Category:      "business",
 		CategoryLabel: "Small business website",
-		ThemePreset:   "calm-nordic",
+		ThemePreset:   siteconfig.ThemePaletteCleanLocal,
 		PrimaryCTA:    "Get in touch",
 		ServicesTitle: "What you can book or buy",
 		ServicesIntro: "A concise overview of the main offers people should understand before they reach out.",
@@ -1476,11 +1578,14 @@ func profilePrompt(prompt string) promptProfile {
 		}
 	}
 
-	if hasAny(lower, "premium", "luxury", "dark", "dramatic", "bold", "editorial") {
-		profile.ThemePreset = "meaner-dark"
+	if hasAny(lower, "premium", "luxury", "editorial", "portfolio", "gallery", "showcase", "visual") {
+		profile.ThemePreset = siteconfig.ThemePaletteEditorialStudio
+	}
+	if hasAny(lower, "dark", "dramatic", "bold", "night", "bar", "music", "event", "events", "tattoo") {
+		profile.ThemePreset = siteconfig.ThemePaletteAfterHours
 	}
 	if hasAny(lower, "playful", "fun", "bright", "colorful", "quirky", "silly") {
-		profile.ThemePreset = "playful-ribbon"
+		profile.ThemePreset = siteconfig.ThemePaletteBrightShopfront
 	}
 	if hasAny(lower, "portfolio", "gallery", "showcase", "visual") {
 		profile.WantsGallery = true

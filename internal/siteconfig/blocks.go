@@ -52,6 +52,7 @@ func heroBlockDefinition() BlockDefinition {
 		Version:     BlockVersionV1,
 		DisplayName: "Hero",
 		Category:    BlockCategoryHero,
+		Tagline:     "Page-leading attention grabber with headline, optional supporting image, and primary call-to-action.",
 		DefaultProps: map[string]any{
 			"variant":  "standard",
 			"headline": "A focused website starts here",
@@ -76,6 +77,7 @@ func textSectionBlockDefinition() BlockDefinition {
 		Version:     BlockVersionV1,
 		DisplayName: "Text section",
 		Category:    BlockCategoryContent,
+		Tagline:     "Plain prose section for narrative copy.",
 		DefaultProps: map[string]any{
 			"heading":   "About",
 			"body":      "Add focused supporting copy here.",
@@ -115,6 +117,7 @@ func imageTextBlockDefinition() BlockDefinition {
 		Version:     BlockVersionV1,
 		DisplayName: "Image and text",
 		Category:    BlockCategoryMedia,
+		Tagline:     "A side-by-side image and copy pairing.",
 		DefaultProps: map[string]any{
 			"heading":       "Built with structure",
 			"body":          "Pair a short message with a supporting image.",
@@ -148,6 +151,7 @@ func featuresGridBlockDefinition() BlockDefinition {
 		Version:     BlockVersionV1,
 		DisplayName: "Features grid",
 		Category:    BlockCategoryContent,
+		Tagline:     "A 2-4 column grid of short benefit cards.",
 		DefaultProps: map[string]any{
 			"heading": "What you get",
 			"items": []any{
@@ -182,6 +186,7 @@ func ctaBandBlockDefinition() BlockDefinition {
 		Version:     BlockVersionV1,
 		DisplayName: "CTA band",
 		Category:    BlockCategoryConversion,
+		Tagline:     "A wide call-to-action band between sections.",
 		DefaultProps: map[string]any{
 			"heading": "Ready to begin?",
 			"body":    "Invite visitors into the next step.",
@@ -224,6 +229,7 @@ func contactFormBlockDefinition() BlockDefinition {
 		Version:     BlockVersionV1,
 		DisplayName: "Contact form",
 		Category:    BlockCategoryConversion,
+		Tagline:     "Lead-capture form with custom fields.",
 		DefaultProps: map[string]any{
 			"heading":     "Start the conversation",
 			"intro":       "Share a few details and I will get back to you shortly.",
@@ -283,6 +289,7 @@ func galleryBlockDefinition() BlockDefinition {
 		Version:     BlockVersionV1,
 		DisplayName: "Gallery",
 		Category:    BlockCategoryMedia,
+		Tagline:     "A visual grid of curated images.",
 		DefaultProps: map[string]any{
 			"heading": "Selected work",
 			"images": []any{
@@ -321,6 +328,7 @@ func testimonialsBlockDefinition() BlockDefinition {
 		Version:     BlockVersionV1,
 		DisplayName: "Testimonials",
 		Category:    BlockCategoryContent,
+		Tagline:     "Customer quotes with attribution.",
 		DefaultProps: map[string]any{
 			"heading": "What clients say",
 			"items": []any{
@@ -375,6 +383,7 @@ func pricingPackagesBlockDefinition() BlockDefinition {
 		Version:     BlockVersionV1,
 		DisplayName: "Pricing packages",
 		Category:    BlockCategoryConversion,
+		Tagline:     "Stacked pricing tiers with feature lists.",
 		DefaultProps: map[string]any{
 			"heading": "Packages",
 			"plans": []any{
@@ -415,6 +424,7 @@ func faqBlockDefinition() BlockDefinition {
 		Version:     BlockVersionV1,
 		DisplayName: "FAQ",
 		Category:    BlockCategoryContent,
+		Tagline:     "Question and answer accordion.",
 		DefaultProps: map[string]any{
 			"heading": "Questions people ask first",
 			"items": []any{
@@ -461,6 +471,7 @@ func teamProfileCardsBlockDefinition() BlockDefinition {
 		Version:     BlockVersionV1,
 		DisplayName: "Team profile cards",
 		Category:    BlockCategoryContent,
+		Tagline:     "Team intro cards with photos.",
 		DefaultProps: map[string]any{
 			"heading": "The people behind the work",
 			"people": []any{
@@ -504,6 +515,7 @@ func statsBlockDefinition() BlockDefinition {
 		Version:     BlockVersionV1,
 		DisplayName: "Stats",
 		Category:    BlockCategoryContent,
+		Tagline:     "Punchy metrics with short labels.",
 		DefaultProps: map[string]any{
 			"heading": "By the numbers",
 			"items": []any{
@@ -542,6 +554,7 @@ func collectionListBlockDefinition() BlockDefinition {
 		Version:     BlockVersionV1,
 		DisplayName: "Collection list",
 		Category:    BlockCategoryContent,
+		Tagline:     "Live list of entries from a collection.",
 		DefaultProps: map[string]any{
 			"heading":     "Featured",
 			"collection":  "",
@@ -569,6 +582,7 @@ func collectionIndexBlockDefinition() BlockDefinition {
 		Version:     BlockVersionV1,
 		DisplayName: "Collection index",
 		Category:    BlockCategoryContent,
+		Tagline:     "Index page listing all entries.",
 		DefaultProps: map[string]any{
 			"heading":  "All entries",
 			"sort":     "manual",
@@ -591,6 +605,7 @@ func collectionDetailBlockDefinition() BlockDefinition {
 		Version:     BlockVersionV1,
 		DisplayName: "Collection detail",
 		Category:    BlockCategoryContent,
+		Tagline:     "Renders a single entry's content.",
 		DefaultProps: map[string]any{
 			"layout": "default",
 		},
@@ -637,6 +652,7 @@ func footerBlockDefinition() BlockDefinition {
 		Version:     BlockVersionV1,
 		DisplayName: "Footer",
 		Category:    BlockCategoryContent,
+		Tagline:     "Site-wide footer with link columns.",
 		DefaultProps: map[string]any{
 			"showBrand": true,
 			"tagline":   "A short closing line that reinforces the tone of the site.",

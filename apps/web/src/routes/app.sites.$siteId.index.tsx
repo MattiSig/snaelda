@@ -1,5 +1,5 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
-import type { FormEvent } from "react";
+import type { CSSProperties, FormEvent } from "react";
 import { useEffect, useState } from "react";
 import { GenerationProgressCard, type GenerationProgressItem } from "@/components/GenerationProgressCard";
 import { PuckBuilder, type BuilderSection } from "@/components/PuckBuilder";
@@ -64,6 +64,7 @@ import {
   type SiteDomainsResponse,
   type SiteVersion,
   type ThemeEditorCatalog,
+  type ThemeOption,
   type ThemeSelection,
   updateBlock,
   updateFormSubmission,
@@ -2990,32 +2991,90 @@ function SiteDetail() {
               </div>
             </div>
 
-            <div className="grid gap-4 xl:grid-cols-3">
-              <div className={form.field}>
-                <label htmlFor="theme-palette" className={text.label}>
-                  Palette
-                </label>
-                <Select
-                  id="theme-palette"
-                  value={themeSelection.palette}
-                  onChange={(event) =>
-                    handleThemeSelectionChange("palette", event.target.value)
-                  }
-                >
-                  {themeOptions.palettes.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </Select>
+            <div className={form.field}>
+              <div>
+                <label className={text.label}>Theme direction</label>
                 <p className={form.hint}>
-                  {describeThemeOption(
-                    themeOptions.palettes,
-                    themeSelection.palette,
-                  )}
+                  Each direction keeps the brand primary color and changes the
+                  surrounding surface, contrast, and styling.
                 </p>
               </div>
+              <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+                {themeOptions.palettes.map((option) => {
+                  const selected = themeSelection.palette === option.id;
+                  const colors = themePreviewColors(
+                    option,
+                    draft.theme.tokens.colors,
+                  );
 
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() =>
+                        handleThemeSelectionChange("palette", option.id)
+                      }
+                      className={cn(
+                        "grid gap-3 rounded-[10px] border p-3 text-left transition duration-200 ease-out hover:border-[color-mix(in_oklch,var(--thread-gold)_78%,var(--border))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--thread-gold)]",
+                        selected
+                          ? "border-[var(--thread-gold)] bg-[color-mix(in_oklch,var(--surface-2)_82%,var(--thread-gold))]"
+                          : "border-border bg-[color-mix(in_oklch,var(--surface-1)_52%,transparent)]",
+                      )}
+                    >
+                      <span
+                        className="grid min-h-[118px] gap-3 overflow-hidden rounded-[8px] border p-3"
+                        style={themePreviewStyle(colors)}
+                      >
+                        <span className="flex items-center justify-between gap-3">
+                          <span className="h-2.5 w-16 rounded-[999px] bg-current opacity-80" />
+                          <span
+                            className="size-5 rounded-[999px]"
+                            style={{ backgroundColor: colors.primary }}
+                          />
+                        </span>
+                        <span className="grid gap-2">
+                          <span className="h-3 w-3/4 rounded-[999px] bg-current" />
+                          <span
+                            className="h-2 w-full rounded-[999px]"
+                            style={{ backgroundColor: colors.muted }}
+                          />
+                          <span
+                            className="h-2 w-2/3 rounded-[999px]"
+                            style={{ backgroundColor: colors.muted }}
+                          />
+                        </span>
+                        <span className="flex items-center gap-2">
+                          <span
+                            className="h-7 w-20 rounded-[999px]"
+                            style={{ backgroundColor: colors.primary }}
+                          />
+                          <span
+                            className="h-7 flex-1 rounded-[8px] border"
+                            style={{
+                              backgroundColor: colors.surfaceMuted,
+                              borderColor: colors.border,
+                            }}
+                          />
+                        </span>
+                      </span>
+                      <span>
+                        <strong className="block text-[var(--paper)]">
+                          {option.label}
+                        </strong>
+                        {option.description ? (
+                          <small className="mt-1 block leading-snug text-[var(--paper-muted)]">
+                            {option.description}
+                          </small>
+                        ) : null}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-3">
               <div className={form.field}>
                 <label htmlFor="theme-font-preset" className={text.label}>
                   Font preset
@@ -3820,6 +3879,49 @@ function describeThemeOption(
   selectedID: string,
 ) {
   return options.find((option) => option.id === selectedID)?.description ?? "";
+}
+
+function themePreviewColors(
+  option: ThemeOption,
+  fallback: Record<string, string>,
+) {
+  const colors = option.previewColors ?? fallback;
+  return {
+    background: colors.background ?? "#f7f3ea",
+    foreground: colors.foreground ?? colors.text ?? "#2c2721",
+    surface: colors.surface ?? "#fffaf1",
+    surfaceMuted: colors.surfaceMuted ?? "#ebe3d5",
+    primary: colors.primary ?? "#426b5c",
+    muted: colors.muted ?? "#8c765c",
+    border: colors.border ?? "#d9cebd",
+  };
+}
+
+function themePreviewStyle(
+  colors: ReturnType<typeof themePreviewColors>,
+): CSSProperties {
+  return {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    color: colors.foreground,
+    boxShadow: `inset 0 0 0 999px ${withPreviewAlpha(colors.background, "66")}`,
+  };
+}
+
+function withPreviewAlpha(color: string, alphaHex: string) {
+  const normalized = color.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `${normalized}${alphaHex}`;
+  }
+  if (/^#[0-9a-fA-F]{3}$/.test(normalized)) {
+    const expanded = normalized
+      .slice(1)
+      .split("")
+      .map((part) => part + part)
+      .join("");
+    return `#${expanded}${alphaHex}`;
+  }
+  return normalized;
 }
 
 function formatThemeLabel(value: string) {

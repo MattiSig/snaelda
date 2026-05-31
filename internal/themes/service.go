@@ -236,7 +236,7 @@ func themeStateFromDraft(draft siteconfig.SiteDraft) ThemeState {
 	return ThemeState{
 		Theme:     draft.Theme,
 		Selection: siteconfig.DetectThemeSelection(draft.Theme),
-		Options:   siteconfig.DefaultThemeEditorCatalog(),
+		Options:   siteconfig.ThemeEditorCatalogWithBrand(draft.Brand),
 	}
 }
 

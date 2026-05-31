@@ -27,13 +27,16 @@ type Handler struct {
 }
 
 type HandlerConfig struct {
-	Planner            generationPlanBuilder
-	BlockSuggester     BlockSuggester
-	ImageQueryRewriter ImageQueryRewriter
-	StarterImagery     *StarterImagery
-	AssetImporter      AssetImporter
-	Logger             *slog.Logger
-	AuditRecorder      *audit.Recorder
+	Planner              generationPlanBuilder
+	BlockSuggester       BlockSuggester
+	ImageQueryRewriter   ImageQueryRewriter
+	PageChangeSetPlanner PageChangeSetPlanner
+	ClarifyingPlanner    ClarifyingQuestionPlanner
+	DecomposedPlanner    DecomposedPlanner
+	StarterImagery       *StarterImagery
+	AssetImporter        AssetImporter
+	Logger               *slog.Logger
+	AuditRecorder        *audit.Recorder
 }
 
 type Generator interface {
@@ -47,6 +50,7 @@ type Generator interface {
 	ListRepromptHistory(ctx context.Context, workspaceID string, siteID string) ([]RepromptHistoryEntry, error)
 	LoadDraftRevision(ctx context.Context, workspaceID string, siteID string, revisionID string) (DraftRevision, error)
 	RevertReprompt(ctx context.Context, workspaceID string, siteID string, repromptID string) (siteconfig.SiteDraft, error)
+	BuildInterviewQuestions(ctx context.Context, input GenerateInput) ([]ClarifyingQuestion, error)
 }
 
 type ProgressGenerator interface {
@@ -71,6 +75,18 @@ type generateRequest struct {
 	PreferredLanguage string                 `json:"preferredLanguage,omitempty"`
 	OptionalHints     map[string]string      `json:"optionalHints,omitempty"`
 	Brand             siteconfig.BrandConfig `json:"brand,omitempty"`
+	InterviewAnswers  []ClarifyingAnswer     `json:"interviewAnswers,omitempty"`
+}
+
+type interviewRequest struct {
+	Name          string                 `json:"name,omitempty"`
+	Prompt        string                 `json:"prompt"`
+	Brand         siteconfig.BrandConfig `json:"brand,omitempty"`
+	OptionalHints map[string]string      `json:"optionalHints,omitempty"`
+}
+
+type interviewResponse struct {
+	Questions []ClarifyingQuestion `json:"questions"`
 }
 
 type repromptRequest struct {
@@ -118,6 +134,15 @@ func NewHandler(db DB, cfg HandlerConfig) *Handler {
 	if cfg.ImageQueryRewriter != nil {
 		options = append(options, WithImageQueryRewriter(cfg.ImageQueryRewriter))
 	}
+	if cfg.PageChangeSetPlanner != nil {
+		options = append(options, WithPageChangeSetPlanner(cfg.PageChangeSetPlanner))
+	}
+	if cfg.ClarifyingPlanner != nil {
+		options = append(options, WithClarifyingQuestionPlanner(cfg.ClarifyingPlanner))
+	}
+	if cfg.DecomposedPlanner != nil {
+		options = append(options, WithDecomposedPlanner(cfg.DecomposedPlanner))
+	}
 	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -135,6 +160,7 @@ func NewHandler(db DB, cfg HandlerConfig) *Handler {
 
 func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.Handler) {
 	mux.Handle("POST /api/sites/generate", requireUser(http.HandlerFunc(h.generate)))
+	mux.Handle("POST /api/sites/generate/interview", requireUser(http.HandlerFunc(h.interview)))
 	mux.Handle("GET /api/generation/jobs/{jobId}", requireUser(http.HandlerFunc(h.getJob)))
 	mux.Handle("POST /api/sites/{siteId}/reprompt", requireUser(http.HandlerFunc(h.repromptSite)))
 	mux.Handle("POST /api/sites/{siteId}/pages/{pageId}/reprompt", requireUser(http.HandlerFunc(h.repromptPage)))
@@ -194,6 +220,7 @@ func (h *Handler) generate(w http.ResponseWriter, r *http.Request) {
 		PreferredLanguage: strings.TrimSpace(payload.PreferredLanguage),
 		OptionalHints:     trimOptionalHints(payload.OptionalHints),
 		Brand:             payload.Brand,
+		InterviewAnswers:  trimInterviewAnswers(payload.InterviewAnswers),
 	}
 	if acceptsEventStream(r) {
 		streamer, ok := h.service.(ProgressGenerator)
@@ -213,6 +240,79 @@ func (h *Handler) generate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, result)
+}
+
+func (h *Handler) interview(w http.ResponseWriter, r *http.Request) {
+	session, ok := builderSessionFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "a session is required")
+		return
+	}
+	workspaceID := session.WorkspaceID
+	if workspaceID == "" {
+		writeError(w, http.StatusForbidden, "forbidden", "workspace access is required")
+		return
+	}
+	if _, err := h.authorizer.RequireWorkspaceMember(r.Context(), workspaceID, authorization.RoleOwner, authorization.RoleEditor); err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+	var payload interviewRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "request body must be valid JSON")
+		return
+	}
+	prompt := strings.TrimSpace(payload.Prompt)
+	if prompt == "" {
+		writeError(w, http.StatusBadRequest, "prompt_required", "a prompt is required")
+		return
+	}
+	if len(prompt) > maxGenerationPromptCharacters {
+		writeError(w, http.StatusBadRequest, "prompt_too_long", "prompt exceeds the allowed length")
+		return
+	}
+	questions, err := h.service.BuildInterviewQuestions(r.Context(), GenerateInput{
+		Name:          strings.TrimSpace(payload.Name),
+		Prompt:        prompt,
+		Brand:         payload.Brand,
+		OptionalHints: trimOptionalHints(payload.OptionalHints),
+	})
+	if err != nil {
+		h.writeGenerationError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, interviewResponse{Questions: questions})
+}
+
+func trimInterviewAnswers(input []ClarifyingAnswer) []ClarifyingAnswer {
+	if len(input) == 0 {
+		return nil
+	}
+	output := make([]ClarifyingAnswer, 0, len(input))
+	for _, answer := range input {
+		questionID := strings.TrimSpace(answer.QuestionID)
+		if questionID == "" {
+			continue
+		}
+		trimmed := ClarifyingAnswer{
+			QuestionID: questionID,
+			Prompt:     strings.TrimSpace(answer.Prompt),
+			Text:       strings.TrimSpace(answer.Text),
+			Skipped:    answer.Skipped,
+		}
+		for _, option := range answer.SelectedOptions {
+			option = strings.TrimSpace(option)
+			if option == "" {
+				continue
+			}
+			trimmed.SelectedOptions = append(trimmed.SelectedOptions, option)
+		}
+		output = append(output, trimmed)
+	}
+	if len(output) == 0 {
+		return nil
+	}
+	return output
 }
 
 func trimOptionalHints(input map[string]string) map[string]string {
@@ -618,6 +718,7 @@ func (h *Handler) streamGenerate(w http.ResponseWriter, r *http.Request, run fun
 	flusher.Flush()
 
 	progressEvents := make(chan ProgressStep, 16)
+	partialEvents := make(chan ProgressPartial, 64)
 	jobIDCh := make(chan string, 1)
 	resultCh := make(chan GenerateResult, 1)
 	errCh := make(chan error, 1)
@@ -632,6 +733,11 @@ func (h *Handler) streamGenerate(w http.ResponseWriter, r *http.Request, run fun
 				flusher.Flush()
 			case step := <-progressEvents:
 				if err := writeSSEEvent(w, "progress", step); err != nil {
+					return false
+				}
+				flusher.Flush()
+			case partial := <-partialEvents:
+				if err := writeSSEEvent(w, "partial", partial); err != nil {
 					return false
 				}
 				flusher.Flush()
@@ -655,6 +761,12 @@ func (h *Handler) streamGenerate(w http.ResponseWriter, r *http.Request, run fun
 				case <-r.Context().Done():
 				}
 			},
+			onPartial: func(partial ProgressPartial) {
+				select {
+				case partialEvents <- partial:
+				case <-r.Context().Done():
+				}
+			},
 		})
 		if err != nil {
 			errCh <- err
@@ -674,6 +786,11 @@ func (h *Handler) streamGenerate(w http.ResponseWriter, r *http.Request, run fun
 			flusher.Flush()
 		case step := <-progressEvents:
 			if err := writeSSEEvent(w, "progress", step); err != nil {
+				return
+			}
+			flusher.Flush()
+		case partial := <-partialEvents:
+			if err := writeSSEEvent(w, "partial", partial); err != nil {
 				return
 			}
 			flusher.Flush()

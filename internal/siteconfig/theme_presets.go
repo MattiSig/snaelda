@@ -7,9 +7,12 @@ import (
 )
 
 const (
-	ThemePaletteCalmNordic    = "calm-nordic"
-	ThemePalettePlayfulRibbon = "playful-ribbon"
-	ThemePaletteMeanerDark    = "meaner-dark"
+	ThemePaletteCalmNordic      = "calm-nordic"
+	ThemePaletteCleanLocal      = "clean-local"
+	ThemePaletteBrightShopfront = "bright-shopfront"
+	ThemePaletteEditorialStudio = "editorial-studio"
+	ThemePaletteHeritageCraft   = "heritage-craft"
+	ThemePaletteAfterHours      = "after-hours"
 
 	ThemeFontBalanced   = "balanced"
 	ThemeFontEditorial  = "editorial"
@@ -42,9 +45,10 @@ type ThemeSelection struct {
 }
 
 type ThemeOption struct {
-	ID          string `json:"id"`
-	Label       string `json:"label"`
-	Description string `json:"description,omitempty"`
+	ID            string            `json:"id"`
+	Label         string            `json:"label"`
+	Description   string            `json:"description,omitempty"`
+	PreviewColors map[string]string `json:"previewColors,omitempty"`
 }
 
 type ThemeEditorCatalog struct {
@@ -70,29 +74,65 @@ var (
 			"border":       "#decfbe",
 			"ring":         "#d99633",
 		},
-		ThemePalettePlayfulRibbon: {
-			"background":   "#fff7ee",
-			"foreground":   "#2d2426",
-			"surface":      "#fff0e8",
-			"surfaceMuted": "#f6ddd5",
-			"primary":      "#d95f7e",
-			"secondary":    "#67bfb3",
-			"accent":       "#4f84c8",
-			"muted":        "#b88452",
-			"border":       "#e8c7ba",
-			"ring":         "#e0a23f",
+		ThemePaletteCleanLocal: {
+			"background":   "#f7f3ea",
+			"foreground":   "#2c2721",
+			"surface":      "#fffaf1",
+			"surfaceMuted": "#ebe3d5",
+			"primary":      "#426b5c",
+			"secondary":    "#6f8f82",
+			"accent":       "#b46a4d",
+			"muted":        "#8c765c",
+			"border":       "#d9cebd",
+			"ring":         "#9b7f52",
 		},
-		ThemePaletteMeanerDark: {
-			"background":   "#191119",
-			"foreground":   "#f3ead8",
-			"surface":      "#241a24",
-			"surfaceMuted": "#302333",
-			"primary":      "#86d8cf",
-			"secondary":    "#89b9f0",
-			"accent":       "#ff8a9d",
-			"muted":        "#caa778",
-			"border":       "#5a3e57",
-			"ring":         "#f2bd63",
+		ThemePaletteBrightShopfront: {
+			"background":   "#fff3df",
+			"foreground":   "#33231b",
+			"surface":      "#fffaf0",
+			"surfaceMuted": "#f5d9bd",
+			"primary":      "#c65f32",
+			"secondary":    "#2f9488",
+			"accent":       "#d98b2b",
+			"muted":        "#956b4b",
+			"border":       "#e8c2a2",
+			"ring":         "#d17938",
+		},
+		ThemePaletteEditorialStudio: {
+			"background":   "#f2eee6",
+			"foreground":   "#1f1d1b",
+			"surface":      "#fbf8f1",
+			"surfaceMuted": "#e2dbcf",
+			"primary":      "#3a4e59",
+			"secondary":    "#8b6f55",
+			"accent":       "#9b4f4c",
+			"muted":        "#72685e",
+			"border":       "#cbc2b5",
+			"ring":         "#92785f",
+		},
+		ThemePaletteHeritageCraft: {
+			"background":   "#f5eadb",
+			"foreground":   "#34251e",
+			"surface":      "#fff6e8",
+			"surfaceMuted": "#e7d1bc",
+			"primary":      "#875c3d",
+			"secondary":    "#6f7d54",
+			"accent":       "#b25f45",
+			"muted":        "#876e58",
+			"border":       "#d7bda5",
+			"ring":         "#a86f42",
+		},
+		ThemePaletteAfterHours: {
+			"background":   "#151314",
+			"foreground":   "#f1e8d8",
+			"surface":      "#211d20",
+			"surfaceMuted": "#2e2830",
+			"primary":      "#d58f4f",
+			"secondary":    "#7fb3a5",
+			"accent":       "#b986d0",
+			"muted":        "#c4a77e",
+			"border":       "#514653",
+			"ring":         "#e0b369",
 		},
 	}
 	themeTypographyTokens = map[string]map[string]any{
@@ -146,9 +186,12 @@ var (
 	}
 	themeCatalog = ThemeEditorCatalog{
 		Palettes: []ThemeOption{
-			{ID: ThemePaletteCalmNordic, Label: "Calm Nordic", Description: "Vellum neutrals with blue, teal, and coral held in balance."},
-			{ID: ThemePalettePlayfulRibbon, Label: "Playful Ribbon", Description: "Warm paper surfaces with coral leading the woven accents."},
-			{ID: ThemePaletteMeanerDark, Label: "Meaner Dark", Description: "Mulberry-black surfaces with teal action and coral sparks."},
+			{ID: ThemePaletteCleanLocal, Label: "Clean Local", Description: "Practical warm neutrals for services, clinics, trades, classes, and consultants."},
+			{ID: ThemePaletteBrightShopfront, Label: "Bright Shopfront", Description: "Sunlit, friendly surfaces for cafes, shops, salons, studios, and bookable local offers."},
+			{ID: ThemePaletteEditorialStudio, Label: "Editorial Studio", Description: "Image-led restraint with sharper contrast for photographers, florists, makers, and boutique portfolios."},
+			{ID: ThemePaletteCalmNordic, Label: "Calm Nordic", Description: "Muted vellum surfaces for quiet, spacious sites that should feel steady rather than loud."},
+			{ID: ThemePaletteHeritageCraft, Label: "Heritage Craft", Description: "Earthier paper and clay tones for handmade, workshop, food, and place-based businesses."},
+			{ID: ThemePaletteAfterHours, Label: "After Hours", Description: "A warm dark direction for bars, studios, music, events, tattoo, and dramatic visual brands."},
 		},
 		FontPresets: []ThemeOption{
 			{ID: ThemeFontBalanced, Label: "Balanced", Description: "Serif headings with calm supporting sans text."},
@@ -180,12 +223,12 @@ var (
 
 func DefaultThemeSelection() ThemeSelection {
 	return ThemeSelection{
-		Palette:        ThemePaletteMeanerDark,
-		FontPreset:     ThemeFontEditorial,
+		Palette:        ThemePaletteCleanLocal,
+		FontPreset:     ThemeFontBalanced,
 		SectionSpacing: ThemeSpacingComfortable,
 		Radius:         ThemeRadiusSoft,
 		ButtonStyle:    ThemeButtonRibbonFill,
-		ImageStyle:     ThemeImageWovenTint,
+		ImageStyle:     ThemeImageSoftFrame,
 	}
 }
 
@@ -193,33 +236,72 @@ func DefaultThemeEditorCatalog() ThemeEditorCatalog {
 	return themeCatalog
 }
 
+func ThemeEditorCatalogWithBrand(brand BrandConfig) ThemeEditorCatalog {
+	catalog := themeCatalog
+	catalog.Palettes = make([]ThemeOption, len(themeCatalog.Palettes))
+	for index, option := range themeCatalog.Palettes {
+		selection := DefaultThemeSelection()
+		selection.Palette = option.ID
+		option.PreviewColors = BuildThemeWithBrand(selection, brand).Tokens.Colors
+		catalog.Palettes[index] = option
+	}
+	return catalog
+}
+
 func ThemePreset(name string) ThemeConfig {
 	switch name {
-	case ThemePalettePlayfulRibbon:
+	case ThemePaletteBrightShopfront:
 		return BuildTheme(ThemeSelection{
-			Palette:        ThemePalettePlayfulRibbon,
+			Palette:        ThemePaletteBrightShopfront,
 			FontPreset:     ThemeFontStudioSans,
 			SectionSpacing: ThemeSpacingSnug,
 			Radius:         ThemeRadiusPillowy,
 			ButtonStyle:    ThemeButtonRibbonFill,
 			ImageStyle:     ThemeImagePaperCut,
 		})
-	case ThemePaletteMeanerDark:
+	case ThemePaletteEditorialStudio:
 		return BuildTheme(ThemeSelection{
-			Palette:        ThemePaletteMeanerDark,
+			Palette:        ThemePaletteEditorialStudio,
 			FontPreset:     ThemeFontEditorial,
-			SectionSpacing: ThemeSpacingComfortable,
-			Radius:         ThemeRadiusSoft,
-			ButtonStyle:    ThemeButtonRibbonFill,
-			ImageStyle:     ThemeImageWovenTint,
+			SectionSpacing: ThemeSpacingAiry,
+			Radius:         ThemeRadiusTailored,
+			ButtonStyle:    ThemeButtonInkSolid,
+			ImageStyle:     ThemeImageSoftFrame,
 		})
-	default:
+	case ThemePaletteHeritageCraft:
 		return BuildTheme(ThemeSelection{
-			Palette:        ThemePaletteCalmNordic,
+			Palette:        ThemePaletteHeritageCraft,
 			FontPreset:     ThemeFontBalanced,
 			SectionSpacing: ThemeSpacingComfortable,
 			Radius:         ThemeRadiusSoft,
 			ButtonStyle:    ThemeButtonThreadOutline,
+			ImageStyle:     ThemeImageWovenTint,
+		})
+	case ThemePaletteAfterHours:
+		return BuildTheme(ThemeSelection{
+			Palette:        ThemePaletteAfterHours,
+			FontPreset:     ThemeFontEditorial,
+			SectionSpacing: ThemeSpacingComfortable,
+			Radius:         ThemeRadiusTailored,
+			ButtonStyle:    ThemeButtonRibbonFill,
+			ImageStyle:     ThemeImageWovenTint,
+		})
+	case ThemePaletteCalmNordic:
+		return BuildTheme(ThemeSelection{
+			Palette:        ThemePaletteCalmNordic,
+			FontPreset:     ThemeFontBalanced,
+			SectionSpacing: ThemeSpacingAiry,
+			Radius:         ThemeRadiusSoft,
+			ButtonStyle:    ThemeButtonThreadOutline,
+			ImageStyle:     ThemeImageSoftFrame,
+		})
+	default:
+		return BuildTheme(ThemeSelection{
+			Palette:        ThemePaletteCleanLocal,
+			FontPreset:     ThemeFontBalanced,
+			SectionSpacing: ThemeSpacingComfortable,
+			Radius:         ThemeRadiusSoft,
+			ButtonStyle:    ThemeButtonRibbonFill,
 			ImageStyle:     ThemeImageSoftFrame,
 		})
 	}
@@ -313,6 +395,11 @@ func normalizeThemeSelection(selection ThemeSelection) ThemeSelection {
 func detectThemePalette(colors map[string]string) string {
 	for id, tokens := range themePaletteTokens {
 		if sameStringMap(colors, tokens) {
+			return id
+		}
+	}
+	for id, tokens := range themePaletteTokens {
+		if colors["background"] == tokens["background"] && colors["foreground"] == tokens["foreground"] {
 			return id
 		}
 	}

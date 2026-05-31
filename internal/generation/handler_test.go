@@ -95,6 +95,10 @@ func (g *fakeGenerator) RevertReprompt(_ context.Context, _ string, _ string, re
 	return g.undoResult, g.err
 }
 
+func (g *fakeGenerator) BuildInterviewQuestions(_ context.Context, _ GenerateInput) ([]ClarifyingQuestion, error) {
+	return nil, g.err
+}
+
 type fakeWorkspaceAuthorizer struct{}
 
 func (fakeWorkspaceAuthorizer) RequireWorkspaceMember(context.Context, string, ...string) (authorization.Scope, error) {

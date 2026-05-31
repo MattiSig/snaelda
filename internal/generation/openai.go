@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -55,7 +56,19 @@ type openAIJSONSchemaPayload struct {
 
 type openAIChatCompletionResponse struct {
 	Choices []openAIChoice `json:"choices"`
+	Usage   *openAIUsage   `json:"usage,omitempty"`
 	Error   *openAIError   `json:"error,omitempty"`
+}
+
+type openAIUsage struct {
+	PromptTokens        int                       `json:"prompt_tokens"`
+	CompletionTokens    int                       `json:"completion_tokens"`
+	TotalTokens         int                       `json:"total_tokens"`
+	PromptTokensDetails *openAIPromptTokensDetail `json:"prompt_tokens_details,omitempty"`
+}
+
+type openAIPromptTokensDetail struct {
+	CachedTokens int `json:"cached_tokens"`
 }
 
 type openAIChoice struct {
@@ -90,6 +103,20 @@ type openAIBlockSuggestPayload struct {
 	ChangeSummary string         `json:"changeSummary"`
 }
 
+// pageChangeSetRequestPayload is the trimmed payload for the page change-set
+// call: the catalog lives in the cached system prefix, so the user payload
+// only carries the directive, page context, and the list of allowed type
+// names for inserts.
+type pageChangeSetRequestPayload struct {
+	SiteName        string                 `json:"siteName"`
+	SiteGoal        string                 `json:"siteGoal,omitempty"`
+	Brand           siteconfig.BrandConfig `json:"brand,omitempty"`
+	Page            PageChangeSetPage      `json:"page"`
+	NeighborPages   []NeighborPage         `json:"neighborPages,omitempty"`
+	InsertableTypes []string               `json:"insertableTypes,omitempty"`
+	Prompt          string                 `json:"prompt"`
+}
+
 func NewOpenAIPlanner(cfg OpenAIPlannerConfig) (*OpenAIPlanner, error) {
 	apiKey := strings.TrimSpace(cfg.APIKey)
 	if apiKey == "" {
@@ -118,6 +145,10 @@ func NewOpenAIPlanner(cfg OpenAIPlannerConfig) (*OpenAIPlanner, error) {
 	}, nil
 }
 
+// BuildPlan is the legacy single-call planner used as fallback when the
+// decomposed planner is unavailable. Phase 2c moved the static block registry
+// and theme catalog into the cached system prefix; the per-call payload no
+// longer duplicates them.
 func (p *OpenAIPlanner) BuildPlan(ctx context.Context, input generationInputContext, feedback generationPlanFeedback) (generationPlan, error) {
 	if p == nil {
 		return defaultGenerationPlanBuilder(ctx, input, feedback)
@@ -161,8 +192,6 @@ func (p *OpenAIPlanner) BuildPlan(ctx context.Context, input generationInputCont
 		"brand":             input.Brand,
 		"attempt":           feedback.Attempt,
 		"validation":        feedback.ValidationIssues,
-		"blocks":            summarizeBlockRegistry(),
-		"themeOptions":      siteconfig.DefaultThemeEditorCatalog(),
 	}
 	userJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -173,7 +202,7 @@ func (p *OpenAIPlanner) BuildPlan(ctx context.Context, input generationInputCont
 	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
 		Name:   "site_generation_plan",
 		Schema: generationPlanSchema(),
-		System: generationPlannerSystemPrompt,
+		System: cachedSiteContext() + "\n\n" + generationPlannerSystemPrompt,
 		User:   string(userJSON),
 		Strict: true,
 	}, &responsePayload); err != nil {
@@ -235,12 +264,9 @@ func (p *OpenAIPlanner) RegenerateThemeSelection(ctx context.Context, prompt str
 	payload := map[string]any{
 		"prompt":              strings.TrimSpace(prompt),
 		"currentSelection":    siteconfig.DetectThemeSelection(draft.Theme),
-		"themeOptions":        siteconfig.DefaultThemeEditorCatalog(),
 		"draftSummary":        summarizeDraftForTheme(draft),
 		"brand":               draft.Brand,
-		"brandDirection":      "warm, crafted, friendly, a little silly, dependable",
 		"darkModeRequirement": true,
-		"darkModeDirection":   "warmer near-black/plum backgrounds, stronger contrast, brighter ribbon accents, calm readability",
 		"brandColorRule":      "If brand.primaryColor is set, the rendered theme will override the preset's primary color with brand.primaryColor; pick a palette whose secondary/accent harmonize with it.",
 	}
 	userJSON, err := json.Marshal(payload)
@@ -252,7 +278,7 @@ func (p *OpenAIPlanner) RegenerateThemeSelection(ctx context.Context, prompt str
 	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
 		Name:   "theme_selection",
 		Schema: themeSelectionSchema(),
-		System: themeRegenerationSystemPrompt,
+		System: cachedSiteContext() + "\n\n" + themeRegenerationSystemPrompt,
 		User:   string(userJSON),
 		Strict: true,
 	}, &responsePayload); err != nil {
@@ -260,6 +286,355 @@ func (p *OpenAIPlanner) RegenerateThemeSelection(ctx context.Context, prompt str
 	}
 
 	return responsePayload.ThemeSelection, nil
+}
+
+// BuildOutline runs the structure-first decomposed step. The model returns
+// the site name, goal, theme selection, and page list (title + slug + goal +
+// SEO) — but no blocks. The next stage drafts blocks per page in parallel.
+// Token-wise this is the cheapest planning call: small input, small output.
+func (p *OpenAIPlanner) BuildOutline(ctx context.Context, request OutlineRequest) (OutlineResult, error) {
+	if p == nil {
+		return OutlineResult{}, ErrDecomposedPlannerUnavailable
+	}
+	userJSON, err := json.Marshal(request)
+	if err != nil {
+		return OutlineResult{}, fmt.Errorf("encode outline payload: %w", err)
+	}
+	schema := outlineSchema()
+	var responsePayload OutlineResult
+	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
+		Name:   "site_outline",
+		Schema: schema,
+		System: cachedSiteContext() + "\n\n" + outlinePlannerSystemPrompt,
+		User:   string(userJSON),
+		Strict: true,
+	}, &responsePayload); err != nil {
+		return OutlineResult{}, err
+	}
+	return responsePayload, nil
+}
+
+// BuildPageContent runs the per-page composer step: in one structured-output
+// call the model picks an ordered block list for the page AND produces each
+// block's full props. Replaces the previous decomposition of
+// page-block-plan + per-block copy with a single call per page.
+//
+// The schema uses a oneOf-discriminated union over AllowedTypes so that each
+// block in the output is shaped as { type: const, props: <type's PropSchema> }.
+// Cached site context (tagline registry + theme + brand) lives in the system
+// prefix; this request only carries the per-call deltas.
+func (p *OpenAIPlanner) BuildPageContent(ctx context.Context, request PageContentRequest) (PageContentResult, error) {
+	if p == nil {
+		return PageContentResult{}, ErrDecomposedPlannerUnavailable
+	}
+	allowedTypes := append([]string(nil), request.AllowedTypes...)
+	if len(allowedTypes) == 0 {
+		return PageContentResult{}, fmt.Errorf("build page content: no allowed block types")
+	}
+	registry := siteconfig.DefaultBlockRegistry()
+	blockVariants := make([]map[string]any, 0, len(allowedTypes))
+	for _, blockType := range allowedTypes {
+		def, err := registry.Lookup(blockType, siteconfig.BlockVersionV1)
+		if err != nil {
+			return PageContentResult{}, fmt.Errorf("build page content: lookup %s: %w", blockType, err)
+		}
+		propsSchema := def.PropSchema
+		if len(propsSchema) == 0 {
+			propsSchema = map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+			}
+		}
+		blockVariants = append(blockVariants, map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"required":             []string{"type", "props"},
+			"properties": map[string]any{
+				"type":  map[string]any{"type": "string", "const": blockType},
+				"props": propsSchema,
+			},
+		})
+	}
+
+	userJSON, err := json.Marshal(request)
+	if err != nil {
+		return PageContentResult{}, fmt.Errorf("encode page content payload: %w", err)
+	}
+	schema := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"blocks"},
+		"properties": map[string]any{
+			"blocks": map[string]any{
+				"type":     "array",
+				"minItems": 3,
+				"maxItems": 9,
+				"items":    map[string]any{"anyOf": blockVariants},
+			},
+		},
+	}
+	var responsePayload PageContentResult
+	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
+		Name:   "page_content",
+		Schema: schema,
+		System: cachedSiteContext() + "\n\n" + pageContentSystemPrompt,
+		User:   string(userJSON),
+		Strict: true,
+	}, &responsePayload); err != nil {
+		return PageContentResult{}, err
+	}
+	return responsePayload, nil
+}
+
+func outlineSchema() map[string]any {
+	return map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		// OpenAI strict mode requires every key in properties to be required.
+		"required": []string{"siteName", "siteGoal", "themeSelection", "pages", "assumptions"},
+		"properties": map[string]any{
+			"siteName":       map[string]any{"type": "string"},
+			"siteGoal":       map[string]any{"type": "string"},
+			"themeSelection": themeSelectionObjectSchema(),
+			"pages": map[string]any{
+				"type":     "array",
+				"maxItems": siteconfig.MaxPagesPerSite,
+				"items": map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+					"required":             []string{"title", "slug", "goal", "seo"},
+					"properties": map[string]any{
+						"title": map[string]any{"type": "string"},
+						"slug":  map[string]any{"type": "string"},
+						"goal":  map[string]any{"type": "string"},
+						"seo": map[string]any{
+							"type":                 "object",
+							"additionalProperties": false,
+							"required":             []string{"title", "description"},
+							"properties": map[string]any{
+								"title":       map[string]any{"type": "string"},
+								"description": map[string]any{"type": "string"},
+							},
+						},
+					},
+				},
+			},
+			"assumptions": map[string]any{
+				"type":  "array",
+				"items": map[string]any{"type": "string"},
+			},
+		},
+	}
+}
+
+// themeCatalogContext returns the JSON theme catalog as a stable suffix the
+// model can rely on, positioned in the system prefix so OpenAI's auto-prompt
+// caching (>1024-token identical prefixes) takes effect across calls.
+func themeCatalogContext() string {
+	catalog := map[string]any{
+		"themeCatalog": siteconfig.DefaultThemeEditorCatalog(),
+	}
+	bytes, err := json.Marshal(catalog)
+	if err != nil {
+		return ""
+	}
+	return "Theme catalog (stable, prefer caching this prefix):\n" + string(bytes)
+}
+
+// cachedSiteContext is the long, stable system-message prefix shared by every
+// generation-related call (outline, per-page plan, per-block copy, page
+// change-set). It bundles the deterministic block registry summary, theme
+// catalog, and brand direction. OpenAI auto-caches identical prefixes longer
+// than ~1024 tokens, so positioning this content first means it is hashed
+// once and reused across calls in the same conversation/session.
+//
+// The string is generated once per process via siteContextSystemOnce and held
+// in memory; the underlying catalogs come from siteconfig at build time and
+// never change at runtime.
+var siteContextSystemOnce = sync.OnceValue(func() string {
+	registry := summarizeBlockRegistryForPlan()
+	catalog := siteconfig.DefaultThemeEditorCatalog()
+	bundle := map[string]any{
+		"blockRegistry": registry,
+		"themeCatalog":  catalog,
+		"brandDirection": "Snaelda is warm, crafted, ribbon-led, dependable, with a little Icelandic gravity. Dark mode should feel meaner than light mode while staying calm and readable.",
+	}
+	bytes, err := json.Marshal(bundle)
+	if err != nil {
+		return ""
+	}
+	return "Snaelda site context (stable, cache this prefix):\n" + string(bytes)
+})
+
+// summarizeBlockRegistryForPlan returns just enough for the model to pick
+// block types: type slug, display name, category, and a one-line tagline.
+// No field dumps, no enum options. Used in the cached system prefix so the
+// per-call cost stays small.
+func summarizeBlockRegistryForPlan() []map[string]any {
+	definitions := siteconfig.DefaultBlockRegistry().Definitions()
+	summary := make([]map[string]any, 0, len(definitions))
+	for _, definition := range definitions {
+		summary = append(summary, map[string]any{
+			"type":        definition.Type,
+			"displayName": definition.DisplayName,
+			"category":    string(definition.Category),
+			"tagline":     definition.Tagline,
+		})
+	}
+	return summary
+}
+
+// cachedSiteContext returns the shared cacheable prefix.
+func cachedSiteContext() string {
+	return siteContextSystemOnce()
+}
+
+// BuildClarifyingQuestions runs the small intake-form call: ask the model for
+// 0-3 short, high-leverage questions that would meaningfully reshape the
+// outline. Tiny payload, tiny output — designed to be the cheapest call in
+// the pipeline. The model is expected to return zero questions when the
+// prompt already carries enough intent.
+func (p *OpenAIPlanner) BuildClarifyingQuestions(ctx context.Context, request ClarifyingQuestionsRequest) ([]ClarifyingQuestion, error) {
+	if p == nil {
+		return nil, ErrClarifyingPlannerUnavailable
+	}
+	userJSON, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("encode clarifying questions payload: %w", err)
+	}
+	schema := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"questions"},
+		"properties": map[string]any{
+			"questions": map[string]any{
+				"type":     "array",
+				"maxItems": MaxClarifyingQuestions,
+				"items": map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+					// OpenAI strict mode requires every property to be in
+					// required. Empty string / empty array represent "not
+					// applicable" for options and helper.
+					"required": []string{"id", "prompt", "kind", "options", "helper"},
+					"properties": map[string]any{
+						"id":     map[string]any{"type": "string"},
+						"prompt": map[string]any{"type": "string"},
+						"kind": map[string]any{
+							"type": "string",
+							"enum": []string{
+								ClarifyingQuestionKindSingle,
+								ClarifyingQuestionKindMulti,
+								ClarifyingQuestionKindText,
+							},
+						},
+						"options": map[string]any{
+							"type":     "array",
+							"maxItems": 4,
+							"items":    map[string]any{"type": "string"},
+						},
+						"helper": map[string]any{"type": "string"},
+					},
+				},
+			},
+		},
+	}
+
+	var responsePayload struct {
+		Questions []ClarifyingQuestion `json:"questions"`
+	}
+	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
+		Name:   "clarifying_questions",
+		Schema: schema,
+		System: clarifyingQuestionsSystemPrompt,
+		User:   string(userJSON),
+		Strict: true,
+	}, &responsePayload); err != nil {
+		return nil, err
+	}
+	return responsePayload.Questions, nil
+}
+
+// PlanPageChanges runs the diff-style page reprompt: a small structured call
+// that decides which blocks on a page to keep, edit, remove, or insert. It
+// returns an ordered list of operations, never block copy. Per-block copy is
+// drafted by SuggestBlockProps so the change-set call stays cheap and the
+// rewrites can run in parallel afterwards.
+func (p *OpenAIPlanner) PlanPageChanges(ctx context.Context, request PageChangeSetRequest) (PageChangeSetResponse, error) {
+	if p == nil {
+		return PageChangeSetResponse{}, ErrPageChangeSetUnavailable
+	}
+	insertableTypeNames := make([]string, 0, len(request.InsertableTypes))
+	for _, item := range request.InsertableTypes {
+		insertableTypeNames = append(insertableTypeNames, item.Type)
+	}
+	allowedInsertTypes := append([]string{}, insertableTypeNames...)
+	if len(allowedInsertTypes) == 0 {
+		allowedInsertTypes = []string{""}
+	}
+	// Trim payload: drop the full registry from the user payload (it's in the
+	// cached system prefix). Send only the allowed type names for the model
+	// to reference when inserting.
+	payload := pageChangeSetRequestPayload{
+		SiteName:       request.SiteName,
+		SiteGoal:       request.SiteGoal,
+		Brand:          request.Brand,
+		Page:           request.Page,
+		NeighborPages:  request.NeighborPages,
+		InsertableTypes: insertableTypeNames,
+		Prompt:         request.Prompt,
+	}
+	userJSON, err := json.Marshal(payload)
+	if err != nil {
+		return PageChangeSetResponse{}, fmt.Errorf("encode page change-set payload: %w", err)
+	}
+
+	operationSchema := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		// OpenAI strict mode requires every key in properties to be required.
+		// The model returns "" for fields that don't apply to a given action.
+		"required": []string{"action", "blockId", "type", "purpose", "reason"},
+		"properties": map[string]any{
+			"action": map[string]any{
+				"type": "string",
+				"enum": []string{
+					PageChangeSetActionKeep,
+					PageChangeSetActionEdit,
+					PageChangeSetActionRemove,
+					PageChangeSetActionInsert,
+				},
+			},
+			"blockId": map[string]any{"type": "string"},
+			"type":    map[string]any{"type": "string"},
+			"purpose": map[string]any{"type": "string"},
+			"reason":  map[string]any{"type": "string"},
+		},
+	}
+	schema := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"operations", "changeSummary"},
+		"properties": map[string]any{
+			"operations": map[string]any{
+				"type":  "array",
+				"items": operationSchema,
+			},
+			"changeSummary": map[string]any{"type": "string"},
+		},
+	}
+
+	var responsePayload PageChangeSetResponse
+	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
+		Name:   "page_change_set",
+		Schema: schema,
+		System: cachedSiteContext() + "\n\n" + pageChangeSetSystemPrompt,
+		User:   string(userJSON),
+		Strict: true,
+	}, &responsePayload); err != nil {
+		return PageChangeSetResponse{}, err
+	}
+	return responsePayload, nil
 }
 
 // RewriteImageQuery asks the model for a sharper Pexels search query than
@@ -348,7 +723,7 @@ func (p *OpenAIPlanner) SuggestBlockProps(ctx context.Context, request BlockSugg
 	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
 		Name:   "block_suggest",
 		Schema: schema,
-		System: blockSuggestSystemPrompt,
+		System: cachedSiteContext() + "\n\n" + blockSuggestSystemPrompt,
 		User:   string(userJSON),
 		Strict: true,
 	}, &responsePayload); err != nil {
@@ -418,6 +793,19 @@ func (p *OpenAIPlanner) createStructuredCompletion(ctx context.Context, input st
 		}
 		return fmt.Errorf("openai request failed with status %d", res.StatusCode)
 	}
+	if completion.Usage != nil {
+		cached := 0
+		if completion.Usage.PromptTokensDetails != nil {
+			cached = completion.Usage.PromptTokensDetails.CachedTokens
+		}
+		fmt.Fprintf(os.Stderr, "openai_usage call=%s prompt=%d cached=%d completion=%d total=%d\n",
+			input.Name,
+			completion.Usage.PromptTokens,
+			cached,
+			completion.Usage.CompletionTokens,
+			completion.Usage.TotalTokens,
+		)
+	}
 	if len(completion.Choices) == 0 {
 		return fmt.Errorf("openai response did not include a choice")
 	}
@@ -432,40 +820,6 @@ func (p *OpenAIPlanner) createStructuredCompletion(ctx context.Context, input st
 		return fmt.Errorf("decode openai structured content: %w", err)
 	}
 	return nil
-}
-
-func summarizeBlockRegistry() []map[string]any {
-	definitions := siteconfig.DefaultBlockRegistry().Definitions()
-	summary := make([]map[string]any, 0, len(definitions))
-	for _, definition := range definitions {
-		summary = append(summary, map[string]any{
-			"type":        definition.Type,
-			"displayName": definition.DisplayName,
-			"category":    definition.Category,
-			"fields":      summarizeEditorFields(definition.EditorSchema),
-		})
-	}
-	return summary
-}
-
-func summarizeEditorFields(fields []siteconfig.EditorField) []map[string]any {
-	summary := make([]map[string]any, 0, len(fields))
-	for _, field := range fields {
-		item := map[string]any{
-			"name":      field.Name,
-			"control":   field.Control,
-			"valueType": field.ValueType,
-			"options":   field.Options,
-		}
-		if len(field.Fields) > 0 {
-			item["fields"] = summarizeEditorFields(field.Fields)
-		}
-		if len(field.ItemFields) > 0 {
-			item["itemFields"] = summarizeEditorFields(field.ItemFields)
-		}
-		summary = append(summary, item)
-	}
-	return summary
 }
 
 func summarizeDraftForTheme(draft siteconfig.SiteDraft) map[string]any {
@@ -586,8 +940,11 @@ func themeSelectionObjectSchema() map[string]any {
 		"properties": map[string]any{
 			"palette": map[string]any{"type": "string", "enum": []string{
 				siteconfig.ThemePaletteCalmNordic,
-				siteconfig.ThemePalettePlayfulRibbon,
-				siteconfig.ThemePaletteMeanerDark,
+				siteconfig.ThemePaletteCleanLocal,
+				siteconfig.ThemePaletteBrightShopfront,
+				siteconfig.ThemePaletteEditorialStudio,
+				siteconfig.ThemePaletteHeritageCraft,
+				siteconfig.ThemePaletteAfterHours,
 			}},
 			"fontPreset": map[string]any{"type": "string", "enum": []string{
 				siteconfig.ThemeFontBalanced,
@@ -658,6 +1015,69 @@ Honor the user instruction when one is provided — the instruction trumps infer
 Do not return brand names, person names, hashtags, quotation marks, or commentary. Just the query string.
 If the page is image-led (florist, photographer, restaurant, hotel, cafe, salon, ceramics studio, etc.) skew the query toward atmospheric, magazine-style results.
 If the page is task-oriented (pricing, contact, FAQ) prefer broader supporting imagery that matches the brand mood.`
+
+const outlinePlannerSystemPrompt = `You are the outline planner for Snaelda's structured site generator.
+Return JSON only, matching the supplied schema exactly.
+Produce the SITE OUTLINE only: siteName, siteGoal, a theme selection, and the page list with title, slug, goal, and SEO meta.
+Do NOT produce blocks here — block planning runs in a separate per-page step.
+
+Page rules:
+- Keep the page list tight, usually 1 to 5 pages, never more than 10.
+- Use "/" for the homepage slug. Use absolute path slugs like "/about" or "/contact" for other pages.
+- Each page's goal should be one sentence describing what that page must accomplish.
+- SEO title and description should be honest and search-friendly.
+
+Theme rules:
+- Stay within the supplied themeCatalog enums.
+- Reflect Snaelda's warm, crafted, ribbon-led brand direction.
+- If brand.primaryColor is set, prefer palettes whose accents harmonise with it.
+
+When currentOutline is provided this is a site reprompt: prefer keeping existing pages and slugs unless the new prompt explicitly asks for change. Pages dropped from the outline will be removed; pages added will be drafted fresh.`
+
+const pageContentSystemPrompt = `You are the page composer for Snaelda's structured site generator.
+Return JSON only, matching the supplied schema exactly.
+
+Pick an ordered list of 3-8 blocks for ONE page and produce each block's full props in a single pass.
+- Choose block types ONLY from the supplied allowedTypes; never invent a type. The cached site context lists what each type does.
+- The first block should set the page's tone (typically a hero or section header).
+- Each block's "props" must satisfy the per-type prop schema exactly, including structural choices (variant, layout, alignment, columns) — pick sensible defaults that match the page goal.
+- Plain text only inside copy fields: no HTML, no Markdown, no scripts, no embed code.
+- Match the page goal and the brand voice. Be specific, not generic. Avoid filler.
+- Do not duplicate sections the outline assigns to a different page.
+
+Repeater items (faq items, feature items, packages, etc.): write 3-6 unless the page goal demands more.
+Names, prices, hours, exact addresses: invent only if the prompt + interview answers give you enough; otherwise leave plausible placeholders the user can edit.`
+
+const clarifyingQuestionsSystemPrompt = `You are the intake-form planner for Snaelda's site generator.
+Return JSON only, matching the supplied schema exactly.
+Decide which 0 to 3 short questions would meaningfully improve the generated site if answered.
+Quality over quantity: ask only when an answer would reshape the output, not when you are merely curious.
+If the user's prompt already specifies a detail, do not ask about it again.
+If the prompt is already detailed enough to generate confidently, return zero questions.
+
+Question rules:
+- Keep each prompt short (under 90 characters) and answerable in under 5 seconds.
+- Prefer "single" kind with 3-4 concrete clickable options the user can pick at a glance. Use "multi" when several options can apply at once. Use "text" only when no reasonable shortlist exists.
+- Options must be specific, not generic ("Booking flow", "Contact form", "Neither" — not "Yes" / "No").
+- Avoid jargon and avoid asking about visual style unless the user volunteered an opinion in the prompt.
+
+Each question id should be a short kebab-case slug (e.g., "primary-conversion", "needs-collection", "vibe"). Helper text is optional and should clarify rare ambiguity; do not pad with marketing copy.`
+
+const pageChangeSetSystemPrompt = `You are the structured page-edit planner for Snaelda.
+Return JSON only, matching the supplied schema exactly.
+Decide which blocks on an existing website page to keep, edit, remove, or insert in response to the user's reprompt directive.
+Do not write block copy or props — only choose operations and short purposes. Copy is drafted separately per block.
+
+Operation rules:
+- "keep": copy the named block through unchanged. Use blockId. Use this aggressively — preserve any block the directive does not touch.
+- "edit": rewrite an existing block's copy in place. Use blockId and a short purpose (one sentence) describing the new direction. Never change the block's type.
+- "remove": drop an existing block. Use blockId. Use this only when the directive clearly removes the section.
+- "insert": add a new block. Use type (one of the supplied insertableTypes) and a short purpose. Place the operation at the position in the operations array where the new block should appear in the final page.
+
+Ordering: operations apply in order against the final block list. A page with three existing blocks reprompted to "add a contact section after the gallery" returns: keep(b0), keep(b1), insert(contact), keep(b2).
+
+Prefer the smallest change set that honors the directive. If the directive is ambiguous, lean toward keep + a single edit rather than a wholesale rewrite.
+Set changeSummary to one short sentence describing the diff in plain English.`
 
 const themeRegenerationSystemPrompt = `You are the structured theme selector for Snaelda.
 Return JSON only, matching the supplied schema exactly.

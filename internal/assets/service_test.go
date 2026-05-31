@@ -400,7 +400,7 @@ func snapshotReferencingAsset(assetIDs ...string) siteconfig.PublishedSnapshot {
 	return siteconfig.PublishedSnapshot{
 		SchemaVersion: siteconfig.SiteConfigVersionV1,
 		Site:          siteconfig.PublishedSite{ID: "site-1", Name: "Loom & Light", DefaultLocale: "en"},
-		Theme:         siteconfig.ThemePreset(siteconfig.ThemePaletteMeanerDark),
+		Theme:         siteconfig.ThemePreset(siteconfig.ThemePaletteAfterHours),
 		Navigation: siteconfig.NavigationConfig{
 			Primary: []siteconfig.NavigationItem{{Label: "Home", PageID: "page-home"}},
 		},
