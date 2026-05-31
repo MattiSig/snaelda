@@ -234,7 +234,6 @@ function AppLayout() {
           <div className="flex min-w-0 items-center gap-3">
             <Link
               to="/"
-              search={{ restore: '' }}
               className="flex size-10 items-center justify-center rounded-[12px] border border-border bg-[var(--surface-2)]"
               aria-label="Go to home"
             >

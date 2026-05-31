@@ -13,9 +13,13 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/')({
-  validateSearch: (search: Record<string, unknown>) => ({
-    restore: typeof search.restore === 'string' ? search.restore : '',
-  }),
+  validateSearch: (search: Record<string, unknown>) => {
+    const restore =
+      typeof search.restore === 'string' && search.restore.length > 0
+        ? search.restore
+        : undefined
+    return restore ? { restore } : {}
+  },
   loader: async () => {
     const hostedPublic = await getHostedPublicSiteContext()
     return {
@@ -140,7 +144,6 @@ function Home() {
         <div className="relative z-10 mx-auto flex w-full max-w-[1180px] items-center justify-between gap-4 px-6 pt-7 md:px-8 md:pt-10">
           <Link
             to="/"
-            search={{ restore: '' }}
             className="inline-flex items-center gap-2.5 text-[15px] font-semibold tracking-tight text-[var(--paper)]"
           >
             <img src="/logo.png" alt="" className="size-7 object-contain" />
@@ -274,7 +277,6 @@ function Home() {
         <div className="mx-auto flex w-full max-w-[1100px] flex-col items-start justify-between gap-6 md:flex-row md:items-center">
           <Link
             to="/"
-            search={{ restore: '' }}
             className="inline-flex items-center gap-2.5 text-[15px] font-semibold tracking-tight text-[var(--paper)]"
           >
             <img src="/logo.png" alt="" className="size-7 object-contain" />

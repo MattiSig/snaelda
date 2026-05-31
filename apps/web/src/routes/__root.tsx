@@ -109,7 +109,6 @@ function RootDocument({ children }: { children: ReactNode }) {
           <header className={topbar.shell}>
             <Link
               to="/"
-              search={{ restore: '' }}
               className={topbar.brand}
               activeOptions={{ exact: true }}
             >

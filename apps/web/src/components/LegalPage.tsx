@@ -45,7 +45,6 @@ export function LegalPage({ title, lastUpdated, intro, children }: LegalPageProp
         <header className="relative z-10 mx-auto flex w-full max-w-[920px] items-center justify-between gap-4 px-6 pt-10 md:px-8 md:pt-14">
           <Link
             to="/"
-            search={{ restore: '' }}
             className="inline-flex items-center gap-3 rounded-full border border-[color-mix(in_oklch,var(--border)_78%,transparent)] bg-[color-mix(in_oklch,var(--surface-2)_82%,transparent)] px-4 py-2 text-sm font-semibold text-[var(--paper-muted)] backdrop-blur-sm transition-colors hover:text-[var(--paper)]"
           >
             <img src="/logo.png" alt="" className="size-7 rounded-full object-contain" />
@@ -98,7 +97,7 @@ export function LegalPage({ title, lastUpdated, intro, children }: LegalPageProp
               <Link to="/privacy" className="hover:text-[var(--paper)]">
                 Privacy
               </Link>
-              <Link to="/" search={{ restore: '' }} className="hover:text-[var(--paper)]">
+              <Link to="/" className="hover:text-[var(--paper)]">
                 Home
               </Link>
             </nav>

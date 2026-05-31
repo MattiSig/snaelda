@@ -734,7 +734,6 @@ function ContentWorkspace({
       siteId,
       selectedBlockId: selectedBlock?.id ?? null,
       selectBlock: (blockId) => {
-        if (selectedPage) onSelectPage(selectedPage.id);
         onSelectBlock(blockId);
       },
       editField: onEditField,
@@ -753,8 +752,6 @@ function ContentWorkspace({
     [
       siteId,
       selectedBlock?.id,
-      selectedPage,
-      onSelectPage,
       onSelectBlock,
       onEditField,
       uploadedSiteAssets,
@@ -775,11 +772,13 @@ function ContentWorkspace({
     <InlineEditorProvider value={inlineContext}>
       <section
         className="flex min-h-0 flex-col overflow-auto bg-[var(--surface-1)]"
-        onClick={() => {
-          // Click outside selected block deselects.
-          if (selectedBlock?.id) {
-            onSelectBlock('');
-          }
+        onClick={(event) => {
+          // Click outside selected block deselects. Clicks inside any block
+          // wrapper are owned by that block's EditableBlockFrame.
+          if (!selectedBlock?.id) return;
+          if ((event.target as HTMLElement).closest('[data-canvas-block-id]'))
+            return;
+          onSelectBlock('');
         }}
         onDragEnd={handleDragEnd}
       >
