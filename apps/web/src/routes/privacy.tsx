@@ -20,7 +20,7 @@ function PrivacyPage() {
   return (
     <LegalPage
       title="Privacy Policy"
-      lastUpdated="27 May 2026"
+      lastUpdated="1 June 2026"
       intro={
         <p>
           This policy explains what personal data Snaelda collects, why we
@@ -32,9 +32,9 @@ function PrivacyPage() {
       <h2>1. Who is the controller</h2>
       <p>
         The controller of your personal data is{' '}
-        <strong>[Company Legal Name] AB</strong>, organisation number{' '}
-        <strong>[XXXXXX-XXXX]</strong>, registered at{' '}
-        <strong>[Registered Address, Postal Code, City, Sweden]</strong>{' '}
+        <strong>Mosi hub AB</strong>, organisation number{' '}
+        <strong>559577-7888</strong>, registered at{' '}
+        <strong>Vallstigen 4, 431 69 Mölndal, Sweden</strong>{' '}
         (&quot;Snaelda&quot;, &quot;we&quot;, &quot;us&quot;).
       </p>
       <p>
@@ -55,6 +55,11 @@ function PrivacyPage() {
           data about you or others if you choose to include it.
         </li>
         <li>
+          <strong>Published-site and form data:</strong> content displayed on
+          your published sites, form submissions sent through your sites, and
+          basic page-view data for site analytics.
+        </li>
+        <li>
           <strong>Billing data:</strong> subscription plan, billing email,
           invoice history, country, and the last four digits of your card.
           Full card numbers are handled by Stripe and never touch our servers.
@@ -69,8 +74,28 @@ function PrivacyPage() {
           messages you send us.
         </li>
       </ul>
+      <p>
+        Please do not submit sensitive personal data, credentials, confidential
+        secrets, medical information, financial account details, or other
+        regulated information unless you have a lawful basis and all required
+        rights to do so.
+      </p>
 
-      <h2>3. Why we use your data, and the legal basis</h2>
+      <h2>3. Customer sites and visitor data</h2>
+      <p>
+        For personal data in the content, forms, and visitor interactions on a
+        site you create with Snaelda, you are normally the controller and
+        Snaelda acts as your service provider or processor. This means you are
+        responsible for having a lawful basis, privacy notice, and any required
+        consents for the people whose data you collect through your site.
+      </p>
+      <p>
+        Snaelda remains the controller for account administration, billing,
+        security, platform logs, product emails, and other data we process for
+        our own business and legal purposes.
+      </p>
+
+      <h2>4. Why we use your data, and the legal basis</h2>
       <ul>
         <li>
           <strong>To provide the Service</strong> (drafting, editing,
@@ -86,6 +111,12 @@ function PrivacyPage() {
           <strong>To generate AI drafts</strong> by sending your prompts and
           related context to our AI provider (OpenAI) — performance of a
           contract (Art. 6(1)(b) GDPR).
+        </li>
+        <li>
+          <strong>To handle published-site forms and basic site analytics</strong>{' '}
+          for your workspace — performance of a contract (Art. 6(1)(b) GDPR)
+          and, where we protect the platform against abuse, legitimate interest
+          (Art. 6(1)(f) GDPR).
         </li>
         <li>
           <strong>To keep the Service secure and abuse-free</strong> (rate
@@ -105,7 +136,7 @@ function PrivacyPage() {
         </li>
       </ul>
 
-      <h2>4. Sharing and subprocessors</h2>
+      <h2>5. Sharing and subprocessors</h2>
       <p>
         We do not sell your personal data. We share it only with service
         providers that help us run Snaelda, under contracts that protect your
@@ -122,26 +153,32 @@ function PrivacyPage() {
           produce drafts and suggestions.
         </li>
         <li>
-          <strong>Hosting and storage providers</strong> used to run our
-          servers, database, and object storage (including{' '}
-          <strong>[Hosting Provider, e.g. Railway / AWS / Hetzner]</strong>).
+          <strong>Resend</strong> — transactional email delivery, such as login
+          links, billing notices, and account messages, when production email is
+          enabled.
         </li>
         <li>
-          <strong>Email delivery providers</strong> for transactional emails
-          such as login links, billing receipts, and account notices.
+          <strong>Infrastructure and storage providers</strong> — hosting,
+          database, and S3-compatible object storage used to run the Service,
+          store assets, and deliver published sites.
         </li>
         <li>
-          <strong>Analytics and error-monitoring providers</strong> we may use
-          to understand product usage and diagnose bugs.
+          <strong>Imagery providers such as Pexels</strong> — starter image
+          search and downloads where you use image suggestions.
         </li>
       </ul>
+      <p>
+        Snaelda&apos;s built-in site analytics are first-party and intentionally
+        lightweight. If we add third-party analytics or error-monitoring tools
+        that process personal data, we will update this policy.
+      </p>
       <p>
         We may also disclose personal data when required by law, court order,
         or to protect the rights, property, or safety of Snaelda, our users,
         or others.
       </p>
 
-      <h2>5. International transfers</h2>
+      <h2>6. International transfers</h2>
       <p>
         Some of our subprocessors are located outside the European Economic
         Area (EEA), for example in the United States. When we transfer
@@ -150,7 +187,7 @@ function PrivacyPage() {
         an adequacy decision where one applies.
       </p>
 
-      <h2>6. How long we keep your data</h2>
+      <h2>7. How long we keep your data</h2>
       <ul>
         <li>
           <strong>Account and content:</strong> for as long as your account is
@@ -167,12 +204,13 @@ function PrivacyPage() {
           months.
         </li>
         <li>
-          <strong>Backups:</strong> kept for a short rolling window, after
-          which deletions propagate.
+          <strong>Backups:</strong> kept in a short rolling window, normally no
+          more than 30 days where under our control, after which deletions
+          propagate.
         </li>
       </ul>
 
-      <h2>7. Your rights under the GDPR</h2>
+      <h2>8. Your rights under the GDPR</h2>
       <p>You have the right to:</p>
       <ul>
         <li>access the personal data we hold about you;</li>
@@ -210,7 +248,7 @@ function PrivacyPage() {
         , or with the supervisory authority of your country of residence.
       </p>
 
-      <h2>8. Cookies and similar technologies</h2>
+      <h2>9. Cookies and similar technologies</h2>
       <p>
         We use a small number of strictly necessary cookies (and equivalent
         local storage) to keep you signed in, remember your colour-mode
@@ -218,12 +256,17 @@ function PrivacyPage() {
         under EU rules.
       </p>
       <p>
+        You can block or delete cookies in your browser settings. If you block
+        strictly necessary cookies, login, billing, editing, publishing, or
+        security features may stop working.
+      </p>
+      <p>
         If we later add analytics or marketing cookies that require consent,
         we will ask for your consent first through a cookie banner and give
         you a way to change your choice.
       </p>
 
-      <h2>9. Security</h2>
+      <h2>10. Security</h2>
       <p>
         We take reasonable technical and organisational measures to protect
         your data, including encryption in transit, restricted internal
@@ -233,14 +276,14 @@ function PrivacyPage() {
         relevant authority as required by law.
       </p>
 
-      <h2>10. Children</h2>
+      <h2>11. Children</h2>
       <p>
         Snaelda is not directed to children under 16. If you believe a child
         has provided us with personal data, please contact us and we will
         delete it.
       </p>
 
-      <h2>11. Changes to this policy</h2>
+      <h2>12. Changes to this policy</h2>
       <p>
         We may update this policy as the Service evolves. If we make material
         changes, we will notify you through the Service or by email before
@@ -248,12 +291,12 @@ function PrivacyPage() {
         you when the current version was published.
       </p>
 
-      <h2>12. Contact</h2>
+      <h2>13. Contact</h2>
       <p>
         Privacy questions:{' '}
         <a href="mailto:privacy@snaelda.io">privacy@snaelda.io</a>
         <br />
-        Postal address: <strong>[Registered Address, Postal Code, City, Sweden]</strong>
+        Postal address: <strong>Vallstigen 4, 431 69 Mölndal, Sweden</strong>
       </p>
     </LegalPage>
   )

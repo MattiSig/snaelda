@@ -20,7 +20,7 @@ function TermsPage() {
   return (
     <LegalPage
       title="Terms of Use"
-      lastUpdated="27 May 2026"
+      lastUpdated="1 June 2026"
       intro={
         <p>
           These terms explain what you can expect from Snaelda and what we expect
@@ -31,10 +31,10 @@ function TermsPage() {
     >
       <h2>1. About these terms</h2>
       <p>
-        Snaelda is provided by <strong>[Company Legal Name] AB</strong>,
+        Snaelda is provided by <strong>Mosi hub AB</strong>,
         a company registered in Sweden under organisation number{' '}
-        <strong>[XXXXXX-XXXX]</strong>, with its registered address at{' '}
-        <strong>[Registered Address, Postal Code, City, Sweden]</strong>{' '}
+        <strong>559577-7888</strong>, with its registered address at{' '}
+        <strong>Vallstigen 4, 431 69 Mölndal, Sweden</strong>{' '}
         (&quot;Snaelda&quot;, &quot;we&quot;, &quot;us&quot;).
       </p>
       <p>
@@ -52,9 +52,17 @@ function TermsPage() {
         layout, structure, copy, and imagery based on prompts you provide.
       </p>
       <p>
+        The Service is intended mainly for business and professional use by
+        solo operators and small organisations. If you use the Service as a
+        consumer, nothing in these Terms limits the mandatory consumer rights
+        that apply to you.
+      </p>
+      <p>
         We may change, add, remove, or improve features at any time. We try not
         to break things that work, but we do not guarantee that any particular
-        feature will be available forever.
+        feature will be available forever, or that the Service will meet any
+        uptime, backup, recovery, or performance level unless we expressly say
+        so in writing.
       </p>
 
       <h2>3. Your account</h2>
@@ -127,6 +135,10 @@ function TermsPage() {
           it does not infringe anyone&apos;s rights, violate any law, or
           breach these Terms.
         </li>
+        <li>
+          it does not include sensitive personal data, secrets, credentials, or
+          information that you are not allowed to upload, process, or publish.
+        </li>
       </ul>
 
       <h2>6. AI-generated content</h2>
@@ -143,6 +155,12 @@ function TermsPage() {
         <li>
           Do not rely on AI output for legal, medical, financial, safety, or
           other professional advice.
+        </li>
+        <li>
+          Do not submit prompts, files, or site content containing sensitive
+          personal data, confidential business secrets, credentials, or regulated
+          information unless you have a lawful basis and all required rights to
+          do so.
         </li>
         <li>
           You are responsible for making sure any AI-generated images, copy, or
@@ -163,6 +181,10 @@ function TermsPage() {
           publish or store content that is illegal, infringing, defamatory,
           hateful, harassing, sexually exploitative of minors, or that promotes
           violence or self-harm;
+        </li>
+        <li>
+          publish or store content that unlawfully reveals personal data,
+          confidential information, trade secrets, or credentials;
         </li>
         <li>
           impersonate any person or entity, or misrepresent your affiliation
@@ -199,7 +221,11 @@ function TermsPage() {
         You can stop using the Service and delete your account at any time. We
         may suspend or terminate your access if you materially breach these
         Terms, if we are required to do so by law, or if your use poses a
-        security or legal risk to us or to other users. Where reasonable, we
+        security, operational, reputational, or legal risk to us, visitors,
+        infrastructure providers, or other users. We may immediately disable,
+        unpublish, or remove a site where we reasonably believe it involves
+        phishing, malware, spam, illegal content, infringement, abuse, a
+        security incident, or a credible legal complaint. Where reasonable, we
         will give you notice and a chance to fix the issue first.
       </p>
       <p>
@@ -221,15 +247,23 @@ function TermsPage() {
 
       <h2>11. Limitation of liability</h2>
       <p>
-        To the maximum extent permitted by law, Snaelda is not liable for any
+        If you use the Service for business or professional purposes, then to
+        the maximum extent permitted by law Snaelda is not liable for any
         indirect, incidental, special, consequential, or punitive damages, or
         for any loss of profits, revenue, data, goodwill, or business
         opportunities, arising out of or related to your use of the Service.
       </p>
       <p>
-        Our total liability to you for all claims relating to the Service in
-        any 12-month period is limited to the greater of (a) the amounts you
-        actually paid us for the Service in that period and (b) EUR 100.
+        For business or professional users, our total liability for all claims
+        relating to the Service in any 12-month period is limited to the greater
+        of (a) the amounts you actually paid us for the Service in that period
+        and (b) EUR 100.
+      </p>
+      <p>
+        If you use the Service as a consumer, these limitations apply only to
+        the extent permitted by mandatory consumer law. They do not limit your
+        rights for defective digital services, non-performance, or other rights
+        that cannot be excluded or limited by contract.
       </p>
       <p>
         Nothing in these Terms limits liability for fraud, gross negligence,
@@ -239,10 +273,10 @@ function TermsPage() {
 
       <h2>12. Indemnity</h2>
       <p>
-        You agree to indemnify and hold Snaelda harmless from third-party
-        claims, damages, and reasonable legal costs that arise from Your
-        Content, your published sites, or your breach of these Terms or
-        applicable law.
+        If you use the Service for business or professional purposes, you agree
+        to indemnify and hold Snaelda harmless from third-party claims, damages,
+        and reasonable legal costs that arise from Your Content, your published
+        sites, or your breach of these Terms or applicable law.
       </p>
 
       <h2>13. Changes to these Terms</h2>
@@ -264,16 +298,19 @@ function TermsPage() {
         If you are a consumer resident in the EU, this does not deprive you of
         the protection afforded to you by mandatory provisions of the law of
         your country of residence, and you may also bring proceedings in the
-        courts of that country. EU consumers may also use the European
-        Commission&apos;s online dispute resolution platform at{' '}
+        courts of that country. If you are a consumer in Sweden, you may submit
+        a complaint to the Swedish National Board for Consumer Disputes
+        (Allmänna reklamationsnämnden, ARN) at{' '}
         <a
-          href="https://ec.europa.eu/consumers/odr"
+          href="https://www.arn.se"
           target="_blank"
           rel="noopener noreferrer"
         >
-          ec.europa.eu/consumers/odr
+          arn.se
         </a>
-        .
+        . We are not obliged to participate in alternative dispute resolution
+        unless required by law, but we will consider consumer complaints in good
+        faith.
       </p>
 
       <h2>15. Contact</h2>
