@@ -16,6 +16,7 @@ import {
   Rocket,
   Search,
   Settings as SettingsIcon,
+  Sparkles,
 } from "lucide-react";
 import { SiteDraftRenderer } from "@/components/SiteDraftRenderer";
 import {
@@ -33,6 +34,7 @@ import {
   type ImageApplyResponse,
   type SiteDraft,
 } from "@/lib/api";
+import { buildDraftAssetURL } from "@/lib/assets";
 import {
   buildCanonicalBlockOrder,
   draftToEditorCanvasPage,
@@ -47,6 +49,7 @@ type DraftBlock = SiteDraft["pages"][number]["blocks"][number];
 
 export type BuilderSection =
   | "content"
+  | "prompt"
   | "pages"
   | "collections"
   | "theme"
@@ -69,6 +72,14 @@ const sectionMeta: Record<
     description:
       "Click any text or image to edit it. Use the + between blocks to insert a new one.",
   },
+  prompt: {
+    label: "Prompt",
+    icon: Sparkles,
+    eyebrow: "Prompt",
+    title: "Reweave the draft from a fresh prompt",
+    description:
+      "Replace the whole site or a single page from a new prompt. Every rebuild keeps a checkpoint, so you can restore the previous draft.",
+  },
   pages: {
     label: "Pages",
     icon: FileText,
@@ -86,12 +97,12 @@ const sectionMeta: Record<
       "Create structured lists like services, projects, or menu items, then publish entries from one place.",
   },
   theme: {
-    label: "Theme",
+    label: "Theme & brand",
     icon: Palette,
-    eyebrow: "Theme",
-    title: "Tune the visual system",
+    eyebrow: "Theme & brand",
+    title: "Tune the brand and visual system",
     description:
-      "Palette, type, spacing, radius, buttons, and image treatment. Every change reflects in the preview beside.",
+      "Business name, primary color, logo, palette, type, spacing, radius, buttons, and image treatment. Every change reflects in the preview beside.",
   },
   seo: {
     label: "SEO",
@@ -137,14 +148,15 @@ const sectionMeta: Record<
     label: "Settings",
     icon: SettingsIcon,
     eyebrow: "Settings",
-    title: "Site identity, brand, and rebuild",
+    title: "Site identity",
     description:
-      "Rename, reslug, set brand identity, or rebuild the whole site from a fresh prompt. Danger lives at the bottom.",
+      "Rename, reslug, or delete this draft. Brand lives in Theme & brand. Rebuilds live in Prompt.",
   },
 };
 
 const orderedSections: BuilderSection[] = [
   "content",
+  "prompt",
   "pages",
   "collections",
   "theme",
@@ -224,6 +236,7 @@ type PuckBuilderProps = {
   onReorderBlocks: (blockIds: string[]) => Promise<void>;
 
   pagesPanelContent: ReactNode;
+  promptPanelContent: ReactNode;
   collectionsPanelContent: ReactNode;
   themePanelContent: ReactNode;
   seoPanelContent: ReactNode;
@@ -267,6 +280,7 @@ export function PuckBuilder({
   onMoveBlock,
   onReorderBlocks,
   pagesPanelContent,
+  promptPanelContent,
   collectionsPanelContent,
   themePanelContent,
   seoPanelContent,
@@ -294,12 +308,23 @@ export function PuckBuilder({
     sectionsWithPagePicker.has(section) && draftPages.length > 0;
   const showPreviewPane = sectionsWithPreview.has(section);
 
+  const brandLogoAsset = draft.brand.logo?.assetId
+    ? uploadedSiteAssets.find((asset) => asset.id === draft.brand.logo?.assetId)
+    : null;
+  const brandLogoSrc = brandLogoAsset
+    ? buildDraftAssetURL(brandLogoAsset.id)
+    : null;
+
   return (
     <div className="grid min-h-0 gap-4 lg:grid-cols-[224px_minmax(0,1fr)]">
       <LeftRail
         active={section}
         onSelect={handleSelectSection}
         siteName={draft.site.name}
+        brandBusinessName={draft.brand.businessName}
+        brandPrimaryColor={draft.brand.primaryColor}
+        brandLogoSrc={brandLogoSrc}
+        brandLogoAlt={draft.brand.logo?.alt ?? ""}
         isPublishing={isPublishing}
       />
 
@@ -353,23 +378,25 @@ export function PuckBuilder({
           ) : (
             <AdminWorkspace
               controls={
-                section === "pages"
-                  ? pagesPanelContent
-                  : section === "collections"
-                    ? collectionsPanelContent
-                    : section === "theme"
-                      ? themePanelContent
-                      : section === "seo"
-                        ? seoPanelContent
-                        : section === "navigation"
-                          ? navigationPanelContent
-                          : section === "assets"
-                            ? assetsPanelContent
-                            : section === "inquiries"
-                              ? inquiriesPanelContent
-                              : section === "publish"
-                                ? publishPanelContent
-                                : settingsPanelContent
+                section === "prompt"
+                  ? promptPanelContent
+                  : section === "pages"
+                    ? pagesPanelContent
+                    : section === "collections"
+                      ? collectionsPanelContent
+                      : section === "theme"
+                        ? themePanelContent
+                        : section === "seo"
+                          ? seoPanelContent
+                          : section === "navigation"
+                            ? navigationPanelContent
+                            : section === "assets"
+                              ? assetsPanelContent
+                              : section === "inquiries"
+                                ? inquiriesPanelContent
+                                : section === "publish"
+                                  ? publishPanelContent
+                                  : settingsPanelContent
               }
               preview={
                 showPreviewPane ? (
@@ -393,23 +420,53 @@ function LeftRail({
   active,
   onSelect,
   siteName,
+  brandBusinessName,
+  brandPrimaryColor,
+  brandLogoSrc,
+  brandLogoAlt,
   isPublishing,
 }: {
   active: BuilderSection;
   onSelect: (next: BuilderSection) => void;
   siteName: string;
+  brandBusinessName: string;
+  brandPrimaryColor: string;
+  brandLogoSrc: string | null;
+  brandLogoAlt: string;
   isPublishing: boolean;
 }) {
+  const displayName = brandBusinessName?.trim() || siteName;
+  const initial = (displayName || "S").trim().charAt(0).toUpperCase();
   return (
     <aside className="rounded-[14px] border border-border bg-[var(--surface-1)] max-lg:hidden">
-      <div className="border-b border-border px-4 py-4">
-        <p className={text.eyebrow}>Editing</p>
-        <p
-          className="mt-1 truncate text-[0.95rem] font-extrabold text-[var(--paper)]"
-          title={siteName}
-        >
-          {siteName}
-        </p>
+      <div className="flex items-center gap-3 border-b border-border px-4 py-4">
+        {brandLogoSrc ? (
+          <img
+            src={brandLogoSrc}
+            alt={brandLogoAlt || `${displayName} logo`}
+            className="size-10 shrink-0 rounded-[10px] border border-border bg-[var(--surface-2)] object-contain p-1"
+          />
+        ) : (
+          <span
+            aria-hidden="true"
+            className="grid size-10 shrink-0 place-items-center rounded-[10px] border border-border text-sm font-black"
+            style={{
+              background: brandPrimaryColor || "var(--surface-2)",
+              color: brandPrimaryColor ? "#fff" : "var(--paper)",
+            }}
+          >
+            {initial}
+          </span>
+        )}
+        <div className="grid min-w-0 gap-0.5">
+          <p className={text.eyebrow}>Editing</p>
+          <p
+            className="truncate text-[0.95rem] font-extrabold text-[var(--paper)]"
+            title={displayName}
+          >
+            {displayName}
+          </p>
+        </div>
       </div>
       <nav className="grid gap-1 p-2" aria-label="Site builder sections">
         {orderedSections.map((id) => {

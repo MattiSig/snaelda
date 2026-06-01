@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { ArrowUpRight, CreditCard, Sparkles } from 'lucide-react'
+import { ArrowUpRight, Check, CreditCard, Minus } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -13,6 +14,7 @@ import {
   type BillingState,
   type BuilderSession,
 } from '@/lib/api'
+import { ONCE_OVER_PRICE_USD, PLANS, type PlanPricing } from '@/lib/billing-plans'
 import { emptyState, form, paddedPanel, text } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 
@@ -77,7 +79,7 @@ function BillingPage() {
 
     try {
       const response = await createBillingCheckout({ plan })
-      window.location.href = response.url
+      window.location.assign(response.url)
     } catch (error) {
       setErrorMessage(error instanceof APIError ? error.message : 'Could not start checkout')
       setIsStartingCheckout('')
@@ -91,7 +93,7 @@ function BillingPage() {
 
     try {
       const response = await createBillingPortal()
-      window.location.href = response.url
+      window.location.assign(response.url)
     } catch (error) {
       setErrorMessage(error instanceof APIError ? error.message : 'Could not open billing portal')
       setIsOpeningPortal(false)
@@ -105,7 +107,7 @@ function BillingPage() {
 
     try {
       const response = await createBillingCheckout({ purchaseType: 'once_over' })
-      window.location.href = response.url
+      window.location.assign(response.url)
     } catch (error) {
       setOnceOverErrorMessage(error instanceof APIError ? error.message : 'Could not start the once-over checkout')
       setIsStartingOnceOverCheckout(false)
@@ -199,23 +201,26 @@ function BillingPage() {
           </p>
         </div>
 
-        <div className="mt-6 grid gap-3 lg:grid-cols-2">
-          <PlanCard
-            name="Basic"
-            accent="var(--thread-gold)"
-            description="The production path for a small business site and its next rounds of edits."
-            ctaLabel={isStartingCheckout === 'basic' ? 'Opening checkout…' : 'Choose Basic'}
-            disabled={isStartingCheckout !== ''}
-            onSelect={() => handleCheckout('basic')}
-          />
-          <PlanCard
-            name="Pro"
-            accent="var(--thread-teal)"
-            description="A roomier plan when you expect multiple sites or heavier iteration."
-            ctaLabel={isStartingCheckout === 'pro' ? 'Opening checkout…' : 'Choose Pro'}
-            disabled={isStartingCheckout !== ''}
-            onSelect={() => handleCheckout('pro')}
-          />
+        <div className="mt-6 grid gap-4 lg:grid-cols-2">
+          {PLANS.map((plan) => {
+            const isCurrent = entitlement.plan === plan.id && entitlement.subscriptionLive
+            const isLoading = isStartingCheckout === plan.id
+            return (
+              <PlanCard
+                key={plan.id}
+                plan={plan}
+                ctaLabel={
+                  isCurrent
+                    ? 'Current plan'
+                    : isLoading
+                      ? 'Opening checkout…'
+                      : `Choose ${plan.name}`
+                }
+                disabled={isCurrent || isStartingCheckout !== ''}
+                onSelect={() => handleCheckout(plan.id)}
+              />
+            )
+          })}
         </div>
 
         {errorMessage ? <p className={cn(text.error, 'mt-4')}>{errorMessage}</p> : null}
@@ -251,7 +256,20 @@ function BillingPage() {
             <UsageRow label="Asset storage" value={storageLabel} />
             <UsageRow
               label="Custom domains"
-              value={entitlement.customDomainsEnabled ? 'Included' : 'Upgrade required'}
+              value={entitlement.customDomainsEnabled ? 'Included' : 'Upgrade to unlock'}
+              action={
+                !entitlement.customDomainsEnabled ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleCheckout('basic')}
+                    disabled={isStartingCheckout !== ''}
+                  >
+                    Upgrade
+                  </Button>
+                ) : undefined
+              }
             />
           </div>
 
@@ -284,15 +302,9 @@ function BillingPage() {
 
             <div className="grid gap-3 md:grid-cols-3">
               <StatusTile
-                label="Status"
-                value={humanOnceOverStatus(onceOver.status)}
-                hint={
-                  onceOverSubmittedLabel
-                    ? `Ready since ${onceOverSubmittedLabel}`
-                    : onceOverPaidLabel
-                      ? `Purchased ${onceOverPaidLabel}`
-                      : 'No request yet'
-                }
+                label="Price"
+                value={`$${ONCE_OVER_PRICE_USD}`}
+                hint="One-time charge. Buy as many passes as you like."
               />
               <StatusTile
                 label="Scope"
@@ -306,12 +318,26 @@ function BillingPage() {
               />
             </div>
 
+            <div className="rounded-[12px] border border-border bg-[var(--surface-2)] px-4 py-3">
+              <p className="flex items-center justify-between gap-3 text-sm">
+                <span className={text.label}>Status</span>
+                <span className="font-semibold text-[var(--paper)]">
+                  {humanOnceOverStatus(onceOver.status)}
+                  {onceOverSubmittedLabel
+                    ? ` · ready since ${onceOverSubmittedLabel}`
+                    : onceOverPaidLabel
+                      ? ` · purchased ${onceOverPaidLabel}`
+                      : ''}
+                </span>
+              </p>
+            </div>
+
             {onceOver.status === 'none' || onceOver.status === 'delivered' ? (
               <div className={emptyState}>
                 <p className={text.p}>
                   {onceOver.status === 'delivered'
                     ? 'This workspace already has a delivered pass. You can buy another if you want a fresh review after new edits.'
-                    : 'No once-over is attached to this workspace yet.'}
+                    : 'Fill in the intake on the right to see what reviewers will read. Buy when you are ready.'}
                 </p>
                 <div className="mt-4">
                   <Button
@@ -319,7 +345,11 @@ function BillingPage() {
                     onClick={handleOnceOverCheckout}
                     disabled={isStartingOnceOverCheckout}
                   >
-                    {isStartingOnceOverCheckout ? 'Opening checkout…' : onceOver.status === 'delivered' ? 'Buy another once-over' : 'Buy a once-over'}
+                    {isStartingOnceOverCheckout
+                      ? 'Opening checkout…'
+                      : onceOver.status === 'delivered'
+                        ? `Buy another once-over · $${ONCE_OVER_PRICE_USD}`
+                        : `Buy once-over · $${ONCE_OVER_PRICE_USD}`}
                     <ArrowUpRight className="size-4" />
                   </Button>
                 </div>
@@ -360,7 +390,7 @@ function BillingPage() {
                 value={onceOverBusiness}
                 onChange={(event) => setOnceOverBusiness(event.target.value)}
                 placeholder="Hand-dyed yarn for knitters who want richer color in their projects."
-                disabled={onceOver.status === 'none' || onceOver.status === 'delivered'}
+                disabled={isSavingOnceOver}
               />
             </div>
 
@@ -374,7 +404,7 @@ function BillingPage() {
                 value={onceOverVisitor}
                 onChange={(event) => setOnceOverVisitor(event.target.value)}
                 placeholder="A knitter deciding whether this is the right indie dye studio to trust."
-                disabled={onceOver.status === 'none' || onceOver.status === 'delivered'}
+                disabled={isSavingOnceOver}
               />
             </div>
 
@@ -388,7 +418,7 @@ function BillingPage() {
                 value={onceOverOutcome}
                 onChange={(event) => setOnceOverOutcome(event.target.value)}
                 placeholder="Get the first yarn order."
-                disabled={onceOver.status === 'none' || onceOver.status === 'delivered'}
+                disabled={isSavingOnceOver}
               />
             </div>
 
@@ -402,7 +432,7 @@ function BillingPage() {
                 value={onceOverStuckOn}
                 onChange={(event) => setOnceOverStuckOn(event.target.value)}
                 placeholder="The proof is buried and the homepage still feels generic."
-                disabled={onceOver.status === 'none' || onceOver.status === 'delivered'}
+                disabled={isSavingOnceOver}
               />
             </div>
 
@@ -427,6 +457,11 @@ function BillingPage() {
               </Button>
             </div>
 
+            {onceOver.status === 'none' || onceOver.status === 'delivered' ? (
+              <p className={cn(form.hint, 'mt-1')}>
+                Saving is enabled after you buy a once-over. Use the field above to preview what the reviewer will read.
+              </p>
+            ) : null}
             {onceOver.status === 'awaiting_intake' ? (
               <p className={cn(form.hint, 'mt-1')}>
                 Buying the once-over reserves the pass. The review clock starts after you mark the intake ready.
@@ -445,35 +480,82 @@ function BillingPage() {
 }
 
 function PlanCard({
-  name,
-  accent,
-  description,
+  plan,
   ctaLabel,
   disabled,
   onSelect,
 }: {
-  name: string
-  accent: string
-  description: string
+  plan: PlanPricing
   ctaLabel: string
   disabled: boolean
   onSelect: () => void
 }) {
   return (
-    <article className="grid gap-4 rounded-[16px] border border-border bg-[var(--surface-2)] p-5">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-lg font-black text-[var(--paper)]">{name}</p>
-          <p className="mt-1 text-sm text-[var(--paper-muted)]">{description}</p>
+    <article
+      className={cn(
+        'grid gap-5 rounded-[16px] border bg-[var(--surface-2)] p-6',
+        plan.isRecommended
+          ? 'border-[color-mix(in_oklch,var(--thread-gold)_55%,var(--border))] shadow-[0_0_0_1px_color-mix(in_oklch,var(--thread-gold)_22%,transparent)]'
+          : 'border-border',
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="grid gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-lg font-black text-[var(--paper)]">{plan.name}</p>
+            {plan.isRecommended ? (
+              <span className="rounded-full border border-[color-mix(in_oklch,var(--thread-gold)_70%,var(--border))] bg-[color-mix(in_oklch,var(--thread-gold)_18%,var(--surface-1))] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--paper)]">
+                Recommended
+              </span>
+            ) : null}
+          </div>
+          <p className="text-sm text-[var(--paper-muted)]">{plan.tagline}</p>
         </div>
-        <span
-          className="flex size-11 items-center justify-center rounded-full"
-          style={{ background: `color-mix(in oklch, ${accent} 22%, var(--surface-1))` }}
-        >
-          <Sparkles className="size-5 text-[var(--paper)]" />
-        </span>
       </div>
-      <Button type="button" onClick={onSelect} disabled={disabled}>
+      <div className="grid gap-1">
+        <p className="flex items-baseline gap-2">
+          <span className="text-[2.4rem] font-black leading-none tabular-nums text-[var(--paper)]">
+            ${plan.priceMonthly}
+          </span>
+          <span className="text-sm text-[var(--paper-muted)]">/ month</span>
+        </p>
+        <p className="text-xs text-[var(--paper-muted)] tabular-nums">
+          ${plan.annualMonthlyEquivalent} / month billed yearly
+        </p>
+      </div>
+      <ul className="grid gap-2 text-sm">
+        {plan.features.map((feature) => (
+          <li key={feature.label} className="flex items-center gap-2">
+            {feature.included ? (
+              <Check
+                className="size-4 shrink-0"
+                style={{ color: plan.accent }}
+                aria-hidden="true"
+              />
+            ) : (
+              <Minus
+                className="size-4 shrink-0 text-[var(--paper-muted)]"
+                aria-hidden="true"
+              />
+            )}
+            <span
+              className={cn(
+                feature.included
+                  ? 'text-[var(--paper)]'
+                  : 'text-[var(--paper-muted)] line-through',
+              )}
+            >
+              {feature.label}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <Button
+        type="button"
+        onClick={onSelect}
+        disabled={disabled}
+        variant={plan.isRecommended ? 'default' : 'outline'}
+      >
         {ctaLabel}
         <ArrowUpRight className="size-4" />
       </Button>
@@ -481,11 +563,22 @@ function PlanCard({
   )
 }
 
-function UsageRow({ label, value }: { label: string; value: string }) {
+function UsageRow({
+  label,
+  value,
+  action,
+}: {
+  label: string
+  value: string
+  action?: ReactNode
+}) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-[12px] border border-border bg-[color-mix(in_oklch,var(--surface-1)_42%,transparent)] px-4 py-3">
       <p className={text.label}>{label}</p>
-      <p className="text-right text-sm font-semibold text-[var(--paper)]">{value}</p>
+      <div className="flex items-center gap-3">
+        <p className="text-right text-sm font-semibold text-[var(--paper)]">{value}</p>
+        {action}
+      </div>
     </div>
   )
 }

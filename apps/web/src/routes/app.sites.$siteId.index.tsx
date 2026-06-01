@@ -110,6 +110,7 @@ const themeRegenerateSteps: GenerationProgressItem[] = [
 
 const validSections: BuilderSection[] = [
   "content",
+  "prompt",
   "pages",
   "collections",
   "theme",
@@ -126,6 +127,8 @@ const legacyPanelToSection: Record<string, BuilderSection> = {
   site: "settings",
   theme: "theme",
   publish: "publish",
+  reprompt: "prompt",
+  rebuild: "prompt",
 };
 
 export const Route = createFileRoute("/app/sites/$siteId/")({
@@ -183,6 +186,10 @@ function SiteDetail() {
   const [assetInputKey, setAssetInputKey] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingSite, setIsSavingSite] = useState(false);
+  const [isSavingBrand, setIsSavingBrand] = useState(false);
+  const [brandErrorMessage, setBrandErrorMessage] = useState("");
+  const [brandStatusMessage, setBrandStatusMessage] = useState("");
+  const [deleteConfirmSlug, setDeleteConfirmSlug] = useState("");
   const [isCreatingPage, setIsCreatingPage] = useState(false);
   const [isSavingPage, setIsSavingPage] = useState(false);
   const [isDeletingPage, setIsDeletingPage] = useState(false);
@@ -231,6 +238,7 @@ function SiteDetail() {
   const [isUploadingAsset, setIsUploadingAsset] = useState(false);
   const [isRepromptingSite, setIsRepromptingSite] = useState(false);
   const [isRepromptingPage, setIsRepromptingPage] = useState(false);
+  const [isConfirmingSiteRebuild, setIsConfirmingSiteRebuild] = useState(false);
   const [repromptHistory, setRepromptHistory] = useState<
     RepromptHistoryRecord[]
   >([]);
@@ -487,6 +495,27 @@ function SiteDetail() {
       const response = await updateSite(siteId, {
         name,
         slug,
+      });
+      setSiteStatusMessage("Site details saved.");
+      applyDraftUpdate(response.draft, selectedPage?.id, selectedBlock?.id);
+    } catch (error) {
+      setSiteErrorMessage(
+        error instanceof APIError ? error.message : "Could not save site",
+      );
+    } finally {
+      setIsSavingSite(false);
+    }
+  }
+
+  async function handleSaveBrand(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsSavingBrand(true);
+    setBrandErrorMessage("");
+    setBrandStatusMessage("");
+    clearBlockedAction();
+
+    try {
+      const response = await updateSite(siteId, {
         brand: {
           businessName: brandBusinessName.trim(),
           primaryColor: brandPrimaryColor.trim(),
@@ -500,14 +529,14 @@ function SiteDetail() {
             : {}),
         },
       });
-      setSiteStatusMessage("Site details saved.");
+      setBrandStatusMessage("Brand saved.");
       applyDraftUpdate(response.draft, selectedPage?.id, selectedBlock?.id);
     } catch (error) {
-      setSiteErrorMessage(
-        error instanceof APIError ? error.message : "Could not save site",
+      setBrandErrorMessage(
+        error instanceof APIError ? error.message : "Could not save brand",
       );
     } finally {
-      setIsSavingSite(false);
+      setIsSavingBrand(false);
     }
   }
 
@@ -1314,6 +1343,7 @@ function SiteDetail() {
       await Promise.all([refreshDraftState(), refreshRepromptHistoryState()]);
       setSiteReprompt("");
       setPageReprompt("");
+      setIsConfirmingSiteRebuild(false);
       setRepromptHistoryScope("site");
       setRepromptStatusMessage("Site regenerated. Review the diff or restore the earlier checkpoint from history.");
     } catch (error) {
@@ -2567,18 +2597,201 @@ function SiteDetail() {
     </div>
   );
 
-  const settingsPanelContent = (
+  const promptPanelContent = (
     <div className="grid gap-4">
       {billingPromptNotice}
       <section className={workspaceSection}>
         <div>
-          <p className={text.eyebrow}>Generation brief</p>
+          <p className={text.eyebrow}>Reweave</p>
           <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
-            Review the current prompt baseline
+            Rebuild from a fresh prompt
           </h2>
           <p className={cn(text.p, "mt-2 text-sm")}>
-            This is the stored brief and summary behind the current draft
-            direction. Use it as the reference point before replacing the site.
+            Replace the whole site or just the selected page. Every rebuild keeps a
+            checkpoint with a diff, so you can inspect changes before keeping them.
+          </p>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-2">
+          <form className={form.grid} onSubmit={handleSiteReprompt}>
+            <label htmlFor="site-reprompt" className={text.label}>
+              Whole site prompt
+            </label>
+            <Textarea
+              id="site-reprompt"
+              rows={4}
+              value={siteReprompt}
+              placeholder="Make the site warmer, tighten the copy, add pricing, and lean harder into workshops."
+              onChange={(event) => {
+                setSiteReprompt(event.target.value);
+                setIsConfirmingSiteRebuild(false);
+              }}
+            />
+            <p className={form.hint}>
+              Regenerates every page. Brand, slug, and history are kept.
+            </p>
+            {isConfirmingSiteRebuild ? (
+              <div className="grid gap-3 rounded-[10px] border border-[color-mix(in_oklch,var(--thread-gold)_55%,var(--border))] bg-[color-mix(in_oklch,var(--thread-gold)_10%,var(--surface-1))] p-3">
+                <p className="text-sm font-bold text-[var(--paper)]">
+                  Rebuild every page from this prompt?
+                </p>
+                <p className="text-sm text-[var(--paper-muted)]">
+                  The current draft is saved as a checkpoint. You can restore it from
+                  history below if the new direction misses.
+                </p>
+                <div className={actions.row}>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={isRepromptingSite || siteReprompt.trim() === ""}
+                  >
+                    {isRepromptingSite
+                      ? "Rebuilding site..."
+                      : "Confirm: rebuild every page"}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setIsConfirmingSiteRebuild(false)}
+                    disabled={isRepromptingSite}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                disabled={isRepromptingSite || siteReprompt.trim() === ""}
+                onClick={() => setIsConfirmingSiteRebuild(true)}
+              >
+                Rebuild whole site
+              </Button>
+            )}
+          </form>
+
+          <form className={form.grid} onSubmit={handlePageReprompt}>
+            <label htmlFor="page-reprompt" className={text.label}>
+              {selectedPage
+                ? `${selectedPage.title} page prompt`
+                : "Page prompt"}
+            </label>
+            <Textarea
+              id="page-reprompt"
+              rows={4}
+              value={pageReprompt}
+              placeholder="Turn this page into a tighter pricing overview with clearer package framing and fewer sections."
+              onChange={(event) => setPageReprompt(event.target.value)}
+            />
+            <p className={form.hint}>
+              Regenerates only the selected page while keeping its route and
+              place in the draft.
+            </p>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={
+                !selectedPage ||
+                isRepromptingPage ||
+                pageReprompt.trim() === ""
+              }
+            >
+              {isRepromptingPage ? "Rebuilding page..." : "Rebuild page"}
+            </Button>
+          </form>
+        </div>
+
+        {isRepromptingSite || isRepromptingPage ? (
+          <GenerationProgressCard
+            eyebrow="Prompt iteration"
+            title={
+              repromptProgressScope === "page"
+                ? "Rebuilding the selected page..."
+                : "Rebuilding the site direction..."
+            }
+            description={
+              repromptProgressScope === "page"
+                ? "Snaelda is replacing the selected page while keeping its route and draft position."
+                : "Snaelda is rewriting the broader draft while keeping the current site identity."
+            }
+            prompt={
+              repromptProgressScope === "page" ? pageReprompt : siteReprompt
+            }
+            steps={
+              repromptProgressScope === "page"
+                ? pageRepromptSteps
+                : siteRepromptSteps
+            }
+            activeStep={repromptProgressStep}
+            activeTotal={repromptProgressStepTotal}
+            showSkeleton={
+              repromptProgressStep === "plan.blocks" ||
+              repromptProgressStep === "copy.write" ||
+              repromptProgressStep === "validate.repair" ||
+              repromptProgressStep === "persist"
+            }
+          />
+        ) : null}
+
+        {repromptErrorMessage ? (
+          <p className={text.error}>{repromptErrorMessage}</p>
+        ) : null}
+        {repromptStatusMessage ? (
+          <p className={text.success}>{repromptStatusMessage}</p>
+        ) : null}
+      </section>
+
+      <section className={workspaceSection}>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className={text.eyebrow}>History</p>
+            <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
+              Recent rebuilds
+            </h2>
+            <p className={cn(text.p, "mt-2 text-sm")}>
+              Every rebuild leaves a checkpoint. Compare the diff or restore an
+              earlier draft from here.
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={isUndoingReprompt || !repromptHistory.length}
+            onClick={handleUndoReprompt}
+          >
+            {isUndoingReprompt
+              ? "Restoring..."
+              : "Restore latest rebuild"}
+          </Button>
+        </div>
+
+        <RepromptHistoryPanel
+          reprompts={repromptHistory}
+          activeScope={repromptHistoryScope}
+          selectedPageId={selectedPage?.id}
+          selectedPageTitle={selectedPage?.title}
+          activeDiffId={
+            isLoadingRepromptDiff ? activeRepromptHistoryId : undefined
+          }
+          activeRevertId={isUndoingReprompt ? activeRepromptHistoryId : undefined}
+          onActiveScopeChange={setRepromptHistoryScope}
+          onShowDiff={handleShowRepromptDiff}
+          onRevert={handleRevertReprompt}
+        />
+      </section>
+
+      <section className={workspaceSection}>
+        <div>
+          <p className={text.eyebrow}>Original brief</p>
+          <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
+            The prompt this draft came from
+          </h2>
+          <p className={cn(text.p, "mt-2 text-sm")}>
+            Use it as the reference point before rewriting, or load it into the
+            rebuild prompt and edit from there.
           </p>
         </div>
 
@@ -2602,7 +2815,7 @@ function SiteDetail() {
                   disabled={!generationMetadata.prompt}
                   onClick={() => setSiteReprompt(generationMetadata.prompt)}
                 >
-                  Load into rebuild prompt
+                  Edit this prompt
                 </Button>
               </div>
             </div>
@@ -2667,147 +2880,22 @@ function SiteDetail() {
           )}
         </div>
       </section>
+    </div>
+  );
+
+  const settingsPanelContent = (
+    <div className="grid gap-4">
+      {billingPromptNotice}
       <section className={workspaceSection}>
         <div>
-          <p className={text.eyebrow}>Prompt iteration</p>
-          <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
-            Replace draft direction
-          </h2>
-          <p className={cn(text.p, "mt-2 text-sm")}>
-            Re-prompts replace the chosen scope. Each rebuild now stores a
-            checkpoint with a diff, so you can inspect changes before keeping
-            them.
-          </p>
-        </div>
-
-        <div className="grid gap-4 xl:grid-cols-2">
-          <form className={form.grid} onSubmit={handleSiteReprompt}>
-            <label htmlFor="site-reprompt" className={text.label}>
-              Whole site prompt
-            </label>
-            <Textarea
-              id="site-reprompt"
-              rows={4}
-              value={siteReprompt}
-              placeholder="Make the site warmer, tighten the copy, add pricing, and lean harder into workshops."
-              onChange={(event) => setSiteReprompt(event.target.value)}
-            />
-            <p className={form.hint}>
-              Regenerates the broader site while keeping its identity and draft
-              history.
-            </p>
-            <Button
-              type="submit"
-              size="sm"
-              disabled={isRepromptingSite || siteReprompt.trim() === ""}
-            >
-              {isRepromptingSite ? "Rebuilding site..." : "Rebuild whole site"}
-            </Button>
-          </form>
-
-          <form className={form.grid} onSubmit={handlePageReprompt}>
-            <label htmlFor="page-reprompt" className={text.label}>
-              {selectedPage
-                ? `${selectedPage.title} page prompt`
-                : "Page prompt"}
-            </label>
-            <Textarea
-              id="page-reprompt"
-              rows={4}
-              value={pageReprompt}
-              placeholder="Turn this page into a tighter pricing overview with clearer package framing and fewer sections."
-              onChange={(event) => setPageReprompt(event.target.value)}
-            />
-            <p className={form.hint}>
-              Regenerates only the selected page while keeping its route and
-              place in the draft.
-            </p>
-            <div className={actions.row}>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={
-                  !selectedPage ||
-                  isRepromptingPage ||
-                  pageReprompt.trim() === ""
-                }
-              >
-                {isRepromptingPage ? "Rebuilding page..." : "Rebuild page"}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={isUndoingReprompt || !repromptHistory.length}
-                onClick={handleUndoReprompt}
-              >
-                {isUndoingReprompt
-                  ? "Restoring..."
-                  : "Restore latest rebuild"}
-              </Button>
-            </div>
-          </form>
-        </div>
-
-        {isRepromptingSite || isRepromptingPage ? (
-          <GenerationProgressCard
-            eyebrow="Prompt iteration"
-            title={
-              repromptProgressScope === "page"
-                ? "Rebuilding the selected page..."
-                : "Rebuilding the site direction..."
-            }
-            description={
-              repromptProgressScope === "page"
-                ? "Snaelda is replacing the selected page while keeping its route and draft position."
-                : "Snaelda is rewriting the broader draft while keeping the current site identity."
-            }
-            prompt={
-              repromptProgressScope === "page" ? pageReprompt : siteReprompt
-            }
-            steps={
-              repromptProgressScope === "page"
-                ? pageRepromptSteps
-                : siteRepromptSteps
-            }
-            activeStep={repromptProgressStep}
-            activeTotal={repromptProgressStepTotal}
-            showSkeleton={
-              repromptProgressStep === "plan.blocks" ||
-              repromptProgressStep === "copy.write" ||
-              repromptProgressStep === "validate.repair" ||
-              repromptProgressStep === "persist"
-            }
-          />
-        ) : null}
-
-        <RepromptHistoryPanel
-          reprompts={repromptHistory}
-          activeScope={repromptHistoryScope}
-          selectedPageId={selectedPage?.id}
-          selectedPageTitle={selectedPage?.title}
-          activeDiffId={
-            isLoadingRepromptDiff ? activeRepromptHistoryId : undefined
-          }
-          activeRevertId={isUndoingReprompt ? activeRepromptHistoryId : undefined}
-          onActiveScopeChange={setRepromptHistoryScope}
-          onShowDiff={handleShowRepromptDiff}
-          onRevert={handleRevertReprompt}
-        />
-
-        {repromptErrorMessage ? (
-          <p className={text.error}>{repromptErrorMessage}</p>
-        ) : null}
-        {repromptStatusMessage ? (
-          <p className={text.success}>{repromptStatusMessage}</p>
-        ) : null}
-      </section>
-      <section className={workspaceSection}>
-        <div>
-          <p className={text.eyebrow}>Site details</p>
+          <p className={text.eyebrow}>Identity</p>
           <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
             Rename and reslug the draft
           </h2>
+          <p className={cn(text.p, "mt-2 text-sm")}>
+            The slug is the path of the published URL. Brand business name and
+            colors live in Theme &amp; brand.
+          </p>
         </div>
 
         <form className={form.grid} onSubmit={handleSaveSite}>
@@ -2833,10 +2921,120 @@ function SiteDetail() {
             required
           />
 
+          {siteErrorMessage ? (
+            <p className={text.error}>{siteErrorMessage}</p>
+          ) : null}
+          {siteStatusMessage ? (
+            <p className={text.success}>{siteStatusMessage}</p>
+          ) : null}
+
+          <div className={actions.row}>
+            <Button type="submit" disabled={isSavingSite}>
+              {isSavingSite ? "Saving..." : "Save identity"}
+            </Button>
+          </div>
+        </form>
+      </section>
+
+      <section
+        className={cn(
+          "grid gap-4 rounded-[12px] border border-[color-mix(in_oklch,oklch(58%_0.18_27)_55%,var(--border))] bg-[color-mix(in_oklch,oklch(58%_0.18_27)_8%,var(--surface-1))] p-5",
+        )}
+      >
+        <div>
+          <p className="text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[oklch(72%_0.16_27)]">
+            Danger zone
+          </p>
+          <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
+            Delete this draft
+          </h2>
+          <p className={cn(text.p, "mt-2 text-sm")}>
+            Removing the draft also removes its rebuild checkpoints. Published
+            versions stay reachable until the live site is taken down separately.
+            Type <strong className="font-extrabold text-[var(--paper)]">{slug || "the slug"}</strong> to confirm.
+          </p>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+          <div className={form.field}>
+            <label htmlFor="delete-confirm-slug" className={text.label}>
+              Confirm slug
+            </label>
+            <Input
+              id="delete-confirm-slug"
+              value={deleteConfirmSlug}
+              onChange={(event) => setDeleteConfirmSlug(event.target.value)}
+              placeholder={slug}
+              autoComplete="off"
+            />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={
+              isDeleting ||
+              !slug ||
+              deleteConfirmSlug.trim() !== slug.trim()
+            }
+            onClick={handleDelete}
+            className="border-[color-mix(in_oklch,oklch(58%_0.18_27)_70%,var(--border))] text-[oklch(78%_0.16_27)] hover:border-[oklch(58%_0.18_27)] hover:bg-[color-mix(in_oklch,oklch(58%_0.18_27)_14%,var(--surface-1))] hover:text-[var(--paper)]"
+          >
+            {isDeleting ? "Deleting draft..." : "Delete draft"}
+          </Button>
+        </div>
+      </section>
+    </div>
+  );
+
+  const themePanelContent = (
+    <div className="grid gap-4">
+      <section className={workspaceSection}>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className={text.eyebrow}>Brand</p>
+            <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
+              Identity that visitors see
+            </h2>
+            <p className={cn(text.p, "mt-2 text-sm")}>
+              Business name, primary color, and logo. The primary color seeds
+              the palette below.
+            </p>
+          </div>
+          <div className="flex items-center gap-3 rounded-[10px] border border-border bg-[var(--surface-1)] px-3 py-2">
+            {brandLogoAssetId && uploadedSiteAssets.find((asset) => asset.id === brandLogoAssetId) ? (
+              <img
+                src={buildDraftAssetURL(brandLogoAssetId)}
+                alt={brandLogoAlt || `${brandBusinessName || name} logo`}
+                className="size-9 rounded-[8px] object-contain"
+              />
+            ) : (
+              <span
+                aria-hidden="true"
+                className="grid size-9 place-items-center rounded-[8px] text-sm font-black text-[var(--paper)]"
+                style={{
+                  background: brandPrimaryColor || "var(--surface-2)",
+                  color: brandPrimaryColor ? "#fff" : "var(--paper)",
+                }}
+              >
+                {(brandBusinessName || name || "S").trim().charAt(0).toUpperCase()}
+              </span>
+            )}
+            <div className="grid gap-0.5">
+              <span className="text-sm font-bold text-[var(--paper)]">
+                {brandBusinessName || name || "Brand preview"}
+              </span>
+              <span className="text-xs text-[var(--paper-muted)] tabular-nums">
+                {brandPrimaryColor || "—"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <form className={form.grid} onSubmit={handleSaveBrand}>
           <div className="grid gap-4 md:grid-cols-2">
             <div className={form.field}>
               <label htmlFor="site-brand-name" className={text.label}>
-                Brand business name
+                Business name
               </label>
               <Input
                 id="site-brand-name"
@@ -2845,10 +3043,13 @@ function SiteDetail() {
                 placeholder="What customers should see in the header and footer"
                 required
               />
+              <p className={form.hint}>
+                Public-facing. Shows in the header, footer, and meta tags.
+              </p>
             </div>
             <div className={form.field}>
               <label htmlFor="site-brand-color" className={text.label}>
-                Brand primary color
+                Primary color
               </label>
               <div className="flex items-center gap-3">
                 <Input
@@ -2865,13 +3066,16 @@ function SiteDetail() {
                   required
                 />
               </div>
+              <p className={form.hint}>
+                Seeds the palette below. The buttons and links inherit it.
+              </p>
             </div>
           </div>
 
           <div className={workspaceInset}>
             <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               <label className={form.field}>
-                <span className={text.label}>Brand logo</span>
+                <span className={text.label}>Logo</span>
                 <Select
                   value={brandLogoAssetId}
                   onChange={(event) => {
@@ -2913,33 +3117,21 @@ function SiteDetail() {
             </div>
           </div>
 
-          {siteErrorMessage ? (
-            <p className={text.error}>{siteErrorMessage}</p>
+          {brandErrorMessage ? (
+            <p className={text.error}>{brandErrorMessage}</p>
           ) : null}
-          {siteStatusMessage ? (
-            <p className={text.success}>{siteStatusMessage}</p>
+          {brandStatusMessage ? (
+            <p className={text.success}>{brandStatusMessage}</p>
           ) : null}
 
           <div className={actions.row}>
-            <Button type="submit" disabled={isSavingSite}>
-              {isSavingSite ? "Saving details..." : "Save site details"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isDeleting}
-              onClick={handleDelete}
-            >
-              {isDeleting ? "Deleting draft..." : "Delete draft"}
+            <Button type="submit" disabled={isSavingBrand}>
+              {isSavingBrand ? "Saving brand..." : "Save brand"}
             </Button>
           </div>
         </form>
       </section>
-    </div>
-  );
 
-  const themePanelContent = (
-    <div className="grid gap-4">
       <section className={workspaceSection}>
         <div>
           <p className={text.eyebrow}>Theme</p>
@@ -2948,7 +3140,7 @@ function SiteDetail() {
           </h2>
           <p className={cn(text.p, "mt-2 text-sm")}>
             Theme choices change the public site styling, not the builder
-            chrome. Keep them visible and separate from general site admin.
+            chrome. The brand primary color seeds the palette here.
           </p>
         </div>
 
@@ -3625,6 +3817,7 @@ function SiteDetail() {
         onMoveBlock={handleMoveBlock}
         onReorderBlocks={handleReorderBlocks}
         pagesPanelContent={pagesPanelContent}
+        promptPanelContent={promptPanelContent}
         collectionsPanelContent={collectionsPanelContent}
         seoPanelContent={seoPanelContent}
         navigationPanelContent={navigationPanelContent}
