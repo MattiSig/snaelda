@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Eye, MoreHorizontal } from 'lucide-react';
+import { Eye } from 'lucide-react';
 import { useInlineEditor } from './context';
 import { BlockToolbar } from './BlockToolbar';
 import { BlockDetailsDrawer } from './BlockDetailsDrawer';
@@ -68,24 +68,12 @@ export function EditableBlockFrame({
         ) : null}
 
         {isSelected ? (
-          <>
-            <BlockToolbar
-              block={block}
-              definition={definition}
-              onDragStart={onDragStart}
-            />
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                setDrawerOpen(true);
-              }}
-              className="pointer-events-auto absolute -bottom-[18px] right-4 z-40 inline-flex h-7 items-center gap-1 rounded-full border border-[oklch(98%_0.005_336_/_0.16)] bg-[oklch(12%_0.018_336_/_0.94)] px-2.5 text-[11px] font-semibold text-[#F9F7F2] shadow-[0_10px_24px_oklch(8%_0.02_336_/_0.45)] backdrop-blur transition-transform hover:-translate-y-px"
-              aria-label="Open block details"
-            >
-              <MoreHorizontal className="size-3" aria-hidden /> Details
-            </button>
-          </>
+          <BlockToolbar
+            block={block}
+            definition={definition}
+            onDragStart={onDragStart}
+            onOpenDetails={() => setDrawerOpen(true)}
+          />
         ) : null}
       </div>
 

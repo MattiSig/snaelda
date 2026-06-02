@@ -35,10 +35,12 @@ export function BlockToolbar({
   block,
   definition,
   onDragStart,
+  onOpenDetails,
 }: {
   block: DraftBlock;
   definition: BlockDefinition | undefined;
   onDragStart?: (event: React.DragEvent) => void;
+  onOpenDetails?: () => void;
 }) {
   const ctx = useInlineEditor();
   if (!ctx?.enabled) return null;
@@ -119,6 +121,18 @@ export function BlockToolbar({
       >
         <Trash2 className="size-3.5" aria-hidden />
       </ToolbarButton>
+
+      {onOpenDetails ? (
+        <>
+          <ToolbarSeparator />
+          <ToolbarButton label="Open block details" onClick={onOpenDetails}>
+            <MoreHorizontal className="size-3.5" aria-hidden />
+            <span className="ml-1 hidden text-[11px] font-bold text-[oklch(98%_0.005_336_/_0.92)] sm:inline">
+              Details
+            </span>
+          </ToolbarButton>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -467,5 +481,3 @@ function ToolbarSeparator() {
   );
 }
 
-// Keep an import that's used in icon imports tree-shake-safe
-export const __BlockToolbarMoreIcon = MoreHorizontal;

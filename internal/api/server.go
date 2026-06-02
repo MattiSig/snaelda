@@ -229,6 +229,7 @@ func (s *Server) Handler() http.Handler {
 		publishConfig := publishing.ServiceConfig{
 			AppBaseURL:       s.config.AppBaseURL,
 			PublicBaseURL:    s.config.PublicBaseURL,
+			APIBaseURL:       s.config.APIBaseURL,
 			PublicBaseDomain: s.config.PublicBaseDomain,
 			ArtifactsDir:     s.config.PublishedArtifactsDir,
 			Cache:            publishedSiteCache,

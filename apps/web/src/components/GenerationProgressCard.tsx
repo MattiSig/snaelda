@@ -59,7 +59,7 @@ export function GenerationProgressCard({
 
   return (
     <section className={cn(paddedPanel, 'rounded-[16px]')}>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(260px,0.7fr)]">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(260px,0.7fr)]">
         <div className="grid gap-4">
           <div className="grid gap-2">
             <p className={text.eyebrow}>{eyebrow}</p>

@@ -87,6 +87,7 @@ type PublishedArtifactResult struct {
 type ServiceConfig struct {
 	AppBaseURL       string
 	PublicBaseURL    string
+	APIBaseURL       string
 	PublicBaseDomain string
 	ArtifactsDir     string
 	Renderer         ArtifactRenderer
@@ -144,6 +145,7 @@ func NewService(db DB, cfg ServiceConfig) *Service {
 	if renderer == nil {
 		renderer = NewWorkerArtifactRenderer(WorkerRendererConfig{
 			PublicBaseURL: cfg.PublicBaseURL,
+			APIBaseURL:    cfg.APIBaseURL,
 			Logger:        logger,
 		})
 	}

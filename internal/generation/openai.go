@@ -202,7 +202,7 @@ func (p *OpenAIPlanner) BuildPlan(ctx context.Context, input generationInputCont
 	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
 		Name:   "site_generation_plan",
 		Schema: generationPlanSchema(),
-		System: cachedSiteContext() + "\n\n" + generationPlannerSystemPrompt,
+		System: cachedSiteContext() + "\n\n" + themeCatalogContext() + "\n\n" + layoutBlockCatalogContext() + "\n\n" + generationPlannerSystemPrompt,
 		User:   string(userJSON),
 		Strict: true,
 	}, &responsePayload); err != nil {
@@ -278,7 +278,7 @@ func (p *OpenAIPlanner) RegenerateThemeSelection(ctx context.Context, prompt str
 	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
 		Name:   "theme_selection",
 		Schema: themeSelectionSchema(),
-		System: cachedSiteContext() + "\n\n" + themeRegenerationSystemPrompt,
+		System: cachedSiteContext() + "\n\n" + themeCatalogContext() + "\n\n" + themeRegenerationSystemPrompt,
 		User:   string(userJSON),
 		Strict: true,
 	}, &responsePayload); err != nil {
@@ -305,7 +305,7 @@ func (p *OpenAIPlanner) BuildOutline(ctx context.Context, request OutlineRequest
 	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
 		Name:   "site_outline",
 		Schema: schema,
-		System: cachedSiteContext() + "\n\n" + outlinePlannerSystemPrompt,
+		System: cachedSiteContext() + "\n\n" + themeCatalogContext() + "\n\n" + outlinePlannerSystemPrompt,
 		User:   string(userJSON),
 		Strict: true,
 	}, &responsePayload); err != nil {
@@ -314,26 +314,51 @@ func (p *OpenAIPlanner) BuildOutline(ctx context.Context, request OutlineRequest
 	return responsePayload, nil
 }
 
+// BuildPageLayout chooses an ordered block skeleton for one page. It receives
+// the compact layout catalog, not full prop schemas, so this step can focus on
+// structure and block intent.
+func (p *OpenAIPlanner) BuildPageLayout(ctx context.Context, request PageLayoutRequest) (PageLayoutResult, error) {
+	if p == nil {
+		return PageLayoutResult{}, ErrDecomposedPlannerUnavailable
+	}
+	userJSON, err := json.Marshal(request)
+	if err != nil {
+		return PageLayoutResult{}, fmt.Errorf("encode page layout payload: %w", err)
+	}
+
+	var responsePayload PageLayoutResult
+	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
+		Name:   "page_layout",
+		Schema: pageLayoutSchema(defaultAllowedBlockTypes()),
+		System: cachedSiteContext() + "\n\n" + layoutBlockCatalogContext() + "\n\n" + pageLayoutSystemPrompt,
+		User:   string(userJSON),
+		Strict: true,
+	}, &responsePayload); err != nil {
+		return PageLayoutResult{}, err
+	}
+	return responsePayload, nil
+}
+
 // BuildPageContent runs the per-page composer step: in one structured-output
-// call the model picks an ordered block list for the page AND produces each
-// block's full props. Replaces the previous decomposition of
-// page-block-plan + per-block copy with a single call per page.
-//
-// The schema uses a oneOf-discriminated union over AllowedTypes so that each
-// block in the output is shaped as { type: const, props: <type's PropSchema> }.
-// Cached site context (tagline registry + theme + brand) lives in the system
-// prefix; this request only carries the per-call deltas.
+// call the model fills full props for the selected layout. It must not choose,
+// reorder, add, or remove block types.
 func (p *OpenAIPlanner) BuildPageContent(ctx context.Context, request PageContentRequest) (PageContentResult, error) {
 	if p == nil {
 		return PageContentResult{}, ErrDecomposedPlannerUnavailable
 	}
-	allowedTypes := append([]string(nil), request.AllowedTypes...)
-	if len(allowedTypes) == 0 {
-		return PageContentResult{}, fmt.Errorf("build page content: no allowed block types")
+	layout := append([]PageLayoutBlock(nil), request.Layout...)
+	if len(layout) == 0 {
+		return PageContentResult{}, fmt.Errorf("build page content: no layout blocks")
 	}
 	registry := siteconfig.DefaultBlockRegistry()
-	blockVariants := make([]map[string]any, 0, len(allowedTypes))
-	for _, blockType := range allowedTypes {
+	seenTypes := map[string]bool{}
+	blockVariants := make([]map[string]any, 0, len(layout))
+	for _, layoutBlock := range layout {
+		blockType := strings.TrimSpace(layoutBlock.Type)
+		if blockType == "" || seenTypes[blockType] {
+			continue
+		}
+		seenTypes[blockType] = true
 		def, err := registry.Lookup(blockType, siteconfig.BlockVersionV1)
 		if err != nil {
 			return PageContentResult{}, fmt.Errorf("build page content: lookup %s: %w", blockType, err)
@@ -367,8 +392,8 @@ func (p *OpenAIPlanner) BuildPageContent(ctx context.Context, request PageConten
 		"properties": map[string]any{
 			"blocks": map[string]any{
 				"type":     "array",
-				"minItems": 3,
-				"maxItems": 9,
+				"minItems": len(layout),
+				"maxItems": len(layout),
 				"items":    map[string]any{"anyOf": blockVariants},
 			},
 		},
@@ -383,7 +408,56 @@ func (p *OpenAIPlanner) BuildPageContent(ctx context.Context, request PageConten
 	}, &responsePayload); err != nil {
 		return PageContentResult{}, err
 	}
+	if err := validatePageContentMatchesLayout(responsePayload, layout); err != nil {
+		return PageContentResult{}, err
+	}
 	return responsePayload, nil
+}
+
+func pageLayoutSchema(allowedTypes []string) map[string]any {
+	if len(allowedTypes) == 0 {
+		allowedTypes = []string{""}
+	}
+	blockSchema := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"type", "purpose", "contentBrief", "variantHint"},
+		"properties": map[string]any{
+			"type": map[string]any{
+				"type": "string",
+				"enum": allowedTypes,
+			},
+			"purpose":      map[string]any{"type": "string"},
+			"contentBrief": map[string]any{"type": "string"},
+			"variantHint":  map[string]any{"type": "string"},
+		},
+	}
+	return map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"blocks"},
+		"properties": map[string]any{
+			"blocks": map[string]any{
+				"type":     "array",
+				"minItems": 2,
+				"maxItems": 9,
+				"items":    blockSchema,
+			},
+		},
+	}
+}
+
+func validatePageContentMatchesLayout(result PageContentResult, layout []PageLayoutBlock) error {
+	if len(result.Blocks) != len(layout) {
+		return fmt.Errorf("page content returned %d blocks for %d layout blocks", len(result.Blocks), len(layout))
+	}
+	for index, block := range result.Blocks {
+		expected := strings.TrimSpace(layout[index].Type)
+		if strings.TrimSpace(block.Type) != expected {
+			return fmt.Errorf("page content block %d type mismatch: got %q want %q", index, block.Type, expected)
+		}
+	}
+	return nil
 }
 
 func outlineSchema() map[string]any {
@@ -443,20 +517,14 @@ func themeCatalogContext() string {
 
 // cachedSiteContext is the long, stable system-message prefix shared by every
 // generation-related call (outline, per-page plan, per-block copy, page
-// change-set). It bundles the deterministic block registry summary, theme
-// catalog, and brand direction. OpenAI auto-caches identical prefixes longer
-// than ~1024 tokens, so positioning this content first means it is hashed
-// once and reused across calls in the same conversation/session.
+// change-set). It bundles only the stable brand direction shared by every
+// generation call. Larger catalogs are appended only to the calls that need
+// them so content calls do not carry every possible block in their context.
 //
 // The string is generated once per process via siteContextSystemOnce and held
-// in memory; the underlying catalogs come from siteconfig at build time and
-// never change at runtime.
+// in memory.
 var siteContextSystemOnce = sync.OnceValue(func() string {
-	registry := summarizeBlockRegistryForPlan()
-	catalog := siteconfig.DefaultThemeEditorCatalog()
 	bundle := map[string]any{
-		"blockRegistry": registry,
-		"themeCatalog":  catalog,
 		"brandDirection": "Snaelda is warm, crafted, ribbon-led, dependable, with a little Icelandic gravity. Dark mode should feel meaner than light mode while staying calm and readable.",
 	}
 	bytes, err := json.Marshal(bundle)
@@ -576,13 +644,13 @@ func (p *OpenAIPlanner) PlanPageChanges(ctx context.Context, request PageChangeS
 	// cached system prefix). Send only the allowed type names for the model
 	// to reference when inserting.
 	payload := pageChangeSetRequestPayload{
-		SiteName:       request.SiteName,
-		SiteGoal:       request.SiteGoal,
-		Brand:          request.Brand,
-		Page:           request.Page,
-		NeighborPages:  request.NeighborPages,
+		SiteName:        request.SiteName,
+		SiteGoal:        request.SiteGoal,
+		Brand:           request.Brand,
+		Page:            request.Page,
+		NeighborPages:   request.NeighborPages,
 		InsertableTypes: insertableTypeNames,
-		Prompt:         request.Prompt,
+		Prompt:          request.Prompt,
 	}
 	userJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -1185,13 +1253,26 @@ Theme rules:
 
 When currentOutline is provided this is a site reprompt: prefer keeping existing pages and slugs unless the new prompt explicitly asks for change. Pages dropped from the outline will be removed; pages added will be drafted fresh.`
 
-const pageContentSystemPrompt = `You are the page composer for Snaelda's structured site generator.
+const pageLayoutSystemPrompt = `You are the page layout planner for Snaelda's structured site generator.
 Return JSON only, matching the supplied schema exactly.
 
-Pick an ordered list of 3-8 blocks for ONE page and produce each block's full props in a single pass.
-- Choose block types ONLY from the supplied allowedTypes; never invent a type. The cached site context lists what each type does.
+Pick an ordered list of 2-8 block skeletons for ONE page.
+- Choose block types ONLY from the supplied layoutBlockCatalog; never invent a type.
 - The first block should set the page's tone (typically a hero or section header).
-- Each block's "props" must satisfy the per-type prop schema exactly, including structural choices (variant, layout, alignment, columns) — pick sensible defaults that match the page goal.
+- Include purpose, contentBrief, and variantHint for each block. Keep these concise; do not write final copy.
+- Use contact_form only when the page should collect visitor input. Do not use testimonials, cta_band, or text_section as a substitute for an actual form.
+- Do not duplicate sections the outline assigns to a different page.
+- End with footer when this page needs site-level contact details, navigation, socials, or legal copy.
+
+The layout is structural only. Full props and copy are written in a later call.`
+
+const pageContentSystemPrompt = `You are the page content composer for Snaelda's structured site generator.
+Return JSON only, matching the supplied schema exactly.
+
+Fill full props for ONE page's supplied layout in a single pass.
+- Preserve the supplied layout exactly: same number of blocks, same order, same block types.
+- Do not choose, add, remove, or reorder block types.
+- Each block's props must satisfy the per-type prop schema exactly, including structural choices (variant, layout, alignment, columns). Use the layout block's variantHint when it is compatible with the schema.
 - Plain text only inside copy fields: no HTML, no Markdown, no scripts, no embed code.
 - Match the page goal and the brand voice. Be specific, not generic. Avoid filler.
 - Do not duplicate sections the outline assigns to a different page.

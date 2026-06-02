@@ -121,6 +121,154 @@ func TestOpenAIPlannerBuildPlanParsesStructuredCompletion(t *testing.T) {
 	}
 }
 
+func TestOpenAIPlannerBuildPageLayoutParsesStructuredCompletion(t *testing.T) {
+	var requestBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{
+				"message": map[string]any{
+					"content": `{"blocks":[{"type":"hero","purpose":"Open with contact intent.","contentBrief":"Invite questions about orders and tastings.","variantHint":"standard"},{"type":"contact_form","purpose":"Collect visitor inquiries.","contentBrief":"Ask for name, email, request type, and message.","variantHint":"simple-inquiry"},{"type":"footer","purpose":"Show practical contact details.","contentBrief":"Include email, phone, and hours.","variantHint":""}]}`,
+				},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	planner, err := NewOpenAIPlanner(OpenAIPlannerConfig{
+		APIKey:  "test-key",
+		Model:   "gpt-5-mini",
+		BaseURL: server.URL,
+	})
+	if err != nil {
+		t.Fatalf("new planner: %v", err)
+	}
+
+	result, err := planner.BuildPageLayout(context.Background(), PageLayoutRequest{
+		SiteName: "Gothenburg Roastery",
+		SiteGoal: "Help visitors order beans and ask about tastings.",
+		Page:     OutlinePage{Title: "Contact", Slug: "/contact", Goal: "Let visitors send an inquiry form."},
+		Outline:  []OutlinePage{{Title: "Home", Slug: "/", Goal: "Introduce the roastery."}},
+	})
+	if err != nil {
+		t.Fatalf("build page layout: %v", err)
+	}
+
+	if len(result.Blocks) != 3 || result.Blocks[1].Type != "contact_form" {
+		t.Fatalf("expected parsed contact_form layout, got %#v", result.Blocks)
+	}
+	messages := requestBody["messages"].([]any)
+	system := messages[0].(map[string]any)["content"].(string)
+	if !strings.Contains(system, "layoutBlockCatalog") || !strings.Contains(system, "contact_form") {
+		t.Fatalf("expected layout catalog in system prompt, got %s", system)
+	}
+}
+
+func TestOpenAIPlannerBuildPageContentUsesSelectedLayoutSchemas(t *testing.T) {
+	var requestBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{
+				"message": map[string]any{
+					"content": `{"blocks":[{"type":"hero","props":{"variant":"standard","headline":"Ask about coffee","layout":"centered"}},{"type":"contact_form","props":{"heading":"Send an inquiry","submitLabel":"Send inquiry","fields":[{"name":"name","label":"Name","type":"name","required":true},{"name":"email","label":"Email","type":"email","required":true},{"name":"message","label":"Message","type":"message","required":true}]}},{"type":"footer","props":{"copyright":"Gothenburg Roastery"}}]}`,
+				},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	planner, err := NewOpenAIPlanner(OpenAIPlannerConfig{
+		APIKey:  "test-key",
+		Model:   "gpt-5-mini",
+		BaseURL: server.URL,
+	})
+	if err != nil {
+		t.Fatalf("new planner: %v", err)
+	}
+
+	layout := []PageLayoutBlock{
+		{Type: "hero", Purpose: "Open the page.", ContentBrief: "Contact opener.", VariantHint: "standard"},
+		{Type: "contact_form", Purpose: "Collect inquiries.", ContentBrief: "Simple form.", VariantHint: "simple-inquiry"},
+		{Type: "footer", Purpose: "Close with details.", ContentBrief: "Practical contact.", VariantHint: ""},
+	}
+	result, err := planner.BuildPageContent(context.Background(), PageContentRequest{
+		SiteName: "Gothenburg Roastery",
+		Page:     OutlinePage{Title: "Contact", Slug: "/contact", Goal: "Let visitors send an inquiry form."},
+		Layout:   layout,
+	})
+	if err != nil {
+		t.Fatalf("build page content: %v", err)
+	}
+	if len(result.Blocks) != 3 || result.Blocks[1].Type != "contact_form" {
+		t.Fatalf("expected content for selected layout, got %#v", result.Blocks)
+	}
+
+	responseFormat := requestBody["response_format"].(map[string]any)
+	jsonSchema := responseFormat["json_schema"].(map[string]any)
+	schema := jsonSchema["schema"].(map[string]any)
+	properties := schema["properties"].(map[string]any)
+	blocks := properties["blocks"].(map[string]any)
+	if blocks["minItems"] != float64(3) || blocks["maxItems"] != float64(3) {
+		t.Fatalf("expected exact layout length in schema, got %#v", blocks)
+	}
+	items := blocks["items"].(map[string]any)
+	anyOf := items["anyOf"].([]any)
+	types := map[string]bool{}
+	for _, candidate := range anyOf {
+		props := candidate.(map[string]any)["properties"].(map[string]any)
+		blockType := props["type"].(map[string]any)["const"].(string)
+		types[blockType] = true
+	}
+	if len(types) != 3 || !types["hero"] || !types["contact_form"] || !types["footer"] {
+		t.Fatalf("expected schema to include only selected block types, got %#v", types)
+	}
+
+	messages := requestBody["messages"].([]any)
+	system := messages[0].(map[string]any)["content"].(string)
+	if strings.Contains(system, "layoutBlockCatalog") {
+		t.Fatalf("did not expect layout catalog in page content prompt")
+	}
+}
+
+func TestOpenAIPlannerBuildPageContentRejectsLayoutMismatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{
+				"message": map[string]any{
+					"content": `{"blocks":[{"type":"contact_form","props":{"heading":"Wrong first","submitLabel":"Send","fields":[{"name":"email","label":"Email","type":"email","required":true}]}},{"type":"hero","props":{"headline":"Wrong order"}}]}`,
+				},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	planner, err := NewOpenAIPlanner(OpenAIPlannerConfig{
+		APIKey:  "test-key",
+		Model:   "gpt-5-mini",
+		BaseURL: server.URL,
+	})
+	if err != nil {
+		t.Fatalf("new planner: %v", err)
+	}
+
+	_, err = planner.BuildPageContent(context.Background(), PageContentRequest{
+		SiteName: "Gothenburg Roastery",
+		Page:     OutlinePage{Title: "Contact", Slug: "/contact", Goal: "Let visitors send an inquiry form."},
+		Layout: []PageLayoutBlock{
+			{Type: "hero", Purpose: "Open.", ContentBrief: "Hero.", VariantHint: ""},
+			{Type: "contact_form", Purpose: "Collect.", ContentBrief: "Form.", VariantHint: ""},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "type mismatch") {
+		t.Fatalf("expected layout mismatch error, got %v", err)
+	}
+}
+
 func TestOpenAIPlannerRegenerateThemeSelectionParsesStructuredCompletion(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{

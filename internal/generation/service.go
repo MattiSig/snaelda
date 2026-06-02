@@ -158,8 +158,8 @@ func WithClarifyingQuestionPlanner(planner ClarifyingQuestionPlanner) ServiceOpt
 }
 
 // WithDecomposedPlanner wires the three-step generation pipeline. When set,
-// initial generation prefers the outline → per-page → per-block path over
-// the legacy single BuildPlan call.
+// generation prefers outline → page layout → page content over the legacy
+// single BuildPlan call.
 func WithDecomposedPlanner(planner DecomposedPlanner) ServiceOption {
 	return func(s *Service) {
 		s.decomposedPlanner = planner
@@ -535,23 +535,12 @@ func (s *Service) RepromptPageWithProgress(ctx context.Context, workspaceID stri
 		return GenerateResult{}, err
 	}
 
-	nextPage, pagePlan, changeSetErr := s.applyPageChangeSet(ctx, currentDraft, page, prompt)
-	if changeSetErr != nil {
-		if !errors.Is(changeSetErr, ErrPageChangeSetUnavailable) && !errors.Is(changeSetErr, ErrPageChangeSetEmpty) && s.logger != nil {
-			s.logger.Warn("page change-set reprompt failed; falling back",
-				"siteId", siteID,
-				"pageId", pageID,
-				"error", changeSetErr.Error(),
-			)
-		}
-		fallbackPlan, err := s.buildPageRepromptPlan(ctx, currentDraft, page, prompt)
-		if err != nil {
-			_ = s.failGenerationJob(ctx, jobID, err)
-			return GenerateResult{}, err
-		}
-		pagePlan = fallbackPlan
-		nextPage = replaceDraftPage(page, fallbackPlan)
+	pagePlan, err := s.buildPageRepromptPlan(ctx, currentDraft, page, prompt)
+	if err != nil {
+		_ = s.failGenerationJob(ctx, jobID, err)
+		return GenerateResult{}, err
 	}
+	nextPage := replaceDraftPage(page, pagePlan)
 	if err := tracker.emit(ctx, "copy.write"); err != nil {
 		_ = s.failGenerationJob(ctx, jobID, err)
 		return GenerateResult{}, err
@@ -1415,6 +1404,29 @@ func (s *Service) buildPageRepromptPlan(
 	prompt string,
 ) (generationPagePlan, error) {
 	fallback := fallbackPageRepromptPlan(draft, page, prompt)
+
+	if s.decomposedPlanner != nil {
+		outline := summarizeDraftAsOutline(draft)
+		outlinePage := OutlinePage{
+			Title: firstNonEmpty(page.Title, "Page"),
+			Slug:  page.Slug,
+			Goal:  firstNonEmpty(strings.TrimSpace(prompt), page.SEO.Description, draft.Site.SEO.Description),
+			SEO:   page.SEO,
+		}
+		pagePlan, err := s.buildPagePlanFromLayout(ctx, draft.Site.Name, draft.Site.SEO.Description, draft.Brand, outlinePage, outline.Pages, nil)
+		if err == nil && len(pagePlan.Blocks) > 0 {
+			pagePlan.Title = firstNonEmpty(pagePlan.Title, page.Title)
+			pagePlan.Slug = page.Slug
+			return pagePlan, nil
+		}
+		if err != nil && s.logger != nil {
+			s.logger.Warn("page layout reprompt failed; falling back",
+				"siteId", draft.Site.ID,
+				"pageId", page.ID,
+				"error", err.Error(),
+			)
+		}
+	}
 
 	plan, err := s.buildPlan(ctx, generationInputContext{
 		SiteID:   draft.Site.ID,

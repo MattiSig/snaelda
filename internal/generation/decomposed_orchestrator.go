@@ -13,9 +13,10 @@ import (
 // calls. A 5-page site finishes in roughly one call-duration.
 const maxParallelPageContent = 4
 
-// generateDraftDecomposed runs the two-step pipeline:
-//   1. BuildOutline (1 small call)         → structure + theme + pages
-//   2. BuildPageContent (1 call per page)  → ordered block list with full props
+// generateDraftDecomposed runs the three-step pipeline:
+//  1. BuildOutline (1 small call)         → structure + theme + pages
+//  2. BuildPageLayout (1 call per page)   → ordered block skeleton
+//  3. BuildPageContent (1 call per page)  → full props for that layout
 //
 // Returns ErrDecomposedPlannerUnavailable when the decomposed planner is not
 // configured; callers should fall back to generateDraftWithRetry on that error.
@@ -60,40 +61,17 @@ func (s *Service) generateDraftDecomposed(
 	if err := emitTrackerStep(ctx, tracker, "copy.write"); err != nil {
 		return generationPlan{}, siteconfig.SiteDraft{}, err
 	}
-	allowedTypes := defaultAllowedBlockTypes()
 	pagePlans := make([]generationPagePlan, len(outline.Pages))
 	pageGroup, pageCtx := errgroup.WithContext(ctx)
 	pageGroup.SetLimit(maxParallelPageContent)
 	for i, page := range outline.Pages {
 		i, page := i, page
 		pageGroup.Go(func() error {
-			result, err := s.decomposedPlanner.BuildPageContent(pageCtx, PageContentRequest{
-				SiteName:         outline.SiteName,
-				SiteGoal:         outline.SiteGoal,
-				Brand:            input.Brand,
-				Page:             page,
-				Outline:          outline.Pages,
-				AllowedTypes:     allowedTypes,
-				InterviewAnswers: input.InterviewAnswers,
-			})
+			pagePlan, err := s.buildPagePlanFromLayout(pageCtx, outline.SiteName, outline.SiteGoal, input.Brand, page, outline.Pages, input.InterviewAnswers)
 			if err != nil {
 				return fmt.Errorf("compose page %s: %w", page.Slug, err)
 			}
-			blocks := make([]generationBlockPlan, 0, len(result.Blocks))
-			for _, b := range result.Blocks {
-				stripped, _ := stripGeneratedImages(b.Props).(map[string]any)
-				if stripped == nil {
-					stripped = b.Props
-				}
-				blocks = append(blocks, generationBlockPlan{Type: b.Type, Props: stripped})
-			}
-			pagePlans[i] = generationPagePlan{
-				Title:  page.Title,
-				Slug:   page.Slug,
-				Goal:   page.Goal,
-				SEO:    page.SEO,
-				Blocks: blocks,
-			}
+			pagePlans[i] = pagePlan
 			partialEmitter.emitPageContent(pageCtx, page.Slug, pagePlans[i])
 			return nil
 		})
@@ -135,10 +113,9 @@ func (s *Service) generateDraftDecomposed(
 // pipeline: ask the outline planner to produce a new outline given the
 // current outline + reprompt directive, then for each page in the new outline
 // either (a) preserve the existing page's blocks when its slug matches, or
-// (b) run the per-page block plan + per-block copy for new/replaced pages.
+// (b) run the per-page layout + content calls for new/replaced pages.
 //
-// Returns ErrDecomposedPlannerUnavailable when the planner or block suggester
-// is not configured.
+// Returns ErrDecomposedPlannerUnavailable when the planner is not configured.
 func (s *Service) repromptSiteDecomposed(
 	ctx context.Context,
 	workspaceID string,
@@ -147,7 +124,7 @@ func (s *Service) repromptSiteDecomposed(
 	tracker *progressTracker,
 	partialEmitter partialEventEmitter,
 ) (generationPlan, siteconfig.SiteDraft, error) {
-	if s.decomposedPlanner == nil || s.suggester == nil {
+	if s.decomposedPlanner == nil {
 		return generationPlan{}, siteconfig.SiteDraft{}, ErrDecomposedPlannerUnavailable
 	}
 
@@ -187,7 +164,6 @@ func (s *Service) repromptSiteDecomposed(
 	pagePlans := make([]generationPagePlan, len(outline.Pages))
 	preservedBlocks := make(map[int][]siteconfig.BlockInstance)
 
-	allowedTypes := defaultAllowedBlockTypes()
 	pageGroup, pageCtx := errgroup.WithContext(ctx)
 	pageGroup.SetLimit(maxParallelPageContent)
 	for i, page := range outline.Pages {
@@ -207,32 +183,11 @@ func (s *Service) repromptSiteDecomposed(
 			continue
 		}
 		pageGroup.Go(func() error {
-			result, err := s.decomposedPlanner.BuildPageContent(pageCtx, PageContentRequest{
-				SiteName:     outline.SiteName,
-				SiteGoal:     outline.SiteGoal,
-				Brand:        currentDraft.Brand,
-				Page:         page,
-				Outline:      outline.Pages,
-				AllowedTypes: allowedTypes,
-			})
+			pagePlan, err := s.buildPagePlanFromLayout(pageCtx, outline.SiteName, outline.SiteGoal, currentDraft.Brand, page, outline.Pages, nil)
 			if err != nil {
 				return fmt.Errorf("reprompt compose page %s: %w", page.Slug, err)
 			}
-			blocks := make([]generationBlockPlan, 0, len(result.Blocks))
-			for _, b := range result.Blocks {
-				stripped, _ := stripGeneratedImages(b.Props).(map[string]any)
-				if stripped == nil {
-					stripped = b.Props
-				}
-				blocks = append(blocks, generationBlockPlan{Type: b.Type, Props: stripped})
-			}
-			pagePlans[i] = generationPagePlan{
-				Title:  page.Title,
-				Slug:   page.Slug,
-				Goal:   page.Goal,
-				SEO:    page.SEO,
-				Blocks: blocks,
-			}
+			pagePlans[i] = pagePlan
 			partialEmitter.emitPageContent(pageCtx, page.Slug, pagePlans[i])
 			return nil
 		})
@@ -269,6 +224,64 @@ func (s *Service) repromptSiteDecomposed(
 		draft.Pages[pageIndex].Blocks = blocks
 	}
 	return plan, draft, nil
+}
+
+func (s *Service) buildPagePlanFromLayout(
+	ctx context.Context,
+	siteName string,
+	siteGoal string,
+	brand siteconfig.BrandConfig,
+	page OutlinePage,
+	outline []OutlinePage,
+	interviewAnswers []ClarifyingAnswer,
+) (generationPagePlan, error) {
+	layout, err := s.decomposedPlanner.BuildPageLayout(ctx, PageLayoutRequest{
+		SiteName:         siteName,
+		SiteGoal:         siteGoal,
+		Brand:            brand,
+		Page:             page,
+		Outline:          outline,
+		InterviewAnswers: interviewAnswers,
+	})
+	if err != nil {
+		return generationPagePlan{}, fmt.Errorf("layout page: %w", err)
+	}
+	if len(layout.Blocks) == 0 {
+		return generationPagePlan{}, errors.New("layout returned no blocks")
+	}
+
+	content, err := s.decomposedPlanner.BuildPageContent(ctx, PageContentRequest{
+		SiteName:         siteName,
+		SiteGoal:         siteGoal,
+		Brand:            brand,
+		Page:             page,
+		Outline:          outline,
+		Layout:           layout.Blocks,
+		InterviewAnswers: interviewAnswers,
+	})
+	if err != nil {
+		return generationPagePlan{}, fmt.Errorf("write page content: %w", err)
+	}
+
+	blocks := make([]generationBlockPlan, 0, len(content.Blocks))
+	for index, b := range content.Blocks {
+		stripped, _ := stripGeneratedImages(b.Props).(map[string]any)
+		if stripped == nil {
+			stripped = b.Props
+		}
+		purpose := ""
+		if index < len(layout.Blocks) {
+			purpose = layout.Blocks[index].Purpose
+		}
+		blocks = append(blocks, generationBlockPlan{Type: b.Type, Purpose: purpose, Props: stripped})
+	}
+	return generationPagePlan{
+		Title:  page.Title,
+		Slug:   page.Slug,
+		Goal:   page.Goal,
+		SEO:    page.SEO,
+		Blocks: blocks,
+	}, nil
 }
 
 func summarizeDraftAsOutline(draft siteconfig.SiteDraft) OutlineResult {
@@ -354,8 +367,8 @@ func stripGeneratedImages(value any) any {
 // supply one (e.g. legacy non-streaming path). All methods are no-ops.
 type nilPartialEmitter struct{}
 
-func (nilPartialEmitter) emitOutline(context.Context, OutlineResult)                       {}
-func (nilPartialEmitter) emitPageContent(context.Context, string, generationPagePlan)      {}
+func (nilPartialEmitter) emitOutline(context.Context, OutlineResult)                  {}
+func (nilPartialEmitter) emitPageContent(context.Context, string, generationPagePlan) {}
 
 // partialEventEmitter is implemented by the SSE handler so the orchestrator
 // can stream structural updates as soon as they resolve. The legacy non-
@@ -377,4 +390,3 @@ func partialEmitterFromSink(sink ProgressSink) partialEventEmitter {
 	}
 	return nilPartialEmitter{}
 }
-

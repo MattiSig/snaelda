@@ -216,7 +216,9 @@ export function SiteDraftRenderer({
                 )}
               >
                 {page.blocks
-                  .filter((block) => !block.settings?.hidden)
+                  .filter(
+                    (block) => mode === 'builder' || !block.settings?.hidden,
+                  )
                   .map((block, blockIndex) => {
                     const renderedBlock = renderSiteBlock({
                       block,

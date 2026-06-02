@@ -58,7 +58,7 @@ func TestGenerateCreatesDraftAndTracksCompletedJob(t *testing.T) {
 	if store.prompts[result.Draft.Site.ID] == "" {
 		t.Fatalf("expected prompt to be saved, got %#v", store.prompts)
 	}
-	if store.summary[result.Draft.Site.ID]["themePreset"] != "clean-local" {
+	if store.summary[result.Draft.Site.ID]["themePreset"] != "editorial-studio" {
 		t.Fatalf("expected theme preset summary, got %#v", store.summary[result.Draft.Site.ID])
 	}
 }
@@ -306,6 +306,35 @@ func (f *fakeClarifyingPlanner) BuildClarifyingQuestions(_ context.Context, requ
 	return f.questions, f.err
 }
 
+type fakeDecomposedPlanner struct {
+	outlineRequest OutlineRequest
+	outline        OutlineResult
+	outlineErr     error
+
+	layoutRequests []PageLayoutRequest
+	layout         PageLayoutResult
+	layoutErr      error
+
+	contentRequests []PageContentRequest
+	content         PageContentResult
+	contentErr      error
+}
+
+func (f *fakeDecomposedPlanner) BuildOutline(_ context.Context, request OutlineRequest) (OutlineResult, error) {
+	f.outlineRequest = request
+	return f.outline, f.outlineErr
+}
+
+func (f *fakeDecomposedPlanner) BuildPageLayout(_ context.Context, request PageLayoutRequest) (PageLayoutResult, error) {
+	f.layoutRequests = append(f.layoutRequests, request)
+	return f.layout, f.layoutErr
+}
+
+func (f *fakeDecomposedPlanner) BuildPageContent(_ context.Context, request PageContentRequest) (PageContentResult, error) {
+	f.contentRequests = append(f.contentRequests, request)
+	return f.content, f.contentErr
+}
+
 func TestBuildInterviewQuestionsRequiresPrompt(t *testing.T) {
 	service := Service{}
 	if _, err := service.BuildInterviewQuestions(context.Background(), GenerateInput{}); !errors.Is(err, ErrPromptRequired) {
@@ -353,27 +382,43 @@ func (r *recordingBlockSuggester) SuggestBlockProps(_ context.Context, request B
 	return r.response, nil
 }
 
-func TestRepromptPageAppliesChangeSetAndKeepsBlockIDs(t *testing.T) {
+func TestRepromptPageUsesWholePageLayoutAndRegeneratesBlockIDs(t *testing.T) {
 	store := newFakeGenerationStore()
-	suggester := &recordingBlockSuggester{
-		response: BlockSuggestResponse{
-			Props: map[string]any{
-				"variant":     "standard",
-				"headline":    "Rewritten headline",
-				"subheadline": "Reflects the change-set instruction.",
-				"eyebrow":     "Studio",
-				"layout":      "split-left",
+	planner := &fakeDecomposedPlanner{
+		layout: PageLayoutResult{
+			Blocks: []PageLayoutBlock{
+				{Type: "hero", Purpose: "Rewrite the opener.", ContentBrief: "Sharper promise.", VariantHint: "standard"},
+				{Type: "text_section", Purpose: "Support the new direction.", ContentBrief: "Short proof paragraph.", VariantHint: "default"},
 			},
-			ChangeSummary: "Updated hero copy.",
+		},
+		content: PageContentResult{
+			Blocks: []PageContentBlock{
+				{
+					Type: "hero",
+					Props: map[string]any{
+						"variant":     "standard",
+						"headline":    "Rewritten headline",
+						"subheadline": "Reflects the page reprompt.",
+						"layout":      "centered",
+					},
+				},
+				{
+					Type: "text_section",
+					Props: map[string]any{
+						"heading":   "What changed",
+						"body":      "The whole page was regenerated from one selected layout.",
+						"alignment": "left",
+						"width":     "default",
+					},
+				},
+			},
 		},
 	}
-	planner := &fakeChangeSetPlanner{}
 	service := Service{
-		db:                   store,
-		reader:               store,
-		writer:               store,
-		suggester:            suggester,
-		pageChangeSetPlanner: planner,
+		db:                store,
+		reader:            store,
+		writer:            store,
+		decomposedPlanner: planner,
 	}
 
 	initial, err := service.Generate(context.Background(), "workspace-1", "user-1", GenerateInput{
@@ -389,15 +434,7 @@ func TestRepromptPageAppliesChangeSetAndKeepsBlockIDs(t *testing.T) {
 		t.Fatalf("expected at least two blocks on the home page, got %d", len(homePage.Blocks))
 	}
 	heroID := homePage.Blocks[0].ID
-	keepID := homePage.Blocks[1].ID
-
-	planner.response = PageChangeSetResponse{
-		Operations: []PageChangeSetOperation{
-			{Action: PageChangeSetActionEdit, BlockID: heroID, Purpose: "Punch up the hero headline."},
-			{Action: PageChangeSetActionKeep, BlockID: keepID},
-		},
-		ChangeSummary: "Rewrote only the hero.",
-	}
+	secondID := homePage.Blocks[1].ID
 
 	result, err := service.RepromptPage(context.Background(), "workspace-1", "user-1", initial.Draft.Site.ID, homePage.ID, RepromptInput{
 		Prompt: "Punch up the hero headline.",
@@ -408,25 +445,25 @@ func TestRepromptPageAppliesChangeSetAndKeepsBlockIDs(t *testing.T) {
 
 	updatedPage := result.Draft.Pages[0]
 	if len(updatedPage.Blocks) != 2 {
-		t.Fatalf("expected change-set to produce 2 blocks, got %d", len(updatedPage.Blocks))
+		t.Fatalf("expected page layout/content to produce 2 blocks, got %d", len(updatedPage.Blocks))
 	}
-	if updatedPage.Blocks[0].ID != heroID {
-		t.Fatalf("expected edited hero to keep its id, got %s want %s", updatedPage.Blocks[0].ID, heroID)
+	if updatedPage.Blocks[0].ID == heroID || updatedPage.Blocks[1].ID == secondID {
+		t.Fatalf("expected whole-page rewrite to regenerate block ids, got %#v from %#v", updatedPage.Blocks, homePage.Blocks)
 	}
 	if updatedPage.Blocks[0].Props["headline"] != "Rewritten headline" {
 		t.Fatalf("expected hero props to be rewritten, got %#v", updatedPage.Blocks[0].Props)
 	}
-	if updatedPage.Blocks[1].ID != keepID {
-		t.Fatalf("expected kept block to retain its id, got %s want %s", updatedPage.Blocks[1].ID, keepID)
+	if len(planner.layoutRequests) != 1 {
+		t.Fatalf("expected one page layout request, got %d", len(planner.layoutRequests))
 	}
-	if len(suggester.requests) != 1 {
-		t.Fatalf("expected exactly one block rewrite (the edit), got %d", len(suggester.requests))
+	if len(planner.contentRequests) != 1 {
+		t.Fatalf("expected one page content request, got %d", len(planner.contentRequests))
 	}
-	if suggester.requests[0].Block.ID != heroID {
-		t.Fatalf("expected rewrite to target the hero block, got %#v", suggester.requests[0].Block)
+	if len(planner.contentRequests[0].Layout) != 2 || planner.contentRequests[0].Layout[0].Type != "hero" {
+		t.Fatalf("expected content request to receive selected layout, got %#v", planner.contentRequests[0].Layout)
 	}
-	if planner.request.Page.Title == "" {
-		t.Fatalf("expected change-set planner to receive page context, got %#v", planner.request.Page)
+	if planner.layoutRequests[0].Page.Slug != homePage.Slug {
+		t.Fatalf("expected layout request to target current page, got %#v", planner.layoutRequests[0].Page)
 	}
 }
 

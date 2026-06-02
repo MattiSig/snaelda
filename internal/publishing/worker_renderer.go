@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -20,6 +21,11 @@ import (
 type WorkerRendererConfig struct {
 	// PublicBaseURL is used when the inbound render request leaves the field empty.
 	PublicBaseURL string
+	// APIBaseURL is exported as API_BASE_URL to the worker so that asset URLs
+	// in rendered HTML resolve to this API (e.g. http://localhost:8080 in dev,
+	// https://api.snaelda.io in prod). Without it, the Node renderer has no way
+	// to know the API host and falls back to a hard-coded default.
+	APIBaseURL string
 	// Command is the executable used to launch the renderer. Defaults to "npm".
 	Command string
 	// Args are the arguments passed to Command. Defaults to the npm-script invocation
@@ -42,6 +48,7 @@ type WorkerRendererConfig struct {
 // next use.
 type workerArtifactRenderer struct {
 	publicBaseURL  string
+	apiBaseURL     string
 	command        string
 	args           []string
 	workingDir     string
@@ -92,6 +99,7 @@ func NewWorkerArtifactRenderer(cfg WorkerRendererConfig) ArtifactRenderer {
 
 	return &workerArtifactRenderer{
 		publicBaseURL:  strings.TrimSpace(cfg.PublicBaseURL),
+		apiBaseURL:     strings.TrimSpace(cfg.APIBaseURL),
 		command:        command,
 		args:           args,
 		workingDir:     cfg.WorkingDir,
@@ -192,6 +200,9 @@ func (r *workerArtifactRenderer) ensureWorkerLocked(_ context.Context) error {
 	cmd := exec.Command(r.command, r.args...)
 	if r.workingDir != "" {
 		cmd.Dir = r.workingDir
+	}
+	if r.apiBaseURL != "" {
+		cmd.Env = append(os.Environ(), "API_BASE_URL="+r.apiBaseURL)
 	}
 
 	stdin, err := cmd.StdinPipe()

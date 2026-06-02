@@ -11,9 +11,9 @@ import (
 // wired. Callers should fall back to the legacy BuildPlan path.
 var ErrDecomposedPlannerUnavailable = errors.New("decomposed planner is not configured")
 
-// DecomposedPlanner runs the two-step generation pipeline: outline (site
-// structure + theme + pages) and per-page content (one call per page produces
-// the ordered block list with full props for that page). Each method maps to
+// DecomposedPlanner runs the three-step generation pipeline: outline (site
+// structure + theme + pages), per-page layout (ordered block skeletons), and
+// per-page content (full props for the selected layout). Each method maps to
 // one structured LLM call so the orchestrator can stream partial results and
 // parallelise per-page work.
 //
@@ -22,6 +22,7 @@ var ErrDecomposedPlannerUnavailable = errors.New("decomposed planner is not conf
 // planner.
 type DecomposedPlanner interface {
 	BuildOutline(ctx context.Context, request OutlineRequest) (OutlineResult, error)
+	BuildPageLayout(ctx context.Context, request PageLayoutRequest) (PageLayoutResult, error)
 	BuildPageContent(ctx context.Context, request PageContentRequest) (PageContentResult, error)
 }
 
@@ -57,22 +58,44 @@ type OutlinePage struct {
 	SEO   siteconfig.SEOConfig `json:"seo"`
 }
 
-// PageContentRequest tells the per-page composer everything it needs to pick
-// an ordered block list AND produce each block's full props in a single call.
-// The block catalog (taglines, theme catalog, brand direction) lives in the
-// cached system prefix; this request only carries the per-call deltas.
+// PageLayoutRequest tells the per-page layout planner everything it needs to
+// pick an ordered block list without writing full block props.
+type PageLayoutRequest struct {
+	SiteName         string                 `json:"siteName"`
+	SiteGoal         string                 `json:"siteGoal,omitempty"`
+	Brand            siteconfig.BrandConfig `json:"brand,omitempty"`
+	Page             OutlinePage            `json:"page"`
+	Outline          []OutlinePage          `json:"outline"`
+	InterviewAnswers []ClarifyingAnswer     `json:"interviewAnswers,omitempty"`
+}
+
+// PageLayoutResult is the model's chosen ordered block skeleton for one page.
+type PageLayoutResult struct {
+	Blocks []PageLayoutBlock `json:"blocks"`
+}
+
+// PageLayoutBlock carries structural intent only. The content pass consumes
+// this layout and fills props for each block in the same order.
+type PageLayoutBlock struct {
+	Type         string `json:"type"`
+	Purpose      string `json:"purpose"`
+	ContentBrief string `json:"contentBrief"`
+	VariantHint  string `json:"variantHint"`
+}
+
+// PageContentRequest tells the per-page composer to fill props for the already
+// selected ordered layout. It no longer chooses block types or order.
 type PageContentRequest struct {
 	SiteName         string                 `json:"siteName"`
 	SiteGoal         string                 `json:"siteGoal,omitempty"`
 	Brand            siteconfig.BrandConfig `json:"brand,omitempty"`
 	Page             OutlinePage            `json:"page"`
 	Outline          []OutlinePage          `json:"outline"`
-	AllowedTypes     []string               `json:"allowedTypes"`
+	Layout           []PageLayoutBlock      `json:"layout"`
 	InterviewAnswers []ClarifyingAnswer     `json:"interviewAnswers,omitempty"`
 }
 
-// PageContentResult is the model's chosen ordered block list for one page,
-// each carrying the full props object (no copy/structure split).
+// PageContentResult is the selected layout filled with full props.
 type PageContentResult struct {
 	Blocks []PageContentBlock `json:"blocks"`
 }

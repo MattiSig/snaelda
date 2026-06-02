@@ -196,6 +196,7 @@ func repairSecondaryPage(siteName string, siteGoal string, page generationPagePl
 	title := firstNonEmpty(cleanGeneratedText(page.Title, 120), "Page")
 	slug := uniqueGeneratedPageSlug(page.Slug, title, usedSlugs)
 	blocks := repairBlocks(title, siteGoal, slug, page.Blocks)
+	blocks = repairIntendedContactFormBlock(title, page.Goal, blocks)
 	description := firstNonEmpty(
 		cleanGeneratedText(page.SEO.Description, 180),
 		cleanGeneratedText(page.Goal, 180),
@@ -286,6 +287,85 @@ func repairBlocks(pageTitle string, pageGoal string, pageSlug string, blocks []g
 		},
 	}
 	return []generationBlockPlan{fallback}
+}
+
+func repairIntendedContactFormBlock(pageTitle string, pageGoal string, blocks []generationBlockPlan) []generationBlockPlan {
+	if generatedBlocksIncludeType(blocks, "contact_form") {
+		return blocks
+	}
+
+	for index, block := range blocks {
+		if !generatedBlockLooksLikeContactFormIntent(block) {
+			continue
+		}
+		next := append([]generationBlockPlan(nil), blocks...)
+		next[index] = contactFormBlockFromIntent(block, pageTitle)
+		return next
+	}
+
+	if !generatedTextMentionsContactForm(pageGoal) {
+		return blocks
+	}
+
+	form := contactFormBlockFromIntent(generationBlockPlan{}, pageTitle)
+	insertAt := len(blocks)
+	for index, block := range blocks {
+		if block.Type == "footer" {
+			insertAt = index
+			break
+		}
+	}
+	next := make([]generationBlockPlan, 0, len(blocks)+1)
+	next = append(next, blocks[:insertAt]...)
+	next = append(next, form)
+	next = append(next, blocks[insertAt:]...)
+	return next
+}
+
+func contactFormBlockFromIntent(block generationBlockPlan, pageTitle string) generationBlockPlan {
+	props := map[string]any{
+		"heading":     firstNonEmpty(readGeneratedText(block.Props, "heading", 120), "Send a quick inquiry"),
+		"intro":       firstNonEmpty(readGeneratedText(block.Props, "intro", 500), readGeneratedText(block.Props, "body", 500), "Share a few details and we will get back to you shortly."),
+		"submitLabel": "Send inquiry",
+	}
+	return generationBlockPlan{
+		Type:    "contact_form",
+		Purpose: firstNonEmpty(cleanGeneratedText(block.Purpose, 280), "Give ready visitors a direct inquiry form."),
+		Props:   repairContactFormProps(props, pageTitle),
+	}
+}
+
+func generatedBlockLooksLikeContactFormIntent(block generationBlockPlan) bool {
+	if block.Type == "contact_form" || block.Type == "footer" {
+		return false
+	}
+	if generatedTextMentionsContactForm(block.Purpose) {
+		return true
+	}
+	for _, key := range []string{"heading", "title", "intro", "body"} {
+		if generatedTextMentionsContactForm(readGeneratedText(block.Props, key, 500)) {
+			return true
+		}
+	}
+	return false
+}
+
+func generatedTextMentionsContactForm(value string) bool {
+	text := strings.ToLower(strings.TrimSpace(value))
+	return strings.Contains(text, "contact form") ||
+		strings.Contains(text, "kontaktform") ||
+		strings.Contains(text, "inquiry form") ||
+		strings.Contains(text, "enquiry form") ||
+		strings.Contains(text, "message form")
+}
+
+func generatedBlocksIncludeType(blocks []generationBlockPlan, blockType string) bool {
+	for _, block := range blocks {
+		if block.Type == blockType {
+			return true
+		}
+	}
+	return false
 }
 
 func repairBlockPlan(block generationBlockPlan, pageTitle string, pageGoal string, pageSlug string) (generationBlockPlan, bool) {

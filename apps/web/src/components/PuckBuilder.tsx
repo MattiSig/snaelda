@@ -36,7 +36,6 @@ import {
 } from "@/lib/api";
 import { buildDraftAssetURL } from "@/lib/assets";
 import {
-  buildCanonicalBlockOrder,
   draftToEditorCanvasPage,
   reorderEditorCanvasBlocks,
 } from "@/lib/builder-adapter";
@@ -359,7 +358,6 @@ export function PuckBuilder({
               isCreatingBlock={isCreatingBlock}
               blockErrorMessage={blockErrorMessage}
               blockStatusMessage={blockStatusMessage}
-              onSelectPage={onSelectPage}
               onSelectBlock={onSelectBlock}
               onEditField={onEditField}
               onToggleHidden={onToggleHidden}
@@ -687,7 +685,6 @@ function ContentWorkspace({
   isCreatingBlock,
   blockErrorMessage,
   blockStatusMessage,
-  onSelectPage,
   onSelectBlock,
   onEditField,
   onToggleHidden,
@@ -714,7 +711,6 @@ function ContentWorkspace({
   isCreatingBlock: boolean;
   blockErrorMessage: string;
   blockStatusMessage: string;
-  onSelectPage: (pageId: string) => void;
   onSelectBlock: (blockId: string) => void;
   onEditField: (
     blockId: string,
@@ -739,7 +735,17 @@ function ContentWorkspace({
   onReorderBlocks: (blockIds: string[]) => Promise<void>;
 }) {
   const editorPage = draftToEditorCanvasPage(draft, selectedPage?.id ?? null);
-  const visibleCount = editorPage?.visibleBlocks.length ?? 0;
+  const canvasBlocks = useMemo(
+    () =>
+      editorPage
+        ? editorPage.page.blocks.map((block, originalIndex) => ({
+            block,
+            originalIndex,
+          }))
+        : [],
+    [editorPage],
+  );
+  const canvasBlockCount = canvasBlocks.length;
   const canMoveUp = selectedBlockIndex > 0;
   const canMoveDown =
     selectedPage !== null &&
@@ -771,13 +777,9 @@ function ContentWorkspace({
     const sourceId = dragSourceRef.current;
     dragSourceRef.current = null;
     if (!sourceId || !editorPage) return;
-    const order = reorderEditorCanvasBlocks(
-      editorPage.visibleBlocks,
-      sourceId,
-      index,
-    );
+    const order = reorderEditorCanvasBlocks(canvasBlocks, sourceId, index);
     if (!order) return;
-    void onReorderBlocks(buildCanonicalBlockOrder(editorPage, order));
+    void onReorderBlocks(order);
   }
 
   function handleDragEnd() {
@@ -861,7 +863,7 @@ function ContentWorkspace({
                   </div>
                 ) : null}
 
-                {!editorPage || visibleCount === 0 ? (
+                {!editorPage || canvasBlockCount === 0 ? (
                   <div className="grid min-h-[60vh] place-items-center p-10 text-center">
                     <div className="grid max-w-[44ch] gap-5">
                       <p className={cn(text.p, 'mx-auto')}>
@@ -909,15 +911,15 @@ function ContentWorkspace({
                           >
                             {children}
                           </EditableBlockFrame>
-                          {blockIndex === visibleCount - 1 ? (
+                          {blockIndex === canvasBlockCount - 1 ? (
                             <DropZone
-                              index={visibleCount}
-                              active={dropIndicator === visibleCount}
+                              index={canvasBlockCount}
+                              active={dropIndicator === canvasBlockCount}
                               onDragOver={handleDropZoneDragOver}
                               onDrop={handleDropZoneDrop}
                             >
                               <AddBlockInserter
-                                index={visibleCount}
+                                index={canvasBlockCount}
                                 blockRegistry={blockRegistry}
                                 onAdd={onAddBlock}
                                 variant="standalone"
@@ -944,51 +946,6 @@ function ContentWorkspace({
                 <p className={text.success}>{suggestStatusMessage}</p>
               ) : null}
 
-              {editorPage?.hiddenBlocks.length ? (
-                <section className="border-t border-border pt-4">
-                  <div className="mb-3">
-                    <p className={text.eyebrow}>Hidden blocks</p>
-                    <p className={cn(text.p, 'mt-1 text-sm')}>
-                      These blocks stay out of the rendered page until you
-                      unhide them.
-                    </p>
-                  </div>
-                  <div className="grid gap-2">
-                    {editorPage.hiddenBlocks.map(({ block }) => (
-                      <button
-                        key={block.id}
-                        type="button"
-                        className={cn(
-                          'flex items-center justify-between rounded-[10px] border px-3 py-3 text-left transition-[border-color,transform]',
-                          block.id === selectedBlock?.id
-                            ? 'border-[var(--thread-violet)] bg-[color-mix(in_oklch,var(--surface-1)_88%,var(--thread-violet))]'
-                            : 'border-border bg-[var(--surface-1)] hover:-translate-y-px hover:border-[var(--thread-violet)]',
-                        )}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onSelectPage(selectedPage.id);
-                          onSelectBlock(block.id);
-                          void onToggleHidden(block.id, false);
-                        }}
-                      >
-                        <span>
-                          <strong className="block text-sm text-[var(--paper)]">
-                            {blockDefinitions.get(
-                              `${block.type}@${block.version}`,
-                            )?.displayName ?? block.type}
-                          </strong>
-                          <small className="text-[var(--paper-muted)]">
-                            Click to unhide
-                          </small>
-                        </span>
-                        <span className="rounded-[999px] border border-border bg-[var(--surface-2)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--paper-muted)]">
-                          Hidden
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              ) : null}
             </div>
           ) : (
             <div className={emptyState}>
