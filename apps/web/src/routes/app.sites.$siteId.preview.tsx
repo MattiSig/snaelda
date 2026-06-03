@@ -43,6 +43,7 @@ export const Route = createFileRoute("/app/sites/$siteId/preview")({
 function DraftPreview() {
   const { siteId } = Route.useParams();
   const [draft, setDraft] = useState<SiteDraft | null>(null);
+  const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [shareURL, setShareURL] = useState("");
   const [shareExpiresAt, setShareExpiresAt] = useState("");
@@ -62,6 +63,9 @@ function DraftPreview() {
       .then((response) => {
         if (isMounted) {
           setDraft(response.draft);
+          setSelectedPageId((current) =>
+            resolvePreviewPageId(response.draft, current),
+          );
         }
       })
       .catch((error) => {
@@ -154,6 +158,9 @@ function DraftPreview() {
       );
       const response = await getSiteDraft(siteId);
       setDraft(response.draft);
+      setSelectedPageId((current) =>
+        resolvePreviewPageId(response.draft, current),
+      );
       setRefinementPrompt("");
       setRefinementStatus(
         "Draft refined. Open the builder to compare or restore the checkpoint.",
@@ -186,6 +193,8 @@ function DraftPreview() {
       </div>
     );
   }
+
+  const selectedPage = draft.pages.find((page) => page.id === selectedPageId);
 
   return (
     <div className={layout.previewShell}>
@@ -330,7 +339,53 @@ function DraftPreview() {
           <p className={text.success}>{refinementStatus}</p>
         ) : null}
       </form>
-      <SiteDraftRenderer site={draft} eyebrow="Draft preview" />
+      <nav
+        className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[color-mix(in_oklch,var(--border)_70%,transparent)] bg-[var(--surface-1)] px-5 py-3.5"
+        aria-label="Preview pages"
+      >
+        <div>
+          <p className={text.eyebrow}>Viewing page</p>
+          <p className="m-0 mt-1 text-sm font-bold text-[var(--paper)]">
+            {selectedPage?.title ?? draft.pages[0]?.title ?? "Page"}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {draft.pages.map((page) => {
+            const isSelected = page.id === selectedPageId;
+            return (
+              <Button
+                key={page.id}
+                type="button"
+                size="sm"
+                variant={isSelected ? "default" : "outline"}
+                aria-pressed={isSelected}
+                onClick={() => setSelectedPageId(page.id)}
+              >
+                {page.title}
+              </Button>
+            );
+          })}
+        </div>
+      </nav>
+      <div className="-mx-5 overflow-hidden bg-[var(--background)] max-sm:-mx-3.5">
+        <SiteDraftRenderer
+          site={draft}
+          eyebrow="Draft preview"
+          showPageMeta={false}
+          selectedPageId={selectedPageId ?? undefined}
+          onNavigatePage={setSelectedPageId}
+        />
+      </div>
     </div>
   );
+}
+
+function resolvePreviewPageId(draft: SiteDraft, preferredPageId: string | null) {
+  if (
+    preferredPageId &&
+    draft.pages.some((page) => page.id === preferredPageId)
+  ) {
+    return preferredPageId;
+  }
+  return draft.pages.find((page) => page.slug === "/")?.id ?? draft.pages[0]?.id ?? null;
 }

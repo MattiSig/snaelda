@@ -10,6 +10,7 @@ export const Route = createFileRoute("/preview/$token")({
 function TokenPreview() {
   const { token } = Route.useParams();
   const [draft, setDraft] = useState<SiteDraft | null>(null);
+  const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
@@ -19,6 +20,9 @@ function TokenPreview() {
       .then((response) => {
         if (isMounted) {
           setDraft(response.draft);
+          setSelectedPageId((current) =>
+            resolvePreviewPageId(response.draft, current),
+          );
         }
       })
       .catch((error) => {
@@ -72,6 +76,8 @@ function TokenPreview() {
         site={draft}
         eyebrow="Draft preview"
         showPageMeta={false}
+        selectedPageId={selectedPageId ?? undefined}
+        onNavigatePage={setSelectedPageId}
       />
       <div
         aria-label="This is a draft preview"
@@ -81,4 +87,14 @@ function TokenPreview() {
       </div>
     </div>
   );
+}
+
+function resolvePreviewPageId(draft: SiteDraft, preferredPageId: string | null) {
+  if (
+    preferredPageId &&
+    draft.pages.some((page) => page.id === preferredPageId)
+  ) {
+    return preferredPageId;
+  }
+  return draft.pages.find((page) => page.slug === "/")?.id ?? draft.pages[0]?.id ?? null;
 }

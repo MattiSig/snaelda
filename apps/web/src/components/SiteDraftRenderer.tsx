@@ -1,4 +1,4 @@
-import type { FormEvent, ReactNode } from 'react';
+import type { FormEvent, MouseEvent, ReactNode } from 'react';
 import { useState } from 'react';
 import {
   APIError,
@@ -72,6 +72,7 @@ export function SiteDraftRenderer({
   renderBlock,
   activeEntry,
   activeCollection,
+  onNavigatePage,
 }: {
   site: SiteDraft | PublishedSnapshot | RenderableSite;
   eyebrow?: string;
@@ -84,6 +85,7 @@ export function SiteDraftRenderer({
   renderBlock?: (slot: SiteDraftRendererBlockSlot) => React.ReactNode;
   activeEntry?: CollectionEntry;
   activeCollection?: Collection;
+  onNavigatePage?: (pageId: string) => void;
 }) {
   const renderedPages = selectedPageId
     ? site.pages.filter((page) => page.id === selectedPageId)
@@ -122,9 +124,40 @@ export function SiteDraftRenderer({
   const headerOverlapsHero =
     firstVisibleBlock?.type === 'hero' &&
     asText(firstVisibleBlock.props.variant) === 'full-page';
+  const pageIdByAnchor = new Map(
+    site.pages.map((page) => [pageAnchor(page.slug, page.id), page.id]),
+  );
+
+  function handleShellClick(event: MouseEvent<HTMLDivElement>) {
+    if (!onNavigatePage) {
+      return;
+    }
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
+    const anchor = target.closest('a');
+    if (!anchor) {
+      return;
+    }
+    const href = anchor.getAttribute('href');
+    if (!href?.startsWith('#')) {
+      return;
+    }
+    const pageId = pageIdByAnchor.get(href.slice(1));
+    if (!pageId) {
+      return;
+    }
+    event.preventDefault();
+    onNavigatePage(pageId);
+  }
 
   return (
-    <div className={preview.shell} style={buildSiteThemeStyle(site.theme)}>
+    <div
+      className={preview.shell}
+      style={buildSiteThemeStyle(site.theme)}
+      onClick={handleShellClick}
+    >
       <header
         className={cn(
           preview.header,
