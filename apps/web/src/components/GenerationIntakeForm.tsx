@@ -206,7 +206,7 @@ export function GenerationIntakeForm({
             A few well-chosen answers help Snaelda pick the right pages, blocks, and tone for your draft instead of guessing.
           </p>
           <p className="text-xs text-[var(--paper-muted)]">
-            You can edit any block individually after the draft is generated.
+            Once the draft lands, you can keep refining it with AI or edit any block individually.
           </p>
         </aside>
       </div>

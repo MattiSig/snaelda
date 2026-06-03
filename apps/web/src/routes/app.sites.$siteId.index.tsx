@@ -77,6 +77,7 @@ import { actions, emptyState, form, ribbonPanel, text } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 
 type DraftPage = SiteDraft["pages"][number];
+type RefinementScope = "page" | "site";
 type NavigationDraftState = {
   primary: NavigationItemInput[];
   footer: NavigationItemInput[];
@@ -106,6 +107,33 @@ const themeRegenerateSteps: GenerationProgressItem[] = [
   { step: "plan.theme", label: "Picking colors and typography" },
   { step: "validate.repair", label: "Checking and repairing" },
   { step: "persist", label: "Saving your draft" },
+];
+
+const refinementChips: Array<{ label: string; prompt: string }> = [
+  {
+    label: "Warmer",
+    prompt: "Make this feel warmer, more personal, and less corporate.",
+  },
+  {
+    label: "Bolder layout",
+    prompt: "Push the layout to feel bolder, more memorable, and less template-like.",
+  },
+  {
+    label: "Simpler copy",
+    prompt: "Tighten the copy, reduce repetition, and make the main offer easier to scan.",
+  },
+  {
+    label: "Stronger CTA",
+    prompt: "Make the primary call to action clearer and easier to find.",
+  },
+  {
+    label: "More premium",
+    prompt: "Make the design feel more polished and premium while keeping it approachable.",
+  },
+  {
+    label: "Add booking path",
+    prompt: "Add a clearer booking or inquiry path for visitors who are ready to act.",
+  },
 ];
 
 const validSections: BuilderSection[] = [
@@ -203,8 +231,9 @@ function SiteDetail() {
   const [activeRollbackVersionId, setActiveRollbackVersionId] = useState("");
   const [publishNote, setPublishNote] = useState("");
   const [newCustomDomainHostname, setNewCustomDomainHostname] = useState("");
-  const [siteReprompt, setSiteReprompt] = useState("");
-  const [pageReprompt, setPageReprompt] = useState("");
+  const [refinementPrompt, setRefinementPrompt] = useState("");
+  const [refinementScope, setRefinementScope] =
+    useState<RefinementScope>("page");
   const [themeSelection, setThemeSelection] = useState<ThemeSelection | null>(
     null,
   );
@@ -238,14 +267,13 @@ function SiteDetail() {
   const [isUploadingAsset, setIsUploadingAsset] = useState(false);
   const [isRepromptingSite, setIsRepromptingSite] = useState(false);
   const [isRepromptingPage, setIsRepromptingPage] = useState(false);
-  const [isConfirmingSiteRebuild, setIsConfirmingSiteRebuild] = useState(false);
   const [repromptHistory, setRepromptHistory] = useState<
     RepromptHistoryRecord[]
   >([]);
   const [repromptProgressStep, setRepromptProgressStep] = useState("");
   const [repromptProgressStepTotal, setRepromptProgressStepTotal] = useState(0);
   const [repromptProgressScope, setRepromptProgressScope] = useState<
-    "site" | "page" | ""
+    RefinementScope | ""
   >("");
   const [repromptHistoryScope, setRepromptHistoryScope] = useState<
     "site" | "page"
@@ -1319,89 +1347,74 @@ function SiteDetail() {
     }
   }
 
-  async function handleSiteReprompt(event: FormEvent<HTMLFormElement>) {
+  async function handleApplyRefinement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setIsRepromptingSite(true);
-    setRepromptProgressStep("");
-    setRepromptProgressStepTotal(0);
-    setRepromptProgressScope("site");
-    setRepromptErrorMessage("");
-    setRepromptStatusMessage("");
-    clearBlockedAction();
-
-    try {
-      await streamRepromptSite(
-        siteId,
-        { prompt: siteReprompt },
-        {
-          onProgress: (step) => {
-            setRepromptProgressStep(step.step);
-            setRepromptProgressStepTotal(step.total);
-          },
-        },
-      );
-      await Promise.all([refreshDraftState(), refreshRepromptHistoryState()]);
-      setSiteReprompt("");
-      setPageReprompt("");
-      setIsConfirmingSiteRebuild(false);
-      setRepromptHistoryScope("site");
-      setRepromptStatusMessage("Site regenerated. Review the diff or restore the earlier checkpoint from history.");
-    } catch (error) {
-      setBlockedActionFromError(error);
-      setRepromptErrorMessage(
-        error instanceof APIError ? error.message : "Could not re-prompt site",
-      );
-    } finally {
-      setIsRepromptingSite(false);
-      setRepromptProgressStep("");
-      setRepromptProgressStepTotal(0);
-      setRepromptProgressScope("");
+    const trimmedPrompt = refinementPrompt.trim();
+    if (!trimmedPrompt) {
+      return;
     }
-  }
-
-  async function handlePageReprompt(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selectedPage) {
+    if (refinementScope === "page" && !selectedPage) {
+      setRepromptErrorMessage("Pick a page before refining the current page.");
       return;
     }
 
-    setIsRepromptingPage(true);
     setRepromptProgressStep("");
     setRepromptProgressStepTotal(0);
-    setRepromptProgressScope("page");
+    setRepromptProgressScope(refinementScope);
     setRepromptErrorMessage("");
     setRepromptStatusMessage("");
     clearBlockedAction();
 
     try {
-      await streamRepromptPage(
-        siteId,
-        selectedPage.id,
-        {
-          prompt: pageReprompt,
-        },
-        {
-          onProgress: (step) => {
-            setRepromptProgressStep(step.step);
-            setRepromptProgressStepTotal(step.total);
+      if (refinementScope === "site") {
+        setIsRepromptingSite(true);
+        await streamRepromptSite(
+          siteId,
+          { prompt: trimmedPrompt },
+          {
+            onProgress: (step) => {
+              setRepromptProgressStep(step.step);
+              setRepromptProgressStepTotal(step.total);
+            },
           },
-        },
-      );
-      await Promise.all([
-        refreshDraftState(selectedPage.id, selectedBlock?.id),
-        refreshRepromptHistoryState(),
-      ]);
-      setPageReprompt("");
-      setRepromptHistoryScope("page");
-      setRepromptStatusMessage(
-        `${selectedPage.title} was regenerated. Review the diff or restore the earlier checkpoint from history.`,
-      );
+        );
+        await Promise.all([refreshDraftState(), refreshRepromptHistoryState()]);
+        setRepromptHistoryScope("site");
+        setRepromptStatusMessage(
+          "Site refined. Review the diff or restore the earlier checkpoint from history.",
+        );
+      } else if (refinementScope === "page" && selectedPage) {
+        setIsRepromptingPage(true);
+        await streamRepromptPage(
+          siteId,
+          selectedPage.id,
+          {
+            prompt: trimmedPrompt,
+          },
+          {
+            onProgress: (step) => {
+              setRepromptProgressStep(step.step);
+              setRepromptProgressStepTotal(step.total);
+            },
+          },
+        );
+        await Promise.all([
+          refreshDraftState(selectedPage.id, selectedBlock?.id),
+          refreshRepromptHistoryState(),
+        ]);
+        setRepromptHistoryScope("page");
+        setRepromptStatusMessage(
+          `${selectedPage.title} was refined. Review the diff or restore the earlier checkpoint from history.`,
+        );
+      }
+      setRefinementPrompt("");
     } catch (error) {
       setBlockedActionFromError(error);
       setRepromptErrorMessage(
-        error instanceof APIError ? error.message : "Could not re-prompt page",
+        error instanceof APIError ? error.message : "Could not apply refinement",
       );
     } finally {
+      setIsRepromptingSite(false);
       setIsRepromptingPage(false);
       setRepromptProgressStep("");
       setRepromptProgressStepTotal(0);
@@ -2597,133 +2610,132 @@ function SiteDetail() {
     </div>
   );
 
+  const isApplyingRefinement = isRepromptingSite || isRepromptingPage;
+  const refinementScopeLabel =
+    refinementScope === "page"
+      ? selectedPage
+        ? `${selectedPage.title} page`
+        : "Current page"
+      : "Whole site";
+  const refinementScopeHelp =
+    refinementScope === "page"
+      ? "Refines only the selected page while keeping its route and place in the draft."
+      : "Refines every page. Brand, slug, and checkpoint history are kept.";
+  const refinementProgressSteps =
+    repromptProgressScope === "page"
+      ? pageRepromptSteps
+      : siteRepromptSteps;
+
   const promptPanelContent = (
     <div className="grid gap-4">
       {billingPromptNotice}
       <section className={workspaceSection}>
         <div>
-          <p className={text.eyebrow}>Reweave</p>
+          <p className={text.eyebrow}>AI refine</p>
           <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
-            Rebuild from a fresh prompt
+            Keep shaping this draft
           </h2>
           <p className={cn(text.p, "mt-2 text-sm")}>
-            Replace the whole site or just the selected page. Every rebuild keeps a
-            checkpoint with a diff, so you can inspect changes before keeping them.
+            Say what should change next. Pick the scope first, then apply the
+            refinement into the draft. Every page or site refinement keeps a
+            checkpoint with a diff.
           </p>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-2">
-          <form className={form.grid} onSubmit={handleSiteReprompt}>
-            <label htmlFor="site-reprompt" className={text.label}>
-              Whole site prompt
+        <form
+          className="grid gap-4 rounded-[14px] border border-[color-mix(in_oklch,var(--border)_78%,transparent)] bg-[color-mix(in_oklch,var(--surface-2)_88%,var(--thread-mauve))] p-4"
+          onSubmit={handleApplyRefinement}
+        >
+          <div className="grid gap-3 lg:grid-cols-[minmax(180px,240px)_minmax(0,1fr)]">
+            <label className={form.field}>
+              <span className={text.label}>Scope</span>
+              <Select
+                value={refinementScope}
+                onChange={(event) =>
+                  setRefinementScope(event.target.value as RefinementScope)
+                }
+              >
+                <option value="page">Current page</option>
+                <option value="site">Whole site</option>
+              </Select>
+            </label>
+            <div className="grid gap-1.5 rounded-[10px] border border-[color-mix(in_oklch,var(--border)_68%,transparent)] bg-[var(--surface-1)] px-3 py-2.5">
+              <p className="text-sm font-bold text-[var(--paper)]">
+                {refinementScopeLabel}
+              </p>
+              <p className="m-0 text-sm text-[var(--paper-muted)]">
+                {refinementScopeHelp}
+              </p>
+            </div>
+          </div>
+
+          <div className={form.field}>
+            <label htmlFor="refinement-prompt" className={text.label}>
+              What should change next?
             </label>
             <Textarea
-              id="site-reprompt"
-              rows={4}
-              value={siteReprompt}
-              placeholder="Make the site warmer, tighten the copy, add pricing, and lean harder into workshops."
-              onChange={(event) => {
-                setSiteReprompt(event.target.value);
-                setIsConfirmingSiteRebuild(false);
-              }}
+              id="refinement-prompt"
+              rows={5}
+              value={refinementPrompt}
+              placeholder="Make this feel warmer and less corporate. Add a clearer booking path and tighten the copy."
+              onChange={(event) => setRefinementPrompt(event.target.value)}
             />
-            <p className={form.hint}>
-              Regenerates every page. Brand, slug, and history are kept.
-            </p>
-            {isConfirmingSiteRebuild ? (
-              <div className="grid gap-3 rounded-[10px] border border-[color-mix(in_oklch,var(--thread-gold)_55%,var(--border))] bg-[color-mix(in_oklch,var(--thread-gold)_10%,var(--surface-1))] p-3">
-                <p className="text-sm font-bold text-[var(--paper)]">
-                  Rebuild every page from this prompt?
-                </p>
-                <p className="text-sm text-[var(--paper-muted)]">
-                  The current draft is saved as a checkpoint. You can restore it from
-                  history below if the new direction misses.
-                </p>
-                <div className={actions.row}>
-                  <Button
-                    type="submit"
-                    size="sm"
-                    disabled={isRepromptingSite || siteReprompt.trim() === ""}
-                  >
-                    {isRepromptingSite
-                      ? "Rebuilding site..."
-                      : "Confirm: rebuild every page"}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setIsConfirmingSiteRebuild(false)}
-                    disabled={isRepromptingSite}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : (
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {refinementChips.map((chip) => (
               <Button
+                key={chip.label}
                 type="button"
                 size="sm"
-                disabled={isRepromptingSite || siteReprompt.trim() === ""}
-                onClick={() => setIsConfirmingSiteRebuild(true)}
+                variant="outline"
+                onClick={() =>
+                  setRefinementPrompt((current) =>
+                    current.trim()
+                      ? `${current.trim()} ${chip.prompt}`
+                      : chip.prompt,
+                  )
+                }
               >
-                Rebuild whole site
+                {chip.label}
               </Button>
-            )}
-          </form>
+            ))}
+          </div>
 
-          <form className={form.grid} onSubmit={handlePageReprompt}>
-            <label htmlFor="page-reprompt" className={text.label}>
-              {selectedPage
-                ? `${selectedPage.title} page prompt`
-                : "Page prompt"}
-            </label>
-            <Textarea
-              id="page-reprompt"
-              rows={4}
-              value={pageReprompt}
-              placeholder="Turn this page into a tighter pricing overview with clearer package framing and fewer sections."
-              onChange={(event) => setPageReprompt(event.target.value)}
-            />
-            <p className={form.hint}>
-              Regenerates only the selected page while keeping its route and
-              place in the draft.
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className={cn(form.hint, "m-0")}>
+              This is a refinement rail, not a chat transcript. The next prompt
+              is applied to the current draft.
             </p>
             <Button
               type="submit"
               size="sm"
               disabled={
-                !selectedPage ||
-                isRepromptingPage ||
-                pageReprompt.trim() === ""
+                isApplyingRefinement ||
+                refinementPrompt.trim() === "" ||
+                (refinementScope === "page" && !selectedPage)
               }
             >
-              {isRepromptingPage ? "Rebuilding page..." : "Rebuild page"}
+              {isApplyingRefinement ? "Applying..." : "Apply refinement"}
             </Button>
-          </form>
-        </div>
+          </div>
+        </form>
 
-        {isRepromptingSite || isRepromptingPage ? (
+        {isApplyingRefinement ? (
           <GenerationProgressCard
-            eyebrow="Prompt iteration"
+            eyebrow="AI refinement"
             title={
               repromptProgressScope === "page"
-                ? "Rebuilding the selected page..."
-                : "Rebuilding the site direction..."
+                ? "Refining the selected page..."
+                : "Refining the site direction..."
             }
             description={
               repromptProgressScope === "page"
-                ? "Snaelda is replacing the selected page while keeping its route and draft position."
-                : "Snaelda is rewriting the broader draft while keeping the current site identity."
+                ? "Snaelda is reshaping the selected page while keeping its route and draft position."
+                : "Snaelda is reshaping the broader draft while keeping the current site identity."
             }
-            prompt={
-              repromptProgressScope === "page" ? pageReprompt : siteReprompt
-            }
-            steps={
-              repromptProgressScope === "page"
-                ? pageRepromptSteps
-                : siteRepromptSteps
-            }
+            prompt={refinementPrompt}
+            steps={refinementProgressSteps}
             activeStep={repromptProgressStep}
             activeTotal={repromptProgressStepTotal}
             showSkeleton={
@@ -2813,7 +2825,10 @@ function SiteDetail() {
                   size="sm"
                   variant="outline"
                   disabled={!generationMetadata.prompt}
-                  onClick={() => setSiteReprompt(generationMetadata.prompt)}
+                  onClick={() => {
+                    setRefinementScope("site");
+                    setRefinementPrompt(generationMetadata.prompt);
+                  }}
                 >
                   Edit this prompt
                 </Button>

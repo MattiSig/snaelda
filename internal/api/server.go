@@ -662,3 +662,41 @@ func (a collectionDrafterAdapter) DraftCollection(ctx context.Context, request c
 		Schema:        resp.Schema,
 	}, nil
 }
+
+func (a collectionDrafterAdapter) DraftEntries(ctx context.Context, request collections.EntryDraftRequest) (collections.EntryDraftResponse, error) {
+	resp, err := a.planner.DraftEntries(ctx, generation.EntryDraftRequest{
+		Prompt:   request.Prompt,
+		SiteName: request.SiteName,
+		SiteGoal: request.SiteGoal,
+		Collection: generation.EntryDraftCollection{
+			SingularLabel: request.Collection.SingularLabel,
+			PluralLabel:   request.Collection.PluralLabel,
+			Slug:          request.Collection.Slug,
+			Schema:        request.Collection.Schema,
+		},
+		ExistingEntries: mapEntryDraftExisting(request.ExistingEntries),
+	})
+	if err != nil {
+		return collections.EntryDraftResponse{}, err
+	}
+	entries := make([]collections.EntryDraft, 0, len(resp.Entries))
+	for _, entry := range resp.Entries {
+		entries = append(entries, collections.EntryDraft{
+			Slug:   entry.Slug,
+			Fields: entry.Fields,
+			SEO:    entry.SEO,
+		})
+	}
+	return collections.EntryDraftResponse{Entries: entries}, nil
+}
+
+func mapEntryDraftExisting(entries []collections.EntryDraftExisting) []generation.EntryDraftExisting {
+	out := make([]generation.EntryDraftExisting, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, generation.EntryDraftExisting{
+			Slug:  entry.Slug,
+			Title: entry.Title,
+		})
+	}
+	return out
+}

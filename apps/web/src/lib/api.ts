@@ -1996,6 +1996,21 @@ export async function createCollectionEntry(
   );
 }
 
+export async function draftCollectionEntriesFromPrompt(
+  siteId: string,
+  collectionId: string,
+  input: { prompt: string },
+) {
+  return apiFetch<{ entries: CollectionEntry[] }>(
+    `/api/sites/${siteId}/collections/${collectionId}/entries/draft-from-prompt`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
 export async function updateCollectionEntry(
   siteId: string,
   collectionId: string,

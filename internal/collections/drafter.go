@@ -14,6 +14,7 @@ import (
 // the handler is responsible for storing the resulting draft.
 type CollectionDrafter interface {
 	DraftCollection(ctx context.Context, request CollectionDraftRequest) (CollectionDraftResponse, error)
+	DraftEntries(ctx context.Context, request EntryDraftRequest) (EntryDraftResponse, error)
 }
 
 // CollectionDraftRequest is the structured payload sent to the drafter. The
@@ -33,6 +34,38 @@ type CollectionDraftResponse struct {
 	SingularLabel string                       `json:"singularLabel"`
 	PluralLabel   string                       `json:"pluralLabel"`
 	Schema        []siteconfig.FieldDefinition `json:"schema"`
+}
+
+// EntryDraftRequest is the structured payload sent to the drafter when the
+// user wants starter rows for an existing collection.
+type EntryDraftRequest struct {
+	Prompt          string               `json:"prompt"`
+	SiteName        string               `json:"siteName,omitempty"`
+	SiteGoal        string               `json:"siteGoal,omitempty"`
+	Collection      EntryDraftCollection `json:"collection"`
+	ExistingEntries []EntryDraftExisting `json:"existingEntries,omitempty"`
+}
+
+type EntryDraftCollection struct {
+	SingularLabel string                       `json:"singularLabel"`
+	PluralLabel   string                       `json:"pluralLabel"`
+	Slug          string                       `json:"slug"`
+	Schema        []siteconfig.FieldDefinition `json:"schema"`
+}
+
+type EntryDraftExisting struct {
+	Slug  string `json:"slug"`
+	Title string `json:"title,omitempty"`
+}
+
+type EntryDraftResponse struct {
+	Entries []EntryDraft `json:"entries"`
+}
+
+type EntryDraft struct {
+	Slug   string               `json:"slug,omitempty"`
+	Fields map[string]any       `json:"fields"`
+	SEO    siteconfig.SEOConfig `json:"seo,omitempty"`
 }
 
 // ErrCollectionDrafterUnavailable is returned when the drafter is not

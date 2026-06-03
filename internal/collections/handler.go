@@ -59,6 +59,7 @@ func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.
 
 	mux.Handle("GET /api/sites/{siteId}/collections/{collectionId}/entries", requireUser(http.HandlerFunc(h.listEntries)))
 	mux.Handle("POST /api/sites/{siteId}/collections/{collectionId}/entries", requireUser(http.HandlerFunc(h.createEntry)))
+	mux.Handle("POST /api/sites/{siteId}/collections/{collectionId}/entries/draft-from-prompt", requireUser(http.HandlerFunc(h.draftEntriesFromPrompt)))
 	mux.Handle("GET /api/sites/{siteId}/collections/{collectionId}/entries/{entryId}", requireUser(http.HandlerFunc(h.getEntry)))
 	mux.Handle("PATCH /api/sites/{siteId}/collections/{collectionId}/entries/{entryId}", requireUser(http.HandlerFunc(h.updateEntry)))
 	mux.Handle("DELETE /api/sites/{siteId}/collections/{collectionId}/entries/{entryId}", requireUser(http.HandlerFunc(h.deleteEntry)))
@@ -66,19 +67,19 @@ func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.
 }
 
 type createCollectionRequest struct {
-	Slug          string                            `json:"slug,omitempty"`
-	SingularLabel string                            `json:"singularLabel"`
-	PluralLabel   string                            `json:"pluralLabel"`
-	Schema        []siteconfig.FieldDefinition      `json:"schema,omitempty"`
-	Settings      *siteconfig.CollectionSettings    `json:"settings,omitempty"`
+	Slug          string                         `json:"slug,omitempty"`
+	SingularLabel string                         `json:"singularLabel"`
+	PluralLabel   string                         `json:"pluralLabel"`
+	Schema        []siteconfig.FieldDefinition   `json:"schema,omitempty"`
+	Settings      *siteconfig.CollectionSettings `json:"settings,omitempty"`
 }
 
 type updateCollectionRequest struct {
-	Slug          *string                           `json:"slug,omitempty"`
-	SingularLabel *string                           `json:"singularLabel,omitempty"`
-	PluralLabel   *string                           `json:"pluralLabel,omitempty"`
-	Schema        []siteconfig.FieldDefinition      `json:"schema,omitempty"`
-	Settings      *siteconfig.CollectionSettings    `json:"settings,omitempty"`
+	Slug          *string                        `json:"slug,omitempty"`
+	SingularLabel *string                        `json:"singularLabel,omitempty"`
+	PluralLabel   *string                        `json:"pluralLabel,omitempty"`
+	Schema        []siteconfig.FieldDefinition   `json:"schema,omitempty"`
+	Settings      *siteconfig.CollectionSettings `json:"settings,omitempty"`
 }
 
 type createEntryRequest struct {
@@ -204,6 +205,10 @@ type draftFromPromptRequest struct {
 	Prompt string `json:"prompt"`
 }
 
+type draftEntriesFromPromptRequest struct {
+	Prompt string `json:"prompt"`
+}
+
 func (h *Handler) draftFromPrompt(w http.ResponseWriter, r *http.Request) {
 	siteID := r.PathValue("siteId")
 	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
@@ -324,6 +329,99 @@ func (h *Handler) createEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"entry": entry})
+}
+
+func (h *Handler) draftEntriesFromPrompt(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	collectionID := r.PathValue("collectionId")
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+	if h.drafter == nil {
+		writeError(w, http.StatusServiceUnavailable, "drafter_unavailable", "the AI entry drafter is not configured")
+		return
+	}
+
+	var payload draftEntriesFromPromptRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "request body must be valid JSON")
+		return
+	}
+	prompt := strings.TrimSpace(payload.Prompt)
+	if prompt == "" {
+		writeError(w, http.StatusBadRequest, "invalid_prompt", "prompt is required")
+		return
+	}
+	if len(prompt) > 2000 {
+		writeError(w, http.StatusBadRequest, "invalid_prompt", "prompt is too long")
+		return
+	}
+
+	draft, err := h.reader.LoadDraft(r.Context(), siteID)
+	if err != nil {
+		writeCollectionError(w, err)
+		return
+	}
+	index := findCollection(draft.Collections, collectionID)
+	if index == -1 {
+		writeCollectionError(w, ErrCollectionNotFound)
+		return
+	}
+	collection := draft.Collections[index]
+	if len(collection.Schema) == 0 {
+		writeError(w, http.StatusBadRequest, "collection_schema_missing", "collection needs fields before entries can be drafted")
+		return
+	}
+	if field := requiredUnsupportedEntryDraftField(collection.Schema); field != "" {
+		writeError(w, http.StatusBadRequest, "collection_schema_unsupported", "required field "+field+" cannot be filled by the entry drafter yet")
+		return
+	}
+
+	existingEntries := make([]EntryDraftExisting, 0, len(collection.Entries))
+	for _, entry := range collection.Entries {
+		existingEntries = append(existingEntries, EntryDraftExisting{
+			Slug:  entry.Slug,
+			Title: entryTitle(entry.Fields, collection.Schema),
+		})
+	}
+	drafted, err := h.drafter.DraftEntries(r.Context(), EntryDraftRequest{
+		Prompt:   prompt,
+		SiteName: draft.Site.Name,
+		SiteGoal: draft.Site.SEO.Description,
+		Collection: EntryDraftCollection{
+			SingularLabel: collection.SingularLabel,
+			PluralLabel:   collection.PluralLabel,
+			Slug:          collection.Slug,
+			Schema:        collection.Schema,
+		},
+		ExistingEntries: existingEntries,
+	})
+	if err != nil {
+		if errors.Is(err, ErrCollectionDrafterUnavailable) {
+			writeError(w, http.StatusServiceUnavailable, "drafter_unavailable", "the AI entry drafter is not available")
+			return
+		}
+		writeError(w, http.StatusBadGateway, "drafter_failed", err.Error())
+		return
+	}
+
+	created := make([]siteconfig.CollectionEntry, 0, len(drafted.Entries))
+	for _, draftEntry := range drafted.Entries {
+		entry, err := h.mutator.CreateEntry(r.Context(), scope.WorkspaceID, siteID, collectionID, CreateEntryInput{
+			Slug:   strings.TrimSpace(draftEntry.Slug),
+			Fields: sanitizeEntryDraftFields(draftEntry.Fields, collection.Schema),
+			SEO:    draftEntry.SEO,
+			Status: siteconfig.EntryStatusDraft,
+		})
+		if err != nil {
+			writeCollectionError(w, err)
+			return
+		}
+		created = append(created, entry)
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"entries": entriesOrEmpty(created)})
 }
 
 func (h *Handler) updateEntry(w http.ResponseWriter, r *http.Request) {
@@ -470,4 +568,37 @@ func entriesOrEmpty(entries []siteconfig.CollectionEntry) []siteconfig.Collectio
 		return []siteconfig.CollectionEntry{}
 	}
 	return entries
+}
+
+func requiredUnsupportedEntryDraftField(schema []siteconfig.FieldDefinition) string {
+	for _, field := range schema {
+		if !field.Required {
+			continue
+		}
+		switch field.Type {
+		case siteconfig.FieldTypeAsset, siteconfig.FieldTypeAssetList, siteconfig.FieldTypeReference:
+			return field.Label
+		}
+	}
+	return ""
+}
+
+func sanitizeEntryDraftFields(fields map[string]any, schema []siteconfig.FieldDefinition) map[string]any {
+	allowed := make(map[string]siteconfig.FieldDefinition, len(schema))
+	for _, field := range schema {
+		allowed[field.Key] = field
+	}
+	out := map[string]any{}
+	for key, value := range fields {
+		field, ok := allowed[key]
+		if !ok || value == nil {
+			continue
+		}
+		switch field.Type {
+		case siteconfig.FieldTypeAsset, siteconfig.FieldTypeAssetList, siteconfig.FieldTypeReference:
+			continue
+		}
+		out[key] = value
+	}
+	return out
 }

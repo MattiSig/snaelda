@@ -897,6 +897,74 @@ func (p *OpenAIPlanner) DraftCollection(ctx context.Context, request CollectionD
 	}, nil
 }
 
+// DraftEntries turns a short user prompt into starter entries for an existing
+// collection. The collections handler validates and persists the result.
+func (p *OpenAIPlanner) DraftEntries(ctx context.Context, request EntryDraftRequest) (EntryDraftResponse, error) {
+	if p == nil {
+		return EntryDraftResponse{}, ErrBlockSuggestUnavailable
+	}
+	userJSON, err := json.Marshal(request)
+	if err != nil {
+		return EntryDraftResponse{}, fmt.Errorf("encode entry draft request: %w", err)
+	}
+	schema := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"entries"},
+		"properties": map[string]any{
+			"entries": map[string]any{
+				"type":     "array",
+				"minItems": 1,
+				"maxItems": 10,
+				"items": map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+					"required":             []string{"slug", "fields"},
+					"properties": map[string]any{
+						"slug": map[string]any{
+							"type":        "string",
+							"pattern":     "^[a-z][a-z0-9-]*$",
+							"description": "URL slug, lowercase words separated by hyphens",
+						},
+						"fields": map[string]any{
+							"type":                 "object",
+							"additionalProperties": true,
+						},
+						"seo": map[string]any{
+							"type":                 "object",
+							"additionalProperties": false,
+							"properties": map[string]any{
+								"title":       map[string]any{"type": "string", "maxLength": 80},
+								"description": map[string]any{"type": "string", "maxLength": 180},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	var response openAIEntryDraftPayload
+	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
+		Name:   "collection_entry_draft",
+		Schema: schema,
+		System: collectionEntryDrafterSystemPrompt,
+		User:   string(userJSON),
+		Strict: false,
+	}, &response); err != nil {
+		return EntryDraftResponse{}, err
+	}
+	out := make([]EntryDraft, 0, len(response.Entries))
+	for _, entry := range response.Entries {
+		out = append(out, EntryDraft{
+			Slug:   entry.Slug,
+			Fields: entry.Fields,
+			SEO:    entry.SEO,
+		})
+	}
+	return EntryDraftResponse{Entries: out}, nil
+}
+
 // CollectionDraftRequest mirrors the collections package's drafter contract.
 // We re-declare it here so the generation package does not import collections
 // (which would create a dependency loop — collections already references
@@ -916,6 +984,37 @@ type CollectionDraftResponse struct {
 	Schema        []siteconfig.FieldDefinition `json:"schema"`
 }
 
+// EntryDraftRequest mirrors the collections package's entry drafter contract.
+type EntryDraftRequest struct {
+	Prompt          string               `json:"prompt"`
+	SiteName        string               `json:"siteName,omitempty"`
+	SiteGoal        string               `json:"siteGoal,omitempty"`
+	Collection      EntryDraftCollection `json:"collection"`
+	ExistingEntries []EntryDraftExisting `json:"existingEntries,omitempty"`
+}
+
+type EntryDraftCollection struct {
+	SingularLabel string                       `json:"singularLabel"`
+	PluralLabel   string                       `json:"pluralLabel"`
+	Slug          string                       `json:"slug"`
+	Schema        []siteconfig.FieldDefinition `json:"schema"`
+}
+
+type EntryDraftExisting struct {
+	Slug  string `json:"slug"`
+	Title string `json:"title,omitempty"`
+}
+
+type EntryDraftResponse struct {
+	Entries []EntryDraft `json:"entries"`
+}
+
+type EntryDraft struct {
+	Slug   string               `json:"slug,omitempty"`
+	Fields map[string]any       `json:"fields"`
+	SEO    siteconfig.SEOConfig `json:"seo,omitempty"`
+}
+
 type openAICollectionDraftPayload struct {
 	Slug          string                            `json:"slug"`
 	SingularLabel string                            `json:"singularLabel"`
@@ -930,6 +1029,16 @@ type openAICollectionDraftFieldEntry struct {
 	Required    bool     `json:"required,omitempty"`
 	Description string   `json:"description,omitempty"`
 	Options     []string `json:"options,omitempty"`
+}
+
+type openAIEntryDraftPayload struct {
+	Entries []openAIEntryDraftEntry `json:"entries"`
+}
+
+type openAIEntryDraftEntry struct {
+	Slug   string               `json:"slug"`
+	Fields map[string]any       `json:"fields"`
+	SEO    siteconfig.SEOConfig `json:"seo,omitempty"`
 }
 
 type structuredCompletionRequest struct {
@@ -1224,6 +1333,34 @@ Field rules:
 - Keep field counts tight — avoid fields the user didn't ask for. No SEO/meta fields, no internal ids, no audit fields. Snaelda adds those automatically.
 
 Avoid duplicating an existing collection (provided in "existingCollections" by plural label) — pick a different angle or a more specific scope if the prompt overlaps.
+Plain text only. No HTML, no Markdown.`
+
+const collectionEntryDrafterSystemPrompt = `You are the collection-entry drafter for Snaelda's website builder.
+Return JSON only, matching the supplied schema exactly.
+Translate a short prompt into draft entries for the provided existing collection.
+
+Input includes:
+- "collection": labels, slug, and schema for the target collection.
+- "existingEntries": current entry slugs and titles, used to avoid duplicates.
+
+Required output:
+- "entries": 1-10 entries unless the user asks for a smaller number.
+- Each entry must include "slug" and "fields".
+- "slug" must be lowercase words separated by hyphens and must not duplicate existing entries.
+- "fields" must use only keys from collection.schema. Do not invent field keys.
+- Required text-like fields should be filled. Optional fields may be omitted when the prompt does not provide enough information.
+
+Field value rules:
+- text, long_text, rich_text, url, email, phone, date, enum: string values only.
+- number: number values only.
+- boolean: true or false only.
+- enum_multi: array of strings selected from the field's options.
+- location: object with "name" and optional "region", "country", "lat", "lng".
+- asset, asset_list, reference: omit these fields. They need real asset or entry ids.
+- For enum and enum_multi, choose only from the field's declared options.
+- Dates must be YYYY-MM-DD.
+
+Write credible starter content, but do not invent external facts like real prices, phone numbers, emails, URLs, addresses, credentials, or names of real people unless the user provided them. If a fact is missing, keep the wording generic and editable.
 Plain text only. No HTML, no Markdown.`
 
 const imageQueryRewriterSystemPrompt = `You are the image-search query writer for Snaelda's website builder.

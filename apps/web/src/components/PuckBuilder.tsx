@@ -72,12 +72,12 @@ const sectionMeta: Record<
       "Click any text or image to edit it. Use the + between blocks to insert a new one.",
   },
   prompt: {
-    label: "Prompt",
+    label: "AI refine",
     icon: Sparkles,
-    eyebrow: "Prompt",
-    title: "Reweave the draft from a fresh prompt",
+    eyebrow: "AI refine",
+    title: "Keep shaping this draft",
     description:
-      "Replace the whole site or a single page from a new prompt. Every rebuild keeps a checkpoint, so you can restore the previous draft.",
+      "Tell Snaelda what should change next. Scope each refinement, then compare or restore the checkpoint if the direction misses.",
   },
   pages: {
     label: "Pages",
@@ -149,7 +149,7 @@ const sectionMeta: Record<
     eyebrow: "Settings",
     title: "Site identity",
     description:
-      "Rename, reslug, or delete this draft. Brand lives in Theme & brand. Rebuilds live in Prompt.",
+      "Rename, reslug, or delete this draft. Brand lives in Theme & brand. AI refinements live in AI refine.",
   },
 };
 

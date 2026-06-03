@@ -66,6 +66,13 @@ const spunFor: Array<{ label: string; tone: string }> = [
   { label: 'everything in between', tone: 'var(--thread-mauve)' },
 ]
 
+const landingPromptChips = [
+  'Make it warm and local',
+  'Include booking',
+  'Keep it simple',
+  'Make it feel premium',
+]
+
 function Home() {
   const navigate = useNavigate()
   const { hostedPublic, published } = Route.useLoaderData()
@@ -173,7 +180,7 @@ function Home() {
           </h1>
           <p className="mt-6 max-w-xl text-[1.05rem] leading-8 text-[var(--paper-muted)] md:text-[1.125rem]">
             Describe what you do. Snaelda lays down a real first draft, ready
-            to tweak and publish.
+            to refine, tweak, and publish.
           </p>
 
           {restoreMessage ? (
@@ -211,6 +218,31 @@ function Home() {
               {isStartingWorkspace ? 'Opening workspace...' : 'Spin my site'}
             </Button>
           </form>
+
+          <div className="mt-4 flex w-full max-w-2xl flex-wrap items-center justify-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[color-mix(in_oklch,var(--paper-muted)_72%,transparent)]">
+              Add direction
+            </span>
+            {landingPromptChips.map((chip) => (
+              <button
+                key={chip}
+                type="button"
+                className="rounded-full border border-[color-mix(in_oklch,var(--border)_62%,transparent)] bg-[color-mix(in_oklch,var(--surface-2)_70%,transparent)] px-3 py-1.5 text-sm font-semibold text-[var(--paper-muted)] transition-[background,border-color,color,transform] hover:-translate-y-px hover:border-[color-mix(in_oklch,var(--thread-teal)_70%,transparent)] hover:bg-[var(--surface-2)] hover:text-[var(--paper)]"
+                onClick={() =>
+                  setPrompt((current) =>
+                    current.trim() ? `${current.trim()}. ${chip}.` : chip,
+                  )
+                }
+              >
+                {chip}
+              </button>
+            ))}
+          </div>
+
+          <p className="mt-4 max-w-xl text-sm text-[color-mix(in_oklch,var(--paper-muted)_76%,transparent)]">
+            The first draft is not the final word. Once it lands, keep shaping
+            the site from the preview or the AI refine panel.
+          </p>
 
           <p className="mt-5 text-xs text-[color-mix(in_oklch,var(--paper-muted)_70%,transparent)]">
             By continuing, you agree to our{' '}
