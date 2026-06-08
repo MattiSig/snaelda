@@ -892,8 +892,14 @@ async function streamAPIRequest(
   });
 }
 
-export async function getCurrentSession() {
-  return apiFetch<SessionResponse>("/api/sessions/me").then(
+export async function getCurrentSession(options?: {
+  retryOnUnauthorized?: boolean;
+}) {
+  return apiFetch<SessionResponse>(
+    "/api/sessions/me",
+    {},
+    options?.retryOnUnauthorized ?? true,
+  ).then(
     (response) => response.session,
   );
 }

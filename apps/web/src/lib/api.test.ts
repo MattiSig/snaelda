@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   getAPIBaseURL,
+  getCurrentSession,
   normalizePublishedSiteResponse,
   resolveRuntimeAPIBaseURL,
   startAnonymousSession,
@@ -76,6 +77,27 @@ describe('anonymous session', () => {
     expect(String(fetchMock.mock.calls[0][0])).toContain(
       '/api/sessions/anonymous?freshIfBlocked=true',
     )
+  })
+
+  it('can check for a session without attempting an auth refresh', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({
+        error: {
+          code: 'unauthenticated',
+          message: 'a session is required',
+        },
+      }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    await expect(
+      getCurrentSession({ retryOnUnauthorized: false }),
+    ).rejects.toMatchObject({ status: 401 })
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/sessions/me')
   })
 })
 

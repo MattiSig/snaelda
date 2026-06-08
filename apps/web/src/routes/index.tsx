@@ -1,9 +1,16 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import type { CSSProperties, FormEvent } from 'react'
 import { useEffect, useState } from 'react'
-import { Globe, Sparkles } from 'lucide-react'
+import { ArrowRight, Globe, Sparkles } from 'lucide-react'
 import { PublishedSitePage } from '@/components/PublishedSitePage'
-import { APIError, getPublishedSiteByHostname, restoreWorkspace, startAnonymousSession } from '@/lib/api'
+import {
+  APIError,
+  getCurrentSession,
+  getPublishedSiteByHostname,
+  restoreWorkspace,
+  startAnonymousSession,
+  type BuilderSession,
+} from '@/lib/api'
 import {
   buildPublishedPageHead,
   loadPublishedSitePageData,
@@ -80,6 +87,29 @@ function Home() {
   const [prompt, setPrompt] = useState('')
   const [restoreMessage, setRestoreMessage] = useState('')
   const [isStartingWorkspace, setIsStartingWorkspace] = useState(false)
+  const [currentSession, setCurrentSession] = useState<BuilderSession | null>(null)
+
+  useEffect(() => {
+    if (hostedPublic.isHostedPublic) {
+      return
+    }
+
+    let isMounted = true
+
+    getCurrentSession({ retryOnUnauthorized: false })
+      .then((session) => {
+        if (isMounted) {
+          setCurrentSession(session)
+        }
+      })
+      .catch(() => {
+        // No active session is the normal first-visit state.
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [hostedPublic.isHostedPublic])
 
   useEffect(() => {
     const incomingRestoreKey = extractRecoveryKey(search.restore || '')
@@ -156,12 +186,22 @@ function Home() {
             <img src="/logo.png" alt="" className="size-7 object-contain" />
             snaelda
           </Link>
-          <Link
-            to="/login"
-            className="text-sm font-semibold text-[var(--paper-muted)] underline-offset-4 transition-colors hover:text-[var(--thread-gold)] hover:underline"
-          >
-            Log in
-          </Link>
+          {currentSession ? (
+            <Link
+              to="/app"
+              className="inline-flex min-h-11 items-center gap-2 rounded-full border border-[color-mix(in_oklch,var(--thread-teal)_52%,var(--border))] bg-[color-mix(in_oklch,var(--surface-2)_76%,transparent)] px-4 text-sm font-bold text-[var(--paper)] transition-[background,border-color,color,transform] hover:-translate-y-px hover:border-[var(--thread-teal)] hover:bg-[var(--surface-2)]"
+            >
+              Open workspace
+              <ArrowRight aria-hidden className="size-4" />
+            </Link>
+          ) : (
+            <Link
+              to="/login"
+              className="text-sm font-semibold text-[var(--paper-muted)] underline-offset-4 transition-colors hover:text-[var(--thread-gold)] hover:underline"
+            >
+              Log in
+            </Link>
+          )}
         </div>
 
         <div className="relative z-10 mx-auto flex w-full max-w-[1180px] flex-1 flex-col items-center justify-center px-6 pb-14 pt-10 text-center md:px-8 md:pb-20 md:pt-14">
@@ -189,8 +229,15 @@ function Home() {
             </p>
           ) : null}
 
+          {currentSession ? (
+            <ReturningWorkspacePrompt session={currentSession} />
+          ) : null}
+
           <form
-            className="group relative mt-10 flex w-full max-w-2xl flex-col items-stretch gap-3 rounded-[18px] border border-[color-mix(in_oklch,var(--border)_56%,transparent)] bg-[color-mix(in_oklch,var(--surface-2)_88%,transparent)] p-3 shadow-[0_24px_70px_-22px_oklch(16%_0.05_336_/_0.6)] backdrop-blur-sm transition-colors duration-300 focus-within:border-[color-mix(in_oklch,var(--thread-teal)_70%,transparent)] md:flex-row md:items-center md:p-2.5 md:pl-3"
+            className={cn(
+              'group relative flex w-full max-w-2xl flex-col items-stretch gap-3 rounded-[18px] border border-[color-mix(in_oklch,var(--border)_56%,transparent)] bg-[color-mix(in_oklch,var(--surface-2)_88%,transparent)] p-3 shadow-[0_24px_70px_-22px_oklch(16%_0.05_336_/_0.6)] backdrop-blur-sm transition-colors duration-300 focus-within:border-[color-mix(in_oklch,var(--thread-teal)_70%,transparent)] md:flex-row md:items-center md:p-2.5 md:pl-3',
+              currentSession ? 'mt-5' : 'mt-10',
+            )}
             onSubmit={async (event: FormEvent) => {
               event.preventDefault()
               await handleGuestStart(prompt)
@@ -215,7 +262,11 @@ function Home() {
               className="min-h-14 shrink-0 rounded-[14px] bg-[var(--thread-gold)] px-7 text-[var(--ink)] shadow-[0_10px_24px_-8px_oklch(78%_0.11_68_/_0.55)] transition-transform duration-200 hover:-translate-y-px hover:bg-[color-mix(in_oklch,var(--thread-gold)_84%,white)]"
             >
               <Globe className="size-4.5" />
-              {isStartingWorkspace ? 'Opening workspace...' : 'Spin my site'}
+              {isStartingWorkspace
+                ? 'Opening workspace...'
+                : currentSession
+                  ? 'Start another site'
+                  : 'Spin my site'}
             </Button>
           </form>
 
@@ -321,13 +372,50 @@ function Home() {
             <Link to="/privacy" className="transition-colors hover:text-[var(--paper)]">
               Privacy
             </Link>
-            <Link to="/login" className="transition-colors hover:text-[var(--thread-gold)]">
-              Log in
-            </Link>
+            {currentSession ? (
+              <Link to="/app" className="transition-colors hover:text-[var(--thread-teal)]">
+                Open workspace
+              </Link>
+            ) : (
+              <Link to="/login" className="transition-colors hover:text-[var(--thread-gold)]">
+                Log in
+              </Link>
+            )}
           </nav>
         </div>
       </footer>
     </main>
+  )
+}
+
+export function ReturningWorkspacePrompt({
+  session,
+}: {
+  session: BuilderSession
+}) {
+  const ownerLabel =
+    session.user?.name ||
+    session.user?.email ||
+    (session.kind === 'trial' ? 'Your trial workspace' : 'Your workspace')
+
+  return (
+    <div className="mt-8 flex w-full max-w-2xl flex-col items-center justify-between gap-4 rounded-[16px] border border-[color-mix(in_oklch,var(--thread-teal)_42%,var(--border))] bg-[color-mix(in_oklch,var(--thread-teal)_8%,var(--surface-1))] px-5 py-4 text-left sm:flex-row">
+      <div className="min-w-0">
+        <p className="text-xs font-bold uppercase tracking-[0.12em] text-[var(--thread-teal)]">
+          Your workspace is waiting
+        </p>
+        <p className="mt-1 truncate text-sm text-[var(--paper-muted)]">
+          {ownerLabel}
+        </p>
+      </div>
+      <Link
+        to="/app"
+        className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-[var(--thread-teal)] px-5 text-sm font-bold text-[var(--ink)] transition-[background,transform] hover:-translate-y-px hover:bg-[color-mix(in_oklch,var(--thread-teal)_86%,white)]"
+      >
+        Continue editing
+        <ArrowRight aria-hidden className="size-4" />
+      </Link>
+    </div>
   )
 }
 
