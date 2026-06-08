@@ -179,9 +179,14 @@ func (h *Handler) startAnonymousSession(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if session, err := h.resolveSession(r); err == nil {
-		h.writeSessionCookies(w, r, session)
-		writeAuthJSON(w, http.StatusOK, sessionResponse{Session: session})
-		return
+		freshIfBlocked := r.URL.Query().Get("freshIfBlocked") == "true"
+		// Preserve active workspaces, but let a landing-page prompt replace a
+		// guest trial that can no longer generate.
+		if !freshIfBlocked || !trialGenerationBlocked(session) {
+			h.writeSessionCookies(w, r, session)
+			writeAuthJSON(w, http.StatusOK, sessionResponse{Session: session})
+			return
+		}
 	}
 
 	session, token, csrfToken, err := h.createTrialSession(r.Context())
@@ -193,6 +198,12 @@ func (h *Handler) startAnonymousSession(w http.ResponseWriter, r *http.Request) 
 	http.SetCookie(w, h.guestCookie(token, int(h.refreshTokenTTL.Seconds())))
 	http.SetCookie(w, h.csrfCookie(csrfToken, int(h.refreshTokenTTL.Seconds())))
 	writeAuthJSON(w, http.StatusCreated, sessionResponse{Session: session})
+}
+
+func trialGenerationBlocked(session Session) bool {
+	return session.Kind == SessionKindTrial &&
+		!session.SubscriptionLive &&
+		(session.TrialExpired || session.PromptsUsed >= trialPromptLimit)
 }
 
 func (h *Handler) sessionMe(w http.ResponseWriter, r *http.Request) {

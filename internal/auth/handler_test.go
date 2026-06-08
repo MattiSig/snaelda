@@ -342,6 +342,75 @@ func TestRequireUserRejectsMissingCookie(t *testing.T) {
 	}
 }
 
+func TestTrialGenerationBlocked(t *testing.T) {
+	now := time.Now().UTC()
+
+	tests := []struct {
+		name    string
+		session Session
+		blocked bool
+	}{
+		{
+			name: "active trial",
+			session: Session{
+				Kind:           SessionKindTrial,
+				TrialStartedAt: &now,
+				PromptLimit:    trialPromptLimit,
+			},
+		},
+		{
+			name: "expired trial",
+			session: Session{
+				Kind:           SessionKindTrial,
+				TrialStartedAt: &now,
+				TrialExpired:   true,
+				PromptLimit:    trialPromptLimit,
+			},
+			blocked: true,
+		},
+		{
+			name: "exhausted trial",
+			session: Session{
+				Kind:           SessionKindTrial,
+				TrialStartedAt: &now,
+				PromptsUsed:    trialPromptLimit,
+				PromptLimit:    trialPromptLimit,
+			},
+			blocked: true,
+		},
+		{
+			name: "subscribed trial workspace",
+			session: Session{
+				Kind:             SessionKindTrial,
+				TrialStartedAt:   &now,
+				TrialExpired:     true,
+				PromptsUsed:      trialPromptLimit,
+				PromptLimit:      trialPromptLimit,
+				SubscriptionLive: true,
+			},
+		},
+		{
+			name: "authenticated session with expired trial metadata",
+			session: Session{
+				Kind:           SessionKindAuthenticated,
+				User:           &User{ID: "user-1"},
+				TrialStartedAt: &now,
+				TrialExpired:   true,
+				PromptsUsed:    trialPromptLimit,
+				PromptLimit:    trialPromptLimit,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := trialGenerationBlocked(test.session); got != test.blocked {
+				t.Fatalf("expected blocked=%v, got %v", test.blocked, got)
+			}
+		})
+	}
+}
+
 func TestRestoreSessionRotatesGuestCookieAndAllowsSessionAccess(t *testing.T) {
 	trialStartedAt := time.Now().UTC().Add(-time.Hour)
 	store := &fakeAuthStore{

@@ -817,11 +817,18 @@ async function streamAPIRequest(
   }
 
   while (true) {
-    const { value, done } = await reader.read();
-    if (done) {
+    let chunk: ReadableStreamReadResult<Uint8Array>;
+    try {
+      chunk = await reader.read();
+    } catch {
+      // Railway or the browser can terminate a long-lived SSE connection while
+      // the detached generation job keeps running. Recover below via the job ID.
       break;
     }
-    buffer += decoder.decode(value, { stream: true });
+    if (chunk.done) {
+      break;
+    }
+    buffer += decoder.decode(chunk.value, { stream: true });
     const blocks = buffer.split(/\r?\n\r?\n/);
     buffer = blocks.pop() ?? "";
     for (const block of blocks) {
@@ -833,7 +840,14 @@ async function streamAPIRequest(
   }
 
   if (buffer.trim()) {
-    await handleEventBlock(buffer);
+    try {
+      await handleEventBlock(buffer);
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      // A truncated final SSE frame is expected when the connection drops.
+    }
   }
   if (completed) {
     return completed;
@@ -943,8 +957,13 @@ export async function login(email: string, name?: string) {
   });
 }
 
-export async function startAnonymousSession() {
-  return apiFetch<SessionResponse>("/api/sessions/anonymous", {
+export async function startAnonymousSession(options?: {
+  freshIfBlocked?: boolean;
+}) {
+  const path = options?.freshIfBlocked
+    ? "/api/sessions/anonymous?freshIfBlocked=true"
+    : "/api/sessions/anonymous";
+  return apiFetch<SessionResponse>(path, {
     method: "POST",
   }).then((response) => response.session);
 }

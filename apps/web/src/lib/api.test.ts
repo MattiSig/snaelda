@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   getAPIBaseURL,
   normalizePublishedSiteResponse,
   resolveRuntimeAPIBaseURL,
+  startAnonymousSession,
 } from './api'
 
 describe('api base url', () => {
@@ -47,6 +48,87 @@ describe('api base url', () => {
     process.env.API_BASE_URL = 'https://api.snaelda.io'
 
     expect(getAPIBaseURL()).toBe('https://api.snaelda.io')
+  })
+})
+
+describe('anonymous session', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('can request a fresh session when the current trial is blocked', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({
+        session: {
+          kind: 'trial',
+          workspaceId: 'workspace-1',
+          workspaceRole: 'owner',
+        },
+      }), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    await startAnonymousSession({ freshIfBlocked: true })
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      '/api/sessions/anonymous?freshIfBlocked=true',
+    )
+  })
+})
+
+describe('generation stream recovery', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('polls the persisted job after the SSE connection drops', async () => {
+    const encoder = new TextEncoder()
+    let pullCount = 0
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pullCount += 1
+        if (pullCount === 1) {
+          controller.enqueue(
+            encoder.encode('event: job\ndata: {"jobId":"job-1"}\n\n'),
+          )
+          return
+        }
+        controller.error(new Error('connection terminated'))
+      },
+    })
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(stream, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        job: {
+          id: 'job-1',
+          kind: 'site',
+          state: 'succeeded',
+          siteId: 'site-1',
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+
+    const result = await import('./api').then(({ streamGenerateSite }) =>
+      streamGenerateSite({ prompt: 'A neighborhood bicycle repair shop' }),
+    )
+
+    expect(result).toEqual({
+      jobId: 'job-1',
+      siteId: 'site-1',
+      draftId: 'site-1',
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(String(fetchMock.mock.calls[1][0])).toContain(
+      '/api/generation/jobs/job-1',
+    )
   })
 })
 

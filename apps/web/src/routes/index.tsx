@@ -100,7 +100,7 @@ function Home() {
     setIsStartingWorkspace(true)
     setRestoreMessage('')
     try {
-      await startAnonymousSession()
+      await startAnonymousSession({ freshIfBlocked: true })
       await navigate({
         to: '/app',
         search: promptOverride?.trim() ? { prompt: promptOverride.trim() } : {},

@@ -215,9 +215,8 @@ function SitesIndex() {
       setIsPreparingIntake(false)
       setIsAutoGenerating(false)
       setGenerationPrompt('')
-      if (error instanceof APIError) {
-        // Network or auth failures should not block generation — fall back to
-        // launching the run without any interview answers.
+      if (!(error instanceof APIError) || error.status >= 500) {
+        // Intake is optional. Transient failures should not prevent generation.
         await runGeneration({
           promptValue: trimmedPrompt,
           nameValue,
@@ -225,7 +224,7 @@ function SitesIndex() {
         })
         return
       }
-      setErrorMessage('Could not prepare the intake questions')
+      setErrorMessage(error.message)
     }
   }
 
