@@ -15,15 +15,17 @@ import (
 )
 
 var (
-	ErrNotFound                = errors.New("theme site not found")
-	ErrNoThemeChanges          = errors.New("theme update requires at least one change")
-	ErrThemePaletteInvalid     = errors.New("theme palette is invalid")
-	ErrThemeFontPresetInvalid  = errors.New("theme font preset is invalid")
-	ErrThemeSpacingInvalid     = errors.New("theme section spacing is invalid")
-	ErrThemeRadiusInvalid      = errors.New("theme radius is invalid")
-	ErrThemeButtonStyleInvalid = errors.New("theme button style is invalid")
-	ErrThemeImageStyleInvalid  = errors.New("theme image style is invalid")
-	ErrThemeRegenerationOff    = errors.New("theme regeneration is not configured")
+	ErrNotFound                 = errors.New("theme site not found")
+	ErrNoThemeChanges           = errors.New("theme update requires at least one change")
+	ErrThemePaletteInvalid      = errors.New("theme palette is invalid")
+	ErrThemeFontPresetInvalid   = errors.New("theme font preset is invalid")
+	ErrThemeTypeScaleInvalid    = errors.New("theme type scale is invalid")
+	ErrThemeSpacingInvalid      = errors.New("theme section spacing is invalid")
+	ErrThemeContentWidthInvalid = errors.New("theme content width is invalid")
+	ErrThemeRadiusInvalid       = errors.New("theme radius is invalid")
+	ErrThemeButtonStyleInvalid  = errors.New("theme button style is invalid")
+	ErrThemeImageStyleInvalid   = errors.New("theme image style is invalid")
+	ErrThemeRegenerationOff     = errors.New("theme regeneration is not configured")
 )
 
 type DB interface {
@@ -66,7 +68,9 @@ type ThemeState struct {
 type UpdateInput struct {
 	Palette        *string
 	FontPreset     *string
+	TypeScale      *string
 	SectionSpacing *string
+	ContentWidth   *string
 	Radius         *string
 	ButtonStyle    *string
 	ImageStyle     *string
@@ -100,7 +104,9 @@ func (s *Service) Load(ctx context.Context, siteID string) (ThemeState, error) {
 func (s *Service) Update(ctx context.Context, workspaceID string, siteID string, input UpdateInput) (ThemeState, error) {
 	if input.Palette == nil &&
 		input.FontPreset == nil &&
+		input.TypeScale == nil &&
 		input.SectionSpacing == nil &&
+		input.ContentWidth == nil &&
 		input.Radius == nil &&
 		input.ButtonStyle == nil &&
 		input.ImageStyle == nil {
@@ -122,8 +128,14 @@ func (s *Service) Update(ctx context.Context, workspaceID string, siteID string,
 	if input.FontPreset != nil {
 		selection.FontPreset = strings.TrimSpace(*input.FontPreset)
 	}
+	if input.TypeScale != nil {
+		selection.TypeScale = strings.TrimSpace(*input.TypeScale)
+	}
 	if input.SectionSpacing != nil {
 		selection.SectionSpacing = strings.TrimSpace(*input.SectionSpacing)
+	}
+	if input.ContentWidth != nil {
+		selection.ContentWidth = strings.TrimSpace(*input.ContentWidth)
 	}
 	if input.Radius != nil {
 		selection.Radius = strings.TrimSpace(*input.Radius)
@@ -248,8 +260,14 @@ func validateSelection(selection siteconfig.ThemeSelection) error {
 	if !hasThemeOption(catalog.FontPresets, selection.FontPreset) {
 		return ErrThemeFontPresetInvalid
 	}
+	if !hasThemeOption(catalog.TypeScales, selection.TypeScale) {
+		return ErrThemeTypeScaleInvalid
+	}
 	if !hasThemeOption(catalog.SectionSpacings, selection.SectionSpacing) {
 		return ErrThemeSpacingInvalid
+	}
+	if !hasThemeOption(catalog.ContentWidths, selection.ContentWidth) {
+		return ErrThemeContentWidthInvalid
 	}
 	if !hasThemeOption(catalog.Radii, selection.Radius) {
 		return ErrThemeRadiusInvalid
@@ -394,8 +412,12 @@ func themeFailureReason(err error) string {
 		return "invalid_theme_palette"
 	case errors.Is(err, ErrThemeFontPresetInvalid):
 		return "invalid_theme_font_preset"
+	case errors.Is(err, ErrThemeTypeScaleInvalid):
+		return "invalid_theme_type_scale"
 	case errors.Is(err, ErrThemeSpacingInvalid):
 		return "invalid_theme_section_spacing"
+	case errors.Is(err, ErrThemeContentWidthInvalid):
+		return "invalid_theme_content_width"
 	case errors.Is(err, ErrThemeRadiusInvalid):
 		return "invalid_theme_radius"
 	case errors.Is(err, ErrThemeButtonStyleInvalid):

@@ -1,5 +1,9 @@
 import type { CSSProperties } from "react";
-import type { SiteDraft } from "@/lib/api";
+import type {
+  SiteDraft,
+  ThemeEditorCatalog,
+  ThemeSelection,
+} from "@/lib/api";
 
 type ThemeConfig = SiteDraft["theme"];
 
@@ -23,6 +27,7 @@ export function buildSiteThemeStyle(theme: ThemeConfig): CSSProperties {
   const bodyFont = resolveFontStack(asString(typography.bodyFont));
   const headingWeight = asNumberString(typography.headingWeight, "700");
   const bodyWeight = asNumberString(typography.bodyWeight, "400");
+  const typeScale = resolveTypeScale(asString(typography.scale));
 
   return {
     "--color-background": colors.background ?? "#191119",
@@ -39,6 +44,7 @@ export function buildSiteThemeStyle(theme: ThemeConfig): CSSProperties {
     "--font-body": bodyFont,
     "--font-headingWeight": headingWeight,
     "--font-bodyWeight": bodyWeight,
+    ...typeScale,
     "--size-contentWidth": contentWidth,
     "--radius-panel": radius,
     "--radius-card": radius,
@@ -51,6 +57,42 @@ export function buildSiteThemeStyle(theme: ThemeConfig): CSSProperties {
     ...buttonVars,
     ...imageVars,
   } as CSSProperties;
+}
+
+export function buildSiteThemeFromSelection(
+  currentTheme: ThemeConfig,
+  selection: ThemeSelection,
+  options: ThemeEditorCatalog,
+): ThemeConfig {
+  const palette = options.palettes.find(
+    (option) => option.id === selection.palette,
+  );
+
+  return {
+    version: currentTheme.version,
+    tokens: {
+      colors: {
+        ...currentTheme.tokens.colors,
+        ...(palette?.previewColors ?? {}),
+      },
+      typography: {
+        ...currentTheme.tokens.typography,
+        ...fontPresetTokens(selection.fontPreset),
+        scale: selection.typeScale,
+      },
+      layout: {
+        ...currentTheme.tokens.layout,
+        sectionPaddingY: sectionSpacingValue(selection.sectionSpacing),
+        contentWidth: contentWidthValue(selection.contentWidth),
+      },
+      shape: {
+        ...currentTheme.tokens.shape,
+        radius: radiusValue(selection.radius),
+        buttonStyle: selection.buttonStyle,
+        imageStyle: selection.imageStyle,
+      },
+    },
+  };
 }
 
 function asString(value: unknown) {
@@ -69,16 +111,149 @@ function asNumberString(value: unknown, fallback: string) {
 
 function resolveFontStack(value: string) {
   switch (value) {
+    case "Literata":
+      return '"Literata", "Iowan Old Style", "Palatino Linotype", Georgia, serif';
+    case "Be Vietnam Pro":
+      return '"Be Vietnam Pro", "Avenir Next", "Segoe UI", sans-serif';
     case "Iowan Old Style":
       return '"Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif';
     case "Avenir Next":
       return '"Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif';
+    case "Helvetica Neue":
+      return '"Helvetica Neue", Helvetica, Arial, sans-serif';
+    case "Trebuchet MS":
+      return '"Trebuchet MS", "Segoe UI", Arial, sans-serif';
+    case "Georgia":
+      return 'Georgia, "Times New Roman", serif';
     default:
       return value || '"Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif';
   }
 }
 
+function resolveTypeScale(value: string): Record<string, string> {
+  switch (value) {
+    case "compact":
+      return {
+        "--size-sectionHeading": "clamp(1.5rem,2.4vw,2.1rem)",
+        "--size-heroHeading": "clamp(2.25rem,5vw,4.25rem)",
+        "--size-fullPageHeading": "clamp(2.5rem,6vw,4.8rem)",
+      };
+    case "expressive":
+      return {
+        "--size-sectionHeading": "clamp(1.9rem,3.4vw,2.9rem)",
+        "--size-heroHeading": "clamp(3.2rem,7.5vw,6.6rem)",
+        "--size-fullPageHeading": "clamp(3.4rem,8vw,7rem)",
+      };
+    default:
+      return {
+        "--size-sectionHeading": "clamp(1.65rem,2.8vw,2.4rem)",
+        "--size-heroHeading": "clamp(2.6rem,6.2vw,5.4rem)",
+        "--size-fullPageHeading": "clamp(2.8rem,7vw,6rem)",
+      };
+  }
+}
+
+function fontPresetTokens(value: string): Record<string, string | number> {
+  switch (value) {
+    case "editorial":
+      return {
+        heading: "Literata",
+        body: "Literata",
+        headingFont: "Literata",
+        bodyFont: "Literata",
+        headingWeight: 700,
+        bodyWeight: 400,
+      };
+    case "studio-sans":
+      return {
+        heading: "Be Vietnam Pro",
+        body: "Be Vietnam Pro",
+        headingFont: "Be Vietnam Pro",
+        bodyFont: "Be Vietnam Pro",
+        headingWeight: 700,
+        bodyWeight: 400,
+      };
+    case "modern-grotesk":
+      return {
+        heading: "Helvetica Neue",
+        body: "Helvetica Neue",
+        headingFont: "Helvetica Neue",
+        bodyFont: "Helvetica Neue",
+        headingWeight: 700,
+        bodyWeight: 400,
+      };
+    case "humanist":
+      return {
+        heading: "Trebuchet MS",
+        body: "Trebuchet MS",
+        headingFont: "Trebuchet MS",
+        bodyFont: "Trebuchet MS",
+        headingWeight: 700,
+        bodyWeight: 400,
+      };
+    case "heritage-serif":
+      return {
+        heading: "Georgia",
+        body: "Georgia",
+        headingFont: "Georgia",
+        bodyFont: "Georgia",
+        headingWeight: 700,
+        bodyWeight: 400,
+      };
+    default:
+      return {
+        heading: "Literata",
+        body: "Be Vietnam Pro",
+        headingFont: "Literata",
+        bodyFont: "Be Vietnam Pro",
+        headingWeight: 600,
+        bodyWeight: 400,
+      };
+  }
+}
+
+function sectionSpacingValue(value: string) {
+  switch (value) {
+    case "snug":
+      return "88px";
+    case "airy":
+      return "120px";
+    default:
+      return "96px";
+  }
+}
+
+function contentWidthValue(value: string) {
+  switch (value) {
+    case "focused":
+      return "640px";
+    case "wide":
+      return "860px";
+    default:
+      return "720px";
+  }
+}
+
+function radiusValue(value: string) {
+  switch (value) {
+    case "sharp":
+      return "0px";
+    case "crisp":
+      return "8px";
+    case "tailored":
+      return "16px";
+    case "pillowy":
+      return "32px";
+    default:
+      return "24px";
+  }
+}
+
 function innerRadius(radius: string) {
+  const pixelRadius = /^(\d+(?:\.\d+)?)px$/.exec(radius);
+  if (pixelRadius) {
+    return `${Math.max(0, Number(pixelRadius[1]) - 6)}px`;
+  }
   return `calc(${radius} - 6px)`;
 }
 

@@ -101,12 +101,20 @@ Allow controlled editing of:
 
 - color palette
 - font style preset
+- typography scale
 - button style
 - corner radius
 - section spacing
+- content width
 - image style
 
 Do not expose raw CSS in the MVP.
+
+Theme controls update the builder preview immediately. Saving persists the
+current selection to the canonical draft; resetting restores the last saved
+theme. Presets should offer materially distinct directions, including square
+corners, graduated rounding, mixed serif and sans pairings, full-serif
+typography, and multiple sans voices.
 
 ## Prompt-Driven Iteration
 

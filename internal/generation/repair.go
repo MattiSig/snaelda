@@ -72,7 +72,9 @@ func normalizeThemeSelection(selection siteconfig.ThemeSelection) siteconfig.The
 func hasThemeSelection(selection siteconfig.ThemeSelection) bool {
 	return selection.Palette != "" ||
 		selection.FontPreset != "" ||
+		selection.TypeScale != "" ||
 		selection.SectionSpacing != "" ||
+		selection.ContentWidth != "" ||
 		selection.Radius != "" ||
 		selection.ButtonStyle != "" ||
 		selection.ImageStyle != ""

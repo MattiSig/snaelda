@@ -82,7 +82,9 @@ func TestUpdateRebuildsThemeFromSelection(t *testing.T) {
 	state, err := service.Update(context.Background(), "workspace-1", "site_demo", UpdateInput{
 		Palette:        stringPointer(siteconfig.ThemePaletteBrightShopfront),
 		FontPreset:     stringPointer(siteconfig.ThemeFontStudioSans),
+		TypeScale:      stringPointer(siteconfig.ThemeTypeScaleExpressive),
 		SectionSpacing: stringPointer(siteconfig.ThemeSpacingSnug),
+		ContentWidth:   stringPointer(siteconfig.ThemeContentWidthWide),
 		Radius:         stringPointer(siteconfig.ThemeRadiusPillowy),
 		ButtonStyle:    stringPointer(siteconfig.ThemeButtonInkSolid),
 		ImageStyle:     stringPointer(siteconfig.ThemeImagePaperCut),
@@ -104,6 +106,12 @@ func TestUpdateRebuildsThemeFromSelection(t *testing.T) {
 	}
 	if state.Selection.ImageStyle != siteconfig.ThemeImagePaperCut {
 		t.Fatalf("expected updated image style, got %#v", state.Selection)
+	}
+	if state.Theme.Tokens.Typography["scale"] != siteconfig.ThemeTypeScaleExpressive {
+		t.Fatalf("expected expressive type scale, got %#v", state.Theme.Tokens.Typography)
+	}
+	if state.Theme.Tokens.Layout["contentWidth"] != "860px" {
+		t.Fatalf("expected wide content width, got %#v", state.Theme.Tokens.Layout)
 	}
 }
 
@@ -158,7 +166,9 @@ func TestRegenerateRebuildsThemeFromProviderSelection(t *testing.T) {
 		selection: siteconfig.ThemeSelection{
 			Palette:        siteconfig.ThemePaletteBrightShopfront,
 			FontPreset:     siteconfig.ThemeFontStudioSans,
+			TypeScale:      siteconfig.ThemeTypeScaleExpressive,
 			SectionSpacing: siteconfig.ThemeSpacingSnug,
+			ContentWidth:   siteconfig.ThemeContentWidthWide,
 			Radius:         siteconfig.ThemeRadiusPillowy,
 			ButtonStyle:    siteconfig.ThemeButtonInkSolid,
 			ImageStyle:     siteconfig.ThemeImagePaperCut,

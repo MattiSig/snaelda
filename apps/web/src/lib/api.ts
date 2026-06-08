@@ -359,7 +359,9 @@ export type ThemeOption = {
 export type ThemeSelection = {
   palette: string;
   fontPreset: string;
+  typeScale: string;
   sectionSpacing: string;
+  contentWidth: string;
   radius: string;
   buttonStyle: string;
   imageStyle: string;
@@ -368,7 +370,9 @@ export type ThemeSelection = {
 export type ThemeEditorCatalog = {
   palettes: ThemeOption[];
   fontPresets: ThemeOption[];
+  typeScales: ThemeOption[];
   sectionSpacings: ThemeOption[];
+  contentWidths: ThemeOption[];
   radii: ThemeOption[];
   buttonStyles: ThemeOption[];
   imageStyles: ThemeOption[];

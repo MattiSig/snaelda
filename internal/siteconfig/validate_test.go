@@ -442,11 +442,16 @@ func TestBuildThemeWithBrandIgnoresInvalidBrandColor(t *testing.T) {
 func TestDetectThemeSelectionKeepsPaletteWithBrandDerivedColors(t *testing.T) {
 	selection := DefaultThemeSelection()
 	selection.Palette = ThemePaletteEditorialStudio
+	selection.TypeScale = ThemeTypeScaleExpressive
+	selection.ContentWidth = ThemeContentWidthFocused
 	theme := BuildThemeWithBrand(selection, BrandConfig{PrimaryColor: "#abcdef"})
 
 	detected := DetectThemeSelection(theme)
 	if detected.Palette != ThemePaletteEditorialStudio {
 		t.Fatalf("expected palette detection to survive brand color derivation, got %#v", detected)
+	}
+	if detected.TypeScale != ThemeTypeScaleExpressive || detected.ContentWidth != ThemeContentWidthFocused {
+		t.Fatalf("expected extended theme selection to be detected, got %#v", detected)
 	}
 }
 
@@ -455,10 +460,33 @@ func TestThemeEditorCatalogWithBrandAddsPreviewColors(t *testing.T) {
 	if len(catalog.Palettes) != 6 {
 		t.Fatalf("expected six palette options, got %d", len(catalog.Palettes))
 	}
+	if len(catalog.FontPresets) != 6 {
+		t.Fatalf("expected six font presets, got %d", len(catalog.FontPresets))
+	}
+	if len(catalog.Radii) != 5 {
+		t.Fatalf("expected five radius options, got %d", len(catalog.Radii))
+	}
 	for _, option := range catalog.Palettes {
 		if option.PreviewColors["primary"] != "#abcdef" {
 			t.Fatalf("expected branded preview color for %s, got %#v", option.ID, option.PreviewColors)
 		}
+	}
+}
+
+func TestBuildThemeSupportsSharpCornersAndDistinctFontPresets(t *testing.T) {
+	selection := DefaultThemeSelection()
+	selection.FontPreset = ThemeFontHumanist
+	selection.Radius = ThemeRadiusSharp
+
+	theme := BuildTheme(selection)
+	if theme.Tokens.Typography["headingFont"] != "Trebuchet MS" || theme.Tokens.Typography["bodyFont"] != "Trebuchet MS" {
+		t.Fatalf("expected humanist font tokens, got %#v", theme.Tokens.Typography)
+	}
+	if theme.Tokens.Shape["radius"] != "0px" {
+		t.Fatalf("expected true square corners, got %#v", theme.Tokens.Shape)
+	}
+	if detected := DetectThemeSelection(theme); detected.FontPreset != ThemeFontHumanist || detected.Radius != ThemeRadiusSharp {
+		t.Fatalf("expected expanded selection to round trip, got %#v", detected)
 	}
 }
 

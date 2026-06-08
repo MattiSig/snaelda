@@ -1242,7 +1242,7 @@ func themeSelectionObjectSchema() map[string]any {
 	return map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
-		"required":             []string{"palette", "fontPreset", "sectionSpacing", "radius", "buttonStyle", "imageStyle"},
+		"required":             []string{"palette", "fontPreset", "typeScale", "sectionSpacing", "contentWidth", "radius", "buttonStyle", "imageStyle"},
 		"properties": map[string]any{
 			"palette": map[string]any{"type": "string", "enum": []string{
 				siteconfig.ThemePaletteCalmNordic,
@@ -1256,13 +1256,28 @@ func themeSelectionObjectSchema() map[string]any {
 				siteconfig.ThemeFontBalanced,
 				siteconfig.ThemeFontEditorial,
 				siteconfig.ThemeFontStudioSans,
+				siteconfig.ThemeFontModernGrotesk,
+				siteconfig.ThemeFontHumanist,
+				siteconfig.ThemeFontHeritageSerif,
+			}},
+			"typeScale": map[string]any{"type": "string", "enum": []string{
+				siteconfig.ThemeTypeScaleCompact,
+				siteconfig.ThemeTypeScaleBalanced,
+				siteconfig.ThemeTypeScaleExpressive,
 			}},
 			"sectionSpacing": map[string]any{"type": "string", "enum": []string{
 				siteconfig.ThemeSpacingSnug,
 				siteconfig.ThemeSpacingComfortable,
 				siteconfig.ThemeSpacingAiry,
 			}},
+			"contentWidth": map[string]any{"type": "string", "enum": []string{
+				siteconfig.ThemeContentWidthFocused,
+				siteconfig.ThemeContentWidthStandard,
+				siteconfig.ThemeContentWidthWide,
+			}},
 			"radius": map[string]any{"type": "string", "enum": []string{
+				siteconfig.ThemeRadiusSharp,
+				siteconfig.ThemeRadiusCrisp,
 				siteconfig.ThemeRadiusTailored,
 				siteconfig.ThemeRadiusSoft,
 				siteconfig.ThemeRadiusPillowy,

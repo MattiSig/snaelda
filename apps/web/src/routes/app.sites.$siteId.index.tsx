@@ -17,6 +17,7 @@ import {
   formatAssetFileSize,
   readImageDimensions,
 } from "@/lib/assets";
+import { buildSiteThemeFromSelection } from "@/lib/site-theme";
 import {
   APIError,
   completeAssetUpload,
@@ -237,6 +238,9 @@ function SiteDetail() {
   const [themeSelection, setThemeSelection] = useState<ThemeSelection | null>(
     null,
   );
+  const [savedThemeSelection, setSavedThemeSelection] =
+    useState<ThemeSelection | null>(null);
+  const [savedTheme, setSavedTheme] = useState<SiteDraft["theme"] | null>(null);
   const [themeOptions, setThemeOptions] = useState<ThemeEditorCatalog | null>(
     null,
   );
@@ -405,6 +409,8 @@ function SiteDetail() {
           setDomainState(domainResponse);
           setBillingState(billingResponse);
           setThemeSelection(themeResponse.selection);
+          setSavedThemeSelection(themeResponse.selection);
+          setSavedTheme(themeResponse.theme);
           setThemeOptions(themeResponse.options);
           setRepromptHistory(repromptHistoryResponse.reprompts);
           setSiteAssets(assetResponse.assets);
@@ -1119,16 +1125,45 @@ function SiteDetail() {
     field: keyof ThemeSelection,
     value: string,
   ) {
-    setThemeSelection((current) =>
+    if (!themeSelection || !themeOptions) {
+      return;
+    }
+    const nextSelection = {
+      ...themeSelection,
+      [field]: value,
+    };
+    setThemeSelection(nextSelection);
+    setDraft((current) =>
       current
         ? {
             ...current,
-            [field]: value,
+            theme: buildSiteThemeFromSelection(
+              current.theme,
+              nextSelection,
+              themeOptions,
+            ),
           }
         : current,
     );
     setThemeErrorMessage("");
-    setThemeStatusMessage("");
+    setThemeStatusMessage("Unsaved theme changes are shown in the live preview.");
+  }
+
+  function handleResetThemeSelection() {
+    if (!savedThemeSelection || !savedTheme) {
+      return;
+    }
+    setThemeSelection(savedThemeSelection);
+    setDraft((current) =>
+      current
+        ? {
+            ...current,
+            theme: savedTheme,
+          }
+        : current,
+    );
+    setThemeErrorMessage("");
+    setThemeStatusMessage("Theme changes reset to the saved version.");
   }
 
   async function handleSaveTheme(event: FormEvent<HTMLFormElement>) {
@@ -1144,6 +1179,8 @@ function SiteDetail() {
     try {
       const response = await updateSiteTheme(siteId, themeSelection);
       setThemeSelection(response.selection);
+      setSavedThemeSelection(response.selection);
+      setSavedTheme(response.theme);
       setThemeOptions(response.options);
       setDraft((current) =>
         current
@@ -1179,6 +1216,8 @@ function SiteDetail() {
         },
       });
       setThemeSelection(response.selection);
+      setSavedThemeSelection(response.selection);
+      setSavedTheme(response.theme);
       setThemeOptions(response.options);
       setDraft((current) =>
         current
@@ -1719,6 +1758,11 @@ function SiteDetail() {
     selectedPage && selectedBlock
       ? selectedPage.blocks.findIndex((block) => block.id === selectedBlock.id)
       : -1;
+  const themeHasUnsavedChanges = Boolean(
+    themeSelection &&
+      savedThemeSelection &&
+      !sameThemeSelection(themeSelection, savedThemeSelection),
+  );
   const primaryNavigationPageIds = new Set(
     navigationDraft.primary
       .map((item) => item.pageId)
@@ -3308,6 +3352,31 @@ function SiteDetail() {
               </div>
 
               <div className={form.field}>
+                <label htmlFor="theme-type-scale" className={text.label}>
+                  Type scale
+                </label>
+                <Select
+                  id="theme-type-scale"
+                  value={themeSelection.typeScale}
+                  onChange={(event) =>
+                    handleThemeSelectionChange("typeScale", event.target.value)
+                  }
+                >
+                  {themeOptions.typeScales.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+                <p className={form.hint}>
+                  {describeThemeOption(
+                    themeOptions.typeScales,
+                    themeSelection.typeScale,
+                  )}
+                </p>
+              </div>
+
+              <div className={form.field}>
                 <label htmlFor="theme-section-spacing" className={text.label}>
                   Section spacing
                 </label>
@@ -3331,6 +3400,34 @@ function SiteDetail() {
                   {describeThemeOption(
                     themeOptions.sectionSpacings,
                     themeSelection.sectionSpacing,
+                  )}
+                </p>
+              </div>
+
+              <div className={form.field}>
+                <label htmlFor="theme-content-width" className={text.label}>
+                  Content width
+                </label>
+                <Select
+                  id="theme-content-width"
+                  value={themeSelection.contentWidth}
+                  onChange={(event) =>
+                    handleThemeSelectionChange(
+                      "contentWidth",
+                      event.target.value,
+                    )
+                  }
+                >
+                  {themeOptions.contentWidths.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+                <p className={form.hint}>
+                  {describeThemeOption(
+                    themeOptions.contentWidths,
+                    themeSelection.contentWidth,
                   )}
                 </p>
               </div>
@@ -3432,9 +3529,21 @@ function SiteDetail() {
                   ? "Regenerating theme..."
                   : "Regenerate theme"}
               </Button>
+              {themeHasUnsavedChanges ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleResetThemeSelection}
+                  disabled={isSavingTheme || isRegeneratingTheme}
+                >
+                  Reset live changes
+                </Button>
+              ) : null}
               <Button
                 type="submit"
-                disabled={isSavingTheme || isRegeneratingTheme}
+                disabled={
+                  isSavingTheme || isRegeneratingTheme || !themeHasUnsavedChanges
+                }
               >
                 {isSavingTheme ? "Saving theme..." : "Save theme"}
               </Button>
@@ -4087,6 +4196,19 @@ function describeThemeOption(
   selectedID: string,
 ) {
   return options.find((option) => option.id === selectedID)?.description ?? "";
+}
+
+function sameThemeSelection(left: ThemeSelection, right: ThemeSelection) {
+  return (
+    left.palette === right.palette &&
+    left.fontPreset === right.fontPreset &&
+    left.typeScale === right.typeScale &&
+    left.sectionSpacing === right.sectionSpacing &&
+    left.contentWidth === right.contentWidth &&
+    left.radius === right.radius &&
+    left.buttonStyle === right.buttonStyle &&
+    left.imageStyle === right.imageStyle
+  );
 }
 
 function themePreviewColors(

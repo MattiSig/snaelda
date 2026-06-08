@@ -35,7 +35,9 @@ type Authorizer interface {
 type updateThemeRequest struct {
 	Palette        *string `json:"palette,omitempty"`
 	FontPreset     *string `json:"fontPreset,omitempty"`
+	TypeScale      *string `json:"typeScale,omitempty"`
 	SectionSpacing *string `json:"sectionSpacing,omitempty"`
+	ContentWidth   *string `json:"contentWidth,omitempty"`
 	Radius         *string `json:"radius,omitempty"`
 	ButtonStyle    *string `json:"buttonStyle,omitempty"`
 	ImageStyle     *string `json:"imageStyle,omitempty"`
@@ -98,7 +100,9 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	state, err := h.service.Update(r.Context(), scope.WorkspaceID, siteID, UpdateInput{
 		Palette:        trimPointer(payload.Palette),
 		FontPreset:     trimPointer(payload.FontPreset),
+		TypeScale:      trimPointer(payload.TypeScale),
 		SectionSpacing: trimPointer(payload.SectionSpacing),
+		ContentWidth:   trimPointer(payload.ContentWidth),
 		Radius:         trimPointer(payload.Radius),
 		ButtonStyle:    trimPointer(payload.ButtonStyle),
 		ImageStyle:     trimPointer(payload.ImageStyle),
@@ -283,8 +287,12 @@ func themeErrorDetails(err error) (code string, message string, status int) {
 		return "invalid_theme_palette", "theme palette is not supported", http.StatusBadRequest
 	case errors.Is(err, ErrThemeFontPresetInvalid):
 		return "invalid_theme_font_preset", "theme font preset is not supported", http.StatusBadRequest
+	case errors.Is(err, ErrThemeTypeScaleInvalid):
+		return "invalid_theme_type_scale", "theme type scale is not supported", http.StatusBadRequest
 	case errors.Is(err, ErrThemeSpacingInvalid):
 		return "invalid_theme_section_spacing", "theme section spacing is not supported", http.StatusBadRequest
+	case errors.Is(err, ErrThemeContentWidthInvalid):
+		return "invalid_theme_content_width", "theme content width is not supported", http.StatusBadRequest
 	case errors.Is(err, ErrThemeRadiusInvalid):
 		return "invalid_theme_radius", "theme radius is not supported", http.StatusBadRequest
 	case errors.Is(err, ErrThemeButtonStyleInvalid):

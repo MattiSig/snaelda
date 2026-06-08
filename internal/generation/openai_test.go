@@ -23,7 +23,7 @@ func TestOpenAIPlannerBuildPlanParsesStructuredCompletion(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{{
 				"message": map[string]any{
-					"content": `{"siteName":"Ribbon & Pine","siteGoal":"Win more workshop bookings.","themeSelection":{"palette":"bright-shopfront","fontPreset":"studio-sans","sectionSpacing":"snug","radius":"pillowy","buttonStyle":"ink-solid","imageStyle":"paper-cut"},"pages":[{"title":"Home","slug":"/","goal":"Introduce the studio and get visitors to book.","blocks":[{"type":"hero","purpose":"Lead with the main offer","props":{"headline":"Book a warmer workshop site"}}],"seo":{"title":"Ribbon & Pine","description":"Workshop booking website"}}],"assetsNeeded":["hero-image"],"assumptions":["Classes are booked by inquiry."]}`,
+					"content": `{"siteName":"Ribbon & Pine","siteGoal":"Win more workshop bookings.","themeSelection":{"palette":"bright-shopfront","fontPreset":"studio-sans","typeScale":"expressive","sectionSpacing":"snug","contentWidth":"wide","radius":"pillowy","buttonStyle":"ink-solid","imageStyle":"paper-cut"},"pages":[{"title":"Home","slug":"/","goal":"Introduce the studio and get visitors to book.","blocks":[{"type":"hero","purpose":"Lead with the main offer","props":{"headline":"Book a warmer workshop site"}}],"seo":{"title":"Ribbon & Pine","description":"Workshop booking website"}}],"assetsNeeded":["hero-image"],"assumptions":["Classes are booked by inquiry."]}`,
 				},
 			}},
 		})
@@ -274,7 +274,7 @@ func TestOpenAIPlannerRegenerateThemeSelectionParsesStructuredCompletion(t *test
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{{
 				"message": map[string]any{
-					"content": `{"themeSelection":{"palette":"after-hours","fontPreset":"editorial","sectionSpacing":"airy","radius":"soft","buttonStyle":"ribbon-fill","imageStyle":"woven-tint"}}`,
+					"content": `{"themeSelection":{"palette":"after-hours","fontPreset":"editorial","typeScale":"expressive","sectionSpacing":"airy","contentWidth":"standard","radius":"soft","buttonStyle":"ribbon-fill","imageStyle":"woven-tint"}}`,
 				},
 			}},
 		})

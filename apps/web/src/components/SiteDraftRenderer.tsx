@@ -609,7 +609,7 @@ function renderSiteBlock({
 }
 
 const headingClass =
-  '[font-family:var(--font-heading)] text-[clamp(1.65rem,2.8vw,2.4rem)] [font-weight:var(--font-headingWeight,700)] leading-[1.08] tracking-tight text-[var(--color-text)]';
+  '[font-family:var(--font-heading)] text-[var(--size-sectionHeading)] [font-weight:var(--font-headingWeight,700)] leading-[1.08] tracking-tight text-[var(--color-text)]';
 
 const bodyClass =
   'text-[1.05rem] leading-[1.65] text-[color-mix(in_oklch,var(--color-text)_82%,var(--color-background))]';
@@ -679,7 +679,7 @@ function HeroBlock({
         value={asText(props.headline)}
         placeholder="Add a headline that says what you do"
         as="h2"
-        className="[font-family:var(--font-heading)] text-[clamp(2.6rem,6.2vw,5.4rem)] [font-weight:var(--font-headingWeight,700)] leading-[0.96] tracking-[-0.02em] text-[var(--color-text)]"
+        className="[font-family:var(--font-heading)] text-[var(--size-heroHeading)] [font-weight:var(--font-headingWeight,700)] leading-[0.96] tracking-[-0.02em] text-[var(--color-text)]"
       />
       <InlineEditableText
         blockId={blockId}
@@ -847,7 +847,7 @@ function FullPageHeroBlock({
             value={headline ?? ''}
             placeholder="A bold full-page promise"
             as="h1"
-            className="[font-family:var(--font-heading)] text-[clamp(2.8rem,7vw,6rem)] [font-weight:var(--font-headingWeight,700)] leading-[0.95] tracking-[-0.02em] text-[#F9F7F2] drop-shadow-[0_2px_24px_rgba(0,0,0,0.35)]"
+            className="[font-family:var(--font-heading)] text-[var(--size-fullPageHeading)] [font-weight:var(--font-headingWeight,700)] leading-[0.95] tracking-[-0.02em] text-[#F9F7F2] drop-shadow-[0_2px_24px_rgba(0,0,0,0.35)]"
           />
           <InlineEditableText
             blockId={blockId}

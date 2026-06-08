@@ -14,14 +14,27 @@ const (
 	ThemePaletteHeritageCraft   = "heritage-craft"
 	ThemePaletteAfterHours      = "after-hours"
 
-	ThemeFontBalanced   = "balanced"
-	ThemeFontEditorial  = "editorial"
-	ThemeFontStudioSans = "studio-sans"
+	ThemeFontBalanced      = "balanced"
+	ThemeFontEditorial     = "editorial"
+	ThemeFontStudioSans    = "studio-sans"
+	ThemeFontModernGrotesk = "modern-grotesk"
+	ThemeFontHumanist      = "humanist"
+	ThemeFontHeritageSerif = "heritage-serif"
+
+	ThemeTypeScaleCompact    = "compact"
+	ThemeTypeScaleBalanced   = "balanced"
+	ThemeTypeScaleExpressive = "expressive"
 
 	ThemeSpacingSnug        = "snug"
 	ThemeSpacingComfortable = "comfortable"
 	ThemeSpacingAiry        = "airy"
 
+	ThemeContentWidthFocused  = "focused"
+	ThemeContentWidthStandard = "standard"
+	ThemeContentWidthWide     = "wide"
+
+	ThemeRadiusSharp    = "sharp"
+	ThemeRadiusCrisp    = "crisp"
 	ThemeRadiusTailored = "tailored"
 	ThemeRadiusSoft     = "soft"
 	ThemeRadiusPillowy  = "pillowy"
@@ -38,7 +51,9 @@ const (
 type ThemeSelection struct {
 	Palette        string `json:"palette"`
 	FontPreset     string `json:"fontPreset"`
+	TypeScale      string `json:"typeScale"`
 	SectionSpacing string `json:"sectionSpacing"`
+	ContentWidth   string `json:"contentWidth"`
 	Radius         string `json:"radius"`
 	ButtonStyle    string `json:"buttonStyle"`
 	ImageStyle     string `json:"imageStyle"`
@@ -54,7 +69,9 @@ type ThemeOption struct {
 type ThemeEditorCatalog struct {
 	Palettes        []ThemeOption `json:"palettes"`
 	FontPresets     []ThemeOption `json:"fontPresets"`
+	TypeScales      []ThemeOption `json:"typeScales"`
 	SectionSpacings []ThemeOption `json:"sectionSpacings"`
+	ContentWidths   []ThemeOption `json:"contentWidths"`
 	Radii           []ThemeOption `json:"radii"`
 	ButtonStyles    []ThemeOption `json:"buttonStyles"`
 	ImageStyles     []ThemeOption `json:"imageStyles"`
@@ -137,41 +154,74 @@ var (
 	}
 	themeTypographyTokens = map[string]map[string]any{
 		ThemeFontBalanced: {
-			"heading":       "Iowan Old Style",
-			"body":          "Avenir Next",
-			"headingFont":   "Iowan Old Style",
-			"bodyFont":      "Avenir Next",
-			"headingWeight": 700,
+			"heading":       "Literata",
+			"body":          "Be Vietnam Pro",
+			"headingFont":   "Literata",
+			"bodyFont":      "Be Vietnam Pro",
+			"headingWeight": 600,
 			"bodyWeight":    400,
-			"scale":         "calm",
 		},
 		ThemeFontEditorial: {
-			"heading":       "Iowan Old Style",
-			"body":          "Avenir Next",
-			"headingFont":   "Iowan Old Style",
-			"bodyFont":      "Avenir Next",
+			"heading":       "Literata",
+			"body":          "Literata",
+			"headingFont":   "Literata",
+			"bodyFont":      "Literata",
 			"headingWeight": 700,
 			"bodyWeight":    400,
-			"scale":         "editorial",
 		},
 		ThemeFontStudioSans: {
-			"heading":       "Avenir Next",
-			"body":          "Avenir Next",
-			"headingFont":   "Avenir Next",
-			"bodyFont":      "Avenir Next",
+			"heading":       "Be Vietnam Pro",
+			"body":          "Be Vietnam Pro",
+			"headingFont":   "Be Vietnam Pro",
+			"bodyFont":      "Be Vietnam Pro",
 			"headingWeight": 700,
 			"bodyWeight":    400,
-			"scale":         "playful",
 		},
+		ThemeFontModernGrotesk: {
+			"heading":       "Helvetica Neue",
+			"body":          "Helvetica Neue",
+			"headingFont":   "Helvetica Neue",
+			"bodyFont":      "Helvetica Neue",
+			"headingWeight": 700,
+			"bodyWeight":    400,
+		},
+		ThemeFontHumanist: {
+			"heading":       "Trebuchet MS",
+			"body":          "Trebuchet MS",
+			"headingFont":   "Trebuchet MS",
+			"bodyFont":      "Trebuchet MS",
+			"headingWeight": 700,
+			"bodyWeight":    400,
+		},
+		ThemeFontHeritageSerif: {
+			"heading":       "Georgia",
+			"body":          "Georgia",
+			"headingFont":   "Georgia",
+			"bodyFont":      "Georgia",
+			"headingWeight": 700,
+			"bodyWeight":    400,
+		},
+	}
+	themeTypeScaleValues = map[string]string{
+		ThemeTypeScaleCompact:    "compact",
+		ThemeTypeScaleBalanced:   "balanced",
+		ThemeTypeScaleExpressive: "expressive",
 	}
 	themeSectionSpacingValues = map[string]string{
 		ThemeSpacingSnug:        "88px",
 		ThemeSpacingComfortable: "96px",
 		ThemeSpacingAiry:        "120px",
 	}
+	themeContentWidthValues = map[string]string{
+		ThemeContentWidthFocused:  "640px",
+		ThemeContentWidthStandard: "720px",
+		ThemeContentWidthWide:     "860px",
+	}
 	themeRadiusValues = map[string]string{
-		ThemeRadiusTailored: "22px",
-		ThemeRadiusSoft:     "28px",
+		ThemeRadiusSharp:    "0px",
+		ThemeRadiusCrisp:    "8px",
+		ThemeRadiusTailored: "16px",
+		ThemeRadiusSoft:     "24px",
 		ThemeRadiusPillowy:  "32px",
 	}
 	themeButtonStyles = map[string]struct{}{
@@ -194,18 +244,33 @@ var (
 			{ID: ThemePaletteAfterHours, Label: "After Hours", Description: "A warm dark direction for bars, studios, music, events, tattoo, and dramatic visual brands."},
 		},
 		FontPresets: []ThemeOption{
-			{ID: ThemeFontBalanced, Label: "Balanced", Description: "Serif headings with calm supporting sans text."},
-			{ID: ThemeFontEditorial, Label: "Editorial", Description: "Sharper serif display with the highest contrast hierarchy."},
-			{ID: ThemeFontStudioSans, Label: "Studio Sans", Description: "Unified sans treatment for a lighter, brisker tone."},
+			{ID: ThemeFontBalanced, Label: "Literary Sans", Description: "Literata headings with clean Be Vietnam Pro body text."},
+			{ID: ThemeFontEditorial, Label: "Editorial Serif", Description: "Literata throughout for a bookish, text-led character."},
+			{ID: ThemeFontStudioSans, Label: "Studio Sans", Description: "Be Vietnam Pro throughout for a warm contemporary voice."},
+			{ID: ThemeFontModernGrotesk, Label: "Modern Grotesk", Description: "A tighter Helvetica-led system stack with a direct commercial tone."},
+			{ID: ThemeFontHumanist, Label: "Humanist Sans", Description: "Open, friendly Trebuchet forms suited to services and community sites."},
+			{ID: ThemeFontHeritageSerif, Label: "Heritage Serif", Description: "Georgia throughout for a familiar, traditional editorial feel."},
+		},
+		TypeScales: []ThemeOption{
+			{ID: ThemeTypeScaleCompact, Label: "Compact", Description: "Smaller headings for information-dense sites and longer titles."},
+			{ID: ThemeTypeScaleBalanced, Label: "Balanced", Description: "A clear default hierarchy with practical headline scale."},
+			{ID: ThemeTypeScaleExpressive, Label: "Expressive", Description: "Larger display moments for short, confident messaging."},
 		},
 		SectionSpacings: []ThemeOption{
 			{ID: ThemeSpacingSnug, Label: "Snug", Description: "Tighter section rhythm for denser pages."},
 			{ID: ThemeSpacingComfortable, Label: "Comfortable", Description: "The default prototype spacing balance."},
 			{ID: ThemeSpacingAiry, Label: "Airy", Description: "More breathing room between major sections."},
 		},
+		ContentWidths: []ThemeOption{
+			{ID: ThemeContentWidthFocused, Label: "Focused", Description: "Narrower prose and forms for calm, guided reading."},
+			{ID: ThemeContentWidthStandard, Label: "Standard", Description: "Balanced line lengths for most small-business sites."},
+			{ID: ThemeContentWidthWide, Label: "Wide", Description: "More room for menus, listings, and content-rich sections."},
+		},
 		Radii: []ThemeOption{
-			{ID: ThemeRadiusTailored, Label: "Tailored", Description: "Sharper corners with a little craft left in."},
-			{ID: ThemeRadiusSoft, Label: "Soft", Description: "Rounded panels aligned with the current prototype."},
+			{ID: ThemeRadiusSharp, Label: "Sharp", Description: "True square corners with no rounding."},
+			{ID: ThemeRadiusCrisp, Label: "Crisp", Description: "A restrained 8px corner for practical interfaces."},
+			{ID: ThemeRadiusTailored, Label: "Tailored", Description: "Moderate corners that keep structure visible."},
+			{ID: ThemeRadiusSoft, Label: "Soft", Description: "Generous rounding aligned with the warm default."},
 			{ID: ThemeRadiusPillowy, Label: "Pillowy", Description: "Extra rounded surfaces for the warmest feel."},
 		},
 		ButtonStyles: []ThemeOption{
@@ -225,7 +290,9 @@ func DefaultThemeSelection() ThemeSelection {
 	return ThemeSelection{
 		Palette:        ThemePaletteCleanLocal,
 		FontPreset:     ThemeFontBalanced,
+		TypeScale:      ThemeTypeScaleBalanced,
 		SectionSpacing: ThemeSpacingComfortable,
+		ContentWidth:   ThemeContentWidthStandard,
 		Radius:         ThemeRadiusSoft,
 		ButtonStyle:    ThemeButtonRibbonFill,
 		ImageStyle:     ThemeImageSoftFrame,
@@ -254,7 +321,9 @@ func ThemePreset(name string) ThemeConfig {
 		return BuildTheme(ThemeSelection{
 			Palette:        ThemePaletteBrightShopfront,
 			FontPreset:     ThemeFontStudioSans,
+			TypeScale:      ThemeTypeScaleExpressive,
 			SectionSpacing: ThemeSpacingSnug,
+			ContentWidth:   ThemeContentWidthWide,
 			Radius:         ThemeRadiusPillowy,
 			ButtonStyle:    ThemeButtonRibbonFill,
 			ImageStyle:     ThemeImagePaperCut,
@@ -263,7 +332,9 @@ func ThemePreset(name string) ThemeConfig {
 		return BuildTheme(ThemeSelection{
 			Palette:        ThemePaletteEditorialStudio,
 			FontPreset:     ThemeFontEditorial,
+			TypeScale:      ThemeTypeScaleExpressive,
 			SectionSpacing: ThemeSpacingAiry,
+			ContentWidth:   ThemeContentWidthFocused,
 			Radius:         ThemeRadiusTailored,
 			ButtonStyle:    ThemeButtonInkSolid,
 			ImageStyle:     ThemeImageSoftFrame,
@@ -272,7 +343,9 @@ func ThemePreset(name string) ThemeConfig {
 		return BuildTheme(ThemeSelection{
 			Palette:        ThemePaletteHeritageCraft,
 			FontPreset:     ThemeFontBalanced,
+			TypeScale:      ThemeTypeScaleBalanced,
 			SectionSpacing: ThemeSpacingComfortable,
+			ContentWidth:   ThemeContentWidthStandard,
 			Radius:         ThemeRadiusSoft,
 			ButtonStyle:    ThemeButtonThreadOutline,
 			ImageStyle:     ThemeImageWovenTint,
@@ -281,7 +354,9 @@ func ThemePreset(name string) ThemeConfig {
 		return BuildTheme(ThemeSelection{
 			Palette:        ThemePaletteAfterHours,
 			FontPreset:     ThemeFontEditorial,
+			TypeScale:      ThemeTypeScaleExpressive,
 			SectionSpacing: ThemeSpacingComfortable,
+			ContentWidth:   ThemeContentWidthStandard,
 			Radius:         ThemeRadiusTailored,
 			ButtonStyle:    ThemeButtonRibbonFill,
 			ImageStyle:     ThemeImageWovenTint,
@@ -290,7 +365,9 @@ func ThemePreset(name string) ThemeConfig {
 		return BuildTheme(ThemeSelection{
 			Palette:        ThemePaletteCalmNordic,
 			FontPreset:     ThemeFontBalanced,
+			TypeScale:      ThemeTypeScaleBalanced,
 			SectionSpacing: ThemeSpacingAiry,
+			ContentWidth:   ThemeContentWidthFocused,
 			Radius:         ThemeRadiusSoft,
 			ButtonStyle:    ThemeButtonThreadOutline,
 			ImageStyle:     ThemeImageSoftFrame,
@@ -299,7 +376,9 @@ func ThemePreset(name string) ThemeConfig {
 		return BuildTheme(ThemeSelection{
 			Palette:        ThemePaletteCleanLocal,
 			FontPreset:     ThemeFontBalanced,
+			TypeScale:      ThemeTypeScaleBalanced,
 			SectionSpacing: ThemeSpacingComfortable,
+			ContentWidth:   ThemeContentWidthStandard,
 			Radius:         ThemeRadiusSoft,
 			ButtonStyle:    ThemeButtonRibbonFill,
 			ImageStyle:     ThemeImageSoftFrame,
@@ -323,14 +402,16 @@ func BuildThemeWithBrand(selection ThemeSelection, brand BrandConfig) ThemeConfi
 		colors = deriveBrandPalette(colors, brand.PrimaryColor)
 	}
 	sectionPaddingY := themeSectionSpacingValues[normalized.SectionSpacing]
+	typography := maps.Clone(themeTypographyTokens[normalized.FontPreset])
+	typography["scale"] = themeTypeScaleValues[normalized.TypeScale]
 	return ThemeConfig{
 		Version: ThemeVersionV1,
 		Tokens: ThemeTokens{
 			Colors:     colors,
-			Typography: maps.Clone(themeTypographyTokens[normalized.FontPreset]),
+			Typography: typography,
 			Layout: map[string]any{
 				"maxWidth":        "1120px",
-				"contentWidth":    "720px",
+				"contentWidth":    themeContentWidthValues[normalized.ContentWidth],
 				"sectionPaddingX": "24px",
 				"sectionPaddingY": sectionPaddingY,
 			},
@@ -353,8 +434,14 @@ func DetectThemeSelection(theme ThemeConfig) ThemeSelection {
 	if fontPreset := detectThemeFontPreset(theme.Tokens.Typography); fontPreset != "" {
 		selection.FontPreset = fontPreset
 	}
+	if typeScale := detectThemeTypeScale(theme.Tokens.Typography); typeScale != "" {
+		selection.TypeScale = typeScale
+	}
 	if spacing := detectThemeSectionSpacing(theme.Tokens.Layout); spacing != "" {
 		selection.SectionSpacing = spacing
+	}
+	if contentWidth := detectThemeContentWidth(theme.Tokens.Layout); contentWidth != "" {
+		selection.ContentWidth = contentWidth
 	}
 	if radius := detectThemeRadius(theme.Tokens.Shape); radius != "" {
 		selection.Radius = radius
@@ -377,8 +464,14 @@ func normalizeThemeSelection(selection ThemeSelection) ThemeSelection {
 	if _, ok := themeTypographyTokens[normalized.FontPreset]; !ok {
 		normalized.FontPreset = DefaultThemeSelection().FontPreset
 	}
+	if _, ok := themeTypeScaleValues[normalized.TypeScale]; !ok {
+		normalized.TypeScale = DefaultThemeSelection().TypeScale
+	}
 	if _, ok := themeSectionSpacingValues[normalized.SectionSpacing]; !ok {
 		normalized.SectionSpacing = DefaultThemeSelection().SectionSpacing
+	}
+	if _, ok := themeContentWidthValues[normalized.ContentWidth]; !ok {
+		normalized.ContentWidth = DefaultThemeSelection().ContentWidth
 	}
 	if _, ok := themeRadiusValues[normalized.Radius]; !ok {
 		normalized.Radius = DefaultThemeSelection().Radius
@@ -408,7 +501,24 @@ func detectThemePalette(colors map[string]string) string {
 
 func detectThemeFontPreset(typography map[string]any) string {
 	for id, tokens := range themeTypographyTokens {
-		if sameAnyMap(typography, tokens) {
+		matches := true
+		for key, value := range tokens {
+			if typography[key] != value {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			return id
+		}
+	}
+	return ""
+}
+
+func detectThemeTypeScale(typography map[string]any) string {
+	value, _ := typography["scale"].(string)
+	for id, scale := range themeTypeScaleValues {
+		if value == scale {
 			return id
 		}
 	}
@@ -428,8 +538,24 @@ func detectThemeSectionSpacing(layout map[string]any) string {
 	return ""
 }
 
+func detectThemeContentWidth(layout map[string]any) string {
+	value, _ := layout["contentWidth"].(string)
+	for id, width := range themeContentWidthValues {
+		if value == width {
+			return id
+		}
+	}
+	return ""
+}
+
 func detectThemeRadius(shape map[string]any) string {
 	value, _ := shape["radius"].(string)
+	switch value {
+	case "22px":
+		return ThemeRadiusTailored
+	case "28px":
+		return ThemeRadiusSoft
+	}
 	for id, radius := range themeRadiusValues {
 		if value == radius {
 			return id

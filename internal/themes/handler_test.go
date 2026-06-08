@@ -109,7 +109,7 @@ func TestUpdateThemePassesTrimmedSelection(t *testing.T) {
 		service:    service,
 		authorizer: stubThemeAuthorizer{},
 	}
-	req := httptest.NewRequest(http.MethodPatch, "/api/sites/site_demo/theme", strings.NewReader(`{"palette":" bright-shopfront ","fontPreset":" studio-sans ","sectionSpacing":" snug ","radius":" pillowy ","buttonStyle":" ink-solid ","imageStyle":" paper-cut "}`)).WithContext(auth.WithUser(context.Background(), auth.User{
+	req := httptest.NewRequest(http.MethodPatch, "/api/sites/site_demo/theme", strings.NewReader(`{"palette":" bright-shopfront ","fontPreset":" studio-sans ","typeScale":" expressive ","sectionSpacing":" snug ","contentWidth":" wide ","radius":" pillowy ","buttonStyle":" ink-solid ","imageStyle":" paper-cut "}`)).WithContext(auth.WithUser(context.Background(), auth.User{
 		ID:            "user-1",
 		Email:         "demo@snaelda.local",
 		WorkspaceID:   "workspace-1",
@@ -131,6 +131,12 @@ func TestUpdateThemePassesTrimmedSelection(t *testing.T) {
 	}
 	if service.updateIn.ButtonStyle == nil || *service.updateIn.ButtonStyle != siteconfig.ThemeButtonInkSolid {
 		t.Fatalf("expected trimmed button style, got %#v", service.updateIn.ButtonStyle)
+	}
+	if service.updateIn.TypeScale == nil || *service.updateIn.TypeScale != siteconfig.ThemeTypeScaleExpressive {
+		t.Fatalf("expected trimmed type scale, got %#v", service.updateIn.TypeScale)
+	}
+	if service.updateIn.ContentWidth == nil || *service.updateIn.ContentWidth != siteconfig.ThemeContentWidthWide {
+		t.Fatalf("expected trimmed content width, got %#v", service.updateIn.ContentWidth)
 	}
 	if service.updateIn.ImageStyle == nil || *service.updateIn.ImageStyle != siteconfig.ThemeImagePaperCut {
 		t.Fatalf("expected trimmed image style, got %#v", service.updateIn.ImageStyle)
