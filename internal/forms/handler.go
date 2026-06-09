@@ -116,7 +116,11 @@ func (h *Handler) submit(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	siteID := strings.TrimSpace(r.PathValue("siteId"))
-	if _, err := h.authorizer.RequireSite(r.Context(), siteID); err != nil {
+	if _, err := authorization.RequireUser(r.Context()); err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+	if _, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor); err != nil {
 		writeAuthorizationError(w, err)
 		return
 	}

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -40,11 +41,12 @@ type ServerConfig struct {
 }
 
 type Server struct {
-	config   Config
-	logger   *slog.Logger
-	database Pinger
-	auth     *auth.Handler
-	mailer   email.Mailer
+	config     Config
+	logger     *slog.Logger
+	database   Pinger
+	auth       *auth.Handler
+	mailer     email.Mailer
+	startupErr error
 }
 
 type Config = config.Config
@@ -59,6 +61,7 @@ func NewServer(cfg ServerConfig) *Server {
 		logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 	}
 
+	var startupErr error
 	tokenManager, err := auth.NewTokenManager(auth.TokenConfig{
 		Secret:   firstNonEmpty(cfg.Config.AuthJWTSecret, "test-auth-secret"),
 		Issuer:   firstNonEmpty(cfg.Config.AuthIssuer, "snaelda-api"),
@@ -67,6 +70,7 @@ func NewServer(cfg ServerConfig) *Server {
 	})
 	if err != nil {
 		logger.Error("configure auth tokens", "error", err)
+		startupErr = fmt.Errorf("configure auth tokens: %w", err)
 	}
 
 	var authStore auth.UserStore
@@ -94,14 +98,18 @@ func NewServer(cfg ServerConfig) *Server {
 		})
 		if err != nil {
 			logger.Error("configure email transport", "error", err)
+			if startupErr == nil {
+				startupErr = fmt.Errorf("configure email transport: %w", err)
+			}
 		}
 	}
 
 	return &Server{
-		config:   cfg.Config,
-		logger:   logger,
-		database: cfg.Database,
-		mailer:   mailer,
+		config:     cfg.Config,
+		logger:     logger,
+		database:   cfg.Database,
+		mailer:     mailer,
+		startupErr: startupErr,
 		auth: auth.NewHandler(auth.HandlerConfig{
 			Store:           authStore,
 			Tokens:          tokenManager,
@@ -123,6 +131,18 @@ func NewServer(cfg ServerConfig) *Server {
 }
 
 func (s *Server) Handler() http.Handler {
+	handler, err := s.BuildHandler()
+	if err != nil {
+		panic(err)
+	}
+	return handler
+}
+
+func (s *Server) BuildHandler() (http.Handler, error) {
+	if s.startupErr != nil {
+		return nil, s.startupErr
+	}
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", s.health)
@@ -238,7 +258,7 @@ func (s *Server) Handler() http.Handler {
 		if strings.EqualFold(s.config.PublishedArtifactsBackend, "s3") {
 			artifactStore, err := s.newPublishedArtifactsS3Store()
 			if err != nil {
-				s.logger.Error("configure published artifacts S3 store", "error", err)
+				return nil, fmt.Errorf("configure published artifacts S3 store: %w", err)
 			} else {
 				publishConfig.Store = artifactStore
 			}
@@ -314,7 +334,7 @@ func (s *Server) Handler() http.Handler {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, billing.Module{})
 	}
 
-	return s.cors(s.recover(s.logRequests(s.securityHeaders(s.noCache(s.csrf(mux))))))
+	return s.cors(s.recover(s.logRequests(s.securityHeaders(s.noCache(s.csrf(mux)))))), nil
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
@@ -599,6 +619,13 @@ func (r *statusRecorder) Flush() {
 }
 
 func (s *Server) newPublishedArtifactsS3Store() (publishing.ArtifactStore, error) {
+	endpoint := strings.TrimSpace(s.config.S3Endpoint)
+	if endpoint != "" {
+		if _, err := url.ParseRequestURI(endpoint); err != nil {
+			return nil, fmt.Errorf("invalid S3 endpoint: %w", err)
+		}
+	}
+
 	awsConfig, err := awscfg.LoadDefaultConfig(
 		context.Background(),
 		awscfg.WithRegion(firstNonEmpty(s.config.S3Region, "us-east-1")),
@@ -613,7 +640,7 @@ func (s *Server) newPublishedArtifactsS3Store() (publishing.ArtifactStore, error
 	}
 	client := s3.NewFromConfig(awsConfig, func(options *s3.Options) {
 		options.UsePathStyle = s.config.S3ForcePathStyle
-		if endpoint := strings.TrimSpace(s.config.S3Endpoint); endpoint != "" {
+		if endpoint != "" {
 			options.BaseEndpoint = aws.String(endpoint)
 		}
 	})

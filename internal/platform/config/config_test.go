@@ -319,6 +319,43 @@ func TestLoadRequiresStripeSecretWhenWebhookSecretIsSet(t *testing.T) {
 	}
 }
 
+func TestLoadRequiresHTTPSURLsInProduction(t *testing.T) {
+	setProductionEnv(t)
+	t.Setenv("APP_BASE_URL", "http://app.snaelda.test")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected production https url error")
+	}
+}
+
+func TestLoadRequiresPublicNonLocalDomainInProduction(t *testing.T) {
+	setProductionEnv(t)
+	t.Setenv("PUBLIC_BASE_URL", "https://localhost:3000")
+	t.Setenv("PUBLIC_BASE_DOMAIN", "localhost")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected public non-local domain error")
+	}
+}
+
+func TestLoadRequiresProductionStripeConfiguration(t *testing.T) {
+	setProductionEnv(t)
+	t.Setenv("STRIPE_SECRET_KEY", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected production stripe configuration error")
+	}
+}
+
+func TestLoadRequiresResendInProduction(t *testing.T) {
+	setProductionEnv(t)
+	t.Setenv("EMAIL_TRANSPORT", "mailpit")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected production email transport error")
+	}
+}
+
 func unsetStorageEnv(t *testing.T) {
 	t.Helper()
 
@@ -332,6 +369,26 @@ func unsetStorageEnv(t *testing.T) {
 	t.Setenv("PREVIEW_TOKEN_TTL", "")
 	t.Setenv("PUBLIC_BASE_URL", "")
 	t.Setenv("PUBLIC_BASE_DOMAIN", "")
+}
+
+func setProductionEnv(t *testing.T) {
+	t.Helper()
+
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("AUTH_JWT_SECRET", "production-secret")
+	t.Setenv("APP_BASE_URL", "https://app.snaelda.test")
+	t.Setenv("PUBLIC_BASE_URL", "https://sites.snaelda.test")
+	t.Setenv("PUBLIC_BASE_DOMAIN", "sites.snaelda.test")
+	t.Setenv("BILLING_SUCCESS_URL", "https://app.snaelda.test/app/billing/success")
+	t.Setenv("BILLING_CANCEL_URL", "https://app.snaelda.test/app/billing/cancel")
+	t.Setenv("BILLING_PORTAL_RETURN_URL", "https://app.snaelda.test/app/billing")
+	t.Setenv("STRIPE_SECRET_KEY", "sk_live_123")
+	t.Setenv("STRIPE_WEBHOOK_SECRET", "whsec_123")
+	t.Setenv("STRIPE_PRICE_BASIC", "price_basic")
+	t.Setenv("STRIPE_PRICE_PRO", "price_pro")
+	t.Setenv("EMAIL_TRANSPORT", "resend")
+	t.Setenv("RESEND_API_KEY", "re_123")
 }
 
 func writeEnvFile(t *testing.T, path string, contents string) {

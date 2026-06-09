@@ -14,6 +14,9 @@ import (
 
 	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/platform/config"
+	"github.com/MattiSig/snaelda/internal/publishing"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type fakePinger struct {
@@ -522,6 +525,45 @@ func TestFailureLoggingIncludesRequestCategory(t *testing.T) {
 		t.Fatalf("expected failure log category, got %q", logOutput.String())
 	}
 }
+
+func TestBuildHandlerFailsForInvalidPublishedArtifactsS3Config(t *testing.T) {
+	server := NewServer(ServerConfig{
+		Config: config.Config{
+			AppEnv:                     "test",
+			HTTPAddr:                   "127.0.0.1:0",
+			AppBaseURL:                 "http://localhost:3000",
+			PublicBaseURL:              "http://localhost:3000",
+			PublicBaseDomain:           "localhost",
+			PublishedArtifactsBackend:  "s3",
+			PublishedArtifactsS3Bucket: "published",
+			S3Endpoint:                 "://bad-endpoint",
+		},
+		Logger:   slog.New(slog.DiscardHandler),
+		Database: fakePublishingDB{},
+	})
+
+	if _, err := server.BuildHandler(); err == nil {
+		t.Fatal("expected build handler to fail for invalid published artifacts s3 config")
+	}
+}
+
+type fakePublishingDB struct{}
+
+func (fakePublishingDB) Ping(context.Context) error { return nil }
+func (fakePublishingDB) Query(context.Context, string, ...any) (pgx.Rows, error) {
+	return nil, nil
+}
+func (fakePublishingDB) QueryRow(context.Context, string, ...any) pgx.Row {
+	return nil
+}
+func (fakePublishingDB) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, nil
+}
+func (fakePublishingDB) BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error) {
+	return nil, nil
+}
+
+var _ publishing.DB = fakePublishingDB{}
 
 func validAuthCookie(t *testing.T) *http.Cookie {
 	t.Helper()

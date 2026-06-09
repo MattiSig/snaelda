@@ -39,10 +39,15 @@ func main() {
 		Logger:   logger,
 		Database: dbPool,
 	})
+	handler, err := server.BuildHandler()
+	if err != nil {
+		logger.Error("build api handler", "error", err)
+		os.Exit(1)
+	}
 
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           server.Handler(),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

@@ -24,7 +24,7 @@ Refreshed 2026-06-09 from a spec-to-source audit of `specs/*`, `internal/*`, `ap
   - Cover site/page reprompt, block suggest, image apply, theme regeneration, collection drafting, entry drafting, and future AI actions.
   - Route all actions through shared durable rate limits, generation jobs, audit events, and structured quota errors.
 
-- [ ] Fix form-submission read authorization.
+- [x] Fix form-submission read authorization.
   - Listing submissions must require an authenticated workspace member, matching the update route and the L2-or-paid privacy contract; cookie-only trial sessions must not read inquiries.
 
 - [x] Validate and serve every asset-reference location.
@@ -36,7 +36,7 @@ Refreshed 2026-06-09 from a spec-to-source audit of `specs/*`, `internal/*`, `ap
   - Derive the purchased plan from trusted Stripe price IDs and propagate plan metadata to subscriptions so Pro Checkout cannot become Basic.
   - Add collection/entry URL entitlements before programmatic content can exceed plan limits.
 
-- [ ] Fail production startup when launch-critical services are incomplete.
+- [x] Fail production startup when launch-critical services are incomplete.
   - Require HTTPS app/public/billing URLs, non-local public domains, Stripe secret + webhook + configured plans, and production email transport/key.
   - Treat explicitly configured S3 artifact storage failures as fatal instead of silently falling back to local disk.
 

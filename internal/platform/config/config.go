@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"strconv"
@@ -211,6 +212,41 @@ func Load() (Config, error) {
 	} else if strings.TrimSpace(cfg.OpenAIModel) == "" {
 		return Config{}, fmt.Errorf("OPENAI_MODEL is required when OPENAI_API_KEY is set")
 	}
+	if cfg.AppEnv == "production" {
+		if err := validateProductionURL("APP_BASE_URL", cfg.AppBaseURL, false); err != nil {
+			return Config{}, err
+		}
+		if err := validateProductionURL("PUBLIC_BASE_URL", cfg.PublicBaseURL, true); err != nil {
+			return Config{}, err
+		}
+		if err := validateProductionURL("BILLING_SUCCESS_URL", cfg.BillingSuccessURL, false); err != nil {
+			return Config{}, err
+		}
+		if err := validateProductionURL("BILLING_CANCEL_URL", cfg.BillingCancelURL, false); err != nil {
+			return Config{}, err
+		}
+		if err := validateProductionURL("BILLING_PORTAL_RETURN_URL", cfg.BillingPortalReturnURL, false); err != nil {
+			return Config{}, err
+		}
+		if isLocalHostname(cfg.PublicBaseDomain) {
+			return Config{}, fmt.Errorf("PUBLIC_BASE_DOMAIN must not be local in production")
+		}
+		if cfg.StripeSecretKey == "" {
+			return Config{}, fmt.Errorf("STRIPE_SECRET_KEY is required in production")
+		}
+		if cfg.StripeWebhookSecret == "" {
+			return Config{}, fmt.Errorf("STRIPE_WEBHOOK_SECRET is required in production")
+		}
+		if cfg.StripePriceBasic == "" {
+			return Config{}, fmt.Errorf("STRIPE_PRICE_BASIC is required in production")
+		}
+		if cfg.StripePricePro == "" {
+			return Config{}, fmt.Errorf("STRIPE_PRICE_PRO is required in production")
+		}
+		if cfg.EmailTransport != "resend" {
+			return Config{}, fmt.Errorf("EMAIL_TRANSPORT must be resend in production")
+		}
+	}
 
 	return cfg, nil
 }
@@ -274,6 +310,35 @@ func resolvePublicBaseDomain(publicBaseURL string, override string) (string, err
 
 func normalizeHostname(value string) string {
 	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(value)), ".")
+}
+
+func validateProductionURL(envName string, raw string, requirePublicHost bool) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("%s must be a valid URL in production: %w", envName, err)
+	}
+	if parsed.Scheme != "https" || parsed.Host == "" {
+		return fmt.Errorf("%s must be an https URL in production", envName)
+	}
+	if requirePublicHost && isLocalHostname(parsed.Hostname()) {
+		return fmt.Errorf("%s must not use a local hostname in production", envName)
+	}
+	return nil
+}
+
+func isLocalHostname(host string) bool {
+	normalized := normalizeHostname(host)
+	if normalized == "" {
+		return true
+	}
+	if normalized == "localhost" || strings.HasSuffix(normalized, ".localhost") || strings.HasSuffix(normalized, ".local") {
+		return true
+	}
+	ip := net.ParseIP(normalized)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalMulticast() || ip.IsLinkLocalUnicast() || ip.IsUnspecified()
 }
 
 func resolveHTTPAddr(env environment) string {

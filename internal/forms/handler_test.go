@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/authorization"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
 )
@@ -41,13 +42,26 @@ func (f *fakeFormService) UpdateStatus(_ context.Context, submissionID string, i
 	return f.updated, f.err
 }
 
-type fakeFormsAuthorizer struct{}
+type fakeFormsAuthorizer struct {
+	siteRoles       []string
+	submissionRoles []string
+	siteErr         error
+	submissionErr   error
+}
 
-func (fakeFormsAuthorizer) RequireSite(context.Context, string, ...string) (authorization.Scope, error) {
+func (f *fakeFormsAuthorizer) RequireSite(_ context.Context, _ string, allowedRoles ...string) (authorization.Scope, error) {
+	f.siteRoles = append([]string(nil), allowedRoles...)
+	if f.siteErr != nil {
+		return authorization.Scope{}, f.siteErr
+	}
 	return authorization.Scope{WorkspaceID: "workspace-1", SiteID: "site-1", Role: authorization.RoleOwner}, nil
 }
 
-func (fakeFormsAuthorizer) RequireFormSubmission(context.Context, string, ...string) (authorization.Scope, error) {
+func (f *fakeFormsAuthorizer) RequireFormSubmission(_ context.Context, _ string, allowedRoles ...string) (authorization.Scope, error) {
+	f.submissionRoles = append([]string(nil), allowedRoles...)
+	if f.submissionErr != nil {
+		return authorization.Scope{}, f.submissionErr
+	}
 	return authorization.Scope{WorkspaceID: "workspace-1", SiteID: "site-1", SubmissionID: "submission-1", Role: authorization.RoleOwner}, nil
 }
 
@@ -68,7 +82,7 @@ func TestSubmitReturnsGenericAcceptedResponse(t *testing.T) {
 	}
 	handler := Handler{
 		service:    service,
-		authorizer: fakeFormsAuthorizer{},
+		authorizer: &fakeFormsAuthorizer{},
 		limiter:    staticLimiter{allowed: true},
 	}
 
@@ -105,7 +119,7 @@ func TestSubmitReturnsValidationIssues(t *testing.T) {
 	}
 	handler := Handler{
 		service:    service,
-		authorizer: fakeFormsAuthorizer{},
+		authorizer: &fakeFormsAuthorizer{},
 		limiter:    staticLimiter{allowed: true},
 	}
 
@@ -124,7 +138,7 @@ func TestSubmitReturnsValidationIssues(t *testing.T) {
 func TestSubmitRespectsRateLimit(t *testing.T) {
 	handler := Handler{
 		service:    &fakeFormService{},
-		authorizer: fakeFormsAuthorizer{},
+		authorizer: &fakeFormsAuthorizer{},
 		limiter:    staticLimiter{allowed: false},
 	}
 
@@ -142,16 +156,19 @@ func TestSubmitRespectsRateLimit(t *testing.T) {
 
 func TestListAndUpdateUseAuthenticatedService(t *testing.T) {
 	nextStatus := "reviewed"
+	authorizer := &fakeFormsAuthorizer{}
 	service := &fakeFormService{
 		submissions: []Submission{{ID: "submission-1", Status: "new", CreatedAt: time.Date(2026, 5, 12, 12, 0, 0, 0, time.UTC)}},
 		updated:     Submission{ID: "submission-1", Status: "reviewed"},
 	}
 	handler := Handler{
 		service:    service,
-		authorizer: fakeFormsAuthorizer{},
+		authorizer: authorizer,
 	}
 
-	listReq := httptest.NewRequest(http.MethodGet, "/api/sites/site-1/form-submissions", nil)
+	listReq := httptest.NewRequest(http.MethodGet, "/api/sites/site-1/form-submissions", nil).WithContext(
+		auth.WithUser(context.Background(), auth.User{ID: "user-1"}),
+	)
 	listReq.SetPathValue("siteId", "site-1")
 	listRes := httptest.NewRecorder()
 	handler.list(listRes, listReq)
@@ -160,6 +177,9 @@ func TestListAndUpdateUseAuthenticatedService(t *testing.T) {
 	}
 	if service.listSiteID != "site-1" {
 		t.Fatalf("expected site id to reach list service, got %q", service.listSiteID)
+	}
+	if got := strings.Join(authorizer.siteRoles, ","); got != "owner,editor" {
+		t.Fatalf("expected owner/editor submission read roles, got %q", got)
 	}
 
 	updateReq := httptest.NewRequest(http.MethodPatch, "/api/form-submissions/submission-1", strings.NewReader(`{"status":"reviewed"}`))
@@ -171,6 +191,26 @@ func TestListAndUpdateUseAuthenticatedService(t *testing.T) {
 	}
 	if service.updateID != "submission-1" || service.updateInput.Status == nil || *service.updateInput.Status != nextStatus {
 		t.Fatalf("expected update input to reach service, got %#v %#v", service.updateID, service.updateInput)
+	}
+	if got := strings.Join(authorizer.submissionRoles, ","); got != "owner,editor" {
+		t.Fatalf("expected owner/editor submission update roles, got %q", got)
+	}
+}
+
+func TestListRejectsUnauthenticatedSubmissionRead(t *testing.T) {
+	handler := Handler{
+		service:    &fakeFormService{},
+		authorizer: &fakeFormsAuthorizer{},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sites/site-1/form-submissions", nil)
+	req.SetPathValue("siteId", "site-1")
+	res := httptest.NewRecorder()
+
+	handler.list(res, req)
+
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("expected unauthenticated submission read to fail, got %d", res.Code)
 	}
 }
 
