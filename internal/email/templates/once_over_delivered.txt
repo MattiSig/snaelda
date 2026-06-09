@@ -2,3 +2,7 @@ Your {{.ProductName}} once-over is ready.
 
 Workspace: {{.WorkspaceName}}
 View delivery: {{.DeliveryURL}}
+
+Next steps:
+{{range .NextSteps}}- {{.}}
+{{end}}

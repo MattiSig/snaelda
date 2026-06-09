@@ -19,6 +19,7 @@ type Config struct {
 	APIBaseURL                 string
 	PublicBaseURL              string
 	PublicBaseDomain           string
+	OperatorEmails             []string
 	StripeSecretKey            string
 	StripeWebhookSecret        string
 	StripePriceBasic           string
@@ -90,6 +91,7 @@ func Load() (Config, error) {
 		AppBaseURL:                 env.get("APP_BASE_URL", "http://localhost:3000"),
 		APIBaseURL:                 env.get("API_BASE_URL", "http://localhost:8080"),
 		PublicBaseURL:              env.get("PUBLIC_BASE_URL", "http://localhost:3000"),
+		OperatorEmails:             parseCSV(env.lookup("OPERATOR_EMAILS")),
 		StripeSecretKey:            strings.TrimSpace(env.lookup("STRIPE_SECRET_KEY")),
 		StripeWebhookSecret:        strings.TrimSpace(env.lookup("STRIPE_WEBHOOK_SECRET")),
 		StripePriceBasic:           strings.TrimSpace(env.lookup("STRIPE_PRICE_BASIC")),
@@ -310,6 +312,19 @@ func resolvePublicBaseDomain(publicBaseURL string, override string) (string, err
 
 func normalizeHostname(value string) string {
 	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(value)), ".")
+}
+
+func parseCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.ToLower(strings.TrimSpace(part))
+		if trimmed == "" {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	return out
 }
 
 func validateProductionURL(envName string, raw string, requirePublicHost bool) error {

@@ -85,18 +85,19 @@ func (s Sender) SendOnceOverIntakeReady(ctx context.Context, to Address, data On
 	})
 }
 
-func (s Sender) SendOnceOverDelivered(ctx context.Context, to Address, data OnceOverDeliveredTemplateData) (SendResult, error) {
+func (s Sender) SendOnceOverDelivered(ctx context.Context, to Address, data OnceOverDeliveredTemplateData, idempotencyKey string) (SendResult, error) {
 	subject, textBody, htmlBody, err := RenderOnceOverDelivered(data)
 	if err != nil {
 		return SendResult{}, err
 	}
 	return s.Mailer.Send(ctx, Message{
-		To:       []Address{to},
-		From:     s.DefaultFrom,
-		Subject:  subject,
-		TextBody: textBody,
-		HTMLBody: htmlBody,
-		Tags:     map[string]string{"template": "once_over_delivered"},
+		To:             []Address{to},
+		From:           s.DefaultFrom,
+		Subject:        subject,
+		TextBody:       textBody,
+		HTMLBody:       htmlBody,
+		Tags:           map[string]string{"template": "once_over_delivered"},
+		IdempotencyKey: idempotencyKey,
 	})
 }
 

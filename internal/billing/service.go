@@ -9,6 +9,7 @@ import (
 
 	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/email"
+	"github.com/MattiSig/snaelda/internal/platform/audit"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -20,6 +21,7 @@ const (
 )
 
 type DB interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }
@@ -45,6 +47,7 @@ type ServiceConfig struct {
 	OnceOverPriceID    string
 	ProductName        string
 	EmailSender        email.Sender
+	AuditRecorder      *audit.Recorder
 	DefaultSiteLimit   int
 	DefaultPromptLimit int
 	DefaultAssetBytes  int64
@@ -61,6 +64,7 @@ type Service struct {
 	onceOverPriceID    string
 	productName        string
 	emailSender        email.Sender
+	auditRecorder      *audit.Recorder
 	defaultSiteLimit   int
 	defaultPromptLimit int
 	defaultAssetBytes  int64
@@ -126,6 +130,7 @@ func NewService(store DB, cfg ServiceConfig) *Service {
 		onceOverPriceID:    strings.TrimSpace(cfg.OnceOverPriceID),
 		productName:        cfg.ProductName,
 		emailSender:        cfg.EmailSender,
+		auditRecorder:      cfg.AuditRecorder,
 		defaultSiteLimit:   cfg.DefaultSiteLimit,
 		defaultPromptLimit: cfg.DefaultPromptLimit,
 		defaultAssetBytes:  cfg.DefaultAssetBytes,
@@ -509,11 +514,12 @@ func lookupBillingContactTx(ctx context.Context, store interface {
 		select w.id::text,
 		       w.name,
 		       coalesce(u.id::text, ''),
-		       coalesce(u.email, ''),
+		       coalesce(u.email, bc.email, ''),
 		       coalesce(u.name, ''),
 		       coalesce(w.stripe_customer_id, '')
 		from workspaces w
 		left join users u on u.id = w.created_by
+		left join billing_customers bc on bc.workspace_id = w.id
 		where w.id = $1
 	`, workspaceID).Scan(&contact.WorkspaceID, &contact.WorkspaceName, &contact.UserID, &contact.UserEmail, &contact.UserName, &contact.StripeCustomerID)
 	return contact, err

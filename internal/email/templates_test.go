@@ -46,3 +46,24 @@ func TestRenderFormSubmissionForwarded(t *testing.T) {
 		t.Fatal("expected html field rendering")
 	}
 }
+
+func TestRenderOnceOverDelivered(t *testing.T) {
+	_, textBody, htmlBody, err := RenderOnceOverDelivered(OnceOverDeliveredTemplateData{
+		ProductName:   "Snaelda",
+		WorkspaceName: "Wool Shop",
+		DeliveryURL:   "https://loom.test/share/123",
+		NextSteps: []string{
+			"Replace the last placeholder photo.",
+			"Connect the custom domain.",
+		},
+	})
+	if err != nil {
+		t.Fatalf("render once-over delivered: %v", err)
+	}
+	if !strings.Contains(textBody, "Replace the last placeholder photo.") {
+		t.Fatal("expected next steps in text body")
+	}
+	if !strings.Contains(htmlBody, "<li>Connect the custom domain.</li>") {
+		t.Fatal("expected next steps in html body")
+	}
+}

@@ -45,6 +45,7 @@ type OnceOverDeliveredTemplateData struct {
 	ProductName   string
 	WorkspaceName string
 	DeliveryURL   string
+	NextSteps     []string
 }
 
 type FormSubmissionForwardedTemplateData struct {

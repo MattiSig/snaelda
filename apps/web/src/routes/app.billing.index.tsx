@@ -356,9 +356,11 @@ function BillingPage() {
               </div>
             ) : null}
 
-            {onceOver.status === 'pending' && onceOverRequest?.videoUrl ? (
+            {(onceOver.status === 'pending' || onceOver.status === 'delivered') && onceOverRequest?.videoUrl ? (
               <div className="rounded-[14px] border border-border bg-[var(--surface-2)] p-4">
-                <p className={text.label}>Current delivery link</p>
+                <p className={text.label}>
+                  {onceOver.status === 'delivered' ? 'Your walkthrough' : 'Current delivery link'}
+                </p>
                 <a
                   className="mt-2 inline-flex text-sm font-semibold text-[var(--thread-gold)] underline underline-offset-4"
                   href={onceOverRequest.videoUrl}
@@ -367,6 +369,15 @@ function BillingPage() {
                 >
                   Open walkthrough
                 </a>
+                {onceOverRequest.deliveryNextSteps?.length ? (
+                  <ol className="mt-4 grid gap-2 pl-5 text-sm text-[var(--paper-muted)]">
+                    {onceOverRequest.deliveryNextSteps.map((step, index) => (
+                      <li key={`${step}-${index}`} className="list-decimal">
+                        {step}
+                      </li>
+                    ))}
+                  </ol>
+                ) : null}
               </div>
             ) : null}
           </div>

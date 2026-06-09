@@ -39,6 +39,7 @@ export type BuilderSession = {
   kind: "authenticated" | "trial";
   workspaceId: string;
   workspaceRole: string;
+  isOperator?: boolean;
   user?: AuthUser;
   guestSessionId?: string;
   promptsUsed?: number;
@@ -503,7 +504,22 @@ export type OnceOverRequest = {
   intakeStuckOn?: string;
   intakeSubmittedAt?: string;
   videoUrl?: string;
+  deliveryNextSteps?: string[];
   deliveredAt?: string;
+};
+
+export type PendingOnceOverRequest = {
+  id: string;
+  workspaceId: string;
+  workspaceName: string;
+  ownerName?: string;
+  ownerEmail?: string;
+  paidAt: string;
+  intakeSubmittedAt: string;
+  intakeBusiness: string;
+  intakeVisitor: string;
+  intakeOutcome: string;
+  intakeStuckOn?: string;
 };
 
 export type OnceOverState = {
@@ -945,6 +961,31 @@ export async function updateOnceOver(input: {
     },
     body: JSON.stringify(input),
   });
+}
+
+export async function listPendingOnceOvers() {
+  return apiFetch<{ requests: PendingOnceOverRequest[] }>(
+    "/api/billing/once-over/pending",
+  );
+}
+
+export async function deliverOnceOver(
+  requestId: string,
+  input: {
+    videoUrl: string;
+    deliveryNextSteps: string[];
+  },
+) {
+  return apiFetch<{ onceOver: OnceOverState }>(
+    `/api/billing/once-over/${requestId}/deliver`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    },
+  );
 }
 
 export async function refreshAuthSession() {

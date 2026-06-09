@@ -39,6 +39,7 @@ type HandlerConfig struct {
 	CookieSecure     bool
 	AppBaseURL       string
 	APIBaseURL       string
+	OperatorEmails   []string
 	EmailSender      email.Sender
 	EmailRateLimiter *email.RateLimiter
 	IPRateLimiter    *IPRateLimiter
@@ -51,6 +52,7 @@ type Handler struct {
 	cookieSecure     bool
 	appBaseURL       string
 	apiBaseURL       string
+	operatorEmails   map[string]struct{}
 	emailSender      email.Sender
 	emailRateLimiter *email.RateLimiter
 	ipRateLimiter    *IPRateLimiter
@@ -90,6 +92,7 @@ func NewHandler(cfg HandlerConfig) *Handler {
 		cookieSecure:     cfg.CookieSecure,
 		appBaseURL:       strings.TrimRight(strings.TrimSpace(cfg.AppBaseURL), "/"),
 		apiBaseURL:       strings.TrimRight(strings.TrimSpace(cfg.APIBaseURL), "/"),
+		operatorEmails:   buildOperatorEmailSet(cfg.OperatorEmails),
 		emailSender:      cfg.EmailSender,
 		emailRateLimiter: cfg.EmailRateLimiter,
 		ipRateLimiter:    cfg.IPRateLimiter,
@@ -594,6 +597,7 @@ func (h *Handler) resolveAuthenticatedSession(r *http.Request) (Session, error) 
 		Kind:          SessionKindAuthenticated,
 		WorkspaceID:   user.WorkspaceID,
 		WorkspaceRole: user.WorkspaceRole,
+		IsOperator:    h.isOperatorEmail(user.Email),
 		User:          &user,
 	}
 	h.attachWorkspaceTrialState(r.Context(), &session)
@@ -756,6 +760,7 @@ func (h *Handler) loadTrialSession(ctx context.Context, column string, hash stri
 			WorkspaceRole: "owner",
 		}
 		session.User = &user
+		session.IsOperator = h.isOperatorEmail(user.Email)
 	}
 
 	_, _ = h.store.Exec(ctx, `
@@ -888,10 +893,34 @@ func (h *Handler) claimTrialSession(ctx context.Context, session Session, emailA
 	user.WorkspaceID = session.WorkspaceID
 	user.WorkspaceRole = "owner"
 	session.User = &user
+	session.IsOperator = h.isOperatorEmail(user.Email)
 	session.ClaimedByUserID = user.ID
 	session.ClaimedAt = &claimedAt
 	session.HasRecoveryKey = false
 	return user, session, nil
+}
+
+func buildOperatorEmailSet(emails []string) map[string]struct{} {
+	if len(emails) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(emails))
+	for _, emailAddress := range emails {
+		normalized := normalizeEmail(emailAddress)
+		if normalized == "" {
+			continue
+		}
+		set[normalized] = struct{}{}
+	}
+	return set
+}
+
+func (h *Handler) isOperatorEmail(emailAddress string) bool {
+	if len(h.operatorEmails) == 0 {
+		return false
+	}
+	_, ok := h.operatorEmails[normalizeEmail(emailAddress)]
+	return ok
 }
 
 func (h *Handler) findUserByEmail(ctx context.Context, emailAddress string) (User, error) {

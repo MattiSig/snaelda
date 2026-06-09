@@ -117,6 +117,7 @@ func NewServer(cfg ServerConfig) *Server {
 			CookieSecure:    cfg.Config.AuthCookieSecure,
 			AppBaseURL:      cfg.Config.AppBaseURL,
 			APIBaseURL:      cfg.Config.APIBaseURL,
+			OperatorEmails:  cfg.Config.OperatorEmails,
 			EmailSender: email.Sender{
 				Mailer: mailer,
 				DefaultFrom: email.Address{
@@ -329,6 +330,7 @@ func (s *Server) BuildHandler() (http.Handler, error) {
 					Name:  s.config.EmailFromName,
 				},
 			},
+			AuditRecorder: auditRecorder,
 		}).Mount(mux, s.auth.RequireSession)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, billing.Module{})

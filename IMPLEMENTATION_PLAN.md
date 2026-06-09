@@ -40,9 +40,9 @@ Refreshed 2026-06-09 from a spec-to-source audit of `specs/*`, `internal/*`, `ap
   - Require HTTPS app/public/billing URLs, non-local public domains, Stripe secret + webhook + configured plans, and production email transport/key.
   - Treat explicitly configured S3 artifact storage failures as fatal instead of silently falling back to local disk.
 
-- [ ] Complete the Once-over delivery workflow.
-  - Add an operator-authorized pending queue and delivery endpoint.
-  - Persist video URL, next steps, and `delivered_at`; transition status atomically; send `once_over_delivered` idempotently; record an audit event.
+- [x] Complete the Once-over delivery workflow.
+  - Added an operator-authorized pending queue route in the builder plus backend queue and delivery endpoints.
+  - Delivery now persists video URL, next steps, and `delivered_at`; flips the workspace status in one transaction; sends `once_over_delivered` with an idempotency key; and records an audit event.
 
 ## P1 — Core Product And AI Experience
 

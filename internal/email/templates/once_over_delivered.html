@@ -3,5 +3,11 @@
     <p>Your <strong>{{.ProductName}}</strong> once-over is ready.</p>
     <p>Workspace: {{.WorkspaceName}}</p>
     <p><a href="{{.DeliveryURL}}">View delivery</a></p>
+    {{if .NextSteps}}
+    <p>Next steps:</p>
+    <ol>
+      {{range .NextSteps}}<li>{{.}}</li>{{end}}
+    </ol>
+    {{end}}
   </body>
 </html>

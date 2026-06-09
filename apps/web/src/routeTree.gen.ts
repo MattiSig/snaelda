@@ -30,6 +30,7 @@ import { Route as PublicSiteSlugSplatRouteImport } from './routes/public.$siteSl
 import { Route as AppSitesSiteIdRouteImport } from './routes/app.sites.$siteId'
 import { Route as AppBillingSuccessRouteImport } from './routes/app.billing.success'
 import { Route as AppBillingCancelRouteImport } from './routes/app.billing.cancel'
+import { Route as AppAdminOnceOverRouteImport } from './routes/app.admin.once-over'
 import { Route as AppSitesSiteIdIndexRouteImport } from './routes/app.sites.$siteId.index'
 import { Route as AppSitesSiteIdPreviewRouteImport } from './routes/app.sites.$siteId.preview'
 import { Route as AppSitesSiteIdCollectionsRouteImport } from './routes/app.sites.$siteId.collections'
@@ -142,6 +143,11 @@ const AppBillingCancelRoute = AppBillingCancelRouteImport.update({
   path: '/cancel',
   getParentRoute: () => AppBillingRoute,
 } as any)
+const AppAdminOnceOverRoute = AppAdminOnceOverRouteImport.update({
+  id: '/admin/once-over',
+  path: '/admin/once-over',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSitesSiteIdIndexRoute = AppSitesSiteIdIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -178,6 +184,7 @@ export interface FileRoutesByFullPath {
   '/preview/$token': typeof PreviewTokenRoute
   '/public/$siteSlug': typeof PublicSiteSlugRouteWithChildren
   '/app/': typeof AppIndexRoute
+  '/app/admin/once-over': typeof AppAdminOnceOverRoute
   '/app/billing/cancel': typeof AppBillingCancelRoute
   '/app/billing/success': typeof AppBillingSuccessRoute
   '/app/sites/$siteId': typeof AppSitesSiteIdRouteWithChildren
@@ -202,6 +209,7 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/preview/$token': typeof PreviewTokenRoute
   '/app': typeof AppIndexRoute
+  '/app/admin/once-over': typeof AppAdminOnceOverRoute
   '/app/billing/cancel': typeof AppBillingCancelRoute
   '/app/billing/success': typeof AppBillingSuccessRoute
   '/public/$siteSlug/$': typeof PublicSiteSlugSplatRoute
@@ -229,6 +237,7 @@ export interface FileRoutesById {
   '/preview/$token': typeof PreviewTokenRoute
   '/public/$siteSlug': typeof PublicSiteSlugRouteWithChildren
   '/app/': typeof AppIndexRoute
+  '/app/admin/once-over': typeof AppAdminOnceOverRoute
   '/app/billing/cancel': typeof AppBillingCancelRoute
   '/app/billing/success': typeof AppBillingSuccessRoute
   '/app/sites/$siteId': typeof AppSitesSiteIdRouteWithChildren
@@ -258,6 +267,7 @@ export interface FileRouteTypes {
     | '/preview/$token'
     | '/public/$siteSlug'
     | '/app/'
+    | '/app/admin/once-over'
     | '/app/billing/cancel'
     | '/app/billing/success'
     | '/app/sites/$siteId'
@@ -282,6 +292,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/preview/$token'
     | '/app'
+    | '/app/admin/once-over'
     | '/app/billing/cancel'
     | '/app/billing/success'
     | '/public/$siteSlug/$'
@@ -308,6 +319,7 @@ export interface FileRouteTypes {
     | '/preview/$token'
     | '/public/$siteSlug'
     | '/app/'
+    | '/app/admin/once-over'
     | '/app/billing/cancel'
     | '/app/billing/success'
     | '/app/sites/$siteId'
@@ -485,6 +497,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppBillingCancelRouteImport
       parentRoute: typeof AppBillingRoute
     }
+    '/app/admin/once-over': {
+      id: '/app/admin/once-over'
+      path: '/admin/once-over'
+      fullPath: '/app/admin/once-over'
+      preLoaderRoute: typeof AppAdminOnceOverRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/sites/$siteId/': {
       id: '/app/sites/$siteId/'
       path: '/'
@@ -553,12 +572,14 @@ const AppSitesSiteIdRouteWithChildren = AppSitesSiteIdRoute._addFileChildren(
 interface AppRouteChildren {
   AppBillingRoute: typeof AppBillingRouteWithChildren
   AppIndexRoute: typeof AppIndexRoute
+  AppAdminOnceOverRoute: typeof AppAdminOnceOverRoute
   AppSitesSiteIdRoute: typeof AppSitesSiteIdRouteWithChildren
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppBillingRoute: AppBillingRouteWithChildren,
   AppIndexRoute: AppIndexRoute,
+  AppAdminOnceOverRoute: AppAdminOnceOverRoute,
   AppSitesSiteIdRoute: AppSitesSiteIdRouteWithChildren,
 }
 

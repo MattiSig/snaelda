@@ -8,6 +8,7 @@ import (
 
 	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/email"
+	"github.com/MattiSig/snaelda/internal/platform/audit"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -23,6 +24,7 @@ type HandlerConfig struct {
 	BillingPortalReturnURL string
 	ProductName            string
 	EmailSender            email.Sender
+	AuditRecorder          *audit.Recorder
 }
 
 type Handler struct {
@@ -42,6 +44,7 @@ func NewHandler(store DB, cfg HandlerConfig) *Handler {
 			OnceOverPriceID:    cfg.OnceOverPriceID,
 			ProductName:        cfg.ProductName,
 			EmailSender:        cfg.EmailSender,
+			AuditRecorder:      cfg.AuditRecorder,
 			DefaultSiteLimit:   3,
 			DefaultPromptLimit: 250,
 			DefaultAssetBytes:  5 << 30,
@@ -57,6 +60,8 @@ func (h *Handler) Mount(mux *http.ServeMux, requireSession func(http.Handler) ht
 	mux.Handle("GET /api/billing/entitlements", requireSession(http.HandlerFunc(h.entitlements)))
 	mux.Handle("POST /api/billing/checkout", requireSession(http.HandlerFunc(h.checkout)))
 	mux.Handle("PUT /api/billing/once-over", requireSession(http.HandlerFunc(h.updateOnceOver)))
+	mux.Handle("GET /api/billing/once-over/pending", requireSession(http.HandlerFunc(h.listPendingOnceOvers)))
+	mux.Handle("POST /api/billing/once-over/{requestId}/deliver", requireSession(http.HandlerFunc(h.deliverOnceOver)))
 	mux.Handle("POST /api/billing/portal", requireSession(http.HandlerFunc(h.portal)))
 	mux.HandleFunc("POST /api/billing/webhook", h.webhook)
 }
@@ -72,6 +77,11 @@ type onceOverUpdateRequest struct {
 	IntakeOutcome  string `json:"intakeOutcome"`
 	IntakeStuckOn  string `json:"intakeStuckOn"`
 	ReadyForReview bool   `json:"readyForReview"`
+}
+
+type onceOverDeliveryRequest struct {
+	VideoURL          string   `json:"videoUrl"`
+	DeliveryNextSteps []string `json:"deliveryNextSteps"`
 }
 
 func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
@@ -157,6 +167,64 @@ func (h *Handler) updateOnceOver(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, ErrOnceOverUnavailable):
 			status = http.StatusConflict
 			code = "once_over_unavailable"
+		}
+		writeBillingError(w, status, code, err.Error())
+		return
+	}
+
+	writeBillingJSON(w, http.StatusOK, map[string]OnceOverState{"onceOver": state})
+}
+
+func (h *Handler) listPendingOnceOvers(w http.ResponseWriter, r *http.Request) {
+	session, ok := auth.SessionFromContext(r.Context())
+	if !ok || !session.IsOperator {
+		writeBillingError(w, http.StatusForbidden, "forbidden", "operator access is required")
+		return
+	}
+
+	requests, err := h.service.ListPendingOnceOvers(r.Context())
+	if err != nil {
+		writeBillingError(w, http.StatusInternalServerError, "once_over_pending_failed", err.Error())
+		return
+	}
+	writeBillingJSON(w, http.StatusOK, map[string]any{"requests": requests})
+}
+
+func (h *Handler) deliverOnceOver(w http.ResponseWriter, r *http.Request) {
+	session, ok := auth.SessionFromContext(r.Context())
+	if !ok || !session.IsOperator || session.User == nil {
+		writeBillingError(w, http.StatusForbidden, "forbidden", "operator access is required")
+		return
+	}
+
+	requestID := r.PathValue("requestId")
+	if requestID == "" {
+		writeBillingError(w, http.StatusBadRequest, "invalid_request", "request id is required")
+		return
+	}
+
+	var payload onceOverDeliveryRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil && !errors.Is(err, io.EOF) {
+		writeBillingError(w, http.StatusBadRequest, "invalid_request", "request body must be valid JSON")
+		return
+	}
+
+	state, err := h.service.DeliverOnceOver(r.Context(), DeliverOnceOverInput{
+		RequestID:         requestID,
+		VideoURL:          payload.VideoURL,
+		DeliveryNextSteps: payload.DeliveryNextSteps,
+		DeliveredByUserID: session.User.ID,
+	})
+	if err != nil {
+		status := http.StatusBadRequest
+		code := "once_over_delivery_failed"
+		switch {
+		case errors.Is(err, ErrOnceOverRequestNotFound):
+			status = http.StatusNotFound
+			code = "once_over_request_not_found"
+		case errors.Is(err, ErrOnceOverNotReady), errors.Is(err, ErrOnceOverDeliveryMismatch):
+			status = http.StatusConflict
+			code = "once_over_delivery_conflict"
 		}
 		writeBillingError(w, status, code, err.Error())
 		return

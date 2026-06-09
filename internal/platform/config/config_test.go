@@ -82,6 +82,9 @@ func TestLoadUsesLocalStorageDefaults(t *testing.T) {
 	if cfg.OpenAIModel != "gpt-5-mini" {
 		t.Fatalf("expected default OpenAI model, got %q", cfg.OpenAIModel)
 	}
+	if len(cfg.OperatorEmails) != 0 {
+		t.Fatalf("expected no operator emails by default, got %#v", cfg.OperatorEmails)
+	}
 }
 
 func TestLoadUsesRailwayPortWhenHTTPAddrMissing(t *testing.T) {
@@ -158,6 +161,23 @@ func TestLoadAllowsStorageOverrides(t *testing.T) {
 	}
 	if cfg.BillingPortalReturnURL != "https://app.snaelda.test/billing" {
 		t.Fatalf("expected overridden billing portal return url, got %q", cfg.BillingPortalReturnURL)
+	}
+}
+
+func TestLoadParsesOperatorEmails(t *testing.T) {
+	t.Setenv("APP_ENV", "test")
+	t.Setenv("OPERATOR_EMAILS", " maker@snaelda.app, support@snaelda.app ,,MAKER+alt@snaelda.app ")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	if got, want := len(cfg.OperatorEmails), 3; got != want {
+		t.Fatalf("expected %d operator emails, got %#v", want, cfg.OperatorEmails)
+	}
+	if cfg.OperatorEmails[0] != "maker@snaelda.app" || cfg.OperatorEmails[1] != "support@snaelda.app" || cfg.OperatorEmails[2] != "maker+alt@snaelda.app" {
+		t.Fatalf("unexpected operator emails %#v", cfg.OperatorEmails)
 	}
 }
 

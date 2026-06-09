@@ -2,6 +2,7 @@ package billing
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -281,6 +282,150 @@ func TestUpdateOnceOverMarksRequestPending(t *testing.T) {
 	}
 }
 
+func TestListPendingOnceOvers(t *testing.T) {
+	store := newFakeBillingStore()
+	readyAt := time.Now().UTC().Add(-30 * time.Minute)
+	workspaceID := "00000000-0000-4000-8000-000000000301"
+	userID := "00000000-0000-4000-8000-000000000302"
+	store.workspaces[workspaceID] = fakeWorkspace{
+		id:              workspaceID,
+		name:            "Wool Shop",
+		createdByUserID: userID,
+		onceOverStatus:  onceOverStatusPending,
+	}
+	store.users[userID] = fakeUser{id: userID, email: "owner@example.com", name: "Owner"}
+	store.onceOverRequests[workspaceID] = []fakeOnceOverRequest{{
+		id:                "request-1",
+		stripePaymentID:   "pi_123",
+		paidAt:            readyAt.Add(-time.Hour),
+		intakeBusiness:    "Hand-dyed yarn for knitters.",
+		intakeVisitor:     "A first-time customer comparing indie dyers.",
+		intakeOutcome:     "Order a first skein.",
+		intakeStuckOn:     "The hero still feels generic.",
+		intakeSubmittedAt: &readyAt,
+		createdAt:         readyAt.Add(-2 * time.Hour),
+	}}
+
+	service := NewService(store, ServiceConfig{})
+	requests, err := service.ListPendingOnceOvers(context.Background())
+	if err != nil {
+		t.Fatalf("list pending once-overs: %v", err)
+	}
+	if len(requests) != 1 {
+		t.Fatalf("expected one pending request, got %#v", requests)
+	}
+	if requests[0].OwnerEmail != "owner@example.com" || requests[0].WorkspaceName != "Wool Shop" {
+		t.Fatalf("unexpected pending request %#v", requests[0])
+	}
+}
+
+func TestDeliverOnceOverPersistsDeliveryAndSendsEmail(t *testing.T) {
+	store := newFakeBillingStore()
+	submittedAt := time.Now().UTC().Add(-time.Hour)
+	workspaceID := "00000000-0000-4000-8000-000000000311"
+	userID := "00000000-0000-4000-8000-000000000312"
+	operatorID := "00000000-0000-4000-8000-000000000313"
+	store.workspaces[workspaceID] = fakeWorkspace{
+		id:              workspaceID,
+		name:            "Wool Shop",
+		createdByUserID: userID,
+		onceOverStatus:  onceOverStatusPending,
+	}
+	store.users[userID] = fakeUser{id: userID, email: "owner@example.com", name: "Owner"}
+	store.onceOverRequests[workspaceID] = []fakeOnceOverRequest{{
+		id:                "request-1",
+		stripePaymentID:   "pi_123",
+		paidAt:            submittedAt.Add(-time.Hour),
+		intakeBusiness:    "Hand-dyed yarn for knitters.",
+		intakeVisitor:     "A first-time customer comparing indie dyers.",
+		intakeOutcome:     "Order a first skein.",
+		intakeStuckOn:     "The hero still feels generic.",
+		intakeSubmittedAt: &submittedAt,
+		createdAt:         submittedAt.Add(-2 * time.Hour),
+	}}
+
+	mailer := email.NewMemoryMailer()
+	service := NewService(store, ServiceConfig{
+		EmailSender: email.Sender{
+			Mailer:      mailer,
+			DefaultFrom: email.Address{Email: "hi@snaelda.app", Name: "Snaelda"},
+		},
+		ProductName: "Snaelda",
+	})
+
+	state, err := service.DeliverOnceOver(context.Background(), DeliverOnceOverInput{
+		RequestID: "request-1",
+		VideoURL:  "https://loom.test/share/123",
+		DeliveryNextSteps: []string{
+			"Replace the last placeholder photo.",
+			"Connect the custom domain.",
+		},
+		DeliveredByUserID: operatorID,
+	})
+	if err != nil {
+		t.Fatalf("deliver once-over: %v", err)
+	}
+	if state.Status != onceOverStatusDelivered {
+		t.Fatalf("expected delivered status, got %#v", state)
+	}
+	request := store.onceOverRequests[workspaceID][0]
+	if request.videoURL != "https://loom.test/share/123" || request.deliveredAt == nil {
+		t.Fatalf("expected persisted delivery details, got %#v", request)
+	}
+	if len(request.deliveryNextSteps) != 2 || request.deliveryNextSteps[1] != "Connect the custom domain." {
+		t.Fatalf("expected persisted next steps, got %#v", request.deliveryNextSteps)
+	}
+	if got := store.workspaces[workspaceID].onceOverStatus; got != onceOverStatusDelivered {
+		t.Fatalf("expected delivered workspace status, got %q", got)
+	}
+	if len(store.auditEvents) != 1 || store.auditEvents[0] != "once_over.delivered" {
+		t.Fatalf("expected one delivery audit event, got %#v", store.auditEvents)
+	}
+	if len(mailer.Messages) != 1 {
+		t.Fatalf("expected one delivery email, got %d", len(mailer.Messages))
+	}
+	if !strings.Contains(mailer.Messages[0].TextBody, "Replace the last placeholder photo.") {
+		t.Fatalf("expected next steps in delivery email, got %q", mailer.Messages[0].TextBody)
+	}
+	if mailer.Messages[0].IdempotencyKey != "once_over_delivered:request-1" {
+		t.Fatalf("expected once-over delivery idempotency key, got %q", mailer.Messages[0].IdempotencyKey)
+	}
+}
+
+func TestDeliverOnceOverAllowsIdempotentRetry(t *testing.T) {
+	store := newFakeBillingStore()
+	submittedAt := time.Now().UTC().Add(-time.Hour)
+	deliveredAt := time.Now().UTC().Add(-5 * time.Minute)
+	workspaceID := "00000000-0000-4000-8000-000000000321"
+	store.workspaces[workspaceID] = fakeWorkspace{
+		id:             workspaceID,
+		name:           "Wool Shop",
+		onceOverStatus: onceOverStatusDelivered,
+	}
+	store.onceOverRequests[workspaceID] = []fakeOnceOverRequest{{
+		id:                "request-1",
+		stripePaymentID:   "pi_123",
+		paidAt:            submittedAt.Add(-time.Hour),
+		intakeSubmittedAt: &submittedAt,
+		videoURL:          "https://loom.test/share/123",
+		deliveryNextSteps: []string{"Connect the custom domain."},
+		deliveredAt:       &deliveredAt,
+		createdAt:         submittedAt.Add(-2 * time.Hour),
+	}}
+
+	service := NewService(store, ServiceConfig{})
+	if _, err := service.DeliverOnceOver(context.Background(), DeliverOnceOverInput{
+		RequestID:         "request-1",
+		VideoURL:          "https://loom.test/share/123",
+		DeliveryNextSteps: []string{"Connect the custom domain."},
+	}); err != nil {
+		t.Fatalf("expected idempotent retry to succeed, got %v", err)
+	}
+	if len(store.auditEvents) != 0 {
+		t.Fatalf("expected no new audit events on idempotent retry, got %#v", store.auditEvents)
+	}
+}
+
 type fakeStripeClient struct {
 	checkoutResult CheckoutSessionResult
 	portalResult   PortalSessionResult
@@ -316,6 +461,7 @@ type fakeBillingStore struct {
 	processedEvents      map[string]string
 	subscriptions        map[string]SubscriptionEventData
 	onceOverRequests     map[string][]fakeOnceOverRequest
+	auditEvents          []string
 }
 
 type fakeWorkspace struct {
@@ -349,6 +495,7 @@ type fakeOnceOverRequest struct {
 	intakeStuckOn     string
 	intakeSubmittedAt *time.Time
 	videoURL          string
+	deliveryNextSteps []string
 	deliveredAt       *time.Time
 	createdAt         time.Time
 }
@@ -368,6 +515,41 @@ func newFakeBillingStore() *fakeBillingStore {
 
 func (s *fakeBillingStore) BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error) {
 	return &fakeBillingTx{store: s}, nil
+}
+
+func (s *fakeBillingStore) Query(_ context.Context, sql string, args ...any) (pgx.Rows, error) {
+	switch {
+	case strings.Contains(sql, "from once_over_requests r") && strings.Contains(sql, "where r.intake_submitted_at is not null"):
+		rows := make([][]any, 0)
+		for workspaceID, requests := range s.onceOverRequests {
+			workspace := s.workspaces[workspaceID]
+			if workspace.onceOverStatus != onceOverStatusPending {
+				continue
+			}
+			owner := s.users[workspace.createdByUserID]
+			for _, request := range requests {
+				if request.intakeSubmittedAt == nil || request.deliveredAt != nil {
+					continue
+				}
+				rows = append(rows, []any{
+					request.id,
+					workspaceID,
+					workspace.name,
+					owner.name,
+					firstNonEmpty(owner.email, s.customersByWorkspace[workspaceID].email),
+					request.paidAt,
+					*request.intakeSubmittedAt,
+					request.intakeBusiness,
+					request.intakeVisitor,
+					request.intakeOutcome,
+					request.intakeStuckOn,
+				})
+			}
+		}
+		return &fakeBillingRows{rows: rows}, nil
+	default:
+		return &fakeBillingRows{err: errors.New("not implemented")}, nil
+	}
 }
 
 func (s *fakeBillingStore) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
@@ -393,7 +575,14 @@ func (s *fakeBillingStore) queryRow(sql string, args ...any) pgx.Row {
 	case strings.Contains(sql, "from workspaces w"):
 		workspace := s.workspaces[args[0].(string)]
 		user := s.users[workspace.createdByUserID]
-		return fakeRow{values: []any{workspace.id, workspace.name, user.id, user.email, user.name, workspace.stripeCustomerID}}
+		return fakeRow{values: []any{
+			workspace.id,
+			workspace.name,
+			user.id,
+			firstNonEmpty(user.email, s.customersByWorkspace[workspace.id].email),
+			user.name,
+			workspace.stripeCustomerID,
+		}}
 	case strings.Contains(sql, "from billing_customers") && strings.Contains(sql, "where workspace_id = $1"):
 		customer := s.customersByWorkspace[args[0].(string)]
 		if customer.customerID == "" {
@@ -426,12 +615,33 @@ func (s *fakeBillingStore) queryRow(sql string, args ...any) pgx.Row {
 			status = onceOverStatusNone
 		}
 		return fakeRow{values: []any{status}}
+	case strings.Contains(sql, "from once_over_requests r") && strings.Contains(sql, "delivery_next_steps"):
+		requestID := args[0].(string)
+		for workspaceID, requests := range s.onceOverRequests {
+			workspace := s.workspaces[workspaceID]
+			for _, request := range requests {
+				if request.id != requestID {
+					continue
+				}
+				nextStepsJSON, _ := json.Marshal(request.deliveryNextSteps)
+				return fakeRow{values: []any{
+					workspaceID,
+					workspace.onceOverStatus,
+					request.intakeSubmittedAt,
+					stringPointer(request.videoURL),
+					string(nextStepsJSON),
+					request.deliveredAt,
+				}}
+			}
+		}
+		return fakeRow{err: pgx.ErrNoRows}
 	case strings.Contains(sql, "from once_over_requests"):
 		requests := s.onceOverRequests[args[0].(string)]
 		if len(requests) == 0 {
 			return fakeRow{err: pgx.ErrNoRows}
 		}
 		request := requests[len(requests)-1]
+		nextStepsJSON, _ := json.Marshal(request.deliveryNextSteps)
 		return fakeRow{values: []any{
 			request.id,
 			request.paidAt,
@@ -441,6 +651,7 @@ func (s *fakeBillingStore) queryRow(sql string, args ...any) pgx.Row {
 			request.intakeStuckOn,
 			request.intakeSubmittedAt,
 			stringPointer(request.videoURL),
+			string(nextStepsJSON),
 			request.deliveredAt,
 		}}
 	case strings.Contains(sql, "select id::text") && strings.Contains(sql, "from once_over_requests"):
@@ -533,17 +744,34 @@ func (s *fakeBillingStore) exec(sql string, args ...any) (pgconn.CommandTag, err
 				if requests[i].id != requestID {
 					continue
 				}
-				requests[i].intakeBusiness = args[1].(string)
-				requests[i].intakeVisitor = args[2].(string)
-				requests[i].intakeOutcome = args[3].(string)
-				requests[i].intakeStuckOn = args[4].(string)
-				if submittedAt, ok := args[5].(*time.Time); ok && submittedAt != nil && requests[i].intakeSubmittedAt == nil {
-					requests[i].intakeSubmittedAt = submittedAt
+				if strings.Contains(sql, "delivery_next_steps") {
+					requests[i].videoURL = args[1].(string)
+					var nextSteps []string
+					switch payload := args[2].(type) {
+					case []byte:
+						_ = json.Unmarshal(payload, &nextSteps)
+					case string:
+						_ = json.Unmarshal([]byte(payload), &nextSteps)
+					}
+					requests[i].deliveryNextSteps = nextSteps
+					if deliveredAt, ok := args[3].(time.Time); ok {
+						requests[i].deliveredAt = &deliveredAt
+					}
+				} else {
+					requests[i].intakeBusiness = args[1].(string)
+					requests[i].intakeVisitor = args[2].(string)
+					requests[i].intakeOutcome = args[3].(string)
+					requests[i].intakeStuckOn = args[4].(string)
+					if submittedAt, ok := args[5].(*time.Time); ok && submittedAt != nil && requests[i].intakeSubmittedAt == nil {
+						requests[i].intakeSubmittedAt = submittedAt
+					}
 				}
 				s.onceOverRequests[workspaceID] = requests
 				return pgconn.CommandTag{}, nil
 			}
 		}
+	case strings.Contains(sql, "insert into audit_events"):
+		s.auditEvents = append(s.auditEvents, args[3].(string))
 	case strings.Contains(sql, "insert into users"):
 		emailAddress := strings.ToLower(strings.TrimSpace(args[0].(string)))
 		for _, user := range s.users {
@@ -581,8 +809,8 @@ func (tx *fakeBillingTx) Prepare(context.Context, string, string) (*pgconn.State
 func (tx *fakeBillingTx) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 	return tx.store.exec(sql, args...)
 }
-func (tx *fakeBillingTx) Query(context.Context, string, ...any) (pgx.Rows, error) {
-	return nil, errors.New("not implemented")
+func (tx *fakeBillingTx) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	return tx.store.Query(ctx, sql, args...)
 }
 func (tx *fakeBillingTx) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
 	return tx.store.queryRow(sql, args...)
@@ -656,6 +884,49 @@ func stringPointer(value string) *string {
 	}
 	return &value
 }
+
+type fakeBillingRows struct {
+	rows  [][]any
+	index int
+	err   error
+}
+
+func (r *fakeBillingRows) Close() {}
+
+func (r *fakeBillingRows) Err() error { return r.err }
+
+func (r *fakeBillingRows) CommandTag() pgconn.CommandTag { return pgconn.CommandTag{} }
+
+func (r *fakeBillingRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
+
+func (r *fakeBillingRows) Next() bool {
+	if r.err != nil {
+		return false
+	}
+	if r.index >= len(r.rows) {
+		return false
+	}
+	r.index++
+	return true
+}
+
+func (r *fakeBillingRows) Scan(dest ...any) error {
+	if r.index == 0 || r.index > len(r.rows) {
+		return errors.New("scan called without row")
+	}
+	return fakeRow{values: r.rows[r.index-1]}.Scan(dest...)
+}
+
+func (r *fakeBillingRows) Values() ([]any, error) {
+	if r.index == 0 || r.index > len(r.rows) {
+		return nil, errors.New("values called without row")
+	}
+	return r.rows[r.index-1], nil
+}
+
+func (r *fakeBillingRows) RawValues() [][]byte { return nil }
+
+func (r *fakeBillingRows) Conn() *pgx.Conn { return nil }
 
 func authSession(workspaceID string) auth.Session {
 	return auth.Session{WorkspaceID: workspaceID}

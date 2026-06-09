@@ -2,6 +2,7 @@ package billing
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -39,6 +40,7 @@ type OnceOverRequest struct {
 	IntakeStuckOn     string     `json:"intakeStuckOn,omitempty"`
 	IntakeSubmittedAt *time.Time `json:"intakeSubmittedAt,omitempty"`
 	VideoURL          string     `json:"videoUrl,omitempty"`
+	DeliveryNextSteps []string   `json:"deliveryNextSteps,omitempty"`
 	DeliveredAt       *time.Time `json:"deliveredAt,omitempty"`
 }
 
@@ -258,6 +260,7 @@ func loadOnceOverState(ctx context.Context, store interface {
 	var intakeSubmittedAt *time.Time
 	var deliveredAt *time.Time
 	var videoURL *string
+	var nextStepsJSON string
 	err := store.QueryRow(ctx, `
 		select id::text,
 		       paid_at,
@@ -267,6 +270,7 @@ func loadOnceOverState(ctx context.Context, store interface {
 		       coalesce(intake_stuck_on, ''),
 		       intake_submitted_at,
 		       video_url,
+		       coalesce(delivery_next_steps, '[]'::jsonb)::text,
 		       delivered_at
 		from once_over_requests
 		where workspace_id = $1
@@ -281,6 +285,7 @@ func loadOnceOverState(ctx context.Context, store interface {
 		&request.IntakeStuckOn,
 		&intakeSubmittedAt,
 		&videoURL,
+		&nextStepsJSON,
 		&deliveredAt,
 	)
 	if err != nil {
@@ -297,6 +302,9 @@ func loadOnceOverState(ctx context.Context, store interface {
 	request.DeliveredAt = deliveredAt
 	if videoURL != nil {
 		request.VideoURL = strings.TrimSpace(*videoURL)
+	}
+	if err := json.Unmarshal([]byte(nextStepsJSON), &request.DeliveryNextSteps); err != nil {
+		return OnceOverState{}, fmt.Errorf("decode once-over delivery steps: %w", err)
 	}
 	state.Request = &request
 	if state.Status == "" {
