@@ -320,6 +320,76 @@ func TestSaveDraftRejectsAssetFromDifferentSite(t *testing.T) {
 	}
 }
 
+func TestSaveDraftRejectsBrandLogoFromDifferentSite(t *testing.T) {
+	tx := &fakeDraftTx{}
+	db := &fakeDraftDB{
+		tx:       tx,
+		queryRow: fakeDraftRow{json: []byte(`[{"id":"asset-logo","siteId":"site-2"}]`)},
+	}
+	writer := NewPostgresWriter(db)
+	draft := validPersistenceDraft()
+	draft.Brand = siteconfig.BrandConfig{
+		BusinessName: "Nordic Studio",
+		PrimaryColor: "#315c4f",
+		Logo: &siteconfig.BrandLogo{
+			AssetID: "asset-logo",
+			Alt:     "Nordic Studio logo",
+		},
+	}
+
+	err := writer.SaveDraft(context.Background(), "00000000-0000-4000-8000-000000000101", draft)
+	var validationErr siteconfig.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected validation error, got %v", err)
+	}
+	if !validationErr.Has("invalid_asset_reference") {
+		t.Fatalf("expected invalid asset reference issue, got %#v", validationErr.Issues)
+	}
+	if db.beginCount != 0 {
+		t.Fatalf("expected asset validation before transaction, got %d begins", db.beginCount)
+	}
+}
+
+func TestSaveDraftRejectsCollectionEntryAssetFromDifferentSite(t *testing.T) {
+	tx := &fakeDraftTx{}
+	db := &fakeDraftDB{
+		tx:       tx,
+		queryRow: fakeDraftRow{json: []byte(`[{"id":"asset-entry","siteId":"site-2"}]`)},
+	}
+	writer := NewPostgresWriter(db)
+	draft := validPersistenceDraft()
+	draft.Collections = []siteconfig.Collection{{
+		ID:            "collection-1",
+		Slug:          "services",
+		SingularLabel: "Service",
+		PluralLabel:   "Services",
+		Schema: []siteconfig.FieldDefinition{
+			{Key: "image", Label: "Image", Type: siteconfig.FieldTypeAsset},
+		},
+		Entries: []siteconfig.CollectionEntry{{
+			ID:        "entry-1",
+			Slug:      "scaffolding",
+			Status:    siteconfig.EntryStatusDraft,
+			SortOrder: 0,
+			Fields: map[string]any{
+				"image": map[string]any{"assetId": "asset-entry", "alt": "Scaffolding"},
+			},
+		}},
+	}}
+
+	err := writer.SaveDraft(context.Background(), "00000000-0000-4000-8000-000000000101", draft)
+	var validationErr siteconfig.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected validation error, got %v", err)
+	}
+	if !validationErr.Has("invalid_asset_reference") {
+		t.Fatalf("expected invalid asset reference issue, got %#v", validationErr.Issues)
+	}
+	if db.beginCount != 0 {
+		t.Fatalf("expected asset validation before transaction, got %d begins", db.beginCount)
+	}
+}
+
 func validPersistenceDraft() siteconfig.SiteDraft {
 	return siteconfig.SiteDraft{
 		Site: siteconfig.DraftSite{

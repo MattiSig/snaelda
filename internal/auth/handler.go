@@ -393,12 +393,6 @@ func (h *Handler) consumeMagicLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.consumeMagicLinkToken(r.Context(), token)
-	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "invalid_magic_link", "magic link is invalid or expired")
-		return
-	}
-
 	refreshToken, err := newRefreshToken()
 	if err != nil {
 		writeAuthError(w, http.StatusInternalServerError, "login_failed", "could not sign in")
@@ -409,8 +403,12 @@ func (h *Handler) consumeMagicLink(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, http.StatusInternalServerError, "login_failed", "could not sign in")
 		return
 	}
-	sessionID, err := h.createSession(r.Context(), user.ID, refreshToken, h.refreshTokenTTL, r.UserAgent())
+	user, sessionID, err := h.consumeMagicLinkToken(r.Context(), token, refreshToken, h.refreshTokenTTL, r.UserAgent())
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeAuthError(w, http.StatusUnauthorized, "invalid_magic_link", "magic link is invalid or expired")
+			return
+		}
 		writeAuthError(w, http.StatusInternalServerError, "login_failed", "could not sign in")
 		return
 	}
@@ -971,10 +969,10 @@ func (h *Handler) sendMagicLink(ctx context.Context, user User, purpose string, 
 	return sendErr
 }
 
-func (h *Handler) consumeMagicLinkToken(ctx context.Context, token string) (User, error) {
+func (h *Handler) consumeMagicLinkToken(ctx context.Context, token string, refreshToken string, ttl time.Duration, userAgent string) (User, string, error) {
 	tx, err := beginStoreTx(ctx, h.store)
 	if err != nil {
-		return User{}, err
+		return User{}, "", err
 	}
 	defer tx.Rollback(ctx)
 
@@ -996,26 +994,37 @@ func (h *Handler) consumeMagicLinkToken(ctx context.Context, token string) (User
 		where ml.token_hash = $1
 		  and ml.consumed_at is null
 		  and ml.expires_at > now()
+		  and ml.purpose in ($2, $3)
 		order by wm.created_at asc
 		limit 1
-	`, tokenHash(token)).Scan(&magicLinkID, &user.ID, &user.Email, &user.Name, &user.WorkspaceID, &user.WorkspaceRole)
+		for update
+	`, tokenHash(token), magicLinkLoginPurpose, magicLinkVerify).Scan(&magicLinkID, &user.ID, &user.Email, &user.Name, &user.WorkspaceID, &user.WorkspaceRole)
 	if err != nil {
-		return User{}, err
+		return User{}, "", err
 	}
 
-	if _, err := tx.Exec(ctx, `
+	tag, err := tx.Exec(ctx, `
 		update magic_links
 		set consumed_at = now()
 		where id = $1
 		  and consumed_at is null
-	`, magicLinkID); err != nil {
-		return User{}, err
+	`, magicLinkID)
+	if err != nil {
+		return User{}, "", err
+	}
+	if tag.RowsAffected() != 1 {
+		return User{}, "", pgx.ErrNoRows
+	}
+
+	sessionID, err := createSessionWithStore(ctx, tx, user.ID, refreshToken, ttl, userAgent)
+	if err != nil {
+		return User{}, "", err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return User{}, err
+		return User{}, "", err
 	}
-	return user, nil
+	return user, sessionID, nil
 }
 
 func normalizeEmail(value string) string {
@@ -1146,8 +1155,16 @@ func workspaceNameFromEmail(email string) string {
 }
 
 func (h *Handler) createSession(ctx context.Context, userID string, refreshToken string, ttl time.Duration, userAgent string) (string, error) {
+	return createSessionWithStore(ctx, h.store, userID, refreshToken, ttl, userAgent)
+}
+
+type sessionWriter interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+func createSessionWithStore(ctx context.Context, store sessionWriter, userID string, refreshToken string, ttl time.Duration, userAgent string) (string, error) {
 	var sessionID string
-	err := h.store.QueryRow(ctx, `
+	err := store.QueryRow(ctx, `
 		insert into auth_sessions (user_id, refresh_token_hash, user_agent, expires_at, last_used_at)
 		values ($1, $2, $3, now() + ($4 * interval '1 second'), now())
 		returning id::text

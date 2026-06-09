@@ -42,7 +42,7 @@ func (w *PostgresWriter) SaveDraft(ctx context.Context, workspaceID string, draf
 	if err != nil {
 		return err
 	}
-	if err := w.validateAssetReferences(ctx, workspaceID, draft.Site.ID, draft.Pages); err != nil {
+	if err := w.validateAssetReferences(ctx, workspaceID, draft); err != nil {
 		return err
 	}
 
@@ -451,8 +451,8 @@ type assetReference struct {
 	Path string
 }
 
-func (w *PostgresWriter) validateAssetReferences(ctx context.Context, workspaceID string, siteID string, pages []siteconfig.PageDraft) error {
-	references := collectAssetReferences(pages)
+func (w *PostgresWriter) validateAssetReferences(ctx context.Context, workspaceID string, draft siteconfig.SiteDraft) error {
+	references := collectAssetReferences(draft)
 	if len(references) == 0 {
 		return nil
 	}
@@ -507,7 +507,7 @@ func (w *PostgresWriter) validateAssetReferences(ctx context.Context, workspaceI
 			})
 			continue
 		}
-		if referencedSiteID != "" && referencedSiteID != siteID {
+		if referencedSiteID != "" && referencedSiteID != draft.Site.ID {
 			issues = append(issues, siteconfig.Issue{
 				Path:    reference.Path,
 				Code:    "invalid_asset_reference",
@@ -521,9 +521,21 @@ func (w *PostgresWriter) validateAssetReferences(ctx context.Context, workspaceI
 	return nil
 }
 
-func collectAssetReferences(pages []siteconfig.PageDraft) []assetReference {
+func collectAssetReferences(draft siteconfig.SiteDraft) []assetReference {
 	references := []assetReference{}
-	for pageIndex, page := range pages {
+	if draft.Brand.Logo != nil && draft.Brand.Logo.AssetID != "" {
+		references = append(references, assetReference{
+			ID:   draft.Brand.Logo.AssetID,
+			Path: "brand.logo.assetId",
+		})
+	}
+	for collectionIndex, collection := range draft.Collections {
+		for entryIndex, entry := range collection.Entries {
+			path := fmt.Sprintf("collections[%d].entries[%d].fields", collectionIndex, entryIndex)
+			references = append(references, collectAssetReferencesFromValue(path, entry.Fields)...)
+		}
+	}
+	for pageIndex, page := range draft.Pages {
 		for blockIndex, block := range page.Blocks {
 			path := fmt.Sprintf("pages[%d].blocks[%d].props", pageIndex, blockIndex)
 			references = append(references, collectAssetReferencesFromValue(path, block.Props)...)

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -541,4 +542,290 @@ func newHandlerTestTokenManager(t *testing.T) *TokenManager {
 		t.Fatalf("new token manager: %v", err)
 	}
 	return manager
+}
+
+func TestConsumeMagicLinkTokenCreatesSessionAndConsumesTokenAtomically(t *testing.T) {
+	store := newFakeMagicLinkStore("magic-token", magicLinkLoginPurpose, time.Now().UTC().Add(time.Minute))
+	handler := NewHandler(HandlerConfig{Store: store})
+
+	user, sessionID, err := handler.consumeMagicLinkToken(context.Background(), "magic-token", "refresh-token", time.Hour, "test-agent")
+	if err != nil {
+		t.Fatalf("consume magic link token: %v", err)
+	}
+	if user.ID != "user-1" {
+		t.Fatalf("expected user-1, got %#v", user)
+	}
+	if sessionID == "" {
+		t.Fatal("expected auth session id")
+	}
+	if !store.state.consumed {
+		t.Fatal("expected magic link to be consumed on commit")
+	}
+	if store.state.sessionsCreated != 1 {
+		t.Fatalf("expected one committed session, got %d", store.state.sessionsCreated)
+	}
+}
+
+func TestConsumeMagicLinkTokenRollsBackWhenSessionCreationFails(t *testing.T) {
+	store := newFakeMagicLinkStore("magic-token", magicLinkLoginPurpose, time.Now().UTC().Add(time.Minute))
+	store.state.sessionInsertErr = context.DeadlineExceeded
+	handler := NewHandler(HandlerConfig{Store: store})
+
+	_, _, err := handler.consumeMagicLinkToken(context.Background(), "magic-token", "refresh-token", time.Hour, "test-agent")
+	if err == nil {
+		t.Fatal("expected session creation failure")
+	}
+	if store.state.consumed {
+		t.Fatal("expected consumed_at rollback on failure")
+	}
+	if store.state.sessionsCreated != 0 {
+		t.Fatalf("expected no committed session, got %d", store.state.sessionsCreated)
+	}
+
+	store.state.sessionInsertErr = nil
+	if _, _, err := handler.consumeMagicLinkToken(context.Background(), "magic-token", "refresh-token-2", time.Hour, "test-agent"); err != nil {
+		t.Fatalf("expected retry after rollback to succeed, got %v", err)
+	}
+}
+
+func TestConsumeMagicLinkTokenRejectsExpiredReplayAndWrongPurpose(t *testing.T) {
+	tests := []struct {
+		name      string
+		purpose   string
+		expiresAt time.Time
+	}{
+		{
+			name:      "expired",
+			purpose:   magicLinkLoginPurpose,
+			expiresAt: time.Now().UTC().Add(-time.Minute),
+		},
+		{
+			name:      "wrong purpose",
+			purpose:   "password_reset",
+			expiresAt: time.Now().UTC().Add(time.Minute),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := newFakeMagicLinkStore("magic-token", test.purpose, test.expiresAt)
+			handler := NewHandler(HandlerConfig{Store: store})
+
+			_, _, err := handler.consumeMagicLinkToken(context.Background(), "magic-token", "refresh-token", time.Hour, "test-agent")
+			if err != pgx.ErrNoRows {
+				t.Fatalf("expected pgx.ErrNoRows, got %v", err)
+			}
+			if store.state.consumed {
+				t.Fatal("expected token to remain unconsumed")
+			}
+		})
+	}
+
+	store := newFakeMagicLinkStore("magic-token", magicLinkLoginPurpose, time.Now().UTC().Add(time.Minute))
+	handler := NewHandler(HandlerConfig{Store: store})
+	if _, _, err := handler.consumeMagicLinkToken(context.Background(), "magic-token", "refresh-token", time.Hour, "test-agent"); err != nil {
+		t.Fatalf("initial consume should succeed: %v", err)
+	}
+	if _, _, err := handler.consumeMagicLinkToken(context.Background(), "magic-token", "refresh-token-2", time.Hour, "test-agent"); err != pgx.ErrNoRows {
+		t.Fatalf("expected replay to fail with pgx.ErrNoRows, got %v", err)
+	}
+}
+
+func TestConsumeMagicLinkTokenAllowsOnlyOneConcurrentRedemption(t *testing.T) {
+	store := newFakeMagicLinkStore("magic-token", magicLinkLoginPurpose, time.Now().UTC().Add(time.Minute))
+	handler := NewHandler(HandlerConfig{Store: store})
+
+	var wg sync.WaitGroup
+	results := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			_, _, err := handler.consumeMagicLinkToken(
+				context.Background(),
+				"magic-token",
+				"refresh-token-"+string(rune('a'+index)),
+				time.Hour,
+				"test-agent",
+			)
+			results <- err
+		}(i)
+	}
+	wg.Wait()
+	close(results)
+
+	successes := 0
+	failures := 0
+	for err := range results {
+		if err == nil {
+			successes++
+			continue
+		}
+		if err == pgx.ErrNoRows {
+			failures++
+			continue
+		}
+		t.Fatalf("unexpected concurrent redemption error: %v", err)
+	}
+	if successes != 1 || failures != 1 {
+		t.Fatalf("expected one success and one replay failure, got successes=%d failures=%d", successes, failures)
+	}
+}
+
+type fakeMagicLinkStore struct {
+	state *fakeMagicLinkState
+}
+
+type fakeMagicLinkState struct {
+	mu               sync.Mutex
+	cond             *sync.Cond
+	locked           bool
+	tokenHashValue   string
+	purpose          string
+	expiresAt        time.Time
+	consumed         bool
+	sessionInsertErr error
+	sessionsCreated  int
+}
+
+func newFakeMagicLinkStore(token string, purpose string, expiresAt time.Time) *fakeMagicLinkStore {
+	state := &fakeMagicLinkState{
+		tokenHashValue: tokenHash(token),
+		purpose:        purpose,
+		expiresAt:      expiresAt,
+	}
+	state.cond = sync.NewCond(&state.mu)
+	return &fakeMagicLinkStore{state: state}
+}
+
+func (s *fakeMagicLinkStore) QueryRow(context.Context, string, ...any) pgx.Row {
+	return fakeRow{err: pgx.ErrNoRows}
+}
+
+func (s *fakeMagicLinkStore) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, pgx.ErrNoRows
+}
+
+func (s *fakeMagicLinkStore) BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error) {
+	return &fakeMagicLinkTx{state: s.state}, nil
+}
+
+type fakeMagicLinkTx struct {
+	state          *fakeMagicLinkState
+	hasLock        bool
+	consumePending bool
+	sessionPending bool
+}
+
+func (tx *fakeMagicLinkTx) Begin(context.Context) (pgx.Tx, error) {
+	return nil, pgx.ErrTxClosed
+}
+
+func (tx *fakeMagicLinkTx) Commit(context.Context) error {
+	tx.state.mu.Lock()
+	defer tx.state.mu.Unlock()
+	if tx.consumePending {
+		tx.state.consumed = true
+	}
+	if tx.sessionPending {
+		tx.state.sessionsCreated++
+	}
+	if tx.hasLock {
+		tx.state.locked = false
+		tx.hasLock = false
+		tx.state.cond.Broadcast()
+	}
+	return nil
+}
+
+func (tx *fakeMagicLinkTx) Rollback(context.Context) error {
+	tx.state.mu.Lock()
+	defer tx.state.mu.Unlock()
+	tx.consumePending = false
+	tx.sessionPending = false
+	if tx.hasLock {
+		tx.state.locked = false
+		tx.hasLock = false
+		tx.state.cond.Broadcast()
+	}
+	return nil
+}
+
+func (tx *fakeMagicLinkTx) CopyFrom(context.Context, pgx.Identifier, []string, pgx.CopyFromSource) (int64, error) {
+	return 0, pgx.ErrTxClosed
+}
+
+func (tx *fakeMagicLinkTx) SendBatch(context.Context, *pgx.Batch) pgx.BatchResults {
+	return nil
+}
+
+func (tx *fakeMagicLinkTx) LargeObjects() pgx.LargeObjects {
+	return pgx.LargeObjects{}
+}
+
+func (tx *fakeMagicLinkTx) Prepare(context.Context, string, string) (*pgconn.StatementDescription, error) {
+	return nil, pgx.ErrTxClosed
+}
+
+func (tx *fakeMagicLinkTx) Exec(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
+	if !strings.Contains(sql, "update magic_links") {
+		return pgconn.CommandTag{}, pgx.ErrNoRows
+	}
+
+	tx.state.mu.Lock()
+	defer tx.state.mu.Unlock()
+	if !tx.hasLock || tx.state.consumed || tx.consumePending {
+		return pgconn.NewCommandTag("UPDATE 0"), nil
+	}
+	tx.consumePending = true
+	return pgconn.NewCommandTag("UPDATE 1"), nil
+}
+
+func (tx *fakeMagicLinkTx) Query(context.Context, string, ...any) (pgx.Rows, error) {
+	return nil, pgx.ErrTxClosed
+}
+
+func (tx *fakeMagicLinkTx) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
+	switch {
+	case strings.Contains(sql, "from magic_links ml"):
+		tx.state.mu.Lock()
+		for tx.state.locked {
+			tx.state.cond.Wait()
+		}
+		tx.state.locked = true
+		tx.hasLock = true
+		if args[0].(string) != tx.state.tokenHashValue ||
+			tx.state.consumed ||
+			!tx.state.expiresAt.After(time.Now().UTC()) ||
+			(tx.state.purpose != args[1].(string) && tx.state.purpose != args[2].(string)) {
+			tx.state.locked = false
+			tx.hasLock = false
+			tx.state.cond.Broadcast()
+			tx.state.mu.Unlock()
+			return fakeRow{err: pgx.ErrNoRows}
+		}
+		tx.state.mu.Unlock()
+		return fakeRow{values: []any{
+			"magic-link-1",
+			"user-1",
+			"demo@snaelda.local",
+			"Demo User",
+			"workspace-1",
+			"owner",
+		}}
+	case strings.Contains(sql, "insert into auth_sessions"):
+		tx.state.mu.Lock()
+		defer tx.state.mu.Unlock()
+		if tx.state.sessionInsertErr != nil {
+			return fakeRow{err: tx.state.sessionInsertErr}
+		}
+		tx.sessionPending = true
+		return fakeRow{values: []any{"session-1"}}
+	default:
+		return fakeRow{err: pgx.ErrNoRows}
+	}
+}
+
+func (tx *fakeMagicLinkTx) Conn() *pgx.Conn {
+	return nil
 }

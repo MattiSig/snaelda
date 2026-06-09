@@ -54,7 +54,12 @@ function buildSnapshot(): PublishedSnapshot {
         shape: { radius: '14px' },
       },
     },
-    navigation: { primary: [{ label: 'Home', pageId: 'page_home' }] },
+    navigation: {
+      primary: [
+        { label: 'Home', pageId: 'page_home' },
+        { label: 'Draft page', pageId: 'page_draft' },
+      ],
+    },
     collections: [
       {
         id: 'col_services',
@@ -163,6 +168,26 @@ function buildSnapshot(): PublishedSnapshot {
           },
         ],
       },
+      {
+        id: 'page_draft',
+        title: 'Draft page',
+        slug: '/draft-only-page',
+        status: 'draft',
+        type: 'static',
+        seo: { title: 'Draft page', description: 'Should stay out of publish.' },
+        blocks: [
+          {
+            id: 'block_draft',
+            type: 'text_section',
+            version: '1.0.0',
+            props: {
+              heading: 'Draft only',
+              body: 'This page should not render publicly.',
+            },
+            settings: {},
+          },
+        ],
+      },
     ],
   }
 }
@@ -244,6 +269,24 @@ describe('buildPublishedArtifactBundle', () => {
     expect(entryPage?.title).toBe('Scaffolding rentals')
     expect(entryPage?.description).toBe(
       'Heavy-duty scaffolding for facade projects.',
+    )
+  })
+
+  it('skips draft pages and their navigation links from published artifacts', () => {
+    const bundle = buildPublishedArtifactBundle(buildBaseInput(buildSnapshot()))
+    const filesByPath = new Map(bundle.files.map((file) => [file.path, file]))
+
+    expect(filesByPath.has('pages/draft-only-page/index.html')).toBe(false)
+
+    const homeFile = filesByPath.get('pages/index.html')
+    expect(homeFile?.body).not.toContain('Draft page')
+
+    const manifestFile = filesByPath.get('manifest.json')
+    const manifest = JSON.parse(manifestFile!.body) as {
+      pages: Array<{ pagePath: string }>
+    }
+    expect(manifest.pages.map((page) => page.pagePath)).not.toContain(
+      '/draft-only-page',
     )
   })
 })

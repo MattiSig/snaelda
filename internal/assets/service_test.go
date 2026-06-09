@@ -211,6 +211,33 @@ func TestPublicDownloadURLBySiteSlugRejectsAssetNotInPublishedSnapshot(t *testin
 	}
 }
 
+func TestPublicDownloadURLBySiteSlugAllowsPublishedBrandLogo(t *testing.T) {
+	store := newFakeAssetStore()
+	store.siteSlugs["site-1"] = "loom-light"
+	store.publishedSites["site-1"] = true
+	store.publishedSnapshots["site-1"] = snapshotReferencingBrandAsset("asset-logo")
+	store.assets["asset-logo"] = storedAsset{
+		Asset: Asset{
+			ID:          "asset-logo",
+			WorkspaceID: "workspace-1",
+			SiteID:      "site-1",
+			Kind:        "image",
+			StorageKey:  "key-logo",
+			Metadata:    AssetMetadata{UploadStatus: "uploaded"},
+			CreatedAt:   time.Now().UTC(),
+		},
+	}
+	service := NewService(store, &fakeStorage{downloadURL: "http://download.test/logo"})
+
+	downloadURL, err := service.PublicDownloadURLBySiteSlug(context.Background(), "loom-light", "asset-logo")
+	if err != nil {
+		t.Fatalf("public brand logo download url: %v", err)
+	}
+	if downloadURL != "http://download.test/logo" {
+		t.Fatalf("expected public download url, got %q", downloadURL)
+	}
+}
+
 func TestPublicDownloadURLBySiteSlugRejectsUnpublishedSite(t *testing.T) {
 	store := newFakeAssetStore()
 	store.siteSlugs["site-1"] = "loom-light"
@@ -420,6 +447,19 @@ func snapshotReferencingAsset(assetIDs ...string) siteconfig.PublishedSnapshot {
 			}},
 		}},
 	}
+}
+
+func snapshotReferencingBrandAsset(assetID string) siteconfig.PublishedSnapshot {
+	snapshot := snapshotReferencingAsset()
+	snapshot.Brand = siteconfig.BrandConfig{
+		BusinessName: "Loom & Light",
+		PrimaryColor: "#8ee2d1",
+		Logo: &siteconfig.BrandLogo{
+			AssetID: assetID,
+			Alt:     "Loom & Light logo",
+		},
+	}
+	return snapshot
 }
 
 func (s *fakeAssetStore) Query(_ context.Context, sql string, args ...any) (pgx.Rows, error) {

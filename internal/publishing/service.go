@@ -819,6 +819,9 @@ type expectedPagePath struct {
 func expectedPagePaths(snapshot siteconfig.PublishedSnapshot, collectionsByID map[string]siteconfig.Collection) []expectedPagePath {
 	out := make([]expectedPagePath, 0, len(snapshot.Pages))
 	for _, page := range snapshot.Pages {
+		if page.Status == siteconfig.PageStatusDraft {
+			continue
+		}
 		if page.Type == siteconfig.PageTypeCollectionDetail {
 			collection, ok := collectionsByID[page.CollectionID]
 			if !ok {
@@ -1148,7 +1151,7 @@ func (s *Service) enrichSnapshotCredits(ctx context.Context, snapshot *siteconfi
 		return nil
 	}
 
-	references := siteconfig.CollectSnapshotAssetIDs(snapshot.Pages, snapshot.Collections)
+	references := siteconfig.CollectSnapshotAssetIDs(*snapshot)
 	if len(references) == 0 {
 		snapshot.ImageCredits = nil
 		return nil
@@ -1187,11 +1190,13 @@ func dedupeImageCredits(credits []siteconfig.ImageCredit) []siteconfig.ImageCred
 }
 
 func buildPublishedSnapshot(draft siteconfig.SiteDraft) siteconfig.PublishedSnapshot {
+	publishedPages := publishedSnapshotPages(draft.Pages)
+
 	siteDescription := draft.Site.SEO.Description
 	if siteDescription == "" {
 		siteDescription = firstNonEmpty(
-			pageDescription(firstPageBySlug(draft.Pages, "/")),
-			firstNonEmptyPageDescription(draft.Pages),
+			pageDescription(firstPageBySlug(publishedPages, "/")),
+			firstNonEmptyPageDescription(publishedPages),
 			"Discover "+draft.Site.Name+".",
 		)
 	}
@@ -1201,8 +1206,8 @@ func buildPublishedSnapshot(draft siteconfig.SiteDraft) siteconfig.PublishedSnap
 		Description: clampText(siteDescription, 180),
 	}
 
-	pages := make([]siteconfig.PageDraft, 0, len(draft.Pages))
-	for _, page := range draft.Pages {
+	pages := make([]siteconfig.PageDraft, 0, len(publishedPages))
+	for _, page := range publishedPages {
 		pageSEO := page.SEO
 		if pageSEO.Title == "" {
 			if page.Slug == "/" {
@@ -1221,6 +1226,7 @@ func buildPublishedSnapshot(draft siteconfig.SiteDraft) siteconfig.PublishedSnap
 			ID:           page.ID,
 			Title:        page.Title,
 			Slug:         page.Slug,
+			Status:       siteconfig.PageStatusPublished,
 			Type:         page.Type,
 			CollectionID: page.CollectionID,
 			SEO:          pageSEO,
@@ -1246,9 +1252,49 @@ func buildPublishedSnapshot(draft siteconfig.SiteDraft) siteconfig.PublishedSnap
 		},
 		Brand:       publishedBrand(draft),
 		Theme:       draft.Theme,
-		Navigation:  draft.Navigation,
+		Navigation:  publishedNavigation(draft.Navigation, pages),
 		Pages:       pages,
 		Collections: collections,
+	}
+}
+
+func publishedSnapshotPages(pages []siteconfig.PageDraft) []siteconfig.PageDraft {
+	published := make([]siteconfig.PageDraft, 0, len(pages))
+	for _, page := range pages {
+		if page.Status == siteconfig.PageStatusDraft {
+			continue
+		}
+		published = append(published, page)
+	}
+	return published
+}
+
+func publishedNavigation(navigation siteconfig.NavigationConfig, pages []siteconfig.PageDraft) siteconfig.NavigationConfig {
+	pageIDs := make(map[string]struct{}, len(pages))
+	for _, page := range pages {
+		pageIDs[page.ID] = struct{}{}
+	}
+
+	filter := func(items []siteconfig.NavigationItem) []siteconfig.NavigationItem {
+		if len(items) == 0 {
+			return nil
+		}
+		filtered := make([]siteconfig.NavigationItem, 0, len(items))
+		for _, item := range items {
+			if item.PageID == "" {
+				filtered = append(filtered, item)
+				continue
+			}
+			if _, ok := pageIDs[item.PageID]; ok {
+				filtered = append(filtered, item)
+			}
+		}
+		return filtered
+	}
+
+	return siteconfig.NavigationConfig{
+		Primary: filter(navigation.Primary),
+		Footer:  filter(navigation.Footer),
 	}
 }
 

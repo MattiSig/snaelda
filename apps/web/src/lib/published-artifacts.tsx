@@ -68,14 +68,15 @@ type RenderedRoute = {
 export function buildPublishedArtifactBundle(
   input: PublishedArtifactRenderInput,
 ): PublishedArtifactBundle {
+  const snapshot = filterPublishedSnapshot(input.snapshot);
   const collectionsById = new Map<string, Collection>();
-  for (const collection of input.snapshot.collections ?? []) {
+  for (const collection of snapshot.collections ?? []) {
     collectionsById.set(collection.id, collection);
   }
 
   const renderedRoutes: RenderedRoute[] = [];
 
-  for (const page of input.snapshot.pages) {
+  for (const page of snapshot.pages) {
     if (page.type === "collection_detail") {
       const collection = page.collectionId
         ? collectionsById.get(page.collectionId)
@@ -91,12 +92,12 @@ export function buildPublishedArtifactBundle(
       );
       for (const entry of publishedEntries) {
         renderedRoutes.push(
-          renderCollectionEntry(input, page, collection, entry),
+          renderCollectionEntry({ ...input, snapshot }, page, collection, entry),
         );
       }
       continue;
     }
-    renderedRoutes.push(renderStaticOrIndexPage(input, page));
+    renderedRoutes.push(renderStaticOrIndexPage({ ...input, snapshot }, page));
   }
 
   const files: PublishedArtifactFile[] = renderedRoutes.map((route) => ({
@@ -108,7 +109,7 @@ export function buildPublishedArtifactBundle(
   files.push({
     path: "assets/theme.css",
     contentType: "text/css; charset=utf-8",
-    body: buildPublishedThemeCSS(input.snapshot),
+    body: buildPublishedThemeCSS(snapshot),
   });
 
   const manifest: PublishedArtifactManifest = {
@@ -164,6 +165,28 @@ export function buildPublishedArtifactBundle(
   return {
     schemaVersion: "published_artifacts.v1",
     files,
+  };
+}
+
+function filterPublishedSnapshot(snapshot: PublishedSnapshot): PublishedSnapshot {
+  const pages = snapshot.pages
+    .filter((page) => page.status !== "draft")
+    .map((page) => ({
+      ...page,
+      status: "published" as const,
+    }));
+  const pageIds = new Set(pages.map((page) => page.id));
+  const filterNav = (
+    items: PublishedSnapshot["navigation"]["primary"] | PublishedSnapshot["navigation"]["footer"],
+  ) => (items ?? []).filter((item) => !item.pageId || pageIds.has(item.pageId));
+
+  return {
+    ...snapshot,
+    navigation: {
+      primary: filterNav(snapshot.navigation.primary),
+      footer: filterNav(snapshot.navigation.footer),
+    },
+    pages,
   };
 }
 

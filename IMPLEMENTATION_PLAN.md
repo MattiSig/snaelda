@@ -1,201 +1,200 @@
 # Implementation Plan
 
-Refreshed 2026-05-27 after landing the "Find a better image" picker (spec 20 — the second biggest open AI-first surface after block-suggest), the AI-suggest dropdowns on blocks, the full-page hero variant, the Stripe setup script, and the first wave of landing/preview/generation UX hardening. Prior refresh (2026-05-21) followed 16 spec-vs-code audits and the newly-authored `specs/20-ai-authoring-ux.md`. The MVP shape is unchanged: anonymous prompt → generated site → editable draft → published hosted subdomain, with optional account claim and Stripe billing. Open items are sorted by priority tier; "Recently Confirmed Complete" preserves shipped history.
+Refreshed 2026-06-09 from a spec-to-source audit of `specs/*`, `internal/*`, `apps/*`, and `cmd/*`. This is an execution queue, not a shipped-work changelog. Every open item below was confirmed against the current source. Items are sorted by priority; correctness, security, data integrity, and paid conversion come before feature expansion.
 
-## Next Up (re-prioritized 2026-05-27)
+## P0 — Launch Blockers
 
-Highest-leverage open work, in order:
+- [ ] Prevent draft mutations from damaging the active published version.
+  - Draft page deletion currently removes normalized `pages` rows still referenced by live form submissions and analytics.
+  - Preserve stable published-page identities until no active snapshot depends on them; add regression coverage for live forms, analytics, rollback, and later republish.
 
-1. **Trial education affordances** (spec 17) — "Continue your draft" landing affordance and first-generation modal explaining L0 trial state. Required by the GTM story; today users hit the cookie-only failure mode silently.
-2. **Generation streaming for perceived speed** (extends spec 20) — switch the OpenAI call to streaming so pages/blocks materialize as the model writes them, instead of a 30-60s dead-wait at `plan.blocks`. Highest perceived-speed win available without changing the model.
-3. **Once-over delivery workflow** (specs 15, 18) — finish the half-built path. Operator UI to mark delivery + trigger `SendOnceOverDelivered`. Unlocks the $99 add-on revenue.
-4. **Page-suggest empty state** (spec 20) — empty-page CTA that asks the model for likely candidates (Pricing, About, Contact). Smaller scope than block-suggest.
+- [ ] Add concurrency control to canonical draft writes.
+  - Current load-modify-save operations replace the whole draft, and overlapping inline edits can silently overwrite newer or unrelated changes.
+  - Add a draft revision/version precondition or transactional locking, serialize per-block saves in the client, and surface conflict recovery instead of applying stale responses.
 
-Defer: ambient site suggestions (lowest urgency), automated TLS issuance (platform-dependent — Railway/Render/Fly handle this for us).
+- [x] Honor page publication status.
+  - Exclude `status=draft` pages from published snapshots, navigation, sitemap, artifacts, collection routes, forms, and analytics while keeping them editable and previewable.
 
-## Recently Confirmed Complete
+- [x] Make magic-link redemption atomically single-use.
+  - Lock and consume the token and create the authenticated session in one transaction; require exactly one consumed row.
+  - Add replay, concurrent redemption, expiry, purpose, session-creation failure, and rollback tests.
 
-- [x] "Find a better image" affordance on image-bearing blocks (spec 20): new `POST /api/sites/:siteId/blocks/:blockId/image-suggest` returns a model-rewritten Pexels query plus 9 candidate photos (provider, providerId, downloadUrl, source url, dimensions, content type, author, author url, license, description). New `POST /api/sites/:siteId/blocks/:blockId/image-apply` accepts the chosen candidate plus a `path` array (e.g. `["image"]` for hero/image_text, `["images","0","image"]` for gallery), downloads via the existing `imagery.Provider`, imports as a starter asset via `assets.ImportExternal` with full Pexels provenance, mutates the block's image slot through `resolveImageSlot`/`setImageAtPath`, captures before/after `draft_revisions` (scope=`block`), records a `reprompt_history` row, completes a `generation_jobs` row (kind=`block_suggest`), and spends a prompt budget unit only on apply (preview fetches are free, per spec 20). New `ImageQueryRewriter` interface implemented by `OpenAIPlanner.RewriteImageQuery` issues a strict structured-output completion bounded to a single ≤80-char query string with a per-action system prompt that biases image-led brands toward atmospheric stock. `StarterImagery.Inner()` exposes the underlying provider so `SuggestImage` bypasses the per-run dedupe (each invocation gets a fresh result set). The builder's `BlockEditor` now surfaces a "Find a better image" button on every `asset`-typed field; the modal opens, auto-fires the initial search, shows a 3-column grid of candidates with attribution, accepts an optional free-text instruction with a "Search again" button, and applies the chosen photo with one click (Esc + backdrop close). The route's `handleImageApplied` callback merges the returned asset into the local library, syncs the draft, and refreshes the reprompt history. Backend + frontend tests added; verified end-to-end against an Icelandic florist generation (Pexels candidates rendered, applied photo replaced the hero, photo credit updated to the chosen photographer, asset library showed the new entry, no console errors).
-- [x] AI-suggest dropdowns on blocks (spec 20): new `POST /api/sites/:siteId/blocks/:blockId/suggest` endpoint, backed by a new `BlockSuggester` interface implemented by `OpenAIPlanner.SuggestBlockProps` that rewrites only the block's props through a strict structured-output JSON schema derived from the block's existing `PropSchema` (same type/version preserved by construction). The service captures before/after `draft_revisions`, writes a `reprompt_history` row with `scope='block'` and a model-authored `change_summary`, and tracks the work in `generation_jobs` under the new `JobKindBlockSuggest` kind. Migration `000018_block_suggest.sql` extends the `reprompt_history.scope`, `draft_revisions.scope`, and `generation_jobs.kind` check constraints. The builder's `BlockEditor` now surfaces an "Improve with AI" dropdown (Tighten / Expand / Change tone → friendlier/professional/playful/direct / Rewrite from prompt) on text-bearing blocks; the dropdown closes on Esc and click-outside, the local prop state resets to the AI result via React 19's render-time state-derivation pattern, and toast status messages surface success. Wired through `PuckBuilder.tsx` and `apps/web/src/routes/app.sites.$siteId.index.tsx` with paid-plan/billing guard reuse. Backend + frontend tests added; verified end-to-end via Playwright against a freshly generated florist site (hero headline tightened, reprompt history shows the block-scoped entry, no console errors).
-- [x] Full-page hero variant (specs 4, 7): hero blocks now carry a `variant` enum (`standard` / `full-page`) in addition to the existing `layout` field. `internal/siteconfig/blocks.go` validates the new enum, `apps/web/src/components/SiteDraftRenderer.tsx` renders the immersive variant as a true 100vh section that overlaps the page header on first paint (image background, vertical gradient overlay, headline + optional CTAs anchored at the bottom), and the page header recolors to light when the first block is a full-page hero. The OpenAI planner's system prompt teaches the model when to choose `full-page` (image-led brands, magazine-style openers); `repairHeroProps` normalizes the enum on the legacy fallback path. `specs/04-block-registry.md` updated; the block-registry contract golden file regenerated; LLM-aware verified against an Icelandic florist generation.
-- [x] Stripe setup automation: new `cmd/stripe-setup` Go binary creates products + prices (Basic / Pro / Once-over) and the webhook endpoint with exactly the six events `internal/billing/stripe.go` handles, then prints env vars to paste into `.env`. Idempotent via Stripe `lookup_key` (`snaelda_basic_monthly`, `snaelda_pro_monthly`, `snaelda_once_over`) — safe to re-run. Refuses `sk_live_…` keys without `-allow-live` plus a typed "yes" confirmation. Wired into the Makefile as `make stripe-setup`.
-- [x] Immersive preview share route (specs 9, 14): `apps/web/src/routes/preview.$token.tsx` no longer wraps the renderer in editor-style chrome; the `SiteDraftRenderer` renders as the entire page with a small non-blocking "Draft preview" pill pinned to the bottom-right. `apps/web/src/routes/__root.tsx` now excludes `/preview/` (like `/public/` and `/app`) from the app topbar, so the share link experience matches what the recipient will see when the site is published.
-- [x] Generation progress hardening (spec 20): `internal/generation/progress.go` made `progressTracker.emit` monotonic (records highest step index reached, drops backward emits). Fixes the regression where the planner's retry loop would rewind the visible step from `plan.blocks` back to `plan.pages`. `internal/generation/openai.go` adds a heartbeat goroutine that walks through `plan.theme` (+7s) and `plan.blocks` (+16s) during the LLM HTTP call so the UI shows deliberate motion before the LLM returns; `newOrderedEmitter` guarantees idempotent emission so the post-HTTP catch-up is safe.
-- [x] Landing-page simplification (spec 17): the "Enter" dropdown that offered Email / Restore session / Continue as guest sub-choices was replaced with a single subtle "Log in" link in the top-right. The prompt form already lands directly in a trial workspace via `startAnonymousSession()` + `navigate({ to: '/app', search: { prompt }})`. `?restore=` URL auto-restore still works; the restore-failed message now renders inline above the prompt form. Aligns the surface with spec 17's "no signup required" promise.
+- [ ] Centralize prompt reservation and accounting for every model-backed action.
+  - Atomically enforce trial and paid allowances before work begins, then settle usage consistently on success/failure.
+  - Cover site/page reprompt, block suggest, image apply, theme regeneration, collection drafting, entry drafting, and future AI actions.
+  - Route all actions through shared durable rate limits, generation jobs, audit events, and structured quota errors.
 
-- [x] Reprompt history + diff view (spec 20): page- and site-scoped reprompts now capture immutable before/after `draft_revisions` plus durable `reprompt_history` rows through `000017_reprompt_history.sql`, with `GET /api/sites/:siteId/reprompts`, `GET /api/sites/:siteId/revisions/:revisionId`, and `POST /api/sites/:siteId/reprompts/:id/revert` layered into `internal/generation`. The legacy `/api/sites/:siteId/undo` path now restores the latest non-undone reprompt checkpoint via the same history plumbing. In the builder, prompt iteration now includes a scoped History panel with whole-site vs selected-page filters, per-entry revert, and a diff modal that compares stored revision snapshots block-by-block before the user keeps or rolls back a rebuild.
-- [x] Generation hardening (spec 7): the OpenAI planner now sends a strict block-union JSON schema built from per-block prop fragments in `internal/siteconfig/blocks.go`, replacing the old `additionalProperties: true` hole in generated block props. Page reprompt is now model-first, using the AI-authored page when available and only falling back to deterministic templates when planning fails or returns nothing usable. Generation requests now pass through a durable `generation_attempts` limiter with per-user and per-workspace burst/day windows plus a prompt-length cost guard in `internal/generation/handler.go`, and `BlockDefinition` now carries per-type `MigrateProps` scaffolding so future block-version migrations have a first-class home. The frontend renderer also now sanitizes outbound hrefs before rendering, so even malformed drafts degrade to `#` instead of trusting unsafe protocols client-side.
-- [x] Custom-domain management foundation (specs 13, 10): `internal/domains` now supports `POST/PATCH/DELETE /api/sites/:siteId/domains` on top of the existing read path, with paid-plan enforcement via billing entitlements, hostname validation, DNS-TXT verification using `_snaelda-verify.{hostname}`, and safe refusal of hosted `subdomain` records. Domain list responses now expose pending verification instructions plus active-domain public URLs, and active custom domains become the preferred live URL in the builder. The publish/runtime cache now shares a domain cache between `internal/publishing` and `internal/domains`, so attach/verify/delete invalidates stale hostname lookups immediately. The builder publish panel now includes a production-facing custom-domain manager with add, verify, remove, DNS instructions, and paid-plan lock messaging.
-- [x] Theme token vocabulary now matches spec 11 end to end. `internal/siteconfig/theme_presets.go` emits `sectionPaddingX` + `sectionPaddingY` instead of the old single `sectionSpacing`, while `DetectThemeSelection` and the validator stay backward-compatible with legacy snapshots that still carry `sectionSpacing`. The public renderer and published `assets/theme.css` now use the spec-facing CSS variable families (`--color-*`, `--font-*`, `--radius-*`, `--space-sectionPaddingX/Y`) instead of the old `--site-*` contract, and theme CSS now exposes `headingWeight` / `bodyWeight` alongside the existing font-family tokens.
-- [x] `once_over_intake_ready` email sends are now idempotent on Stripe webhook event ID (spec 18 hardening). `internal/email/helpers.go` accepts an idempotency key for the once-over intake-ready template, `internal/billing/once_over.go` passes `once_over_intake_ready:{event_id}`, and billing tests assert the key is present so webhook replays do not double-send through providers that honor idempotency headers.
-- [x] Brand as a first-class typed object (specs 3, 5, 11): new `BrandConfig` Go struct + TypeScript type carry `businessName`, optional `{assetId, alt}` logo, and `primaryColor`; SiteDraft and PublishedSnapshot expose `brand` alongside theme; new `000014_site_brand.sql` adds a `brand jsonb` column on `sites` and the sites reader/writer persist it atomically with the rest of the draft. The siteconfig validator enforces hex colors and required-on-publish; published snapshots fall back to `site.name` + theme primary so legacy drafts still ship. `siteconfig.BuildThemeWithBrand` overrides the palette's `primary` token with `brand.primaryColor` so theme update + regenerate continue to use brand as the source of the rendered primary, and theme regeneration passes the current brand to the model as a constraint. Generation seeds brand from the site name and selected palette primary, the generation input contract carries an optional brand from callers, and `applySiteIdentity` preserves brand across site reprompt.
-- [x] Brand follow-through (specs 3, 5, 7, 11): `BuildThemeWithBrand` now derives `secondary`, `accent`, `surface`, `surfaceMuted`, `border`, `muted`, and `ring` deterministically from `brand.primaryColor` instead of only swapping `primary`; the site settings panel now edits `brand.businessName`, `brand.primaryColor`, and `brand.logo`; and generation input now carries `preferredLanguage`, `optionalHints`, and `brand` through the API/service/OpenAI payload path with strict structured-output enabled for the main site-plan call.
-- [x] Page status contract (specs 3, 5, 6): `PageDraft` now carries `status`, the sites reader/writer persist the existing `pages.status` column end to end, generation seeds pages as `draft`, the API accepts status updates, and the builder page-setup panel exposes a draft/published selector.
-- [x] Image alt is now required end to end (specs 4, 7): image refs and brand logos require non-empty `alt`, validator coverage rejects missing alt text, renderer no longer silently falls back to generated labels, and repair/starter-imagery paths always emit an alt string so publish-time validation stays strict.
-- [x] Block registry contract coverage now asserts every spec-required type by name, including `stats`, `collection_list`, `collection_index`, and `collection_detail`, instead of only relying on sorted fixture order.
-- [x] Magic-link verify rate limit (spec 18): `internal/auth/rate_limiter.go` enforces the shipped 3/hour verification rule and tests cover the dedicated `magic_link_verify` bucket.
+- [ ] Fix form-submission read authorization.
+  - Listing submissions must require an authenticated workspace member, matching the update route and the L2-or-paid privacy contract; cookie-only trial sessions must not read inquiries.
 
-- [x] Collections module Phase 2 (spec 19): `collection_detail` templates now expand at publish time into one rendered HTML page per published entry under `/{collection.slug}/{entry.slug}`, with `block.bindings` substituting entry field values into the template's bound props before SSR. `collection_list` and `collection_index` blocks resolve their entry list from the snapshot at render time, link to the per-entry URLs, and the `stats` block ships its missing renderer alongside. Publish validation expands each template into expected entry paths, refuses templates whose collection has no published entries, and the manifest + sitemap include the per-entry URLs.
-- [x] Footer/navigation/SEO spec-11 follow-through: `NavigationConfig` now carries both `primary` and `footer` link lists end to end, the builder navigation editor saves both sections, and the Footer renderer resolves its links from canonical site navigation instead of footer-local props. Footer blocks now use structured `contact.{address,phone,email,hours}` plus `showBrand`, and Header/Footer resolve `brand.businessName`/`brand.logo` from site context at render time. Published artifact manifests now carry derived `ogImageUrl` and `localBusinessJsonLd`, the public page head emits `og:image`, `twitter:image`, and `LocalBusiness` JSON-LD when the footer includes structured address/hours, and sitemap XML now uses the spec-required `http://www.sitemaps.org` namespace.
-- [x] Asset upload and image-library UI exist in the builder, including uploaded-asset selection in block editors.
-- [x] Contact-form submission storage and the chosen MVP moderation flow exist; email forwarding remains optional follow-up work, not unfinished core behavior.
-- [x] The 10-page limit is already enforced in validation, generation repair, the database, and publish preflight.
-- [x] Main builder loading, empty, and error states exist for login, site list, site detail, preview, publish history, assets, and submissions.
-- [x] Page-level SEO editing plus publish-time `sitemap.xml`, `robots.txt`, canonical metadata, and basic social metadata exist.
-- [x] Refresh-token rotation is server-side and hashed; publish/rollback cache invalidation already exists.
-- [x] Added [specs/16-runtime-lifecycles-and-analytics.md](./specs/16-runtime-lifecycles-and-analytics.md) to define public visibility rules, domain/runtime semantics, and MVP analytics scope.
-- [x] Public page reads now resolve from stored published artifacts plus `manifest.json` metadata; public `/public/{slug}` routes no longer carry internal publish framing.
-- [x] Publish validates artifact completeness before promoting a version live (page HTML, crawl files, theme CSS, manifest metadata).
-- [x] Hosted public URLs use an explicit deployment contract via `PUBLIC_BASE_URL` and `PUBLIC_BASE_DOMAIN`.
-- [x] `internal/domains` exposes a real read API for hosted-domain state from `site_domains`.
-- [x] Builder publish panel surfaces the actual hosted live URL.
-- [x] Generation supports a provider-backed structured-output planner through OpenAI with deterministic fallback, plus a separate theme regeneration model call.
-- [x] Generation metadata writes and job completion are mandatory success conditions.
-- [x] Theme regeneration shipped as `POST /api/sites/:siteId/theme/regenerate`.
-- [x] Public form submission resolves strictly against the active published version's snapshot.
-- [x] Public asset delivery requires the asset to be referenced by the active published version, with hostname-based resolution.
-- [x] Public page resolution records non-blocking views into `page_view_daily` via `analytics.CountableRequest`, filtering bots/health checks.
-- [x] `GET /api/sites/{siteId}/analytics?window=7d|30d|all` plus builder analytics view at `/app/sites/{siteId}/analytics`.
-- [x] Transactional email foundation exists in `internal/email/` with stdout, Mailpit SMTP, Resend HTTP, and memory transports; paired templates; `email_send_attempts` migration; Mailpit in local compose.
-- [x] Navigation primary list is first-class editable canonical data with `PUT /api/sites/{siteId}/navigation` and builder editor for rename, external links, reorder, remove.
-- [x] Backend-owned starter imagery via Pexels in `internal/imagery`, re-hosted as `assets` rows with `provenance` and credits on public pages.
-- [x] Durable spam handling for public forms: honeypot, deterministic spam scoring, `form_submission_attempts` table.
-- [x] Authoring-lifecycle audit events for `site.create`, `site.delete`, `page.delete`, `block.delete`, `site.generate`, `site.reprompt`, `page.reprompt`, `asset.upload`, `asset.delete`.
-- [x] All 12 spec-required block types implemented in `internal/siteconfig/blocks.go` with registry contract test, per-block prop schemas, plain-text enforcement, URL allowlist, and form-field allowlist.
-- [x] Preview tokens (hashed, TTL, revocable) and public render via hostname or slug.
-- [x] Block CRUD (DnD + button reorder), page CRUD with SEO and nav inclusion, draft/preview/publish with versions/rollback, site- and page-level reprompt with undo.
-- [x] CSRF middleware, HttpOnly+Secure+SameSite=Lax cookies, durable per-IP rate limiting, URL allowlist, plain-text-rejects-HTML.
-- [x] Public + authenticated response-header policy enforced in `internal/api/server.go` with explicit CSP, HSTS, frame/type/referrer headers, and `Cache-Control: private, no-store`.
-- [x] Guest-trial / claim subsystem end to end (specs 17, 06, 10, 12): `guest_sessions`, `magic_links`, guest-authored preview tokens, unified session resolution, recovery-key issuance/restoration, magic-link claim/login.
-- [x] Billing module scaffold: real `internal/billing/` module, `billing_customers`/`billing_subscriptions`/`billing_entitlements`/`billing_events` tables, checkout/portal/entitlements/webhook endpoints with Stripe signature verification and idempotency, paid plan gating for new sites/prompt allowance/asset storage, billing routes in `apps/web/src/routes/app.billing.*`.
-- [x] Once-over purchase flow persists `once_over_requests`, updates `workspaces.once_over_status`, sends `once_over_intake_ready` from Stripe webhook.
-- [x] Trial publish to hosted subdomain unblocked (spec 17): publish removed from `blockedTrialRequest` so unclaimed trial users can publish to their hosted subdomain while custom-domain writes stay gated.
-- [x] `writeSessionCookies` now refreshes guest-session and CSRF cookies for active trial users (regression test covers trial vs authenticated sessions).
-- [x] Stripe webhook (`/api/billing/webhook`) added to the CSRF exemption list in `internal/api/server.go`, with a regression test confirming POSTs no longer 403.
-- [x] Publish and rollback gate on `billing.EnforceSiteLimit` (mirroring `internal/sites/handler.go`) and surface `plan_limit_exceeded` to the builder publish panel.
-- [x] Per-IP rate limiting on auth endpoints (`magic-link request`, `magic-link verify`, `recovery-restore`, `recovery-issue`) via durable `auth_rate_limit_attempts` table; verify path tightened to spec-18 3/hour.
-- [x] Public artifact serving now requires manifest membership: `loadPublishedArtifact` validates the requested path against `manifest.Files` (with legacy fallback to known well-known artifacts) and the bundle builder emits the explicit allowlist.
-- [x] Collections module Phase 1 foundation (spec 19): `000013_collections.sql` adds `collections` + `collection_entries` tables plus `pages.type`, `pages.collection_id`, and `block_instances.bindings`; new `internal/collections/` module with CRUD handlers mounted at `/api/sites/:siteId/collections{,/:id}{,/entries}{,/:entryId}{,/reorder}`; `siteconfig` adds the closed `FieldDefinition` registry (15 field types), `Collection`, `CollectionEntry`, `Page.Type`, `Page.CollectionID`, `BlockInstance.Bindings`, and snapshot-time validation that bindings only appear in `collection_detail` templates and target compatible field types; new `collection_list`, `collection_index`, `collection_detail`, and `stats` blocks; sites mutator surfaces `Type` and `CollectionID` on page create/update; SiteDraft load/save persists collections + entries atomically; published snapshots include collections with only `status=published` entries; frontend gets `Collection`, `CollectionEntry`, `FieldDefinition` types, full API client, and a builder route at `/app/sites/:siteId/collections` with collection list, schema editor, and entry editor (create / publish / delete). Per-entry URL rendering moves to the spec-19 Phase 2 line item above.
-- [x] Productionize publish-artifact pipeline (specs 09, 16):
-  - Replaced the `npm run` per-publish shell-out with a long-lived Node render worker (newline-delimited JSON over stdin/stdout) in `internal/publishing/worker_renderer.go`, restarting on crash.
-  - Added `internal/publishing/s3_artifacts.go` plus a `PUBLISHED_ARTIFACTS_BACKEND=s3` toggle so published artifacts are persisted to the S3/SeaweedFS bucket already in compose.
-  - Publish now cleans up orphan artifacts when the commit fails, and rollback refuses to promote a version whose manifest is missing from the store.
-  - Artifact responses now carry an `ETag` keyed on the published version plus tiered `Cache-Control` (HTML revalidates quickly; static crawl files cache longer) with built-in `If-None-Match` → 304 support and an injectable `CDNPurger` hook fired on publish/rollback.
-  - Cache exposes `InvalidateHostname`/`InvalidateSite` so the upcoming custom-domain write API can invalidate without depending on a publish event.
-  - `validateArtifactBundle` now asserts each rendered page's HTML body via balanced-tag and closing-tag structural checks, rejecting truncated or empty renders before they ship.
+- [x] Validate and serve every asset-reference location.
+  - Include brand logos and collection-entry assets in workspace/site ownership validation and published asset allowlisting.
+  - Add regressions for public brand logos, collection-bound imagery, foreign-workspace assets, and workspace-level assets.
 
-## Core Spec Gaps
+- [ ] Establish one canonical billing plan catalog.
+  - Align displayed prices, Stripe setup prices, site limits, prompt allowances, storage allowances, and entitlement snapshots.
+  - Derive the purchased plan from trusted Stripe price IDs and propagate plan metadata to subscriptions so Pro Checkout cannot become Basic.
+  - Add collection/entry URL entitlements before programmatic content can exceed plan limits.
 
-- [ ] Automated TLS issuance for custom domains when the app terminates TLS directly (spec 13).
-  - Attach/verify/delete flows, paid gating, DNS-TXT instructions, and active custom-domain public routing are now shipped.
-  - Remaining work is only the deployment-specific ACME/certificate automation layer (`certmagic`, `autocert`, or equivalent) for environments where Snaelda itself, rather than an upstream proxy/platform, is responsible for certificate issuance.
+- [ ] Fail production startup when launch-critical services are incomplete.
+  - Require HTTPS app/public/billing URLs, non-local public domains, Stripe secret + webhook + configured plans, and production email transport/key.
+  - Treat explicitly configured S3 artifact storage failures as fatal instead of silently falling back to local disk.
 
-## AI-First UX (Spec 20)
+- [ ] Complete the Once-over delivery workflow.
+  - Add an operator-authorized pending queue and delivery endpoint.
+  - Persist video URL, next steps, and `delivered_at`; transition status atomically; send `once_over_delivered` idempotently; record an audit event.
 
-Entire spec is greenfield. None of it is implemented yet.
+## P1 — Core Product And AI Experience
 
-- [x] Generation-progress streaming (SSE).
-  - SSE/job-tracking endpoint backed by a new `generation_jobs` table; emit the spec-defined step labels from `internal/generation/service.go`, keep jobs alive if the SSE client disconnects, and fall back to `GET /api/generation/jobs/:jobId` polling from the frontend.
-  - Builder consumers now render streamed progress on the anonymous-prompt, site-reprompt, page-reprompt, and theme-regeneration paths, with the shared `GenerationProgressCard` adapting to shorter step sets when imagery/copy phases are skipped.
-  - Hardened 2026-05-27: `progressTracker.emit` is now monotonic so the planner's retry loop cannot rewind the visible step; `OpenAIPlanner.BuildPlan` runs a heartbeat goroutine through `plan.theme`/`plan.blocks` during the LLM HTTP call so the UI shows motion before the response arrives.
+- [ ] Make site-wide reprompting revise existing content.
+  - Matching page slugs currently preserve all blocks, so a successful site reprompt can leave copy unchanged.
+  - Use the current draft as context while still applying the requested direction to affected pages.
 
-- [x] Reprompt history + diff view.
-  - New `reprompt_history` table plus immutable before/after `draft_revisions` for current site/page rebuild scopes.
-  - API: list, revision fetch, and revert endpoints; legacy undo now delegates to the newest non-undone history entry.
-  - UI: history panel with scoped filters and a block-by-block diff modal in the builder.
+- [ ] Wire page reprompts through the existing block-aware change-set pipeline.
+  - Preserve unaffected blocks and IDs; apply keep/edit/remove/insert operations; retain targeted undo/history and recover cleanly from partial model failure.
 
-- [ ] **Stream the OpenAI response itself.** (Next Up #4)
-  - Today's heartbeat masks the 30-60s wait at `plan.blocks` but the LLM call is still non-streaming (`io.ReadAll` on the response body in `internal/generation/openai.go`).
-  - Switching to SSE streaming on the upstream call and incremental JSON parsing would let pages/blocks materialize as the model writes them, instead of all-at-once. Single biggest perceived-speed win available without changing model.
+- [ ] Make AI history and diffs trustworthy.
+  - Show block- and entry-scoped AI operations in the History panel with summaries and individual revert.
+  - Replace positional raw-prop diffs with identity-aware rendered before/after comparisons.
+  - Add keyboard navigation, Escape behavior, focus trapping/restoration, and before/after/both modes.
 
-- [x] AI-suggest dropdowns on blocks.
-  - `POST /api/sites/:siteId/blocks/:blockId/suggest` accepts `{action: tighten|expand|tone|rewrite, tone?, instruction?}` and returns the updated draft plus jobId.
-  - Backend constrains the model output to the block's existing `PropSchema` so block type/version cannot change; `OpenAIPlanner.SuggestBlockProps` issues a strict structured-output completion with a per-action system prompt that forbids HTML/Markdown and preserves enums and image/link fields unless the action requires touching them.
-  - `BlockSuggester` interface keeps the service unit-testable without an OpenAI client.
-  - Reprompt history scope expanded to `'block'`; each AI edit captures before/after `draft_revisions` and is individually revertable through the existing `/api/sites/:siteId/reprompts/:id/revert` endpoint. `generation_jobs.kind` now allows `'block_suggest'`. Billing prompt limit and the existing per-scope rate limiter are enforced.
-  - Builder dropdown surfaces Tighten / Expand / Change tone (friendlier / more professional / more playful / more direct) / Rewrite from prompt on text-bearing blocks; Esc + click-outside close the dropdown; local editor state is reset to the AI result via render-time state derivation so the user sees the new copy immediately.
+- [ ] Put collection and entry AI behind shared generation governance.
+  - Persist generated batches atomically instead of entry by entry.
+  - Create jobs, revisions, history, audit events, quota usage, and clear failure states.
+  - Keep the shipped “Prompt up a collection” and “Prompt entries” UX, with generated entries saved as drafts.
 
-- [x] "Find a better image" affordance on image-bearing blocks.
-  - `POST /api/sites/:siteId/blocks/:blockId/image-suggest` returns the model-rewritten query and Pexels candidates (no draft mutation; no prompt budget cost).
-  - `POST /api/sites/:siteId/blocks/:blockId/image-apply` downloads the chosen candidate, imports it as an asset with full provenance, swaps the block's image slot via path-based `resolveImageSlot`/`setImageAtPath`, captures before/after `draft_revisions` (scope=`block`), records `reprompt_history`, completes a `generation_jobs` row, and spends a prompt budget unit.
-  - `OpenAIPlanner.RewriteImageQuery` issues a strict structured-output completion bounded to a single short Pexels query, with a system prompt that biases image-led brands toward atmospheric stock.
-  - Builder modal surfaces 9 candidates with attribution, a free-form "Search again" instruction, and a one-click apply that refreshes the asset library and updates the block.
+- [ ] Complete collection-template authoring.
+  - Expose page type and collection selection when creating/editing pages.
+  - Extend block mutation contracts with validated `bindings`.
+  - Add typed binding controls and preserve bindings when duplicating blocks.
 
-- [ ] **Page-suggest empty state.** (Next Up #4)
-  - Empty-page CTA that asks the model for likely page candidates (Pricing, About, Contact, etc.) given current site context.
+- [ ] Build the complete entry workspace.
+  - Add edit, duplicate, reorder, SEO, status, and typed validation flows.
+  - Use real controls for rich text, assets, asset lists, references, dates, locations, enum multi-select, email, phone, and URLs.
+  - Add entry-level AI rewrite with revision history and undo.
 
-- [ ] Ambient site suggestions.
-  - Lightweight periodic suggestions in the builder shell (e.g., "Add an FAQ section?") driven by a low-frequency model call over the current draft.
-  - Lowest urgency — defer until the higher-leverage AI surfaces above are shipped.
+- [ ] Make collection schema changes safe.
+  - Add schema versions plus migration preview/apply APIs.
+  - Require explicit mappings for rename/type/remove changes and block destructive direct replacement until entries migrate successfully.
 
-## Hardening
+- [ ] Finish collection runtime behavior.
+  - Implement `defaultSort`, `exposeDetailUrls`, collection SEO templates, detail-route gating, and plan limits.
+  - Decide the canonical collection-detail slug/uniqueness model, then align schema, validation, persistence, routes, and specs.
 
-- [ ] Align sessions route naming (specs 17, 10).
-  - Spec 17 says `GET /api/sessions/current` and `POST /api/sessions/attach-email`; code uses `/me` and `/claim`. Update the spec to match shipped reality (code is already wired and tested).
+- [ ] Reconcile the collection block contracts.
+  - Add real collection pickers and correctly typed number/boolean controls.
+  - Implement field mapping, sorting, filtering, layouts, and visitor-facing filters promised by the registry/spec.
+  - Version incompatible changes rather than silently changing old snapshots.
 
-## Polish & Follow-Ups
+- [ ] Make asset lifecycle operations safe and usable.
+  - Wire rename/alt/delete UI to the existing APIs.
+  - Show usage locations, refuse referenced deletion, and avoid object/database inconsistency when deletion fails.
 
-- [ ] Finish the Once-over delivery workflow (specs 15, 18). **(Next Up #5)**
-  - `SendOnceOverDelivered` exists but is never called; `UpdateOnceOver` input has no `videoUrl`/`deliveredAt`; `sanitizeOnceOverVideoURL` is dead code.
-  - Build an operator/admin route to mark delivery and trigger the email; remove the dead helper or wire it.
+- [ ] Fix public URL and SEO correctness.
+  - Generate canonical, sitemap, robots, and artifact URLs for the active hostname.
+  - Handle custom-domain activation, site-slug changes, and rollback without stale hosts or broken asset URLs.
+  - Return real HTTP 404/other statuses for missing public sites and pages instead of soft-404 HTML.
 
-- [ ] Trial education affordances (spec 17). **(Next Up #3)**
-  - "Continue your draft" landing affordance for cookie-detected sessions.
-  - First-generation education modal explaining L0 trial state.
-  - Add "Already have an account → magic-link login" option to the "Save your workspace" panel.
+- [ ] Preserve analytics correctness through SSR and draft changes.
+  - Forward the visitor user agent so crawler filtering sees the requester rather than the Node runtime.
+  - Keep historical published page labels stable and distinguish collection-entry paths from their template page.
 
-- [ ] Builder polish (spec 8).
-  - Wire `updateAsset` / `deleteAsset` (already in `apps/web/src/lib/api.ts`) into the asset library UI with rename + delete affordances.
-  - Add a dedicated submissions route at `apps/web/src/routes/app.sites.$siteId.submissions.tsx` with list/detail two-pane, delete endpoint + UI, CSV export; backend additions in `internal/forms/`.
-  - Add "set homepage" UI under page settings, persisting via a sites mutator update.
-  - Add external-link well-formedness validation on nav items.
-  - Preserve hidden-block ordering across hide/show + reorder (today they always append at end).
-  - Add a pre-publish validation panel surfacing broken nav, missing homepage, draft-only references, etc.
-  - Scope page reprompt undo correctly (today it hits the site undo endpoint) and expand beyond single-slot history.
+- [ ] Define a truthful custom-domain activation state machine.
+  - Separate ownership verification, DNS routing readiness, TLS provisioning, active, and failed states.
+  - Automate provider registration/certificates or require an explicit operator activation gate.
+  - Document wildcard DNS, trusted proxies, forwarded host/protocol handling, and certificate ownership.
 
-- [ ] Remove dead placeholders and prune unused env (specs 2, 10).
-  - Delete `internal/workspaces/`, `internal/pages/`, `internal/blocks/` packages (each only contains `module.go` with `Name()`) and their `mountAuthenticatedPlaceholderModule` lines at `internal/api/server.go:187,197,198`. Spec 2 explicitly says "no workspaces module for MVP."
-  - Remove unused env declarations from `.env.example`: `UNSPLASH_*`, `RAILWAY_API_TOKEN`, `API_BASE_URL` (and any `STRIPE_*`/`BILLING_*` not actually read).
+- [ ] Strengthen tenant integrity in Postgres.
+  - Add composite constraints for block/page/site, entry/collection/site, page/collection/site, asset/workspace/site, and published-version/site relationships.
 
-- [ ] Finish remaining transactional-email follow-ups (spec 18).
-  - Hook `internal/email/` into the remaining Once-over delivery/admin call sites once the operator workflow ships.
-  - Enforce spec 18 send windows when the delivery workflow lands.
-  - Acceptance verification: Mailpit/Resend round-trips for magic-link login, form forwarding, billing notices, Once-over intake-ready.
+- [ ] Preserve magic-link anti-enumeration behavior.
+  - Return indistinguishable responses for known, unknown, rate-limited, and mailer-failure cases.
+  - Rate-limit the submitted normalized address independently of whether an account exists.
 
-- [ ] Acceptance test the billing tri-block.
-  - claim → checkout → webhook → entitlement flip → publish unblocked; portal cancel → entitlement downgrade.
+- [ ] Make inline authoring keyboard- and touch-accessible.
+  - Make block selection keyboard-operable, expose actions on focus/touch, use adequate target sizes, announce saves/errors, and focus-manage menus, drawers, and dialogs.
+
+- [ ] Implement the structured Footer contact contract.
+  - Migrate free-form address/hours to structured address and daily hours.
+  - Emit correct `PostalAddress` and opening-hours JSON-LD.
+
+- [ ] Add billing and email acceptance coverage.
+  - Use signed realistic Stripe payloads for plan mapping, replay, cancellation/downgrade, failed payment, portal, Once-over isolation, and entitlement enforcement.
+  - Test every email template/call site, text/HTML parity, Mailpit round-trip, Resend error classification, and retry behavior.
+
+## P2 — Hardening And Product Depth
+
+- [ ] Make builder loading resilient.
+  - Load the canonical draft independently from billing, domains, assets, submissions, history, theme, and versions; give optional panels their own skeleton, retry, and error state.
+
+- [ ] Decide draft-preview form semantics.
+  - Either add an authenticated draft-submission path or disable submission in draft preview with accurate explanatory copy.
+
+- [ ] Expose “published with draft changes”.
+  - Compare the active snapshot with the current draft and make republish status visible in site lists and the builder.
+
+- [ ] Harden caching and artifact storage.
+  - Add bounded cache size/TTL, explicit public-render cache headers, cross-replica invalidation or a real CDN purger, and cleanup of partial S3 bundle uploads.
+
+- [ ] Make rate-limit admission atomic.
+  - Replace count-then-insert races for auth, forms, and generation; document fail-open/fail-closed policy and test concurrent requests.
+
+- [ ] Complete block versioning.
+  - Dispatch renderers by `type@version`, run registered migrations deliberately, and preserve historical snapshot rendering.
+  - Reconcile the Stats contract as a new version and add only validated responsive/theme dimensions that materially help generated sites.
+
+- [ ] Finish generation progress lifecycle.
+  - Report imagery work in the correct order, add job cancellation, and support persistent background completion/failure feedback.
+  - Upstream token streaming is optional after measuring the current decomposed outline/layout/content pipeline; progressive page materialization already exists.
+
+- [ ] Extend initial generation to structured content.
+  - Generate collections, entries, collection pages, and bindings when the prompt calls for them.
+  - Add asset-aware project creation, location fanout, FAQ-from-services, single-entry rewrite, and empty-page suggestions only after shared governance is in place.
+
+- [ ] Finish trial and email UX.
+  - Standardize exhausted-trial error codes/CTA metadata.
+  - Remove “claim before publishing” misinformation, add “Already have an account” and resend affordances, and decide whether first-generation education remains a modal or becomes inline guidance.
+
+- [ ] Improve inquiry management.
+  - Add search, pagination, status filters, spam signals, delete/export only if validated by user need, and accessible async announcements.
+
+- [ ] Restore contract and browser coverage.
+  - Regenerate and review the block-registry golden fixture; `go test ./...` currently fails only on this contract.
+  - Strengthen tests for editor value types, page status, collection types/bindings, rapid edits, preview forms, assets, keyboard/touch, mobile, dark mode, domains, and billing transitions.
+
+- [ ] Decompose oversized modules after behavior stabilizes.
+  - Split the builder route, public renderer, generation service, and OpenAI adapter along existing domain boundaries without changing contracts.
+
+## P3 — Cleanup
+
+- [ ] Remove obsolete `/api/workspaces`, `/api/pages`, and `/api/blocks` placeholder packages, routes, and tests now superseded by `internal/sites`.
+
+- [ ] Remove unused environment declarations after verifying production deployment requirements, including stale Unsplash and Railway variables.
+
+- [ ] Record billing, domain, and Once-over access-changing events in the application audit log.
 
 ## Spec Debt
 
-- [ ] Backfill spec 6 and fix schema drift.
-  - Add `auth_sessions`, `draft_revisions`, `site_preview_tokens`, `form_submission_attempts`, `guest_sessions`, `magic_links`, `billing_*`, `once_over_requests` to `specs/06-database-design.md`.
-  - Decide and document: `page_view_daily.page_id` nullable (for site-wide totals) vs. current NOT NULL — pick one and align migration or spec.
+- [ ] Update Specs 01–03 for the shipped clarification interview, iterative AI workflow, global header/navigation chrome, current block registry, and trial publishing.
 
-- [ ] Backfill spec 10 with shipped-but-undocumented routes.
-  - `POST /api/sites`, navigation PUT/reorder, preview-token routes, public asset routes, public render/artifact routes, sessions endpoints with the agreed naming.
+- [ ] Finish reconciling Specs 07 and 20 with block/image AI behavior and the remaining governance/history gaps; the decomposed pipeline, partial SSE events, shadow draft, and Pexels drift are now documented.
 
-- [ ] Align spec 17 with shipped sessions naming (see Hardening item above).
+- [ ] Finish reconciling Specs 10, 17, and 19 with the current restore/trial banner flow; nested routes, session naming, and shipped collection/entry prompt routes are now documented.
 
-## Lower-Priority Product Follow-Ups
+- [ ] Reconcile collection-template slug and uniqueness rules across Specs 05, 06, and 12 before changing migrations.
 
-- [ ] Add optional early blocks only if user testing shows real demand: logo cloud, map/location, article teaser, or allowlisted embeds.
-- [ ] Add safe placeholders or gradients for missing imagery if uploaded/starter assets are not present.
-- [ ] Add site-level SEO editing and richer metadata workflows if page-level SEO plus publish-generated metadata stop being enough.
-- [ ] Add form email forwarding follow-ups once Once-over delivery is live.
-- [ ] Consider block-level prompting only after site-level and page-level prompting are stable in real usage.
-- [ ] Add an `archived` site state and an artifact-retention/pruning policy.
-- [ ] Split `site.generate` audit events into `generation.complete` / `generation.fail` once analytics needs it.
+- [ ] Backfill Spec 06 from all deployed migrations and document the chosen stable page identity model for publishing, forms, and analytics.
 
-## Explicit Deferrals
+- [ ] Update Spec 13 with the actual hosting, proxy, wildcard-domain, custom-domain, and TLS operational contract.
 
-- [ ] Do not build arbitrary user code injection.
-- [ ] Do not build custom CSS or custom JavaScript editing.
-- [ ] Do not build full drag-and-drop layout freedom.
-- [ ] Do not build a Webflow-style design editor.
-- [ ] Do not build marketplace or third-party blocks.
-- [ ] Do not build e-commerce checkout inside generated customer websites.
-- [ ] Do not build complex CMS collections beyond the spec 19 scope.
-- [ ] Do not build multi-language sites.
-- [ ] Do not build advanced teams, roles, or client collaboration until the single-workspace MVP works.
-- [ ] Do not build per-customer frontend deployments.
-- [ ] Do not add raw analytics event storage unless aggregated daily counts are insufficient.
+- [ ] Resolve Once-over purchase/intake/delivery policy drift across Spec 15, Spec 18, and `docs/once-over-workflow.md`.
+
+## Confirmed Shipped Baseline
+
+- [x] Landing-page continuation for an active workspace and interrupted guest-generation recovery.
+- [x] Conditional clarification interview before generation.
+- [x] Decomposed outline, per-page layout/content generation, progressive SSE partials, polling recovery, and shadow-draft UI.
+- [x] Static page CRUD/SEO/navigation; block add/edit/hide/duplicate/delete/reorder; inline text/image editing.
+- [x] Site/page reprompt history foundation, revisions, revert, block AI rewrite, and image replacement.
+- [x] Theme editing/regeneration, required dark mode, asset upload/library, submission triage, preview links, publishing, rollback, analytics, custom-domain CRUD, billing foundation, and transactional-email transports.
+- [x] Collection CRUD, schema editing foundation, entry CRUD foundation, public collection rendering, and generic AI collection/entry drafting.

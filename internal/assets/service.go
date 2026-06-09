@@ -601,7 +601,7 @@ func (s *Service) publicDownloadURL(ctx context.Context, lookup publicAssetLooku
 		return "", fmt.Errorf("decode published snapshot for asset lookup: %w", err)
 	}
 
-	references := siteconfig.CollectSnapshotAssetIDs(snapshot.Pages, snapshot.Collections)
+	references := siteconfig.CollectSnapshotAssetIDs(snapshot)
 	if _, referenced := references[asset.ID]; !referenced {
 		return "", ErrAssetNotFound
 	}

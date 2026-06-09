@@ -135,6 +135,23 @@ func TestExpectedPagePathsSkipsDraftEntries(t *testing.T) {
 	}
 }
 
+func TestExpectedPagePathsSkipsDraftPages(t *testing.T) {
+	snapshot := siteconfig.PublishedSnapshot{
+		Pages: []siteconfig.PageDraft{
+			{ID: "page_home", Slug: "/", Status: siteconfig.PageStatusPublished, Type: siteconfig.PageTypeStatic},
+			{ID: "page_draft", Slug: "/draft", Status: siteconfig.PageStatusDraft, Type: siteconfig.PageTypeStatic},
+		},
+	}
+
+	paths := expectedPagePaths(snapshot, map[string]siteconfig.Collection{})
+	if len(paths) != 1 {
+		t.Fatalf("expected only the published page, got %#v", paths)
+	}
+	if paths[0].pagePath != "/" {
+		t.Fatalf("expected homepage path, got %q", paths[0].pagePath)
+	}
+}
+
 func TestValidateArtifactBundleRequiresCollectionEntryArtifacts(t *testing.T) {
 	collection := siteconfig.Collection{
 		ID:   "col_services",
@@ -311,6 +328,68 @@ func TestBuildPublishedSnapshotAddsSEOFallbacks(t *testing.T) {
 	}
 	if snapshot.Pages[1].SEO.Description != "Send a note to plan your next launch." {
 		t.Fatalf("expected page description fallback, got %q", snapshot.Pages[1].SEO.Description)
+	}
+}
+
+func TestBuildPublishedSnapshotExcludesDraftPagesAndNavigation(t *testing.T) {
+	draft := siteconfig.SiteDraft{
+		Site: siteconfig.DraftSite{
+			ID:     "site_demo",
+			Name:   "Nordic Studio",
+			Slug:   "nordic-studio",
+			Status: "draft",
+		},
+		Theme: siteconfig.ThemePreset(siteconfig.ThemePaletteAfterHours),
+		Navigation: siteconfig.NavigationConfig{
+			Primary: []siteconfig.NavigationItem{
+				{Label: "Home", PageID: "page_home"},
+				{Label: "Draft", PageID: "page_draft"},
+			},
+			Footer: []siteconfig.NavigationItem{
+				{Label: "Home", PageID: "page_home"},
+				{Label: "External", Href: "https://example.com"},
+			},
+		},
+		Pages: []siteconfig.PageDraft{
+			{
+				ID:     "page_home",
+				Title:  "Home",
+				Slug:   "/",
+				Status: siteconfig.PageStatusPublished,
+				Blocks: []siteconfig.BlockInstance{{
+					ID:      "block_home",
+					Type:    "text_section",
+					Version: siteconfig.BlockVersionV1,
+					Props:   map[string]any{"heading": "Home", "body": "Published."},
+				}},
+			},
+			{
+				ID:     "page_draft",
+				Title:  "Draft",
+				Slug:   "/draft",
+				Status: siteconfig.PageStatusDraft,
+				Blocks: []siteconfig.BlockInstance{{
+					ID:      "block_draft",
+					Type:    "text_section",
+					Version: siteconfig.BlockVersionV1,
+					Props:   map[string]any{"heading": "Draft", "body": "Not live."},
+				}},
+			},
+		},
+	}
+
+	snapshot := buildPublishedSnapshot(draft)
+	if len(snapshot.Pages) != 1 {
+		t.Fatalf("expected only published pages in snapshot, got %#v", snapshot.Pages)
+	}
+	if snapshot.Pages[0].ID != "page_home" || snapshot.Pages[0].Status != siteconfig.PageStatusPublished {
+		t.Fatalf("expected home page to stay published, got %#v", snapshot.Pages[0])
+	}
+	if len(snapshot.Navigation.Primary) != 1 || snapshot.Navigation.Primary[0].PageID != "page_home" {
+		t.Fatalf("expected draft navigation item to be removed, got %#v", snapshot.Navigation.Primary)
+	}
+	if len(snapshot.Navigation.Footer) != 2 {
+		t.Fatalf("expected footer links to preserve published/external items, got %#v", snapshot.Navigation.Footer)
 	}
 }
 

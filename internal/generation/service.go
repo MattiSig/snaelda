@@ -764,8 +764,8 @@ func draftImageSlotsChanged(before siteconfig.SiteDraft, after siteconfig.SiteDr
 }
 
 func propsHaveDifferentAssets(before map[string]any, after map[string]any) bool {
-	beforeIDs := siteconfig.CollectAssetIDs([]siteconfig.PageDraft{{Blocks: []siteconfig.BlockInstance{{Props: before}}}})
-	afterIDs := siteconfig.CollectAssetIDs([]siteconfig.PageDraft{{Blocks: []siteconfig.BlockInstance{{Props: after}}}})
+	beforeIDs := siteconfig.CollectAssetIDs(siteconfig.BrandConfig{}, []siteconfig.PageDraft{{Blocks: []siteconfig.BlockInstance{{Props: before}}}}, nil)
+	afterIDs := siteconfig.CollectAssetIDs(siteconfig.BrandConfig{}, []siteconfig.PageDraft{{Blocks: []siteconfig.BlockInstance{{Props: after}}}}, nil)
 	if len(beforeIDs) != len(afterIDs) {
 		return true
 	}
