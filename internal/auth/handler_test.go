@@ -412,6 +412,31 @@ func TestTrialGenerationBlocked(t *testing.T) {
 	}
 }
 
+func TestTrialProtectedWrite(t *testing.T) {
+	tests := []struct {
+		name      string
+		method    string
+		path      string
+		protected bool
+	}{
+		{name: "GET on api site", method: http.MethodGet, path: "/api/sites/123"},
+		{name: "POST on api site", method: http.MethodPost, path: "/api/sites", protected: true},
+		{name: "POST on session route", method: http.MethodPost, path: "/api/sessions/claim"},
+		{name: "POST on auth route", method: http.MethodPost, path: "/api/auth/logout"},
+		{name: "POST on billing checkout", method: http.MethodPost, path: "/api/billing/checkout"},
+		{name: "POST on billing portal", method: http.MethodPost, path: "/api/billing/portal", protected: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequest(test.method, test.path, nil)
+			if got := trialProtectedWrite(req); got != test.protected {
+				t.Fatalf("expected protected=%v, got %v", test.protected, got)
+			}
+		})
+	}
+}
+
 func TestRestoreSessionRotatesGuestCookieAndAllowsSessionAccess(t *testing.T) {
 	trialStartedAt := time.Now().UTC().Add(-time.Hour)
 	store := &fakeAuthStore{

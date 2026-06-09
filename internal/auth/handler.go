@@ -168,7 +168,15 @@ func trialProtectedWrite(r *http.Request) bool {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
 		return false
 	}
-	return !strings.HasPrefix(r.URL.Path, "/api/sessions/") && !strings.HasPrefix(r.URL.Path, "/api/auth/")
+	if strings.HasPrefix(r.URL.Path, "/api/sessions/") || strings.HasPrefix(r.URL.Path, "/api/auth/") {
+		return false
+	}
+	// Checkout must stay reachable for expired trials — otherwise users get
+	// locked out of the very endpoint they need to subscribe.
+	if r.URL.Path == "/api/billing/checkout" {
+		return false
+	}
+	return true
 }
 
 func generationRoute(r *http.Request) bool {
