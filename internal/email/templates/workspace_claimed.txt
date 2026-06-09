@@ -1,0 +1,8 @@
+Your {{.ProductName}} workspace is saved.
+
+We linked {{.WorkspaceName}} to this email. Use a magic link to sign in
+next time you visit.
+
+Sign in: {{.LoginURL}}
+
+Receipts and account notifications will land here.

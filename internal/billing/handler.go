@@ -69,6 +69,7 @@ func (h *Handler) Mount(mux *http.ServeMux, requireSession func(http.Handler) ht
 type checkoutRequest struct {
 	Plan         string `json:"plan"`
 	PurchaseType string `json:"purchaseType"`
+	Email        string `json:"email"`
 }
 
 type onceOverUpdateRequest struct {
@@ -97,6 +98,7 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 		Session:      session,
 		Plan:         payload.Plan,
 		PurchaseType: payload.PurchaseType,
+		Email:        payload.Email,
 	})
 	if err != nil {
 		writeBillingError(w, http.StatusBadRequest, "billing_checkout_failed", err.Error())

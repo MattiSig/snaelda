@@ -1,8 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { ArrowUpRight, Check, CreditCard, Minus } from 'lucide-react'
+import { ArrowUpRight, Check, CreditCard, Mail, Minus } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
   APIError,
@@ -38,6 +39,7 @@ function BillingPage() {
   const [onceOverErrorMessage, setOnceOverErrorMessage] = useState('')
   const [onceOverStatusMessage, setOnceOverStatusMessage] = useState('')
   const [isSavingOnceOver, setIsSavingOnceOver] = useState(false)
+  const [claimEmail, setClaimEmail] = useState('')
 
   function applyOnceOverForm(nextBillingState: BillingState) {
     setOnceOverBusiness(nextBillingState.onceOver.request?.intakeBusiness ?? '')
@@ -57,6 +59,7 @@ function BillingPage() {
         setSession(nextSession)
         setBillingState(nextBillingState)
         applyOnceOverForm(nextBillingState)
+        setClaimEmail(nextSession.user?.email ?? '')
         setIsLoading(false)
       })
       .catch((error) => {
@@ -78,7 +81,7 @@ function BillingPage() {
     setStatusMessage('')
 
     try {
-      const response = await createBillingCheckout({ plan })
+      const response = await createBillingCheckout({ plan, email: claimEmail.trim() || undefined })
       window.location.assign(response.url)
     } catch (error) {
       setErrorMessage(error instanceof APIError ? error.message : 'Could not start checkout')
@@ -106,7 +109,10 @@ function BillingPage() {
     setOnceOverStatusMessage('')
 
     try {
-      const response = await createBillingCheckout({ purchaseType: 'once_over' })
+      const response = await createBillingCheckout({
+        purchaseType: 'once_over',
+        email: claimEmail.trim() || undefined,
+      })
       window.location.assign(response.url)
     } catch (error) {
       setOnceOverErrorMessage(error instanceof APIError ? error.message : 'Could not start the once-over checkout')
@@ -170,6 +176,10 @@ function BillingPage() {
   const trialEndsLabel = session.trialExpiresAt
     ? new Date(session.trialExpiresAt).toLocaleDateString()
     : ''
+  const hasClaimedEmail = Boolean(session.user?.email)
+  const needsEmailToCheckout = !hasClaimedEmail
+  const isEmailValid = isLikelyEmail(claimEmail)
+  const checkoutBlockedByEmail = needsEmailToCheckout && !isEmailValid
   const promptLabel = entitlement.subscriptionLive
     ? entitlement.monthlyPromptLimit
       ? `${usage.periodPromptCount}/${entitlement.monthlyPromptLimit} prompts this period`
@@ -201,6 +211,37 @@ function BillingPage() {
           </p>
         </div>
 
+        {needsEmailToCheckout ? (
+          <div className="mt-6 grid gap-3 rounded-[16px] border border-[color-mix(in_oklch,var(--thread-mauve)_38%,var(--border))] bg-[color-mix(in_oklch,var(--thread-mauve)_8%,var(--surface-2))] p-5">
+            <div className="flex items-start gap-3">
+              <span className="mt-1 inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--thread-mauve)_22%,var(--surface-1))] text-[var(--thread-mauve)]">
+                <Mail aria-hidden className="size-4" />
+              </span>
+              <div className="grid gap-1">
+                <p className={text.label}>Save your workspace before you pay</p>
+                <p className="text-sm text-[var(--paper-muted)]">
+                  Receipts go to this address, and you sign in from any browser with
+                  a magic link to it.
+                </p>
+              </div>
+            </div>
+            <Input
+              type="email"
+              autoComplete="email"
+              inputMode="email"
+              value={claimEmail}
+              onChange={(event) => setClaimEmail(event.target.value)}
+              placeholder="you@example.com"
+              aria-label="Email for receipts and login"
+              aria-invalid={claimEmail.length > 0 && !isEmailValid}
+              disabled={isStartingCheckout !== '' || isStartingOnceOverCheckout}
+            />
+            {claimEmail.length > 0 && !isEmailValid ? (
+              <p className={text.error}>That doesn’t look like a valid email yet.</p>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="mt-6 grid gap-4 lg:grid-cols-2">
           {PLANS.map((plan) => {
             const isCurrent = entitlement.plan === plan.id && entitlement.subscriptionLive
@@ -214,9 +255,11 @@ function BillingPage() {
                     ? 'Current plan'
                     : isLoading
                       ? 'Opening checkout…'
-                      : `Choose ${plan.name}`
+                      : checkoutBlockedByEmail
+                        ? 'Add an email above'
+                        : `Choose ${plan.name}`
                 }
-                disabled={isCurrent || isStartingCheckout !== ''}
+                disabled={isCurrent || isStartingCheckout !== '' || checkoutBlockedByEmail}
                 onSelect={() => handleCheckout(plan.id)}
               />
             )
@@ -264,7 +307,7 @@ function BillingPage() {
                     size="sm"
                     variant="outline"
                     onClick={() => handleCheckout('basic')}
-                    disabled={isStartingCheckout !== ''}
+                    disabled={isStartingCheckout !== '' || checkoutBlockedByEmail}
                   >
                     Upgrade
                   </Button>
@@ -278,13 +321,14 @@ function BillingPage() {
               <CreditCard className="size-4" />
               {isOpeningPortal ? 'Opening portal…' : 'Manage billing'}
             </Button>
-          ) : (
+          ) : hasClaimedEmail ? (
             <div className={emptyState}>
               <p className={text.p}>
-                Checkout will also claim the workspace if it is still trial-only.
+                Subscribing as <span className="font-semibold text-[var(--paper)]">{session.user?.email}</span>.
+                Receipts and login go here.
               </p>
             </div>
-          )}
+          ) : null}
         </div>
       </section>
 
@@ -343,13 +387,15 @@ function BillingPage() {
                   <Button
                     type="button"
                     onClick={handleOnceOverCheckout}
-                    disabled={isStartingOnceOverCheckout}
+                    disabled={isStartingOnceOverCheckout || checkoutBlockedByEmail}
                   >
                     {isStartingOnceOverCheckout
                       ? 'Opening checkout…'
-                      : onceOver.status === 'delivered'
-                        ? `Buy another once-over · $${ONCE_OVER_PRICE_USD}`
-                        : `Buy once-over · $${ONCE_OVER_PRICE_USD}`}
+                      : checkoutBlockedByEmail
+                        ? 'Add an email above'
+                        : onceOver.status === 'delivered'
+                          ? `Buy another once-over · $${ONCE_OVER_PRICE_USD}`
+                          : `Buy once-over · $${ONCE_OVER_PRICE_USD}`}
                     <ArrowUpRight className="size-4" />
                   </Button>
                 </div>
@@ -599,6 +645,19 @@ function StatusTile({ label, value, hint }: { label: string; value: string; hint
       <p className="mt-2 text-sm text-[var(--paper-muted)]">{hint}</p>
     </div>
   )
+}
+
+function isLikelyEmail(value: string) {
+  const trimmed = value.trim()
+  if (trimmed.length < 5) {
+    return false
+  }
+  const at = trimmed.indexOf('@')
+  if (at <= 0 || at !== trimmed.lastIndexOf('@')) {
+    return false
+  }
+  const dot = trimmed.indexOf('.', at)
+  return dot > at + 1 && dot < trimmed.length - 1
 }
 
 function humanPlan(plan: string) {

@@ -931,6 +931,7 @@ export async function getBillingState() {
 export async function createBillingCheckout(input: {
   plan?: "basic" | "pro";
   purchaseType?: "subscription" | "once_over";
+  email?: string;
 }) {
   return apiFetch<{ url: string }>("/api/billing/checkout", {
     method: "POST",

@@ -86,6 +86,11 @@ type CheckoutInput struct {
 	Session      auth.Session
 	Plan         string
 	PurchaseType string
+	// Email lets an unclaimed trial session set the customer email
+	// up-front so Stripe pre-fills it and the post-payment claim binds
+	// the workspace to a known address instead of whatever the customer
+	// types at Stripe.
+	Email string
 }
 
 type BillingContact struct {
@@ -179,6 +184,11 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, input CheckoutInput
 		customerID = s.lookupCustomerID(ctx, input.Session.WorkspaceID)
 	}
 
+	customerEmail := contact.UserEmail
+	if customerEmail == "" {
+		customerEmail = strings.TrimSpace(input.Email)
+	}
+
 	result, err := s.stripe.CreateCheckoutSession(ctx, CheckoutSessionRequest{
 		WorkspaceID:   input.Session.WorkspaceID,
 		WorkspaceName: contact.WorkspaceName,
@@ -187,7 +197,7 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, input CheckoutInput
 		Mode:          mode,
 		PriceID:       priceID,
 		CustomerID:    customerID,
-		CustomerEmail: contact.UserEmail,
+		CustomerEmail: customerEmail,
 		SuccessURL:    s.successURL,
 		CancelURL:     s.cancelURL,
 	})
@@ -196,7 +206,7 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, input CheckoutInput
 	}
 
 	if strings.TrimSpace(result.CustomerID) != "" {
-		if err := s.upsertCustomer(ctx, input.Session.WorkspaceID, result.CustomerID, contact.UserEmail); err != nil {
+		if err := s.upsertCustomer(ctx, input.Session.WorkspaceID, result.CustomerID, customerEmail); err != nil {
 			return "", err
 		}
 	}
@@ -315,7 +325,7 @@ func (s *Service) HandleWebhook(ctx context.Context, payload []byte, signature s
 			}
 			break
 		}
-		if err := s.handleCheckoutCompleted(ctx, tx, event); err != nil {
+		if err := s.handleCheckoutCompleted(ctx, tx, event, event.ID); err != nil {
 			return err
 		}
 	case "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted":
@@ -346,7 +356,7 @@ func normalizePurchaseType(value string) string {
 	}
 }
 
-func (s *Service) handleCheckoutCompleted(ctx context.Context, tx pgx.Tx, event WebhookEvent) error {
+func (s *Service) handleCheckoutCompleted(ctx context.Context, tx pgx.Tx, event WebhookEvent, eventID string) error {
 	workspaceID := strings.TrimSpace(event.CheckoutSession.WorkspaceID)
 	if workspaceID == "" {
 		return nil
@@ -356,10 +366,34 @@ func (s *Service) handleCheckoutCompleted(ctx context.Context, tx pgx.Tx, event 
 			return err
 		}
 	}
-	if event.CheckoutSession.CustomerEmail != "" {
-		if err := claimWorkspaceByEmail(ctx, tx, workspaceID, event.CheckoutSession.CustomerEmail); err != nil {
-			return err
-		}
+	claimedEmail := strings.TrimSpace(event.CheckoutSession.CustomerEmail)
+	if claimedEmail == "" {
+		return nil
+	}
+	if err := claimWorkspaceByEmail(ctx, tx, workspaceID, claimedEmail); err != nil {
+		return err
+	}
+	if s.emailSender.Mailer == nil {
+		return nil
+	}
+	contact, err := lookupBillingContactTx(ctx, tx, workspaceID)
+	if err != nil {
+		return err
+	}
+	loginURL := s.appBaseURL
+	if loginURL != "" {
+		loginURL = strings.TrimRight(loginURL, "/") + "/login"
+	}
+	if _, err := s.emailSender.SendWorkspaceClaimed(ctx,
+		email.Address{Email: claimedEmail, Name: contact.UserName},
+		email.WorkspaceClaimedTemplateData{
+			ProductName:   s.productName,
+			WorkspaceName: contact.WorkspaceName,
+			LoginURL:      loginURL,
+		},
+		"workspace_claimed:"+eventID,
+	); err != nil {
+		return err
 	}
 	return nil
 }

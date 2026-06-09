@@ -101,6 +101,22 @@ func (s Sender) SendOnceOverDelivered(ctx context.Context, to Address, data Once
 	})
 }
 
+func (s Sender) SendWorkspaceClaimed(ctx context.Context, to Address, data WorkspaceClaimedTemplateData, idempotencyKey string) (SendResult, error) {
+	subject, textBody, htmlBody, err := RenderWorkspaceClaimed(data)
+	if err != nil {
+		return SendResult{}, err
+	}
+	return s.Mailer.Send(ctx, Message{
+		To:             []Address{to},
+		From:           s.DefaultFrom,
+		Subject:        subject,
+		TextBody:       textBody,
+		HTMLBody:       htmlBody,
+		Tags:           map[string]string{"template": "workspace_claimed"},
+		IdempotencyKey: idempotencyKey,
+	})
+}
+
 func (s Sender) SendFormSubmissionForwarded(ctx context.Context, to Address, data FormSubmissionForwardedTemplateData, idempotencyKey string) (SendResult, error) {
 	subject, textBody, htmlBody, err := RenderFormSubmissionForwarded(data)
 	if err != nil {

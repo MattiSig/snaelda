@@ -48,6 +48,12 @@ type OnceOverDeliveredTemplateData struct {
 	NextSteps     []string
 }
 
+type WorkspaceClaimedTemplateData struct {
+	ProductName   string
+	WorkspaceName string
+	LoginURL      string
+}
+
 type FormSubmissionForwardedTemplateData struct {
 	ProductName string
 	SiteName    string
@@ -92,6 +98,11 @@ func RenderOnceOverDelivered(data OnceOverDeliveredTemplateData) (string, string
 func RenderFormSubmissionForwarded(data FormSubmissionForwardedTemplateData) (string, string, string, error) {
 	subject := fmt.Sprintf("New form submission for %s", data.SiteName)
 	return renderTemplate("form_submission_forwarded", subject, data)
+}
+
+func RenderWorkspaceClaimed(data WorkspaceClaimedTemplateData) (string, string, string, error) {
+	subject := fmt.Sprintf("Your %s workspace is saved", data.ProductName)
+	return renderTemplate("workspace_claimed", subject, data)
 }
 
 func renderTemplate(name string, subject string, data any) (string, string, string, error) {
