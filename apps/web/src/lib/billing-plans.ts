@@ -12,7 +12,6 @@ export type PlanPricing = {
   name: string
   tagline: string
   priceMonthly: number
-  annualMonthlyEquivalent: number
   features: PlanFeature[]
   isRecommended?: boolean
   accent: string
@@ -23,8 +22,7 @@ export const PLANS: PlanPricing[] = [
     id: 'basic',
     name: 'Basic',
     tagline: 'A small business site and its next rounds of edits.',
-    priceMonthly: 12,
-    annualMonthlyEquivalent: 10,
+    priceMonthly: 19,
     features: [
       { label: '50 prompts / month', included: true },
       { label: '3 active sites', included: true },
@@ -39,8 +37,7 @@ export const PLANS: PlanPricing[] = [
     id: 'pro',
     name: 'Pro',
     tagline: 'Multiple sites or heavier iteration on one.',
-    priceMonthly: 29,
-    annualMonthlyEquivalent: 24,
+    priceMonthly: 49,
     features: [
       { label: '200 prompts / month', included: true },
       { label: '10 active sites', included: true },

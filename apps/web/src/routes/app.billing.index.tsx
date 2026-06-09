@@ -530,9 +530,6 @@ function PlanCard({
           </span>
           <span className="text-sm text-[var(--paper-muted)]">/ month</span>
         </p>
-        <p className="text-xs text-[var(--paper-muted)] tabular-nums">
-          ${plan.annualMonthlyEquivalent} / month billed yearly
-        </p>
       </div>
       <ul className="grid gap-2 text-sm">
         {plan.features.map((feature) => (
