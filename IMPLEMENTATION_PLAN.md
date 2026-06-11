@@ -4,9 +4,10 @@ Refreshed 2026-06-09 from a spec-to-source audit of `specs/*`, `internal/*`, `ap
 
 ## P0 — Launch Blockers
 
-- [ ] Prevent draft mutations from damaging the active published version.
-  - Draft page deletion currently removes normalized `pages` rows still referenced by live form submissions and analytics.
-  - Preserve stable published-page identities until no active snapshot depends on them; add regression coverage for live forms, analytics, rollback, and later republish.
+- [x] Prevent draft mutations from damaging the active published version.
+  - Draft persistence now archives removed pages out of the current draft instead of deleting rows still referenced by published form submissions and analytics.
+  - Current-draft reads and site page counts ignore archived rows, while the database preserves published-page identity so later republish and rollback flows can still resolve historical submissions and analytics correctly.
+  - Added unit coverage plus a real-Postgres integration test for live forms, analytics, later republish, and rollback.
 
 - [x] Add concurrency control to canonical draft writes.
   - Draft persistence now uses a canonical `sites.draft_revision` compare-and-swap precondition so overlapping save attempts fail with `draft_conflict` instead of silently overwriting newer changes.

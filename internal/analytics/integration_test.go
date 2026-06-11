@@ -32,6 +32,7 @@ func TestRecorderAndReaderRoundTrip(t *testing.T) {
 		from sites s
 		join pages p on p.site_id = s.id
 		where s.published_version_id is not null
+		  and p.in_draft = true
 		order by s.created_at desc, p.sort_order asc
 		limit 1
 	`)

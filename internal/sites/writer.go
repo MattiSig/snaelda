@@ -306,11 +306,13 @@ func replacePagesAndBlocks(ctx context.Context, tx pgx.Tx, siteID string, pages 
 		pageIDs = append(pageIDs, page.ID)
 	}
 	if _, err := tx.Exec(ctx, `
-		delete from pages
+		update pages
+		set in_draft = false,
+		    updated_at = now()
 		where site_id = $1
 		  and not (id::text = any($2))
 	`, siteID, pageIDs); err != nil {
-		return fmt.Errorf("delete removed page rows: %w", err)
+		return fmt.Errorf("archive removed page rows: %w", err)
 	}
 
 	for _, page := range pages {
@@ -331,8 +333,8 @@ func replacePagesAndBlocks(ctx context.Context, tx pgx.Tx, siteID string, pages 
 			collectionID = page.CollectionID
 		}
 		tag, err := tx.Exec(ctx, `
-			insert into pages (id, site_id, title, slug, sort_order, status, type, collection_id, seo, settings)
-			values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			insert into pages (id, site_id, title, slug, sort_order, status, type, collection_id, seo, settings, in_draft)
+			values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)
 			on conflict (id) do update
 			set title = excluded.title,
 			    slug = excluded.slug,
@@ -342,9 +344,10 @@ func replacePagesAndBlocks(ctx context.Context, tx pgx.Tx, siteID string, pages 
 			    collection_id = excluded.collection_id,
 			    seo = excluded.seo,
 			    settings = excluded.settings,
+			    in_draft = true,
 			    updated_at = now()
 			where pages.site_id = excluded.site_id
-		`, page.ID, siteID, page.Title, page.Slug, page.Sort, page.Status, pageType, collectionID, seoJSON, settingsJSON)
+	`, page.ID, siteID, page.Title, page.Slug, page.Sort, page.Status, pageType, collectionID, seoJSON, settingsJSON)
 		if err != nil {
 			return fmt.Errorf("save page row %s: %w", page.ID, err)
 		}

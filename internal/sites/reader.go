@@ -140,7 +140,7 @@ func (r *PostgresReader) ListSites(ctx context.Context, workspaceID string) ([]S
 		       coalesce(s.published_version_id::text, '') as published_version_id,
 		       count(p.id)::int as page_count
 		from sites s
-		left join pages p on p.site_id = s.id
+		left join pages p on p.site_id = s.id and p.in_draft = true
 		where s.workspace_id = $1
 		group by s.id
 		order by s.updated_at desc, s.created_at desc
@@ -298,6 +298,7 @@ func (r *PostgresReader) loadPages(ctx context.Context, siteID string) ([]pageRo
 		       settings
 		from pages
 		where site_id = $1
+		  and in_draft = true
 		order by sort_order asc, created_at asc
 	`, siteID)
 	if err != nil {

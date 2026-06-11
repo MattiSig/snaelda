@@ -249,12 +249,15 @@ func TestSaveDraftPersistsCanonicalDraftInTransaction(t *testing.T) {
 	if !strings.Contains(tx.execs[3].sql, "delete from collections") {
 		t.Fatalf("expected collections cleanup before pages, got %s", tx.execs[3].sql)
 	}
-	if !strings.Contains(tx.execs[5].sql, "delete from pages") {
-		t.Fatalf("expected removed pages cleanup, got %s", tx.execs[5].sql)
+	if !strings.Contains(tx.execs[5].sql, "update pages") || !strings.Contains(tx.execs[5].sql, "set in_draft = false") {
+		t.Fatalf("expected removed pages to be archived, got %s", tx.execs[5].sql)
 	}
 	pageIDs, ok := tx.execs[5].args[1].([]string)
 	if !ok || len(pageIDs) != 1 || pageIDs[0] != "00000000-0000-4000-8000-000000000501" {
-		t.Fatalf("expected canonical page IDs in cleanup, got %#v", tx.execs[5].args[1])
+		t.Fatalf("expected canonical page IDs in archive pass, got %#v", tx.execs[5].args[1])
+	}
+	if !strings.Contains(tx.execs[6].sql, "in_draft") {
+		t.Fatalf("expected active page upsert to restore in_draft, got %s", tx.execs[6].sql)
 	}
 	if hidden, ok := tx.execs[8].args[8].(bool); !ok || !hidden {
 		t.Fatalf("expected hidden block flag in is_hidden argument, got %#v", tx.execs[8].args[8])
@@ -274,6 +277,44 @@ func TestSaveDraftPersistsCanonicalDraftInTransaction(t *testing.T) {
 	}
 	if revision, ok := tx.execs[0].args[5].(int64); !ok || revision != 1 {
 		t.Fatalf("expected initial persisted draft revision 1, got %#v", tx.execs[0].args[5])
+	}
+}
+
+func TestLoadPagesReadsOnlyDraftRows(t *testing.T) {
+	db := &capturingReaderDB{}
+	reader := NewPostgresReader(db)
+
+	pages, err := reader.loadPages(context.Background(), "site-demo")
+	if err != nil {
+		t.Fatalf("load pages: %v", err)
+	}
+	if len(pages) != 0 {
+		t.Fatalf("expected no pages from empty fake rows, got %#v", pages)
+	}
+	if len(db.queries) != 1 {
+		t.Fatalf("expected one query, got %d", len(db.queries))
+	}
+	if !strings.Contains(db.queries[0], "in_draft = true") {
+		t.Fatalf("expected page load query to filter archived rows, got %s", db.queries[0])
+	}
+}
+
+func TestListSitesCountsOnlyDraftPages(t *testing.T) {
+	db := &capturingReaderDB{}
+	reader := NewPostgresReader(db)
+
+	sites, err := reader.ListSites(context.Background(), "workspace-demo")
+	if err != nil {
+		t.Fatalf("list sites: %v", err)
+	}
+	if len(sites) != 0 {
+		t.Fatalf("expected no sites from empty fake rows, got %#v", sites)
+	}
+	if len(db.queries) != 1 {
+		t.Fatalf("expected one query, got %d", len(db.queries))
+	}
+	if !strings.Contains(db.queries[0], "p.in_draft = true") {
+		t.Fatalf("expected site list query to count only draft pages, got %s", db.queries[0])
 	}
 }
 
@@ -588,3 +629,36 @@ func (r fakeDraftRow) Scan(dest ...any) error {
 	}
 	return nil
 }
+
+type capturingReaderDB struct {
+	queries []string
+}
+
+func (db *capturingReaderDB) Query(_ context.Context, sql string, _ ...any) (pgx.Rows, error) {
+	db.queries = append(db.queries, sql)
+	return &emptyRows{}, nil
+}
+
+func (db *capturingReaderDB) QueryRow(context.Context, string, ...any) pgx.Row {
+	return fakeDraftRow{err: pgx.ErrNoRows}
+}
+
+func (db *capturingReaderDB) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, errors.New("exec is not implemented in capturingReaderDB")
+}
+
+func (db *capturingReaderDB) BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error) {
+	return nil, errors.New("transactions are not implemented in capturingReaderDB")
+}
+
+type emptyRows struct{}
+
+func (r *emptyRows) Close()                                       {}
+func (r *emptyRows) Err() error                                   { return nil }
+func (r *emptyRows) CommandTag() pgconn.CommandTag                { return pgconn.CommandTag{} }
+func (r *emptyRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
+func (r *emptyRows) Conn() *pgx.Conn                              { return nil }
+func (r *emptyRows) RawValues() [][]byte                          { return nil }
+func (r *emptyRows) Values() ([]any, error)                       { return nil, nil }
+func (r *emptyRows) Next() bool                                   { return false }
+func (r *emptyRows) Scan(...any) error                            { return errors.New("scan should not be called on emptyRows") }
