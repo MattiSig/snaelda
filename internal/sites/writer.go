@@ -12,6 +12,7 @@ import (
 )
 
 const defaultThemeName = "Default"
+const initialDraftRevision int64 = 1
 
 type transactionStarter interface {
 	BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error)
@@ -183,6 +184,7 @@ func normalizeDraft(draft siteconfig.SiteDraft) (NormalizedDraftRows, error) {
 			Name:          draft.Site.Name,
 			Slug:          draft.Site.Slug,
 			Status:        siteStatus,
+			Revision:      draft.Revision,
 			DefaultLocale: defaultLocale,
 			SEO:           draft.Site.SEO,
 			Navigation:    draft.Navigation,
@@ -209,6 +211,9 @@ func countBlocks(pages []siteconfig.PageDraft) int {
 }
 
 func saveSite(ctx context.Context, tx pgx.Tx, workspaceID string, site siteRow) error {
+	if site.Revision < 0 {
+		return fmt.Errorf("save site row: invalid draft revision %d", site.Revision)
+	}
 	settingsJSON, err := marshalJSON(map[string]any{
 		"seo":        site.SEO,
 		"navigation": site.Navigation,
@@ -220,24 +225,44 @@ func saveSite(ctx context.Context, tx pgx.Tx, workspaceID string, site siteRow) 
 	if err != nil {
 		return fmt.Errorf("encode site brand: %w", err)
 	}
+	nextRevision := initialDraftRevision
+	if site.Revision > 0 {
+		nextRevision = site.Revision + 1
+	}
 	tag, err := tx.Exec(ctx, `
-		insert into sites (id, workspace_id, name, slug, status, default_locale, settings, brand)
-		values ($1, $2, $3, $4, $5, $6, $7, $8)
+		insert into sites (id, workspace_id, name, slug, status, draft_revision, default_locale, settings, brand)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		on conflict (id) do update
 		set name = excluded.name,
 		    slug = excluded.slug,
 		    status = excluded.status,
+		    draft_revision = sites.draft_revision + 1,
 		    default_locale = excluded.default_locale,
 		    settings = excluded.settings,
 		    brand = excluded.brand,
 		    updated_at = now()
 		where sites.workspace_id = excluded.workspace_id
-	`, site.ID, workspaceID, site.Name, site.Slug, site.Status, site.DefaultLocale, settingsJSON, brandJSON)
+		  and sites.draft_revision = $10
+	`, site.ID, workspaceID, site.Name, site.Slug, site.Status, nextRevision, site.DefaultLocale, settingsJSON, brandJSON, site.Revision)
 	if err != nil {
 		return fmt.Errorf("save site row: %w", err)
 	}
-	if err := requireRowsAffected(tag, "save site row"); err != nil {
-		return err
+	if tag.RowsAffected() == 0 {
+		var exists bool
+		if err := tx.QueryRow(ctx, `
+			select exists(
+				select 1
+				from sites
+				where id = $1
+				  and workspace_id = $2
+			)
+		`, site.ID, workspaceID).Scan(&exists); err != nil {
+			return fmt.Errorf("save site row: detect persistence conflict: %w", err)
+		}
+		if exists {
+			return ErrDraftConflict
+		}
+		return ErrNotFound
 	}
 	return nil
 }

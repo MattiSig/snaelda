@@ -124,6 +124,11 @@ func (s *Service) RevertReprompt(ctx context.Context, workspaceID string, siteID
 	if err != nil {
 		return siteconfig.SiteDraft{}, err
 	}
+	currentDraft, err := s.reader.LoadDraft(ctx, siteID)
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	revision.Draft.Revision = currentDraft.Revision
 	if err := s.writer.SaveDraft(ctx, workspaceID, revision.Draft); err != nil {
 		return siteconfig.SiteDraft{}, err
 	}

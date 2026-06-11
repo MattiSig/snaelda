@@ -11,6 +11,7 @@ import (
 	"github.com/MattiSig/snaelda/internal/authorization"
 	"github.com/MattiSig/snaelda/internal/generation"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
+	"github.com/MattiSig/snaelda/internal/sites"
 )
 
 type Handler struct {
@@ -301,6 +302,8 @@ func themeErrorDetails(err error) (code string, message string, status int) {
 		return "invalid_theme_image_style", "theme image style is not supported", http.StatusBadRequest
 	case errors.Is(err, ErrThemeRegenerationOff):
 		return "theme_regeneration_unavailable", "theme regeneration is not configured", http.StatusServiceUnavailable
+	case errors.Is(err, sites.ErrDraftConflict):
+		return "draft_conflict", "this draft changed while your edit was in flight; reload the latest version and try again", http.StatusConflict
 	case errors.As(err, &validationErr):
 		return "invalid_theme", "theme changes failed validation", http.StatusBadRequest
 	default:

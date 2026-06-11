@@ -8,9 +8,9 @@ Refreshed 2026-06-09 from a spec-to-source audit of `specs/*`, `internal/*`, `ap
   - Draft page deletion currently removes normalized `pages` rows still referenced by live form submissions and analytics.
   - Preserve stable published-page identities until no active snapshot depends on them; add regression coverage for live forms, analytics, rollback, and later republish.
 
-- [ ] Add concurrency control to canonical draft writes.
-  - Current load-modify-save operations replace the whole draft, and overlapping inline edits can silently overwrite newer or unrelated changes.
-  - Add a draft revision/version precondition or transactional locking, serialize per-block saves in the client, and surface conflict recovery instead of applying stale responses.
+- [x] Add concurrency control to canonical draft writes.
+  - Draft persistence now uses a canonical `sites.draft_revision` compare-and-swap precondition so overlapping save attempts fail with `draft_conflict` instead of silently overwriting newer changes.
+  - The builder now serializes inline saves per block and reloads canonical state on conflict; collections surfaces also refresh cleanly when a stale write is rejected.
 
 - [x] Honor page publication status.
   - Exclude `status=draft` pages from published snapshots, navigation, sitemap, artifacts, collection routes, forms, and analytics while keeping them editable and previewable.

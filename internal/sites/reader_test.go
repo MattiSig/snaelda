@@ -20,6 +20,7 @@ func TestAssembleDraftFromNormalizedRows(t *testing.T) {
 			Name:          "Nordic Studio",
 			Slug:          "nordic-studio",
 			Status:        "draft",
+			Revision:      7,
 			DefaultLocale: "en",
 		},
 		Theme: themeRow{
@@ -122,6 +123,9 @@ func TestAssembleDraftFromNormalizedRows(t *testing.T) {
 	if draft.Pages[0].ID != "page_home" {
 		t.Fatalf("expected home page first, got %q", draft.Pages[0].ID)
 	}
+	if draft.Revision != 7 {
+		t.Fatalf("expected draft revision 7, got %d", draft.Revision)
+	}
 	if draft.Pages[0].Blocks[0].ID != "block_hero" {
 		t.Fatalf("expected hero block first, got %q", draft.Pages[0].Blocks[0].ID)
 	}
@@ -188,6 +192,9 @@ func TestNormalizeDraftForPersistence(t *testing.T) {
 	if rows.Site.DefaultLocale != "en" {
 		t.Fatalf("expected default locale fallback, got %q", rows.Site.DefaultLocale)
 	}
+	if rows.Site.Revision != 0 {
+		t.Fatalf("expected zero draft revision for a new draft, got %d", rows.Site.Revision)
+	}
 	if len(rows.Pages) != 1 || rows.Pages[0].Sort != 0 {
 		t.Fatalf("expected one normalized page with sort order 0, got %#v", rows.Pages)
 	}
@@ -252,9 +259,9 @@ func TestSaveDraftPersistsCanonicalDraftInTransaction(t *testing.T) {
 	if hidden, ok := tx.execs[8].args[8].(bool); !ok || !hidden {
 		t.Fatalf("expected hidden block flag in is_hidden argument, got %#v", tx.execs[8].args[8])
 	}
-	siteSettingsJSON, ok := tx.execs[0].args[6].([]byte)
+	siteSettingsJSON, ok := tx.execs[0].args[7].([]byte)
 	if !ok {
-		t.Fatalf("expected site settings JSON bytes, got %#v", tx.execs[0].args[6])
+		t.Fatalf("expected site settings JSON bytes, got %#v", tx.execs[0].args[7])
 	}
 	var siteSettings struct {
 		Navigation siteconfig.NavigationConfig `json:"navigation"`
@@ -264,6 +271,32 @@ func TestSaveDraftPersistsCanonicalDraftInTransaction(t *testing.T) {
 	}
 	if len(siteSettings.Navigation.Primary) != 1 || siteSettings.Navigation.Primary[0].PageID != "00000000-0000-4000-8000-000000000501" {
 		t.Fatalf("expected saved site settings to include navigation, got %#v", siteSettings.Navigation.Primary)
+	}
+	if revision, ok := tx.execs[0].args[5].(int64); !ok || revision != 1 {
+		t.Fatalf("expected initial persisted draft revision 1, got %#v", tx.execs[0].args[5])
+	}
+}
+
+func TestSaveDraftRejectsStaleRevision(t *testing.T) {
+	tx := &fakeDraftTx{
+		execResults: []pgconn.CommandTag{
+			pgconn.NewCommandTag("INSERT 0 0"),
+		},
+		queryRows: []pgx.Row{
+			fakeDraftRow{boolValue: true},
+		},
+	}
+	db := &fakeDraftDB{tx: tx}
+	writer := NewPostgresWriter(db)
+	draft := validPersistenceDraft()
+	draft.Revision = 3
+
+	err := writer.SaveDraft(context.Background(), "00000000-0000-4000-8000-000000000101", draft)
+	if !errors.Is(err, ErrDraftConflict) {
+		t.Fatalf("expected draft conflict, got %v", err)
+	}
+	if tx.committed {
+		t.Fatal("expected conflicting transaction not to commit")
 	}
 }
 
@@ -471,9 +504,11 @@ type fakeExec struct {
 }
 
 type fakeDraftTx struct {
-	execs      []fakeExec
-	committed  bool
-	rolledBack bool
+	execs       []fakeExec
+	execResults []pgconn.CommandTag
+	queryRows   []pgx.Row
+	committed   bool
+	rolledBack  bool
 }
 
 func (tx *fakeDraftTx) Begin(context.Context) (pgx.Tx, error) {
@@ -508,6 +543,11 @@ func (tx *fakeDraftTx) Prepare(context.Context, string, string) (*pgconn.Stateme
 
 func (tx *fakeDraftTx) Exec(_ context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
 	tx.execs = append(tx.execs, fakeExec{sql: sql, args: arguments})
+	if len(tx.execResults) > 0 {
+		tag := tx.execResults[0]
+		tx.execResults = tx.execResults[1:]
+		return tag, nil
+	}
 	return pgconn.NewCommandTag("INSERT 0 1"), nil
 }
 
@@ -516,7 +556,12 @@ func (tx *fakeDraftTx) Query(context.Context, string, ...any) (pgx.Rows, error) 
 }
 
 func (tx *fakeDraftTx) QueryRow(context.Context, string, ...any) pgx.Row {
-	return nil
+	if len(tx.queryRows) == 0 {
+		return fakeDraftRow{boolValue: false}
+	}
+	row := tx.queryRows[0]
+	tx.queryRows = tx.queryRows[1:]
+	return row
 }
 
 func (tx *fakeDraftTx) Conn() *pgx.Conn {
@@ -524,14 +569,22 @@ func (tx *fakeDraftTx) Conn() *pgx.Conn {
 }
 
 type fakeDraftRow struct {
-	json []byte
-	err  error
+	json      []byte
+	boolValue bool
+	err       error
 }
 
 func (r fakeDraftRow) Scan(dest ...any) error {
 	if r.err != nil {
 		return r.err
 	}
-	*dest[0].(*[]byte) = r.json
+	switch target := dest[0].(type) {
+	case *[]byte:
+		*target = r.json
+	case *bool:
+		*target = r.boolValue
+	default:
+		return errors.New("unsupported scan destination")
+	}
 	return nil
 }

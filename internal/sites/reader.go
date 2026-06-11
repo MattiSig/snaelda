@@ -56,6 +56,7 @@ type siteRow struct {
 	Name          string
 	Slug          string
 	Status        string
+	Revision      int64
 	DefaultLocale string
 	SEO           siteconfig.SEOConfig
 	Navigation    siteconfig.NavigationConfig
@@ -221,10 +222,10 @@ func (r *PostgresReader) loadNormalizedDraft(ctx context.Context, siteID string)
 	var siteSettingsJSON []byte
 	var brandJSON []byte
 	err := r.db.QueryRow(ctx, `
-		select id::text, name, slug, status, default_locale, settings, coalesce(brand, '{}'::jsonb)
+		select id::text, name, slug, status, draft_revision, default_locale, settings, coalesce(brand, '{}'::jsonb)
 		from sites
 		where id = $1
-	`, siteID).Scan(&site.ID, &site.Name, &site.Slug, &site.Status, &site.DefaultLocale, &siteSettingsJSON, &brandJSON)
+	`, siteID).Scan(&site.ID, &site.Name, &site.Slug, &site.Status, &site.Revision, &site.DefaultLocale, &siteSettingsJSON, &brandJSON)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return NormalizedDraftRows{}, ErrNotFound
 	}
@@ -582,6 +583,7 @@ func AssembleDraft(rows NormalizedDraftRows) siteconfig.SiteDraft {
 	}
 
 	return siteconfig.SiteDraft{
+		Revision: rows.Site.Revision,
 		Site: siteconfig.DraftSite{
 			ID:            rows.Site.ID,
 			Name:          rows.Site.Name,

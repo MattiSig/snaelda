@@ -880,6 +880,8 @@ func generationErrorDetails(err error) (code string, message string, status int)
 		return "rate_limited", "too many generation requests; please wait before trying again", http.StatusTooManyRequests
 	case errors.As(err, &validationErr):
 		return "invalid_generated_draft", "generated draft failed validation", http.StatusBadRequest
+	case errors.Is(err, sites.ErrDraftConflict):
+		return "draft_conflict", "this draft changed while your edit was in flight; reload the latest version and try again", http.StatusConflict
 	case errors.Is(err, sites.ErrNotFound), errors.Is(err, sites.ErrPageNotFound):
 		return "draft_scope_not_found", "the requested draft scope was not found", http.StatusNotFound
 	case errors.Is(err, ErrNoDraftRevision):

@@ -16,13 +16,7 @@ import {
   listCollections,
   updateCollection,
 } from "@/lib/api";
-import {
-  actions,
-  emptyState,
-  form,
-  paddedPanel,
-  text,
-} from "@/lib/styles";
+import { actions, emptyState, form, paddedPanel, text } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 
 const FIELD_TYPE_LABELS: Record<CollectionFieldType, string> = {
@@ -89,9 +83,46 @@ export function CollectionsPanel({
   const [showPrompt, setShowPrompt] = useState(false);
   const [isDrafting, setIsDrafting] = useState(false);
 
+  async function fetchCollections() {
+    return listCollections(siteId);
+  }
+
+  function isDraftConflictError(error: unknown) {
+    if (!(error instanceof APIError)) {
+      return false;
+    }
+    const code =
+      typeof error.payload?.error === "object"
+        ? error.payload.error.code
+        : error.payload?.code;
+    return code === "draft_conflict";
+  }
+
+  async function refreshCollections(preferredCollectionId?: string | null) {
+    const response = await listCollections(siteId);
+    setCollections(response.collections);
+    if (preferredCollectionId) {
+      const stillExists = response.collections.some(
+        (collection) => collection.id === preferredCollectionId,
+      );
+      setSelectedId(
+        stillExists
+          ? preferredCollectionId
+          : (response.collections[0]?.id ?? null),
+      );
+      return response;
+    }
+    if (
+      !response.collections.some((collection) => collection.id === selectedId)
+    ) {
+      setSelectedId(response.collections[0]?.id ?? null);
+    }
+    return response;
+  }
+
   useEffect(() => {
     let mounted = true;
-    listCollections(siteId)
+    fetchCollections()
       .then((response) => {
         if (!mounted) return;
         setCollections(response.collections);
@@ -115,7 +146,9 @@ export function CollectionsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteId]);
 
-  const selected = collections.find((collection) => collection.id === selectedId);
+  const selected = collections.find(
+    (collection) => collection.id === selectedId,
+  );
 
   async function handleCreate(input: {
     slug: string;
@@ -128,8 +161,17 @@ export function CollectionsPanel({
       setSelectedId(response.collection.id);
       setShowCreate(false);
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        await refreshCollections();
+        setErrorMessage(
+          "This draft changed in another tab or request. The latest collections were reloaded; apply your change again.",
+        );
+        return;
+      }
       setErrorMessage(
-        error instanceof APIError ? error.message : "Could not create collection.",
+        error instanceof APIError
+          ? error.message
+          : "Could not create collection.",
       );
     }
   }
@@ -143,6 +185,13 @@ export function CollectionsPanel({
       setSelectedId(response.collection.id);
       setShowPrompt(false);
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        await refreshCollections();
+        setErrorMessage(
+          "This draft changed in another tab or request. The latest collections were reloaded; apply your change again.",
+        );
+        return;
+      }
       setErrorMessage(
         error instanceof APIError
           ? error.message
@@ -154,7 +203,8 @@ export function CollectionsPanel({
   }
 
   async function handleDelete(collectionId: string) {
-    if (!confirm("Delete this collection? Entries will be removed too.")) return;
+    if (!confirm("Delete this collection? Entries will be removed too."))
+      return;
     try {
       await deleteCollection(siteId, collectionId);
       setCollections((prev) => prev.filter((c) => c.id !== collectionId));
@@ -162,13 +212,25 @@ export function CollectionsPanel({
         setSelectedId(null);
       }
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        await refreshCollections();
+        setErrorMessage(
+          "This draft changed in another tab or request. The latest collections were reloaded; apply your change again.",
+        );
+        return;
+      }
       setErrorMessage(
-        error instanceof APIError ? error.message : "Could not delete collection.",
+        error instanceof APIError
+          ? error.message
+          : "Could not delete collection.",
       );
     }
   }
 
-  async function handleSchemaSave(collectionId: string, schema: FieldDefinition[]) {
+  async function handleSchemaSave(
+    collectionId: string,
+    schema: FieldDefinition[],
+  ) {
     try {
       const response = await updateCollection(siteId, collectionId, { schema });
       setCollections((prev) =>
@@ -177,6 +239,13 @@ export function CollectionsPanel({
         ),
       );
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        await refreshCollections(collectionId);
+        setErrorMessage(
+          "This draft changed in another tab or request. The latest collections were reloaded; apply your change again.",
+        );
+        return;
+      }
       setErrorMessage(
         error instanceof APIError
           ? error.message
@@ -484,9 +553,7 @@ function CollectionDetailPanel({
         <div>
           <p className={text.label}>{collection.singularLabel}</p>
           <h2 className={text.sectionTitle}>{collection.pluralLabel}</h2>
-          <p className={cn(text.muted, "mt-1 text-sm")}>
-            /{collection.slug}
-          </p>
+          <p className={cn(text.muted, "mt-1 text-sm")}>/{collection.slug}</p>
         </div>
         <Button
           type="button"
@@ -522,10 +589,7 @@ function CollectionDetailPanel({
       </div>
 
       {tab === "schema" ? (
-        <SchemaEditor
-          schema={collection.schema}
-          onSave={onSchemaSave}
-        />
+        <SchemaEditor schema={collection.schema} onSave={onSchemaSave} />
       ) : (
         <EntriesList
           siteId={siteId}
@@ -688,6 +752,17 @@ function EntriesList({
   const entries = collection.entries ?? [];
   const canPromptEntries = collection.schema.length > 0;
 
+  function isDraftConflictError(error: unknown) {
+    if (!(error instanceof APIError)) {
+      return false;
+    }
+    const code =
+      typeof error.payload?.error === "object"
+        ? error.payload.error.code
+        : error.payload?.code;
+    return code === "draft_conflict";
+  }
+
   async function refresh() {
     const { listCollectionEntries } = await import("@/lib/api");
     const response = await listCollectionEntries(siteId, collection.id);
@@ -707,6 +782,13 @@ function EntriesList({
       setShowNew(false);
       setStatusMessage("Entry saved.");
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        await refresh();
+        setErrorMessage(
+          "This draft changed in another tab or request. The latest entries were reloaded; apply your change again.",
+        );
+        return;
+      }
       setErrorMessage(
         error instanceof APIError ? error.message : "Could not create entry.",
       );
@@ -731,6 +813,13 @@ function EntriesList({
         count === 1 ? "Drafted 1 entry." : `Drafted ${count} entries.`,
       );
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        await refresh();
+        setErrorMessage(
+          "This draft changed in another tab or request. The latest entries were reloaded; apply your change again.",
+        );
+        return;
+      }
       setErrorMessage(
         error instanceof APIError
           ? error.message
@@ -751,22 +840,43 @@ function EntriesList({
       await refresh();
       setStatusMessage("Entry deleted.");
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        await refresh();
+        setErrorMessage(
+          "This draft changed in another tab or request. The latest entries were reloaded; apply your change again.",
+        );
+        return;
+      }
       setErrorMessage(
         error instanceof APIError ? error.message : "Could not delete entry.",
       );
     }
   }
 
-  async function handleStatusToggle(entryId: string, current: string | undefined) {
+  async function handleStatusToggle(
+    entryId: string,
+    current: string | undefined,
+  ) {
     try {
       setErrorMessage("");
       setStatusMessage("");
       const { updateCollectionEntry } = await import("@/lib/api");
       const next = current === "published" ? "draft" : "published";
-      await updateCollectionEntry(siteId, collection.id, entryId, { status: next });
+      await updateCollectionEntry(siteId, collection.id, entryId, {
+        status: next,
+      });
       await refresh();
-      setStatusMessage(next === "published" ? "Entry published." : "Entry moved to drafts.");
+      setStatusMessage(
+        next === "published" ? "Entry published." : "Entry moved to drafts.",
+      );
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        await refresh();
+        setErrorMessage(
+          "This draft changed in another tab or request. The latest entries were reloaded; apply your change again.",
+        );
+        return;
+      }
       setErrorMessage(
         error instanceof APIError ? error.message : "Could not update entry.",
       );
@@ -923,7 +1033,10 @@ function PromptEntriesPanel({
         </div>
       </div>
       <div className={form.field}>
-        <label className={text.label} htmlFor={`entries-prompt-${collection.id}`}>
+        <label
+          className={text.label}
+          htmlFor={`entries-prompt-${collection.id}`}
+        >
           Prompt
         </label>
         <Textarea
@@ -980,7 +1093,10 @@ function NewEntryForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className={cn(form.grid, "rounded-[12px] border border-border bg-[var(--surface-2)] p-3")}
+      className={cn(
+        form.grid,
+        "rounded-[12px] border border-border bg-[var(--surface-2)] p-3",
+      )}
     >
       <div className={form.field}>
         <label className={text.label} htmlFor="entry-slug">

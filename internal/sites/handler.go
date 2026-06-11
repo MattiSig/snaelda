@@ -758,6 +758,8 @@ func writeSiteError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "invalid_page_slug", "page slug must be / or a slash-prefixed slug")
 	case errors.Is(err, ErrPageSlugConflict):
 		writeError(w, http.StatusConflict, "page_slug_conflict", "page slug is already in use")
+	case errors.Is(err, ErrDraftConflict):
+		writeError(w, http.StatusConflict, "draft_conflict", "this draft changed while your edit was in flight; reload the latest version and try again")
 	case errors.Is(err, ErrNoPageChanges):
 		writeError(w, http.StatusBadRequest, "no_page_changes", "at least one page field must change")
 	case errors.Is(err, ErrPageLimitReached):

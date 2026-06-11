@@ -50,6 +50,7 @@ var (
 	ErrPageCollectionNotFound    = errors.New("page references a collection that does not exist")
 	ErrPageTypeChangeForbidden   = errors.New("page type cannot be changed after creation")
 	ErrPageStatusInvalid         = errors.New("page status must be draft or published")
+	ErrDraftConflict             = errors.New("draft has changed since this edit started")
 )
 
 const navigationLabelMaxLength = 60

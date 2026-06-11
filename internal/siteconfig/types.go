@@ -1,6 +1,7 @@
 package siteconfig
 
 type SiteDraft struct {
+	Revision    int64            `json:"revision"`
 	Site        DraftSite        `json:"site"`
 	Brand       BrandConfig      `json:"brand"`
 	Theme       ThemeConfig      `json:"theme"`

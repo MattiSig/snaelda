@@ -87,6 +87,7 @@ export type FooterContact = {
 };
 
 export type SiteDraft = {
+  revision?: number;
   site: {
     id: string;
     name: string;
@@ -293,7 +294,7 @@ export type SiteRepromptResponse = {
 
 export type DraftRevisionRecord = {
   id: string;
-  scope: 'site' | 'page';
+  scope: "site" | "page";
   targetId?: string;
   prompt: string;
   draft: SiteDraft;
@@ -302,7 +303,7 @@ export type DraftRevisionRecord = {
 
 export type RepromptHistoryRecord = {
   id: string;
-  scope: 'site' | 'page';
+  scope: "site" | "page";
   targetId?: string;
   prompt: string;
   changeSummary?: string;
@@ -598,7 +599,9 @@ function getRuntimeAPIBaseURL() {
   return resolveRuntimeAPIBaseURL(window.location);
 }
 
-export function resolveRuntimeAPIBaseURL(location: Pick<Location, "hostname" | "protocol">) {
+export function resolveRuntimeAPIBaseURL(
+  location: Pick<Location, "hostname" | "protocol">,
+) {
   const { hostname, protocol } = location;
   if (protocol !== "https:" && protocol !== "http:") {
     return "";
@@ -755,7 +758,12 @@ async function streamAPIRequest(
       path !== "/api/auth/refresh"
     ) {
       await refreshAuthSession();
-      return streamAPIRequest(path, init, { onJobCreated, onProgress, onPartial }, false);
+      return streamAPIRequest(
+        path,
+        init,
+        { onJobCreated, onProgress, onPartial },
+        false,
+      );
     }
 
     const payload = await response.json().catch(() => null);
@@ -876,7 +884,8 @@ async function streamAPIRequest(
     throw new APIError(500, {
       error: {
         code: "generation_stream_interrupted",
-        message: "The generation connection dropped before progress could resume.",
+        message:
+          "The generation connection dropped before progress could resume.",
       },
     });
   }
@@ -919,9 +928,7 @@ export async function getCurrentSession(options?: {
     "/api/sessions/me",
     {},
     options?.retryOnUnauthorized ?? true,
-  ).then(
-    (response) => response.session,
-  );
+  ).then((response) => response.session);
 }
 
 export async function getBillingState() {
@@ -1789,7 +1796,7 @@ export async function createSiteDomain(
   input: { hostname: string },
 ) {
   return apiFetch<SiteDomainsResponse>(`/api/sites/${siteId}/domains`, {
-    method: 'POST',
+    method: "POST",
     body: JSON.stringify(input),
   });
 }
@@ -1798,8 +1805,8 @@ export async function verifySiteDomain(siteId: string, domainId: string) {
   return apiFetch<SiteDomainsResponse>(
     `/api/sites/${siteId}/domains/${domainId}`,
     {
-      method: 'PATCH',
-      body: JSON.stringify({ action: 'verify' }),
+      method: "PATCH",
+      body: JSON.stringify({ action: "verify" }),
     },
   );
 }
@@ -1808,7 +1815,7 @@ export async function deleteSiteDomain(siteId: string, domainId: string) {
   return apiFetch<SiteDomainsResponse>(
     `/api/sites/${siteId}/domains/${domainId}`,
     {
-      method: 'DELETE',
+      method: "DELETE",
     },
   );
 }

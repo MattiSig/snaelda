@@ -1,7 +1,10 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { CSSProperties, FormEvent } from "react";
-import { useEffect, useState } from "react";
-import { GenerationProgressCard, type GenerationProgressItem } from "@/components/GenerationProgressCard";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  GenerationProgressCard,
+  type GenerationProgressItem,
+} from "@/components/GenerationProgressCard";
 import { PuckBuilder, type BuilderSection } from "@/components/PuckBuilder";
 import { RepromptHistoryPanel } from "@/components/RepromptHistoryPanel";
 import { RevisionDiffModal } from "@/components/RevisionDiffModal";
@@ -117,11 +120,13 @@ const refinementChips: Array<{ label: string; prompt: string }> = [
   },
   {
     label: "Bolder layout",
-    prompt: "Push the layout to feel bolder, more memorable, and less template-like.",
+    prompt:
+      "Push the layout to feel bolder, more memorable, and less template-like.",
   },
   {
     label: "Simpler copy",
-    prompt: "Tighten the copy, reduce repetition, and make the main offer easier to scan.",
+    prompt:
+      "Tighten the copy, reduce repetition, and make the main offer easier to scan.",
   },
   {
     label: "Stronger CTA",
@@ -129,11 +134,13 @@ const refinementChips: Array<{ label: string; prompt: string }> = [
   },
   {
     label: "More premium",
-    prompt: "Make the design feel more polished and premium while keeping it approachable.",
+    prompt:
+      "Make the design feel more polished and premium while keeping it approachable.",
   },
   {
     label: "Add booking path",
-    prompt: "Add a clearer booking or inquiry path for visitors who are ready to act.",
+    prompt:
+      "Add a clearer booking or inquiry path for visitors who are ready to act.",
   },
 ];
 
@@ -310,6 +317,71 @@ function SiteDetail() {
     "billing" | "claim" | ""
   >("");
   const [isStartingUpgrade, setIsStartingUpgrade] = useState(false);
+  const draftRef = useRef<SiteDraft | null>(null);
+  const blockSaveChains = useRef(new Map<string, Promise<void>>());
+
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
+  const replaceDraft = useCallback((nextDraft: SiteDraft) => {
+    draftRef.current = nextDraft;
+    setDraft(nextDraft);
+  }, []);
+
+  function isDraftConflictError(error: unknown) {
+    if (!(error instanceof APIError)) {
+      return false;
+    }
+    const code =
+      typeof error.payload?.error === "object"
+        ? error.payload.error.code
+        : error.payload?.code;
+    return code === "draft_conflict";
+  }
+
+  async function recoverDraftConflict({
+    preferredPageID,
+    preferredBlockID,
+    includeTheme = false,
+    includeReprompts = false,
+  }: {
+    preferredPageID?: string;
+    preferredBlockID?: string;
+    includeTheme?: boolean;
+    includeReprompts?: boolean;
+  } = {}) {
+    const tasks: Promise<unknown>[] = [
+      refreshDraftState(preferredPageID, preferredBlockID),
+    ];
+    if (includeTheme) {
+      tasks.push(
+        getSiteTheme(siteId).then((response) => {
+          setThemeSelection(response.selection);
+          setSavedThemeSelection(response.selection);
+          setSavedTheme(response.theme);
+          setThemeOptions(response.options);
+        }),
+      );
+    }
+    if (includeReprompts) {
+      tasks.push(refreshRepromptHistoryState().catch(() => null));
+    }
+    await Promise.all(tasks);
+    return "This draft changed in another tab or request. The latest version was reloaded; apply your change again.";
+  }
+
+  function enqueueBlockSave(blockId: string, task: () => Promise<void>) {
+    const previous = blockSaveChains.current.get(blockId) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(task);
+    const tracked = next.finally(() => {
+      if (blockSaveChains.current.get(blockId) === tracked) {
+        blockSaveChains.current.delete(blockId);
+      }
+    });
+    blockSaveChains.current.set(blockId, tracked);
+    return tracked;
+  }
 
   function syncSiteFields(nextDraft: SiteDraft) {
     setName(nextDraft.site.name);
@@ -417,7 +489,7 @@ function SiteDetail() {
           setFormSubmissions(submissionResponse.submissions);
           syncSiteFields(draftResponse.draft);
           const initialPage = draftResponse.draft.pages[0] ?? null;
-          setDraft(draftResponse.draft);
+          replaceDraft(draftResponse.draft);
           setSelectedPageId(initialPage?.id ?? "");
           setSelectedBlockId(initialPage?.blocks[0]?.id ?? "");
           syncSelectedPageFields(draftResponse.draft, initialPage);
@@ -438,7 +510,7 @@ function SiteDetail() {
     return () => {
       isMounted = false;
     };
-  }, [siteId]);
+  }, [replaceDraft, siteId]);
 
   const blockDefinitions = new Map(
     blockRegistry.map((definition) => [
@@ -533,6 +605,15 @@ function SiteDetail() {
       setSiteStatusMessage("Site details saved.");
       applyDraftUpdate(response.draft, selectedPage?.id, selectedBlock?.id);
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        setSiteErrorMessage(
+          await recoverDraftConflict({
+            preferredPageID: selectedPage?.id,
+            preferredBlockID: selectedBlock?.id,
+          }),
+        );
+        return;
+      }
       setSiteErrorMessage(
         error instanceof APIError ? error.message : "Could not save site",
       );
@@ -566,6 +647,15 @@ function SiteDetail() {
       setBrandStatusMessage("Brand saved.");
       applyDraftUpdate(response.draft, selectedPage?.id, selectedBlock?.id);
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        setBrandErrorMessage(
+          await recoverDraftConflict({
+            preferredPageID: selectedPage?.id,
+            preferredBlockID: selectedBlock?.id,
+          }),
+        );
+        return;
+      }
       setBrandErrorMessage(
         error instanceof APIError ? error.message : "Could not save brand",
       );
@@ -598,6 +688,15 @@ function SiteDetail() {
       setNewPageIncludeInNavigation(true);
       setPageStatusMessage("Page added to the draft.");
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        setPageErrorMessage(
+          await recoverDraftConflict({
+            preferredPageID: selectedPage?.id,
+            preferredBlockID: selectedBlock?.id,
+          }),
+        );
+        return;
+      }
       setPageErrorMessage(
         error instanceof APIError ? error.message : "Could not create page",
       );
@@ -631,6 +730,15 @@ function SiteDetail() {
       applyDraftUpdate(response.draft, selectedPage.id, selectedBlock?.id);
       setPageStatusMessage("Page details saved.");
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        setPageErrorMessage(
+          await recoverDraftConflict({
+            preferredPageID: selectedPage.id,
+            preferredBlockID: selectedBlock?.id,
+          }),
+        );
+        return;
+      }
       setPageErrorMessage(
         error instanceof APIError ? error.message : "Could not save page",
       );
@@ -660,6 +768,10 @@ function SiteDetail() {
       applyDraftUpdate(response.draft);
       setPageStatusMessage("Page removed from the draft.");
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        setPageErrorMessage(await recoverDraftConflict());
+        return;
+      }
       setPageErrorMessage(
         error instanceof APIError ? error.message : "Could not delete page",
       );
@@ -689,6 +801,15 @@ function SiteDetail() {
       applyDraftUpdate(response.draft, pageId, selectedBlock?.id);
       setPageStatusMessage("Page order updated.");
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        setPageErrorMessage(
+          await recoverDraftConflict({
+            preferredPageID: pageId,
+            preferredBlockID: selectedBlock?.id,
+          }),
+        );
+        return;
+      }
       setPageErrorMessage(
         error instanceof APIError ? error.message : "Could not reorder pages",
       );
@@ -818,6 +939,15 @@ function SiteDetail() {
       applyDraftUpdate(response.draft, selectedPage?.id, selectedBlock?.id);
       setNavigationStatusMessage("Navigation updated.");
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        setNavigationErrorMessage(
+          await recoverDraftConflict({
+            preferredPageID: selectedPage?.id,
+            preferredBlockID: selectedBlock?.id,
+          }),
+        );
+        return;
+      }
       setNavigationErrorMessage(
         error instanceof APIError ? error.message : "Could not save navigation",
       );
@@ -840,8 +970,9 @@ function SiteDetail() {
     path: ReadonlyArray<string | number>,
     value: unknown,
   ) {
-    if (!draft) return;
-    const ownerPage = draft.pages.find((page) =>
+    const currentDraft = draftRef.current;
+    if (!currentDraft) return;
+    const ownerPage = currentDraft.pages.find((page) =>
       page.blocks.some((block) => block.id === blockId),
     );
     const block = ownerPage?.blocks.find((b) => b.id === blockId);
@@ -852,15 +983,15 @@ function SiteDetail() {
 
     // Optimistic local update so the UI commits immediately, then patch on the
     // server. Failed patches reload the draft so we don't drift.
-    const optimistic = applyBlockUpdate(draft, ownerPage.id, blockId, {
+    const optimistic = applyBlockUpdate(currentDraft, ownerPage.id, blockId, {
       props: nextProps,
       hidden,
     });
-    setDraft(optimistic);
+    replaceDraft(optimistic);
     setBlockErrorMessage("");
     setBlockStatusMessage("");
 
-    void (async () => {
+    void enqueueBlockSave(blockId, async () => {
       try {
         const response = await updateBlock(siteId, ownerPage.id, blockId, {
           props: nextProps,
@@ -868,23 +999,27 @@ function SiteDetail() {
         });
         applyDraftUpdate(response.draft, ownerPage.id, blockId);
       } catch (error) {
+        if (isDraftConflictError(error)) {
+          setBlockErrorMessage(
+            await recoverDraftConflict({
+              preferredPageID: ownerPage.id,
+              preferredBlockID: blockId,
+            }),
+          );
+          return;
+        }
         setBlockErrorMessage(
           error instanceof APIError ? error.message : "Could not save edit",
         );
-        // Reload to recover canonical state.
-        try {
-          const fresh = await getSiteDraft(siteId);
-          applyDraftUpdate(fresh.draft, ownerPage.id, blockId);
-        } catch {
-          // best-effort
-        }
+        await refreshDraftState(ownerPage.id, blockId).catch(() => null);
       }
-    })();
+    });
   }
 
   async function handleToggleHidden(blockId: string, hidden: boolean) {
-    if (!draft) return;
-    const ownerPage = draft.pages.find((page) =>
+    const currentDraft = draftRef.current;
+    if (!currentDraft) return;
+    const ownerPage = currentDraft.pages.find((page) =>
       page.blocks.some((block) => block.id === blockId),
     );
     const block = ownerPage?.blocks.find((b) => b.id === blockId);
@@ -894,13 +1029,24 @@ function SiteDetail() {
     setBlockErrorMessage("");
     setBlockStatusMessage("");
     try {
-      const response = await updateBlock(siteId, ownerPage.id, blockId, {
-        props: block.props as Record<string, unknown>,
-        hidden,
+      await enqueueBlockSave(blockId, async () => {
+        const response = await updateBlock(siteId, ownerPage.id, blockId, {
+          props: block.props as Record<string, unknown>,
+          hidden,
+        });
+        applyDraftUpdate(response.draft, ownerPage.id, blockId);
       });
-      applyDraftUpdate(response.draft, ownerPage.id, blockId);
       setBlockStatusMessage(hidden ? "Block hidden." : "Block unhidden.");
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        setBlockErrorMessage(
+          await recoverDraftConflict({
+            preferredPageID: ownerPage.id,
+            preferredBlockID: blockId,
+          }),
+        );
+        return;
+      }
       setBlockErrorMessage(
         error instanceof APIError
           ? error.message
@@ -970,27 +1116,32 @@ function SiteDetail() {
         const reorderedVisible = [...visibleOrder];
         reorderedVisible.splice(createdVisibleIndex, 1);
         reorderedVisible.splice(
-          Math.max(
-            0,
-            Math.min(input.targetIndex, reorderedVisible.length),
-          ),
+          Math.max(0, Math.min(input.targetIndex, reorderedVisible.length)),
           0,
           createdBlock.id,
         );
         const hiddenIDs = (nextPage?.blocks ?? [])
           .filter((block) => block.settings?.hidden)
           .map((block) => block.id);
-        const reorderResponse = await reorderBlocks(
-          siteId,
-          selectedPage.id,
-          [...reorderedVisible, ...hiddenIDs],
-        );
+        const reorderResponse = await reorderBlocks(siteId, selectedPage.id, [
+          ...reorderedVisible,
+          ...hiddenIDs,
+        ]);
         nextDraft = reorderResponse.draft;
       }
 
       applyDraftUpdate(nextDraft, selectedPage.id, createdBlock.id);
       setBlockStatusMessage("Block added.");
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        setBlockErrorMessage(
+          await recoverDraftConflict({
+            preferredPageID: selectedPage?.id,
+            preferredBlockID: selectedBlock?.id,
+          }),
+        );
+        return;
+      }
       setBlockErrorMessage(
         error instanceof APIError ? error.message : "Could not add block",
       );
@@ -1016,15 +1167,21 @@ function SiteDetail() {
       if (historyResponse) {
         setRepromptHistory(historyResponse.reprompts);
       }
-      setSuggestStatusMessage(
-        suggestionToastForInput(input),
-      );
+      setSuggestStatusMessage(suggestionToastForInput(input));
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        setSuggestErrorMessage(
+          await recoverDraftConflict({
+            preferredPageID: selectedPage?.id,
+            preferredBlockID: selectedBlock?.id,
+            includeReprompts: true,
+          }),
+        );
+        return;
+      }
       setBlockedActionFromError(error);
       setSuggestErrorMessage(
-        error instanceof APIError
-          ? error.message
-          : "Could not rewrite block",
+        error instanceof APIError ? error.message : "Could not rewrite block",
       );
     } finally {
       setIsSuggestingBlock(false);
@@ -1146,7 +1303,9 @@ function SiteDetail() {
         : current,
     );
     setThemeErrorMessage("");
-    setThemeStatusMessage("Unsaved theme changes are shown in the live preview.");
+    setThemeStatusMessage(
+      "Unsaved theme changes are shown in the live preview.",
+    );
   }
 
   function handleResetThemeSelection() {
@@ -1192,6 +1351,16 @@ function SiteDetail() {
       );
       setThemeStatusMessage("Theme saved for preview and publish.");
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        setThemeErrorMessage(
+          await recoverDraftConflict({
+            preferredPageID: selectedPage?.id,
+            preferredBlockID: selectedBlock?.id,
+            includeTheme: true,
+          }),
+        );
+        return;
+      }
       setThemeErrorMessage(
         error instanceof APIError ? error.message : "Could not save theme",
       );
@@ -1229,6 +1398,16 @@ function SiteDetail() {
       );
       setThemeStatusMessage("Theme regenerated from the site brief.");
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        setThemeErrorMessage(
+          await recoverDraftConflict({
+            preferredPageID: selectedPage?.id,
+            preferredBlockID: selectedBlock?.id,
+            includeTheme: true,
+          }),
+        );
+        return;
+      }
       setThemeErrorMessage(
         error instanceof APIError
           ? error.message
@@ -1291,6 +1470,15 @@ function SiteDetail() {
       applyDraftUpdate(response.draft, selectedPage.id, duplicatedBlock?.id);
       setBlockStatusMessage("Block duplicated.");
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        setBlockErrorMessage(
+          await recoverDraftConflict({
+            preferredPageID: selectedPage.id,
+            preferredBlockID: selectedBlock.id,
+          }),
+        );
+        return;
+      }
       setBlockErrorMessage(
         error instanceof APIError ? error.message : "Could not duplicate block",
       );
@@ -1323,6 +1511,14 @@ function SiteDetail() {
       applyDraftUpdate(response.draft, selectedPage.id);
       setBlockStatusMessage("Block removed from the page.");
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        setBlockErrorMessage(
+          await recoverDraftConflict({
+            preferredPageID: selectedPage.id,
+          }),
+        );
+        return;
+      }
       setBlockErrorMessage(
         error instanceof APIError ? error.message : "Could not delete block",
       );
@@ -1359,6 +1555,15 @@ function SiteDetail() {
       applyDraftUpdate(response.draft, selectedPage.id, selectedBlock.id);
       setBlockStatusMessage("Block order updated.");
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        setBlockErrorMessage(
+          await recoverDraftConflict({
+            preferredPageID: selectedPage.id,
+            preferredBlockID: selectedBlock.id,
+          }),
+        );
+        return;
+      }
       setBlockErrorMessage(
         error instanceof APIError ? error.message : "Could not reorder blocks",
       );
@@ -1378,6 +1583,15 @@ function SiteDetail() {
       applyDraftUpdate(response.draft, selectedPage.id, selectedBlock?.id);
       setBlockStatusMessage("Blocks reordered.");
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        setBlockErrorMessage(
+          await recoverDraftConflict({
+            preferredPageID: selectedPage.id,
+            preferredBlockID: selectedBlock?.id,
+          }),
+        );
+        return;
+      }
       setBlockErrorMessage(
         error instanceof APIError ? error.message : "Could not reorder blocks",
       );
@@ -1448,9 +1662,21 @@ function SiteDetail() {
       }
       setRefinementPrompt("");
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        setRepromptErrorMessage(
+          await recoverDraftConflict({
+            preferredPageID: selectedPage?.id,
+            preferredBlockID: selectedBlock?.id,
+            includeReprompts: true,
+          }),
+        );
+        return;
+      }
       setBlockedActionFromError(error);
       setRepromptErrorMessage(
-        error instanceof APIError ? error.message : "Could not apply refinement",
+        error instanceof APIError
+          ? error.message
+          : "Could not apply refinement",
       );
     } finally {
       setIsRepromptingSite(false);
@@ -1480,6 +1706,16 @@ function SiteDetail() {
       ]);
       setRepromptStatusMessage("Previous draft revision restored.");
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        setRepromptErrorMessage(
+          await recoverDraftConflict({
+            preferredPageID: selectedPage?.id,
+            preferredBlockID: selectedBlock?.id,
+            includeReprompts: true,
+          }),
+        );
+        return;
+      }
       setRepromptErrorMessage(
         error instanceof APIError
           ? error.message
@@ -1508,7 +1744,9 @@ function SiteDetail() {
       setRepromptDiffResult(resultResponse.revision);
     } catch (error) {
       setRepromptDiffErrorMessage(
-        error instanceof APIError ? error.message : "Could not load revision diff",
+        error instanceof APIError
+          ? error.message
+          : "Could not load revision diff",
       );
     } finally {
       setIsLoadingRepromptDiff(false);
@@ -1530,8 +1768,20 @@ function SiteDetail() {
       ]);
       setRepromptStatusMessage("Draft restored from history.");
     } catch (error) {
+      if (isDraftConflictError(error)) {
+        setRepromptErrorMessage(
+          await recoverDraftConflict({
+            preferredPageID: selectedPage?.id,
+            preferredBlockID: selectedBlock?.id,
+            includeReprompts: true,
+          }),
+        );
+        return;
+      }
       setRepromptErrorMessage(
-        error instanceof APIError ? error.message : "Could not restore draft revision",
+        error instanceof APIError
+          ? error.message
+          : "Could not restore draft revision",
       );
     } finally {
       setActiveRepromptHistoryId("");
@@ -1760,8 +2010,8 @@ function SiteDetail() {
       : -1;
   const themeHasUnsavedChanges = Boolean(
     themeSelection &&
-      savedThemeSelection &&
-      !sameThemeSelection(themeSelection, savedThemeSelection),
+    savedThemeSelection &&
+    !sameThemeSelection(themeSelection, savedThemeSelection),
   );
   const primaryNavigationPageIds = new Set(
     navigationDraft.primary
@@ -1824,7 +2074,9 @@ function SiteDetail() {
             {selectedPage ? selectedPage.title : "No page selected"}
           </h3>
           <p className={cn(text.p, "text-sm")}>
-            Change the title, URL slug, publish status, and navigation visibility for the selected page. Pick a different page from the header.
+            Change the title, URL slug, publish status, and navigation
+            visibility for the selected page. Pick a different page from the
+            header.
           </p>
         </div>
         {selectedPage ? (
@@ -1860,7 +2112,11 @@ function SiteDetail() {
                   id="pages-edit-status"
                   value={pageStatus}
                   onChange={(event) =>
-                    setPageStatus(event.target.value === "published" ? "published" : "draft")
+                    setPageStatus(
+                      event.target.value === "published"
+                        ? "published"
+                        : "draft",
+                    )
                   }
                 >
                   <option value="draft">Draft</option>
@@ -1873,7 +2129,9 @@ function SiteDetail() {
                 type="checkbox"
                 className="size-4 accent-[var(--thread-teal)]"
                 checked={pageIncludeInNavigation}
-                onChange={(event) => setPageIncludeInNavigation(event.target.checked)}
+                onChange={(event) =>
+                  setPageIncludeInNavigation(event.target.checked)
+                }
               />
               Show this page in the main navigation
             </label>
@@ -1891,7 +2149,10 @@ function SiteDetail() {
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={isSavingPage || draft.pages.findIndex((p) => p.id === selectedPage.id) <= 0}
+                disabled={
+                  isSavingPage ||
+                  draft.pages.findIndex((p) => p.id === selectedPage.id) <= 0
+                }
                 onClick={() => handleMovePage(selectedPage.id, -1)}
               >
                 Move earlier
@@ -1902,7 +2163,8 @@ function SiteDetail() {
                 variant="outline"
                 disabled={
                   isSavingPage ||
-                  draft.pages.findIndex((p) => p.id === selectedPage.id) >= draft.pages.length - 1
+                  draft.pages.findIndex((p) => p.id === selectedPage.id) >=
+                    draft.pages.length - 1
                 }
                 onClick={() => handleMovePage(selectedPage.id, 1)}
               >
@@ -1922,7 +2184,8 @@ function SiteDetail() {
         ) : (
           <div className={emptyState}>
             <p className={text.p}>
-              No page selected. Pick a page from the header above, or add one below.
+              No page selected. Pick a page from the header above, or add one
+              below.
             </p>
           </div>
         )}
@@ -1995,10 +2258,13 @@ function SiteDetail() {
         <div className="grid gap-1">
           <p className={text.eyebrow}>SEO</p>
           <h3 className="m-0 text-[1.1rem] font-extrabold leading-[1.05] text-[var(--paper)]">
-            {selectedPage ? `Search snippet for ${selectedPage.title}` : "Pick a page"}
+            {selectedPage
+              ? `Search snippet for ${selectedPage.title}`
+              : "Pick a page"}
           </h3>
           <p className={cn(text.p, "text-sm")}>
-            What this page shows up as in Google results and when shared. Empty fields fall back to the page title and the first text block.
+            What this page shows up as in Google results and when shared. Empty
+            fields fall back to the page title and the first text block.
           </p>
         </div>
         {selectedPage ? (
@@ -2039,8 +2305,12 @@ function SiteDetail() {
                   "No description yet. A good description is around 150 characters and tells the reader exactly what they will find on this page."}
               </p>
             </div>
-            {pageErrorMessage ? <p className={text.error}>{pageErrorMessage}</p> : null}
-            {pageStatusMessage ? <p className={text.success}>{pageStatusMessage}</p> : null}
+            {pageErrorMessage ? (
+              <p className={text.error}>{pageErrorMessage}</p>
+            ) : null}
+            {pageStatusMessage ? (
+              <p className={text.success}>{pageStatusMessage}</p>
+            ) : null}
             <div className={actions.rowLarge}>
               <Button type="submit" disabled={isSavingPage}>
                 {isSavingPage ? "Saving..." : "Save SEO for this page"}
@@ -2050,7 +2320,8 @@ function SiteDetail() {
         ) : (
           <div className={emptyState}>
             <p className={text.p}>
-              Pick a page from the header to edit its search title and description.
+              Pick a page from the header to edit its search title and
+              description.
             </p>
           </div>
         )}
@@ -2666,9 +2937,7 @@ function SiteDetail() {
       ? "Refines only the selected page while keeping its route and place in the draft."
       : "Refines every page. Brand, slug, and checkpoint history are kept.";
   const refinementProgressSteps =
-    repromptProgressScope === "page"
-      ? pageRepromptSteps
-      : siteRepromptSteps;
+    repromptProgressScope === "page" ? pageRepromptSteps : siteRepromptSteps;
 
   const promptPanelContent = (
     <div className="grid gap-4">
@@ -2818,9 +3087,7 @@ function SiteDetail() {
             disabled={isUndoingReprompt || !repromptHistory.length}
             onClick={handleUndoReprompt}
           >
-            {isUndoingReprompt
-              ? "Restoring..."
-              : "Restore latest rebuild"}
+            {isUndoingReprompt ? "Restoring..." : "Restore latest rebuild"}
           </Button>
         </div>
 
@@ -2832,7 +3099,9 @@ function SiteDetail() {
           activeDiffId={
             isLoadingRepromptDiff ? activeRepromptHistoryId : undefined
           }
-          activeRevertId={isUndoingReprompt ? activeRepromptHistoryId : undefined}
+          activeRevertId={
+            isUndoingReprompt ? activeRepromptHistoryId : undefined
+          }
           onActiveScopeChange={setRepromptHistoryScope}
           onShowDiff={handleShowRepromptDiff}
           onRevert={handleRevertReprompt}
@@ -3009,8 +3278,12 @@ function SiteDetail() {
           </h2>
           <p className={cn(text.p, "mt-2 text-sm")}>
             Removing the draft also removes its rebuild checkpoints. Published
-            versions stay reachable until the live site is taken down separately.
-            Type <strong className="font-extrabold text-[var(--paper)]">{slug || "the slug"}</strong> to confirm.
+            versions stay reachable until the live site is taken down
+            separately. Type{" "}
+            <strong className="font-extrabold text-[var(--paper)]">
+              {slug || "the slug"}
+            </strong>{" "}
+            to confirm.
           </p>
         </div>
 
@@ -3031,9 +3304,7 @@ function SiteDetail() {
             type="button"
             variant="outline"
             disabled={
-              isDeleting ||
-              !slug ||
-              deleteConfirmSlug.trim() !== slug.trim()
+              isDeleting || !slug || deleteConfirmSlug.trim() !== slug.trim()
             }
             onClick={handleDelete}
             className="border-[color-mix(in_oklch,oklch(58%_0.18_27)_70%,var(--border))] text-[oklch(78%_0.16_27)] hover:border-[oklch(58%_0.18_27)] hover:bg-[color-mix(in_oklch,oklch(58%_0.18_27)_14%,var(--surface-1))] hover:text-[var(--paper)]"
@@ -3060,7 +3331,10 @@ function SiteDetail() {
             </p>
           </div>
           <div className="flex items-center gap-3 rounded-[10px] border border-border bg-[var(--surface-1)] px-3 py-2">
-            {brandLogoAssetId && uploadedSiteAssets.find((asset) => asset.id === brandLogoAssetId) ? (
+            {brandLogoAssetId &&
+            uploadedSiteAssets.find(
+              (asset) => asset.id === brandLogoAssetId,
+            ) ? (
               <img
                 src={buildDraftAssetURL(brandLogoAssetId)}
                 alt={brandLogoAlt || `${brandBusinessName || name} logo`}
@@ -3075,7 +3349,10 @@ function SiteDetail() {
                   color: brandPrimaryColor ? "#fff" : "var(--paper)",
                 }}
               >
-                {(brandBusinessName || name || "S").trim().charAt(0).toUpperCase()}
+                {(brandBusinessName || name || "S")
+                  .trim()
+                  .charAt(0)
+                  .toUpperCase()}
               </span>
             )}
             <div className="grid gap-0.5">
@@ -3542,7 +3819,9 @@ function SiteDetail() {
               <Button
                 type="submit"
                 disabled={
-                  isSavingTheme || isRegeneratingTheme || !themeHasUnsavedChanges
+                  isSavingTheme ||
+                  isRegeneratingTheme ||
+                  !themeHasUnsavedChanges
                 }
               >
                 {isSavingTheme ? "Saving theme..." : "Save theme"}
@@ -3634,7 +3913,10 @@ function SiteDetail() {
           ) : null}
 
           {domainState?.customDomainsEnabled ? (
-            <form className={cn(form.grid, "mt-4")} onSubmit={handleCreateDomain}>
+            <form
+              className={cn(form.grid, "mt-4")}
+              onSubmit={handleCreateDomain}
+            >
               <label htmlFor="custom-domain-hostname" className={text.label}>
                 Add a hostname
               </label>
@@ -3954,7 +4236,9 @@ function SiteDetail() {
         onSectionChange={(nextSection) =>
           navigate({
             to: ".",
-            search: { panel: nextSection === "content" ? undefined : nextSection },
+            search: {
+              panel: nextSection === "content" ? undefined : nextSection,
+            },
             replace: true,
           })
         }

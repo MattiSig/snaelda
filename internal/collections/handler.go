@@ -501,6 +501,8 @@ func writeCollectionError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "collection_slug_conflict", "collection slug is already in use")
 	case errors.Is(err, ErrEntrySlugConflict):
 		writeError(w, http.StatusConflict, "entry_slug_conflict", "entry slug is already in use")
+	case errors.Is(err, sites.ErrDraftConflict):
+		writeError(w, http.StatusConflict, "draft_conflict", "this draft changed while your edit was in flight; reload the latest version and try again")
 	case errors.Is(err, ErrCollectionLabelRequired):
 		writeError(w, http.StatusBadRequest, "invalid_collection_label", "collection labels are required")
 	case errors.Is(err, ErrCollectionSlugInvalid):
