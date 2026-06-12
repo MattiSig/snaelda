@@ -1597,6 +1597,7 @@ export async function updateBlock(
   input: {
     props?: Record<string, unknown>;
     hidden?: boolean;
+    bindings?: Record<string, BlockBinding>;
   },
 ) {
   return apiFetch<{ draft: SiteDraft }>(

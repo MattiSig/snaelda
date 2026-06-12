@@ -64,10 +64,10 @@ Refreshed 2026-06-09 from a spec-to-source audit of `specs/*`, `internal/*`, `ap
   - Audit events and API responses now include the job id, history id, and revision identifiers; the History panel renders the new scope chips alongside site/page/block entries.
   - Batches still persist atomically through `Mutator.CreateEntries`, generated entries default to draft status, and failures mark the job failed with the model error preserved for retry diagnostics.
 
-- [ ] Complete collection-template authoring.
-  - Expose page type and collection selection when creating/editing pages.
-  - Extend block mutation contracts with validated `bindings`.
-  - Add typed binding controls and preserve bindings when duplicating blocks.
+- [x] Complete collection-template authoring.
+  - Page create form now exposes `static` / `collection_index` / `collection_detail` and a collection picker; the edit form surfaces the (immutable) type and an editable bound-collection picker for collection-typed pages.
+  - `UpdateBlock` now accepts a validated `bindings` map through the API, mutator, and write path; existing draft validation rejects bindings outside `collection_detail`, unbindable props, or type-mismatched fields.
+  - The block details drawer renders typed binding controls per bindable prop in `collection_detail` templates, only offering compatible entry fields; duplication now copies bindings to the new block instance.
 
 - [ ] Build the complete entry workspace.
   - Add edit, duplicate, reorder, SEO, status, and typed validation flows.

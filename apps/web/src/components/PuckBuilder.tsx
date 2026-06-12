@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import {
   type AssetRecord,
+  type BlockBinding,
   type BlockDefinition,
   type BlockSuggestInput,
   type ImageApplyResponse,
@@ -218,6 +219,10 @@ type PuckBuilderProps = {
     value: unknown,
   ) => void;
   onToggleHidden: (blockId: string, hidden: boolean) => Promise<void>;
+  onUpdateBindings: (
+    blockId: string,
+    bindings: Record<string, BlockBinding>,
+  ) => Promise<void>;
   onSuggestBlock?: (input: BlockSuggestInput) => Promise<void>;
   isSuggestingBlock?: boolean;
   suggestErrorMessage?: string;
@@ -267,6 +272,7 @@ export function PuckBuilder({
   onSelectBlock,
   onEditField,
   onToggleHidden,
+  onUpdateBindings,
   onSuggestBlock,
   isSuggestingBlock,
   suggestErrorMessage,
@@ -361,6 +367,7 @@ export function PuckBuilder({
               onSelectBlock={onSelectBlock}
               onEditField={onEditField}
               onToggleHidden={onToggleHidden}
+              onUpdateBindings={onUpdateBindings}
               onSuggestBlock={onSuggestBlock}
               isSuggestingBlock={isSuggestingBlock}
               suggestErrorMessage={suggestErrorMessage}
@@ -688,6 +695,7 @@ function ContentWorkspace({
   onSelectBlock,
   onEditField,
   onToggleHidden,
+  onUpdateBindings,
   onSuggestBlock,
   isSuggestingBlock,
   suggestErrorMessage,
@@ -718,6 +726,10 @@ function ContentWorkspace({
     value: unknown,
   ) => void;
   onToggleHidden: (blockId: string, hidden: boolean) => Promise<void>;
+  onUpdateBindings: (
+    blockId: string,
+    bindings: Record<string, BlockBinding>,
+  ) => Promise<void>;
   onSuggestBlock?: (input: BlockSuggestInput) => Promise<void>;
   isSuggestingBlock?: boolean;
   suggestErrorMessage?: string;
@@ -798,6 +810,8 @@ function ContentWorkspace({
       editField: onEditField,
       assetLibrary: uploadedSiteAssets,
       blockDefinitions,
+      pages: draft.pages,
+      collections: draft.collections ?? [],
       onSuggestBlock,
       isSuggestingBlock,
       onImageApplied,
@@ -805,6 +819,7 @@ function ContentWorkspace({
       onDuplicateBlock,
       onDeleteBlock,
       onToggleHidden,
+      onUpdateBindings,
       canMoveUp,
       canMoveDown,
     }),
@@ -815,6 +830,8 @@ function ContentWorkspace({
       onEditField,
       uploadedSiteAssets,
       blockDefinitions,
+      draft.pages,
+      draft.collections,
       onSuggestBlock,
       isSuggestingBlock,
       onImageApplied,
@@ -822,6 +839,7 @@ function ContentWorkspace({
       onDuplicateBlock,
       onDeleteBlock,
       onToggleHidden,
+      onUpdateBindings,
       canMoveUp,
       canMoveDown,
     ],

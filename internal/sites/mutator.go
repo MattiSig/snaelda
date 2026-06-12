@@ -114,8 +114,10 @@ type CreateBlockInput struct {
 }
 
 type UpdateBlockInput struct {
-	Props  map[string]any
-	Hidden *bool
+	Props    map[string]any
+	Hidden   *bool
+	Bindings map[string]siteconfig.BlockBinding
+	SetBindings bool
 }
 
 type PostgresMutator struct {
@@ -605,7 +607,7 @@ func (m *PostgresMutator) CreateBlock(ctx context.Context, workspaceID string, s
 }
 
 func (m *PostgresMutator) UpdateBlock(ctx context.Context, workspaceID string, siteID string, pageID string, blockID string, input UpdateBlockInput) (siteconfig.SiteDraft, error) {
-	if input.Props == nil && input.Hidden == nil {
+	if input.Props == nil && input.Hidden == nil && !input.SetBindings {
 		return siteconfig.SiteDraft{}, ErrNoBlockChanges
 	}
 
@@ -643,6 +645,13 @@ func (m *PostgresMutator) UpdateBlock(ctx context.Context, workspaceID string, s
 	}
 	if input.Hidden != nil {
 		block.Settings.Hidden = *input.Hidden
+	}
+	if input.SetBindings {
+		if len(input.Bindings) == 0 {
+			block.Bindings = nil
+		} else {
+			block.Bindings = input.Bindings
+		}
 	}
 	draft.Pages[pageIndex].Blocks[blockIndex] = block
 
@@ -718,6 +727,7 @@ func (m *PostgresMutator) DuplicateBlock(ctx context.Context, workspaceID string
 		Version:  block.Version,
 		Props:    deepCloneMap(block.Props),
 		Settings: deepCloneBlockSettings(block.Settings),
+		Bindings: cloneBindings(block.Bindings),
 	}
 	blocks := draft.Pages[pageIndex].Blocks
 	blocks = append(blocks[:blockIndex+1], append([]siteconfig.BlockInstance{duplicate}, blocks[blockIndex+1:]...)...)
@@ -1150,6 +1160,17 @@ func deepCloneBlockSettings(value siteconfig.BlockSettings) siteconfig.BlockSett
 		Hidden:   value.Hidden,
 		AnchorID: value.AnchorID,
 	}
+}
+
+func cloneBindings(value map[string]siteconfig.BlockBinding) map[string]siteconfig.BlockBinding {
+	if len(value) == 0 {
+		return nil
+	}
+	cloned := make(map[string]siteconfig.BlockBinding, len(value))
+	for key, binding := range value {
+		cloned[key] = binding
+	}
+	return cloned
 }
 
 func starterDraft(name string, slugValue string, prompt string) (siteconfig.SiteDraft, error) {

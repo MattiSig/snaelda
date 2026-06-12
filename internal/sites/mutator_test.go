@@ -822,6 +822,284 @@ func TestReorderBlocksPersistsRequestedOrder(t *testing.T) {
 	}
 }
 
+func TestUpdateBlockPersistsBindings(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := collectionDetailDraft()
+	store.drafts[draft.Site.ID] = draft
+
+	mutator := &PostgresMutator{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	updated, err := mutator.UpdateBlock(
+		context.Background(),
+		"workspace-1",
+		draft.Site.ID,
+		"page_service_detail",
+		"block_hero",
+		UpdateBlockInput{
+			SetBindings: true,
+			Bindings: map[string]siteconfig.BlockBinding{
+				"headline": {Source: siteconfig.BlockBindingSourceEntry, Field: "title"},
+				"body":     {Source: siteconfig.BlockBindingSourceEntry, Field: "summary"},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("update block bindings: %v", err)
+	}
+	page := findPage(updated, "page_service_detail")
+	if got := page.Blocks[0].Bindings["headline"].Field; got != "title" {
+		t.Fatalf("expected headline binding to title, got %q", got)
+	}
+	if got := page.Blocks[0].Bindings["body"].Field; got != "summary" {
+		t.Fatalf("expected body binding to summary, got %q", got)
+	}
+}
+
+func findPage(draft siteconfig.SiteDraft, pageID string) siteconfig.PageDraft {
+	for _, page := range draft.Pages {
+		if page.ID == pageID {
+			return page
+		}
+	}
+	panic("page not found: " + pageID)
+}
+
+func TestUpdateBlockClearsBindingsWhenEmpty(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := collectionDetailDraft()
+	for i := range draft.Pages {
+		if draft.Pages[i].ID == "page_service_detail" {
+			draft.Pages[i].Blocks[0].Bindings = map[string]siteconfig.BlockBinding{
+				"headline": {Source: siteconfig.BlockBindingSourceEntry, Field: "title"},
+			}
+		}
+	}
+	store.drafts[draft.Site.ID] = draft
+
+	mutator := &PostgresMutator{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	updated, err := mutator.UpdateBlock(
+		context.Background(),
+		"workspace-1",
+		draft.Site.ID,
+		"page_service_detail",
+		"block_hero",
+		UpdateBlockInput{
+			SetBindings: true,
+			Bindings:    map[string]siteconfig.BlockBinding{},
+		},
+	)
+	if err != nil {
+		t.Fatalf("clear bindings: %v", err)
+	}
+	if got := findPage(updated, "page_service_detail").Blocks[0].Bindings; len(got) != 0 {
+		t.Fatalf("expected bindings cleared, got %#v", got)
+	}
+}
+
+func TestUpdateBlockRejectsIncompatibleBinding(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := collectionDetailDraft()
+	store.drafts[draft.Site.ID] = draft
+
+	mutator := &PostgresMutator{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	_, err := mutator.UpdateBlock(
+		context.Background(),
+		"workspace-1",
+		draft.Site.ID,
+		"page_service_detail",
+		"block_hero",
+		UpdateBlockInput{
+			SetBindings: true,
+			Bindings: map[string]siteconfig.BlockBinding{
+				"image": {Source: siteconfig.BlockBindingSourceEntry, Field: "title"},
+			},
+		},
+	)
+	if err == nil {
+		t.Fatalf("expected validation error binding text to image, got nil")
+	}
+	var validationErr siteconfig.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected ValidationError, got %v", err)
+	}
+}
+
+func TestUpdateBlockRejectsBindingOnStaticPage(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := validHandlerDraft()
+	draft.Site.ID = "site-static"
+	store.drafts[draft.Site.ID] = draft
+
+	mutator := &PostgresMutator{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	_, err := mutator.UpdateBlock(
+		context.Background(),
+		"workspace-1",
+		draft.Site.ID,
+		"page_home",
+		"block_hero",
+		UpdateBlockInput{
+			SetBindings: true,
+			Bindings: map[string]siteconfig.BlockBinding{
+				"headline": {Source: siteconfig.BlockBindingSourceEntry, Field: "title"},
+			},
+		},
+	)
+	if err == nil {
+		t.Fatalf("expected validation error binding on static page, got nil")
+	}
+	var validationErr siteconfig.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected ValidationError, got %v", err)
+	}
+}
+
+func TestDuplicateBlockPreservesBindings(t *testing.T) {
+	store := newFakeMutationStore()
+	draft := collectionDetailDraft()
+	for i := range draft.Pages {
+		if draft.Pages[i].ID == "page_service_detail" {
+			draft.Pages[i].Blocks[0].Bindings = map[string]siteconfig.BlockBinding{
+				"headline": {Source: siteconfig.BlockBindingSourceEntry, Field: "title"},
+				"body":     {Source: siteconfig.BlockBindingSourceEntry, Field: "summary"},
+			}
+		}
+	}
+	store.drafts[draft.Site.ID] = draft
+
+	mutator := &PostgresMutator{
+		db:     store,
+		reader: store,
+		writer: store,
+	}
+
+	updated, err := mutator.DuplicateBlock(
+		context.Background(),
+		"workspace-1",
+		draft.Site.ID,
+		"page_service_detail",
+		"block_hero",
+	)
+	if err != nil {
+		t.Fatalf("duplicate block: %v", err)
+	}
+	blocks := findPage(updated, "page_service_detail").Blocks
+	if len(blocks) != 2 {
+		t.Fatalf("expected duplicated block, got %d", len(blocks))
+	}
+	duplicate := blocks[1]
+	if duplicate.ID == blocks[0].ID {
+		t.Fatalf("expected new id on duplicate, got same as source")
+	}
+	if duplicate.Bindings["headline"].Field != "title" {
+		t.Fatalf("expected duplicated headline binding, got %#v", duplicate.Bindings)
+	}
+	if duplicate.Bindings["body"].Field != "summary" {
+		t.Fatalf("expected duplicated body binding, got %#v", duplicate.Bindings)
+	}
+	// Mutating the duplicate's bindings must not affect the source map.
+	duplicate.Bindings["headline"] = siteconfig.BlockBinding{
+		Source: siteconfig.BlockBindingSourceEntry,
+		Field:  "summary",
+	}
+	if blocks[0].Bindings["headline"].Field != "title" {
+		t.Fatalf("expected source bindings unchanged after duplicate mutation")
+	}
+}
+
+// collectionDetailDraft returns a fixture that includes a published
+// collection with two text fields and a collection_detail page whose hero
+// block lives at page_service_detail / block_hero. The fixture is the
+// minimum viable shape for exercising binding validation paths.
+func collectionDetailDraft() siteconfig.SiteDraft {
+	draft := validHandlerDraft()
+	draft.Site.ID = "site-collection"
+	draft.Collections = []siteconfig.Collection{
+		{
+			ID:            "col_services",
+			Slug:          "services",
+			SingularLabel: "Service",
+			PluralLabel:   "Services",
+			Schema: []siteconfig.FieldDefinition{
+				{Key: "title", Label: "Title", Type: siteconfig.FieldTypeText, Required: true},
+				{Key: "summary", Label: "Summary", Type: siteconfig.FieldTypeLongText},
+				{Key: "cover", Label: "Cover image", Type: siteconfig.FieldTypeAsset},
+			},
+			Entries: []siteconfig.CollectionEntry{
+				{
+					ID:   "entry_scaffolding",
+					Slug: "scaffolding",
+					Fields: map[string]any{
+						"title":   "Scaffolding",
+						"summary": "Scalable scaffolding for buildings and projects.",
+					},
+					Status: siteconfig.EntryStatusPublished,
+				},
+			},
+		},
+	}
+	draft.Pages = []siteconfig.PageDraft{
+		{
+			ID:    "page_home",
+			Title: "Home",
+			Slug:  "/",
+			Blocks: []siteconfig.BlockInstance{
+				{
+					ID:      "block_home_hero",
+					Type:    "hero",
+					Version: siteconfig.BlockVersionV1,
+					Props: map[string]any{
+						"headline": "Welcome",
+						"layout":   "centered",
+					},
+				},
+			},
+		},
+		{
+			ID:           "page_service_detail",
+			Title:        "Service detail",
+			Slug:         "/service-detail",
+			Type:         siteconfig.PageTypeCollectionDetail,
+			CollectionID: "col_services",
+			Blocks: []siteconfig.BlockInstance{
+				{
+					ID:      "block_hero",
+					Type:    "hero",
+					Version: siteconfig.BlockVersionV1,
+					Props: map[string]any{
+						"headline": "Default headline",
+						"layout":   "centered",
+					},
+				},
+			},
+		},
+	}
+	draft.Navigation = siteconfig.NavigationConfig{
+		Primary: []siteconfig.NavigationItem{
+			{Label: "Home", PageID: "page_home"},
+		},
+	}
+	return draft
+}
+
 type fakeMutationStore struct {
 	drafts  map[string]siteconfig.SiteDraft
 	prompts map[string]string

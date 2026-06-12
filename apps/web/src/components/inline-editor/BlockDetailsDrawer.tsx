@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { BlockEditor } from '@/components/BlockEditor';
 import { useInlineEditor } from './context';
 import { setAtPath } from './path';
+import { BlockBindingsEditor } from './BlockBindingsEditor';
 import type { BlockDefinition, SiteDraft } from '@/lib/api';
 import { text } from '@/lib/styles';
 import { cn } from '@/lib/utils';
@@ -32,6 +33,16 @@ export function BlockDetailsDrawer({
   }, [onClose]);
 
   if (!ctx) return null;
+
+  const ownerPage = ctx.pages.find((page) =>
+    page.blocks.some((entry) => entry.id === block.id),
+  );
+  const isCollectionDetail = ownerPage?.type === 'collection_detail';
+  const ownerCollection = isCollectionDetail
+    ? ctx.collections.find(
+        (collection) => collection.id === ownerPage?.collectionId,
+      )
+    : undefined;
 
   async function handleSave(
     props: Record<string, unknown>,
@@ -115,6 +126,24 @@ export function BlockDetailsDrawer({
             siteId={ctx.siteId}
             onImageApplied={ctx.onImageApplied}
           />
+          {isCollectionDetail && ownerCollection ? (
+            <div className="mt-4">
+              <BlockBindingsEditor
+                block={block}
+                definition={definition}
+                collection={ownerCollection}
+                onSave={(bindings) =>
+                  ctx.onUpdateBindings(block.id, bindings)
+                }
+              />
+            </div>
+          ) : isCollectionDetail ? (
+            <div className="mt-4 rounded-[10px] border border-border bg-[color-mix(in_oklch,var(--surface-2)_45%,transparent)] p-3 text-xs text-[var(--paper-muted)]">
+              This template is not bound to a collection yet. Pick a
+              collection in Pages → Bound collection to enable field
+              bindings.
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

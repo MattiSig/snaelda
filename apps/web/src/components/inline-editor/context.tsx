@@ -1,9 +1,12 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import type {
   AssetRecord,
+  BlockBinding,
   BlockDefinition,
   BlockSuggestInput,
+  Collection,
   ImageApplyResponse,
+  SiteDraft,
 } from '@/lib/api';
 
 export type InlineEditorContextValue = {
@@ -14,6 +17,8 @@ export type InlineEditorContextValue = {
   editField: (blockId: string, path: ReadonlyArray<string | number>, value: unknown) => void;
   assetLibrary: AssetRecord[];
   blockDefinitions: Map<string, BlockDefinition>;
+  pages: SiteDraft['pages'];
+  collections: Collection[];
   onSuggestBlock?: (input: BlockSuggestInput) => Promise<void>;
   isSuggestingBlock?: boolean;
   onImageApplied?: (response: ImageApplyResponse) => void;
@@ -21,6 +26,10 @@ export type InlineEditorContextValue = {
   onDuplicateBlock: () => Promise<void> | void;
   onDeleteBlock: () => Promise<void> | void;
   onToggleHidden: (blockId: string, hidden: boolean) => Promise<void> | void;
+  onUpdateBindings: (
+    blockId: string,
+    bindings: Record<string, BlockBinding>,
+  ) => Promise<void> | void;
   canMoveUp: boolean;
   canMoveDown: boolean;
 };

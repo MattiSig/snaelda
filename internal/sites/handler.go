@@ -139,8 +139,9 @@ type createBlockRequest struct {
 }
 
 type updateBlockRequest struct {
-	Props  map[string]any `json:"props,omitempty"`
-	Hidden *bool          `json:"hidden,omitempty"`
+	Props    map[string]any                     `json:"props,omitempty"`
+	Hidden   *bool                              `json:"hidden,omitempty"`
+	Bindings *map[string]siteconfig.BlockBinding `json:"bindings,omitempty"`
 }
 
 type reorderBlocksRequest struct {
@@ -568,10 +569,15 @@ func (h *Handler) updateBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	draft, err := h.mutator.UpdateBlock(r.Context(), scope.WorkspaceID, siteID, pageID, blockID, UpdateBlockInput{
+	input := UpdateBlockInput{
 		Props:  payload.Props,
 		Hidden: payload.Hidden,
-	})
+	}
+	if payload.Bindings != nil {
+		input.SetBindings = true
+		input.Bindings = *payload.Bindings
+	}
+	draft, err := h.mutator.UpdateBlock(r.Context(), scope.WorkspaceID, siteID, pageID, blockID, input)
 	if err != nil {
 		writeSiteError(w, err)
 		return

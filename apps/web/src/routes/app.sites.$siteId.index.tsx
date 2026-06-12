@@ -56,6 +56,7 @@ import {
   type NavigationItemInput,
   type AssetRecord,
   type BillingState,
+  type BlockBinding,
   type BlockDefinition,
   type BlockSuggestInput,
   type FormSubmissionRecord,
@@ -63,6 +64,7 @@ import {
   type FormSubmissionStatus,
   type GenerationMetadata,
   type DraftRevisionRecord,
+  type PageType,
   type RepromptHistoryRecord,
   type SiteDraft,
   type SiteDomainsResponse,
@@ -205,6 +207,8 @@ function SiteDetail() {
   );
   const [newPageTitle, setNewPageTitle] = useState("");
   const [newPageSlug, setNewPageSlug] = useState("");
+  const [newPageType, setNewPageType] = useState<PageType>("static");
+  const [newPageCollectionId, setNewPageCollectionId] = useState("");
   const [newPageIncludeInNavigation, setNewPageIncludeInNavigation] =
     useState(true);
   const [pageTitle, setPageTitle] = useState("");
@@ -212,6 +216,7 @@ function SiteDetail() {
   const [pageStatus, setPageStatus] = useState<"draft" | "published">("draft");
   const [pageSEOTitle, setPageSEOTitle] = useState("");
   const [pageSEODescription, setPageSEODescription] = useState("");
+  const [pageCollectionId, setPageCollectionId] = useState("");
   const [pageIncludeInNavigation, setPageIncludeInNavigation] = useState(true);
   const [siteAssets, setSiteAssets] = useState<AssetRecord[]>([]);
   const [formSubmissions, setFormSubmissions] = useState<
@@ -407,6 +412,7 @@ function SiteDetail() {
       setPageStatus("draft");
       setPageSEOTitle("");
       setPageSEODescription("");
+      setPageCollectionId("");
       setPageIncludeInNavigation(true);
       return;
     }
@@ -416,6 +422,7 @@ function SiteDetail() {
     setPageStatus(nextPage.status === "published" ? "published" : "draft");
     setPageSEOTitle(nextPage.seo?.title ?? "");
     setPageSEODescription(nextPage.seo?.description ?? "");
+    setPageCollectionId(nextPage.collectionId ?? "");
     setPageIncludeInNavigation(
       nextDraft.navigation.primary.some((item) => item.pageId === nextPage.id),
     );
@@ -685,10 +692,23 @@ function SiteDetail() {
     setPageStatusMessage("");
     clearBlockedAction();
 
+    if (
+      newPageType !== "static" &&
+      newPageCollectionId.trim() === ""
+    ) {
+      setPageErrorMessage(
+        "Pick a collection for collection_index and collection_detail pages.",
+      );
+      setIsCreatingPage(false);
+      return;
+    }
     try {
       const response = await createPage(siteId, {
         title: newPageTitle,
         slug: newPageSlug || undefined,
+        type: newPageType,
+        collectionId:
+          newPageType === "static" ? undefined : newPageCollectionId,
         includeInNavigation: newPageIncludeInNavigation,
       });
       const createdPage = findNewPage(draft, response.draft);
@@ -699,6 +719,8 @@ function SiteDetail() {
       );
       setNewPageTitle("");
       setNewPageSlug("");
+      setNewPageType("static");
+      setNewPageCollectionId("");
       setNewPageIncludeInNavigation(true);
       setPageStatusMessage("Page added to the draft.");
     } catch (error) {
@@ -731,6 +753,9 @@ function SiteDetail() {
     clearBlockedAction();
 
     try {
+      const isCollectionPage =
+        selectedPage.type === "collection_index" ||
+        selectedPage.type === "collection_detail";
       const response = await updatePage(siteId, selectedPage.id, {
         title: pageTitle,
         slug: pageSlug,
@@ -740,6 +765,9 @@ function SiteDetail() {
           description: pageSEODescription,
         },
         includeInNavigation: pageIncludeInNavigation,
+        ...(isCollectionPage
+          ? { collectionId: pageCollectionId }
+          : {}),
       });
       applyDraftUpdate(response.draft, selectedPage.id, selectedBlock?.id);
       setPageStatusMessage("Page details saved.");
@@ -1028,6 +1056,43 @@ function SiteDetail() {
         await refreshDraftState(ownerPage.id, blockId).catch(() => null);
       }
     });
+  }
+
+  async function handleUpdateBindings(
+    blockId: string,
+    bindings: Record<string, BlockBinding>,
+  ) {
+    const currentDraft = draftRef.current;
+    if (!currentDraft) return;
+    const ownerPage = currentDraft.pages.find((page) =>
+      page.blocks.some((block) => block.id === blockId),
+    );
+    if (!ownerPage) return;
+
+    setBlockErrorMessage("");
+    setBlockStatusMessage("");
+    try {
+      await enqueueBlockSave(blockId, async () => {
+        const response = await updateBlock(siteId, ownerPage.id, blockId, {
+          bindings,
+        });
+        applyDraftUpdate(response.draft, ownerPage.id, blockId);
+      });
+      setBlockStatusMessage("Bindings saved.");
+    } catch (error) {
+      if (isDraftConflictError(error)) {
+        const message = await recoverDraftConflict({
+          preferredPageID: ownerPage.id,
+          preferredBlockID: blockId,
+        });
+        setBlockErrorMessage(message);
+        throw new Error(message, { cause: error });
+      }
+      const message =
+        error instanceof APIError ? error.message : "Could not save bindings";
+      setBlockErrorMessage(message);
+      throw error instanceof Error ? error : new Error(message);
+    }
   }
 
   async function handleToggleHidden(blockId: string, hidden: boolean) {
@@ -2143,6 +2208,45 @@ function SiteDetail() {
                   <option value="published">Published</option>
                 </Select>
               </div>
+              <div className={form.field}>
+                <label htmlFor="pages-edit-type" className={text.label}>
+                  Page type
+                </label>
+                <Input
+                  id="pages-edit-type"
+                  value={pageTypeLabel(selectedPage.type)}
+                  readOnly
+                  disabled
+                />
+                <p className={form.hint}>
+                  Type is fixed after the page is created.
+                </p>
+              </div>
+              {selectedPage.type === "collection_index" ||
+              selectedPage.type === "collection_detail" ? (
+                <div className={form.field}>
+                  <label
+                    htmlFor="pages-edit-collection"
+                    className={text.label}
+                  >
+                    Bound collection
+                  </label>
+                  <Select
+                    id="pages-edit-collection"
+                    value={pageCollectionId}
+                    onChange={(event) =>
+                      setPageCollectionId(event.target.value)
+                    }
+                  >
+                    <option value="">Select a collection</option>
+                    {(draft.collections ?? []).map((collection) => (
+                      <option key={collection.id} value={collection.id}>
+                        {collection.pluralLabel}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              ) : null}
             </div>
             <label className={form.toggle}>
               <input
@@ -2239,6 +2343,66 @@ function SiteDetail() {
             onChange={(event) => setNewPageSlug(event.target.value)}
             placeholder="/pricing"
           />
+
+          <label htmlFor="new-page-type" className={text.label}>
+            Page type
+          </label>
+          <Select
+            id="new-page-type"
+            value={newPageType}
+            onChange={(event) => {
+              const value = event.target.value as PageType;
+              setNewPageType(value);
+              if (value === "static") {
+                setNewPageCollectionId("");
+              }
+            }}
+          >
+            <option value="static">Static — hand-authored page</option>
+            <option
+              value="collection_index"
+              disabled={(draft.collections ?? []).length === 0}
+            >
+              Collection index — list a collection
+            </option>
+            <option
+              value="collection_detail"
+              disabled={(draft.collections ?? []).length === 0}
+            >
+              Collection detail — one URL per entry
+            </option>
+          </Select>
+          {(draft.collections ?? []).length === 0 ? (
+            <p className={form.hint}>
+              Create a collection first to enable collection page types.
+            </p>
+          ) : null}
+
+          {newPageType !== "static" ? (
+            <>
+              <label
+                htmlFor="new-page-collection"
+                className={text.label}
+              >
+                Bound collection
+              </label>
+              <Select
+                id="new-page-collection"
+                value={newPageCollectionId}
+                onChange={(event) =>
+                  setNewPageCollectionId(event.target.value)
+                }
+                required
+              >
+                <option value="">Select a collection</option>
+                {(draft.collections ?? []).map((collection) => (
+                  <option key={collection.id} value={collection.id}>
+                    {collection.pluralLabel}
+                  </option>
+                ))}
+              </Select>
+            </>
+          ) : null}
 
           <label className={form.toggle}>
             <input
@@ -4235,6 +4399,7 @@ function SiteDetail() {
         onSelectBlock={handleSelectBlock}
         onEditField={handleEditField}
         onToggleHidden={handleToggleHidden}
+        onUpdateBindings={handleUpdateBindings}
         onSuggestBlock={handleSuggestBlock}
         isSuggestingBlock={isSuggestingBlock}
         suggestErrorMessage={suggestErrorMessage}
@@ -4289,6 +4454,17 @@ function SiteDetail() {
       />
     </>
   );
+}
+
+function pageTypeLabel(type: PageType | undefined): string {
+  switch (type) {
+    case "collection_index":
+      return "Collection index";
+    case "collection_detail":
+      return "Collection detail";
+    default:
+      return "Static";
+  }
 }
 
 function findNewPage(previousDraft: SiteDraft | null, nextDraft: SiteDraft) {
