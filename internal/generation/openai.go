@@ -965,6 +965,71 @@ func (p *OpenAIPlanner) DraftEntries(ctx context.Context, request EntryDraftRequ
 	return EntryDraftResponse{Entries: out}, nil
 }
 
+// RewriteEntry revises one existing entry in place. The model may keep the
+// slug/SEO intact or propose refinements, but it must stay within the
+// collection schema.
+func (p *OpenAIPlanner) RewriteEntry(ctx context.Context, request EntryRewriteRequest) (EntryRewriteResponse, error) {
+	if p == nil {
+		return EntryRewriteResponse{}, ErrBlockSuggestUnavailable
+	}
+	userJSON, err := json.Marshal(request)
+	if err != nil {
+		return EntryRewriteResponse{}, fmt.Errorf("encode entry rewrite request: %w", err)
+	}
+	schema := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"entry", "changeSummary"},
+		"properties": map[string]any{
+			"changeSummary": map[string]any{"type": "string", "maxLength": 180},
+			"entry": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"required":             []string{"slug", "fields"},
+				"properties": map[string]any{
+					"slug": map[string]any{
+						"type":        "string",
+						"pattern":     "^[a-z][a-z0-9-]*$",
+						"description": "URL slug, lowercase words separated by hyphens",
+					},
+					"fields": map[string]any{
+						"type":                 "object",
+						"additionalProperties": true,
+					},
+					"seo": map[string]any{
+						"type":                 "object",
+						"additionalProperties": false,
+						"properties": map[string]any{
+							"title":       map[string]any{"type": "string", "maxLength": 80},
+							"description": map[string]any{"type": "string", "maxLength": 180},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	var response openAIEntryRewritePayload
+	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
+		Name:   "collection_entry_rewrite",
+		Schema: schema,
+		System: collectionEntryRewriteSystemPrompt,
+		User:   string(userJSON),
+		Strict: false,
+	}, &response); err != nil {
+		return EntryRewriteResponse{}, err
+	}
+
+	return EntryRewriteResponse{
+		Entry: EntryDraft{
+			Slug:   response.Entry.Slug,
+			Fields: response.Entry.Fields,
+			SEO:    response.Entry.SEO,
+		},
+		ChangeSummary: response.ChangeSummary,
+	}, nil
+}
+
 // CollectionDraftRequest mirrors the collections package's drafter contract.
 // We re-declare it here so the generation package does not import collections
 // (which would create a dependency loop — collections already references
@@ -1015,6 +1080,19 @@ type EntryDraft struct {
 	SEO    siteconfig.SEOConfig `json:"seo,omitempty"`
 }
 
+type EntryRewriteRequest struct {
+	Prompt     string               `json:"prompt"`
+	SiteName   string               `json:"siteName,omitempty"`
+	SiteGoal   string               `json:"siteGoal,omitempty"`
+	Collection EntryDraftCollection `json:"collection"`
+	Entry      EntryDraft           `json:"entry"`
+}
+
+type EntryRewriteResponse struct {
+	Entry         EntryDraft `json:"entry"`
+	ChangeSummary string     `json:"changeSummary,omitempty"`
+}
+
 type openAICollectionDraftPayload struct {
 	Slug          string                            `json:"slug"`
 	SingularLabel string                            `json:"singularLabel"`
@@ -1039,6 +1117,11 @@ type openAIEntryDraftEntry struct {
 	Slug   string               `json:"slug"`
 	Fields map[string]any       `json:"fields"`
 	SEO    siteconfig.SEOConfig `json:"seo,omitempty"`
+}
+
+type openAIEntryRewritePayload struct {
+	Entry         openAIEntryDraftEntry `json:"entry"`
+	ChangeSummary string                `json:"changeSummary"`
 }
 
 type structuredCompletionRequest struct {
@@ -1377,6 +1460,35 @@ Field value rules:
 
 Write credible starter content, but do not invent external facts like real prices, phone numbers, emails, URLs, addresses, credentials, or names of real people unless the user provided them. If a fact is missing, keep the wording generic and editable.
 Plain text only. No HTML, no Markdown.`
+
+const collectionEntryRewriteSystemPrompt = `You are the collection-entry editor for Snaelda's website builder.
+Return JSON only, matching the supplied schema exactly.
+Revise the provided existing entry in place according to the user's prompt.
+
+Input includes:
+- "collection": labels, slug, and schema for the target collection.
+- "entry": the current entry slug, fields, and SEO metadata.
+
+Required output:
+- "entry": the revised entry payload.
+- "changeSummary": one short past-tense sentence describing what changed.
+
+Rewrite rules:
+- Keep the entry recognizable unless the prompt explicitly asks for a rename or repositioning.
+- "entry.slug" should usually stay the same. Only change it when the prompt clearly changes the entry's title or URL intent.
+- "entry.fields" must use only keys from collection.schema. Do not invent field keys.
+- Preserve existing information that still fits the new direction. Improve clarity, specificity, and structure.
+- Required fields should stay filled. Optional fields may be omitted when no update is needed.
+- Asset, asset_list, and reference fields should be preserved unless the user explicitly asks to remove or replace them, so if you cannot improve them with the prompt just echo the current value or omit them.
+- For enum and enum_multi, choose only from the field's declared options.
+- text, long_text, rich_text, url, email, phone, date, enum: string values only.
+- number: number values only.
+- boolean: true or false only.
+- enum_multi: array of strings selected from the field's options.
+- location: object with "name" and optional "region", "country", "lat", "lng".
+- SEO may be refined, but keep it honest and concise.
+
+Write plain text only. No HTML, no Markdown. Do not invent external facts the user did not provide.`
 
 const imageQueryRewriterSystemPrompt = `You are the image-search query writer for Snaelda's website builder.
 Return JSON only, matching the supplied schema exactly.

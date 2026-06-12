@@ -721,6 +721,36 @@ func (a collectionDrafterAdapter) DraftEntries(ctx context.Context, request coll
 	return collections.EntryDraftResponse{Entries: entries}, nil
 }
 
+func (a collectionDrafterAdapter) RewriteEntry(ctx context.Context, request collections.EntryRewriteRequest) (collections.EntryRewriteResponse, error) {
+	resp, err := a.planner.RewriteEntry(ctx, generation.EntryRewriteRequest{
+		Prompt:   request.Prompt,
+		SiteName: request.SiteName,
+		SiteGoal: request.SiteGoal,
+		Collection: generation.EntryDraftCollection{
+			SingularLabel: request.Collection.SingularLabel,
+			PluralLabel:   request.Collection.PluralLabel,
+			Slug:          request.Collection.Slug,
+			Schema:        request.Collection.Schema,
+		},
+		Entry: generation.EntryDraft{
+			Slug:   request.Entry.Slug,
+			Fields: request.Entry.Fields,
+			SEO:    request.Entry.SEO,
+		},
+	})
+	if err != nil {
+		return collections.EntryRewriteResponse{}, err
+	}
+	return collections.EntryRewriteResponse{
+		Entry: collections.EntryDraft{
+			Slug:   resp.Entry.Slug,
+			Fields: resp.Entry.Fields,
+			SEO:    resp.Entry.SEO,
+		},
+		ChangeSummary: resp.ChangeSummary,
+	}, nil
+}
+
 func mapEntryDraftExisting(entries []collections.EntryDraftExisting) []generation.EntryDraftExisting {
 	out := make([]generation.EntryDraftExisting, 0, len(entries))
 	for _, entry := range entries {

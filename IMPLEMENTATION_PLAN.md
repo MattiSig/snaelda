@@ -69,10 +69,10 @@ Refreshed 2026-06-09 from a spec-to-source audit of `specs/*`, `internal/*`, `ap
   - `UpdateBlock` now accepts a validated `bindings` map through the API, mutator, and write path; existing draft validation rejects bindings outside `collection_detail`, unbindable props, or type-mismatched fields.
   - The block details drawer renders typed binding controls per bindable prop in `collection_detail` templates, only offering compatible entry fields; duplication now copies bindings to the new block instance.
 
-- [ ] Build the complete entry workspace.
-  - Add edit, duplicate, reorder, SEO, status, and typed validation flows.
-  - Use real controls for rich text, assets, asset lists, references, dates, locations, enum multi-select, email, phone, and URLs.
-  - Add entry-level AI rewrite with revision history and undo.
+- [x] Build the complete entry workspace.
+  - Entry authoring now supports edit, duplicate, reorder, SEO, status, and schema-aware validation flows, with successful writes clearing stale collection-level errors after later saves.
+  - The editor now uses real typed controls for rich text, assets, asset lists, references, dates, locations, enum multi-select, email, phone, and URLs.
+  - Entry-level AI rewrite now records revision history with summaries, diff/revert actions, and checkpoint restoration.
 
 - [ ] Make collection schema changes safe.
   - Add schema versions plus migration preview/apply APIs.
@@ -198,4 +198,4 @@ Refreshed 2026-06-09 from a spec-to-source audit of `specs/*`, `internal/*`, `ap
 - [x] Static page CRUD/SEO/navigation; block add/edit/hide/duplicate/delete/reorder; inline text/image editing.
 - [x] Site/page reprompt history foundation, revisions, revert, block AI rewrite, and image replacement.
 - [x] Theme editing/regeneration, required dark mode, asset upload/library, submission triage, preview links, publishing, rollback, analytics, custom-domain CRUD, billing foundation, and transactional-email transports.
-- [x] Collection CRUD, schema editing foundation, entry CRUD foundation, public collection rendering, and generic AI collection/entry drafting.
+- [x] Collection CRUD, schema editing, the complete entry workspace, public collection rendering, and generic AI collection/entry drafting.

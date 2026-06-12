@@ -7,6 +7,11 @@ export type APIErrorPayload = {
       };
   code?: string;
   message?: string;
+  issues?: Array<{
+    path: string;
+    code: string;
+    message: string;
+  }>;
 };
 
 export class APIError extends Error {
@@ -2147,6 +2152,42 @@ export async function updateCollectionEntry(
       body: JSON.stringify(input),
     },
   );
+}
+
+export async function duplicateCollectionEntry(
+  siteId: string,
+  collectionId: string,
+  entryId: string,
+) {
+  return apiFetch<{ entry: CollectionEntry }>(
+    `/api/sites/${siteId}/collections/${collectionId}/entries/${entryId}/duplicate`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    },
+  )
+}
+
+export async function repromptCollectionEntry(
+  siteId: string,
+  collectionId: string,
+  entryId: string,
+  input: { prompt: string },
+) {
+  return apiFetch<{
+    entry: CollectionEntry;
+    jobId?: string;
+    historyId?: string;
+    previousRevisionId?: string;
+    resultRevisionId?: string;
+  }>(
+    `/api/sites/${siteId}/collections/${collectionId}/entries/${entryId}/reprompt`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  )
 }
 
 export async function deleteCollectionEntry(

@@ -110,6 +110,25 @@ func TestCreateCollectionAssignsSlugAndID(t *testing.T) {
 	}
 }
 
+func TestCreateCollectionSeedsStarterSchemaWhenEmpty(t *testing.T) {
+	store := &memoryStore{draft: validDraft()}
+	mutator := NewMutator(store, store)
+
+	collection, err := mutator.CreateCollection(context.Background(), "workspace", "site_test_1", CreateCollectionInput{
+		SingularLabel: "Service",
+		PluralLabel:   "Services",
+	})
+	if err != nil {
+		t.Fatalf("create collection: %v", err)
+	}
+	if len(collection.Schema) != 1 {
+		t.Fatalf("expected a starter schema field, got %#v", collection.Schema)
+	}
+	if collection.Schema[0].Key != "title" || collection.Schema[0].Type != siteconfig.FieldTypeText {
+		t.Fatalf("expected title starter field, got %#v", collection.Schema[0])
+	}
+}
+
 func TestCreateEntryValidatesAgainstSchema(t *testing.T) {
 	store := &memoryStore{draft: validDraft()}
 	mutator := NewMutator(store, store)
@@ -233,5 +252,68 @@ func TestCreateEntriesPersistsBatchAtomically(t *testing.T) {
 	}
 	if len(savedCollection.Entries) != 0 {
 		t.Fatalf("expected batch failure to leave entries untouched, got %d", len(savedCollection.Entries))
+	}
+}
+
+func TestDuplicateEntryCreatesDraftCopyAfterSource(t *testing.T) {
+	store := &memoryStore{draft: validDraft()}
+	mutator := NewMutator(store, store)
+
+	collection, err := mutator.CreateCollection(context.Background(), "workspace", "site_test_1", CreateCollectionInput{
+		SingularLabel: "Service",
+		PluralLabel:   "Services",
+		Schema: []siteconfig.FieldDefinition{
+			{Key: "title", Label: "Title", Type: siteconfig.FieldTypeText, Required: true},
+			{Key: "summary", Label: "Summary", Type: siteconfig.FieldTypeLongText},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create collection: %v", err)
+	}
+	created, err := mutator.CreateEntry(context.Background(), "workspace", "site_test_1", collection.ID, CreateEntryInput{
+		Slug: "carpentry",
+		Fields: map[string]any{
+			"title":   "Carpentry",
+			"summary": "Repairs and rebuilds for older homes.",
+		},
+		SEO: siteconfig.SEOConfig{
+			Title:       "Carpentry",
+			Description: "Repairs and rebuilds for older homes.",
+		},
+		Status: siteconfig.EntryStatusPublished,
+	})
+	if err != nil {
+		t.Fatalf("create entry: %v", err)
+	}
+
+	duplicate, err := mutator.DuplicateEntry(context.Background(), "workspace", "site_test_1", collection.ID, created.ID)
+	if err != nil {
+		t.Fatalf("duplicate entry: %v", err)
+	}
+	if duplicate.ID == created.ID {
+		t.Fatal("expected duplicate id to differ from source")
+	}
+	if duplicate.Slug != "carpentry-copy" {
+		t.Fatalf("expected duplicate slug to derive from source, got %q", duplicate.Slug)
+	}
+	if duplicate.Status != siteconfig.EntryStatusDraft {
+		t.Fatalf("expected duplicate to reset to draft, got %q", duplicate.Status)
+	}
+
+	savedCollection, err := mutator.GetCollection(context.Background(), "site_test_1", collection.ID)
+	if err != nil {
+		t.Fatalf("get collection: %v", err)
+	}
+	if len(savedCollection.Entries) != 2 {
+		t.Fatalf("expected 2 entries after duplicate, got %d", len(savedCollection.Entries))
+	}
+	if savedCollection.Entries[0].ID != created.ID {
+		t.Fatalf("expected source entry to stay first, got %q", savedCollection.Entries[0].ID)
+	}
+	if savedCollection.Entries[1].ID != duplicate.ID {
+		t.Fatalf("expected duplicate to be inserted after source, got %q", savedCollection.Entries[1].ID)
+	}
+	if savedCollection.Entries[1].Fields["summary"] != "Repairs and rebuilds for older homes." {
+		t.Fatalf("expected duplicate fields to match source, got %#v", savedCollection.Entries[1].Fields)
 	}
 }

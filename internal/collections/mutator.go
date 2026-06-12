@@ -2,6 +2,7 @@ package collections
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -39,8 +40,9 @@ func NewMutator(reader Reader, writer Writer) *Mutator {
 	return &Mutator{reader: reader, writer: writer}
 }
 
-// CreateCollectionInput describes a new collection. Schema may be empty;
-// callers are expected to follow up with PATCH calls to populate it.
+// CreateCollectionInput describes a new collection. When Schema is empty we
+// seed a minimal required title field so the collection is immediately valid
+// and editable from the schema workspace.
 type CreateCollectionInput struct {
 	Slug          string
 	SingularLabel string
@@ -124,6 +126,9 @@ func (m *Mutator) CreateCollection(ctx context.Context, workspaceID string, site
 	}
 
 	schema := normalizeSchema(input.Schema)
+	if len(schema) == 0 {
+		schema = defaultCollectionSchema()
+	}
 
 	collection := siteconfig.Collection{
 		ID:            collectionID,
@@ -369,6 +374,58 @@ func (m *Mutator) UpdateEntry(ctx context.Context, workspaceID string, siteID st
 	return m.GetEntry(ctx, siteID, collectionID, entryID)
 }
 
+// DuplicateEntry clones an existing entry, inserts it directly after the
+// source row, and returns the persisted duplicate. Duplicates always start in
+// draft so users can safely revise them before publication.
+func (m *Mutator) DuplicateEntry(ctx context.Context, workspaceID string, siteID string, collectionID string, entryID string) (siteconfig.CollectionEntry, error) {
+	draft, err := m.reader.LoadDraft(ctx, siteID)
+	if err != nil {
+		return siteconfig.CollectionEntry{}, err
+	}
+	collectionIndex := findCollection(draft.Collections, collectionID)
+	if collectionIndex == -1 {
+		return siteconfig.CollectionEntry{}, ErrCollectionNotFound
+	}
+	collection := draft.Collections[collectionIndex]
+
+	entryIndex := findEntry(collection.Entries, entryID)
+	if entryIndex == -1 {
+		return siteconfig.CollectionEntry{}, ErrEntryNotFound
+	}
+	source := collection.Entries[entryIndex]
+	entrySlug, err := chooseEntrySlug("", source.Slug+"-copy", collection.Entries, "")
+	if err != nil {
+		return siteconfig.CollectionEntry{}, err
+	}
+	duplicateID, err := ids.New()
+	if err != nil {
+		return siteconfig.CollectionEntry{}, fmt.Errorf("generate entry id: %w", err)
+	}
+	duplicate := siteconfig.CollectionEntry{
+		ID:        duplicateID,
+		Slug:      entrySlug,
+		Fields:    cloneAnyMap(source.Fields),
+		SEO:       source.SEO,
+		Status:    siteconfig.EntryStatusDraft,
+		SortOrder: source.SortOrder + 1,
+	}
+
+	nextEntries := make([]siteconfig.CollectionEntry, 0, len(collection.Entries)+1)
+	nextEntries = append(nextEntries, collection.Entries[:entryIndex+1]...)
+	nextEntries = append(nextEntries, duplicate)
+	nextEntries = append(nextEntries, collection.Entries[entryIndex+1:]...)
+	for i := range nextEntries {
+		nextEntries[i].SortOrder = i
+	}
+	collection.Entries = nextEntries
+	draft.Collections[collectionIndex] = collection
+
+	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
+		return siteconfig.CollectionEntry{}, err
+	}
+	return m.GetEntry(ctx, siteID, collectionID, duplicateID)
+}
+
 // DeleteEntry removes an entry from a collection.
 func (m *Mutator) DeleteEntry(ctx context.Context, workspaceID string, siteID string, collectionID string, entryID string) error {
 	draft, err := m.reader.LoadDraft(ctx, siteID)
@@ -599,6 +656,40 @@ func trimStrings(values []string) []string {
 		out = append(out, trimmed)
 	}
 	return out
+}
+
+func defaultCollectionSchema() []siteconfig.FieldDefinition {
+	return []siteconfig.FieldDefinition{
+		{
+			Key:      "title",
+			Label:    "Title",
+			Type:     siteconfig.FieldTypeText,
+			Required: true,
+		},
+	}
+}
+
+func cloneAnyMap(input map[string]any) map[string]any {
+	if len(input) == 0 {
+		return map[string]any{}
+	}
+	payload, err := json.Marshal(input)
+	if err != nil {
+		out := make(map[string]any, len(input))
+		for key, value := range input {
+			out[key] = value
+		}
+		return out
+	}
+	var output map[string]any
+	if err := json.Unmarshal(payload, &output); err != nil {
+		out := make(map[string]any, len(input))
+		for key, value := range input {
+			out[key] = value
+		}
+		return out
+	}
+	return output
 }
 
 // stableSortCollections is exposed for parity with the sites assembler that

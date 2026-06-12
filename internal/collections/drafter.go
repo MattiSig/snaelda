@@ -15,6 +15,7 @@ import (
 type CollectionDrafter interface {
 	DraftCollection(ctx context.Context, request CollectionDraftRequest) (CollectionDraftResponse, error)
 	DraftEntries(ctx context.Context, request EntryDraftRequest) (EntryDraftResponse, error)
+	RewriteEntry(ctx context.Context, request EntryRewriteRequest) (EntryRewriteResponse, error)
 }
 
 // CollectionDraftRequest is the structured payload sent to the drafter. The
@@ -66,6 +67,23 @@ type EntryDraft struct {
 	Slug   string               `json:"slug,omitempty"`
 	Fields map[string]any       `json:"fields"`
 	SEO    siteconfig.SEOConfig `json:"seo,omitempty"`
+}
+
+// EntryRewriteRequest is the structured payload sent to the drafter when the
+// user wants AI to revise one existing entry in place.
+type EntryRewriteRequest struct {
+	Prompt     string               `json:"prompt"`
+	SiteName   string               `json:"siteName,omitempty"`
+	SiteGoal   string               `json:"siteGoal,omitempty"`
+	Collection EntryDraftCollection `json:"collection"`
+	Entry      EntryDraft           `json:"entry"`
+}
+
+// EntryRewriteResponse returns the revised entry fields plus a concise
+// summary suitable for history surfaces.
+type EntryRewriteResponse struct {
+	Entry         EntryDraft `json:"entry"`
+	ChangeSummary string     `json:"changeSummary,omitempty"`
 }
 
 // ErrCollectionDrafterUnavailable is returned when the drafter is not

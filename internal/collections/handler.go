@@ -87,6 +87,8 @@ func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.
 	mux.Handle("GET /api/sites/{siteId}/collections/{collectionId}/entries/{entryId}", requireUser(http.HandlerFunc(h.getEntry)))
 	mux.Handle("PATCH /api/sites/{siteId}/collections/{collectionId}/entries/{entryId}", requireUser(http.HandlerFunc(h.updateEntry)))
 	mux.Handle("DELETE /api/sites/{siteId}/collections/{collectionId}/entries/{entryId}", requireUser(http.HandlerFunc(h.deleteEntry)))
+	mux.Handle("POST /api/sites/{siteId}/collections/{collectionId}/entries/{entryId}/duplicate", requireUser(http.HandlerFunc(h.duplicateEntry)))
+	mux.Handle("POST /api/sites/{siteId}/collections/{collectionId}/entries/{entryId}/reprompt", requireUser(http.HandlerFunc(h.repromptEntry)))
 	mux.Handle("POST /api/sites/{siteId}/collections/{collectionId}/entries/reorder", requireUser(http.HandlerFunc(h.reorderEntries)))
 }
 
@@ -236,6 +238,10 @@ type draftFromPromptRequest struct {
 }
 
 type draftEntriesFromPromptRequest struct {
+	Prompt string `json:"prompt"`
+}
+
+type repromptEntryRequest struct {
 	Prompt string `json:"prompt"`
 }
 
@@ -646,10 +652,10 @@ func (h *Handler) draftEntriesFromPrompt(w http.ResponseWriter, r *http.Request)
 		PreviousDraft: previousDraft,
 		NextDraft:     nextDraft,
 		Summary: map[string]any{
-			"collectionId": collectionID,
+			"collectionId":   collectionID,
 			"collectionSlug": collection.Slug,
-			"entryCount":   len(created),
-			"entryIds":     entryIDs,
+			"entryCount":     len(created),
+			"entryIds":       entryIDs,
 		},
 	})
 	if err != nil {
@@ -716,6 +722,243 @@ func (h *Handler) updateEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"entry": entry})
+}
+
+func (h *Handler) duplicateEntry(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	collectionID := r.PathValue("collectionId")
+	entryID := r.PathValue("entryId")
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+	if h.billingDB != nil {
+		if err := billing.EnforceCollectionEntryLimit(r.Context(), h.billingDB, scope.WorkspaceID, 1); err != nil {
+			writeCollectionError(w, err)
+			return
+		}
+	}
+	entry, err := h.mutator.DuplicateEntry(r.Context(), scope.WorkspaceID, siteID, collectionID, entryID)
+	if err != nil {
+		writeCollectionError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"entry": entry})
+}
+
+func (h *Handler) repromptEntry(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	collectionID := r.PathValue("collectionId")
+	entryID := r.PathValue("entryId")
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+	if h.drafter == nil {
+		writeError(w, http.StatusServiceUnavailable, "drafter_unavailable", "the AI entry drafter is not configured")
+		return
+	}
+
+	var payload repromptEntryRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "request body must be valid JSON")
+		return
+	}
+	prompt := strings.TrimSpace(payload.Prompt)
+	if prompt == "" {
+		writeError(w, http.StatusBadRequest, "invalid_prompt", "prompt is required")
+		return
+	}
+	if len(prompt) > 2000 {
+		writeError(w, http.StatusBadRequest, "invalid_prompt", "prompt is too long")
+		return
+	}
+
+	session, _ := builderSessionFromContext(r.Context())
+	userID := ""
+	if session.User != nil {
+		userID = session.User.ID
+	}
+	if !h.limiter.Allow(r.Context(), scope.WorkspaceID, userID, "entry_reprompt") {
+		writeError(w, http.StatusTooManyRequests, "rate_limited", "too many generation requests; please wait before trying again")
+		return
+	}
+
+	draft, err := h.reader.LoadDraft(r.Context(), siteID)
+	if err != nil {
+		writeCollectionError(w, err)
+		return
+	}
+	collectionIndex := findCollection(draft.Collections, collectionID)
+	if collectionIndex == -1 {
+		writeCollectionError(w, ErrCollectionNotFound)
+		return
+	}
+	collection := draft.Collections[collectionIndex]
+	entryIndex := findEntry(collection.Entries, entryID)
+	if entryIndex == -1 {
+		writeCollectionError(w, ErrEntryNotFound)
+		return
+	}
+	entry := collection.Entries[entryIndex]
+
+	jobID, err := h.jobs.CreateJob(r.Context(), generation.PromptActionInput{
+		WorkspaceID: scope.WorkspaceID,
+		UserID:      userID,
+		SiteID:      siteID,
+		Kind:        generation.JobKindEntryDraft,
+		Prompt:      prompt,
+		Payload: map[string]any{
+			"scope":        "entry_reprompt",
+			"siteId":       siteID,
+			"collectionId": collectionID,
+			"entryId":      entryID,
+			"prompt":       prompt,
+		},
+	})
+	if err != nil {
+		writeCollectionError(w, err)
+		return
+	}
+	if err := h.jobs.UpdateProgress(r.Context(), jobID, generation.JobKindEntryDraft, "prompt.normalize"); err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
+		return
+	}
+	if err := h.jobs.UpdateProgress(r.Context(), jobID, generation.JobKindEntryDraft, "plan.blocks"); err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
+		return
+	}
+
+	rewritten, err := h.drafter.RewriteEntry(r.Context(), EntryRewriteRequest{
+		Prompt:   prompt,
+		SiteName: draft.Site.Name,
+		SiteGoal: draft.Site.SEO.Description,
+		Collection: EntryDraftCollection{
+			SingularLabel: collection.SingularLabel,
+			PluralLabel:   collection.PluralLabel,
+			Slug:          collection.Slug,
+			Schema:        collection.Schema,
+		},
+		Entry: EntryDraft{
+			Slug:   entry.Slug,
+			Fields: cloneAnyMap(entry.Fields),
+			SEO:    entry.SEO,
+		},
+	})
+	if err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		if errors.Is(err, ErrCollectionDrafterUnavailable) {
+			writeError(w, http.StatusServiceUnavailable, "drafter_unavailable", "the AI entry drafter is not available")
+			return
+		}
+		writeError(w, http.StatusBadGateway, "drafter_failed", err.Error())
+		return
+	}
+	if err := h.jobs.UpdateProgress(r.Context(), jobID, generation.JobKindEntryDraft, "copy.write"); err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
+		return
+	}
+	if err := h.jobs.UpdateProgress(r.Context(), jobID, generation.JobKindEntryDraft, "validate.repair"); err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
+		return
+	}
+
+	nextFields := cloneAnyMap(entry.Fields)
+	for key, value := range sanitizeEntryDraftFields(rewritten.Entry.Fields, collection.Schema) {
+		nextFields[key] = value
+	}
+	nextSEO := entry.SEO
+	if title := strings.TrimSpace(rewritten.Entry.SEO.Title); title != "" {
+		nextSEO.Title = title
+	}
+	if description := strings.TrimSpace(rewritten.Entry.SEO.Description); description != "" {
+		nextSEO.Description = description
+	}
+	nextSlug := entry.Slug
+	if slug := strings.TrimSpace(rewritten.Entry.Slug); slug != "" {
+		nextSlug = slug
+	}
+	fieldsPatch := replaceEntryFields(entry.Fields, nextFields)
+	previousDraft := draft
+	updatedEntry, err := h.mutator.UpdateEntry(r.Context(), scope.WorkspaceID, siteID, collectionID, entryID, UpdateEntryInput{
+		Slug:   &nextSlug,
+		Fields: fieldsPatch,
+		SEO:    &nextSEO,
+	})
+	if err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
+		return
+	}
+	nextDraft, err := h.reader.LoadDraft(r.Context(), siteID)
+	if err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
+		return
+	}
+	changeSummary := strings.TrimSpace(rewritten.ChangeSummary)
+	if changeSummary == "" {
+		changeSummary = entryRewriteSummary(collection, updatedEntry)
+	}
+	historyResult, err := h.recordHistory(r.Context(), generation.PromptHistoryInput{
+		WorkspaceID:   scope.WorkspaceID,
+		SiteID:        siteID,
+		UserID:        userID,
+		JobID:         jobID,
+		Scope:         "entry",
+		TargetID:      entryID,
+		Prompt:        prompt,
+		ChangeSummary: changeSummary,
+		PreviousDraft: previousDraft,
+		NextDraft:     nextDraft,
+		Summary: map[string]any{
+			"collectionId": collectionID,
+			"entryId":      entryID,
+			"slug":         updatedEntry.Slug,
+		},
+	})
+	if err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
+		return
+	}
+	if err := h.jobs.CompleteJob(r.Context(), jobID, siteID, map[string]any{
+		"entry":              updatedEntry,
+		"historyId":          historyResult.HistoryID,
+		"resultRevisionId":   historyResult.ResultRevisionID,
+		"previousRevisionId": historyResult.PreviousRevisionID,
+	}); err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
+		return
+	}
+	h.recordAudit(r.Context(), audit.Event{
+		WorkspaceID: scope.WorkspaceID,
+		SiteID:      siteID,
+		UserID:      userID,
+		Action:      "collection.entry_reprompt",
+		Metadata: map[string]any{
+			"jobId":              jobID,
+			"collectionId":       collectionID,
+			"entryId":            entryID,
+			"historyId":          historyResult.HistoryID,
+			"previousRevisionId": historyResult.PreviousRevisionID,
+			"resultRevisionId":   historyResult.ResultRevisionID,
+		},
+	})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"entry":              updatedEntry,
+		"jobId":              jobID,
+		"historyId":          historyResult.HistoryID,
+		"previousRevisionId": historyResult.PreviousRevisionID,
+		"resultRevisionId":   historyResult.ResultRevisionID,
+	})
 }
 
 func (h *Handler) deleteEntry(w http.ResponseWriter, r *http.Request) {
@@ -864,6 +1107,31 @@ func entryDraftSummary(collection siteconfig.Collection, count int) string {
 		return fmt.Sprintf("Drafted 1 %s entry.", label)
 	}
 	return fmt.Sprintf("Drafted %d %s entries.", count, label)
+}
+
+func entryRewriteSummary(collection siteconfig.Collection, entry siteconfig.CollectionEntry) string {
+	label := strings.TrimSpace(collection.SingularLabel)
+	if label == "" {
+		label = "entry"
+	}
+	title := strings.TrimSpace(entryTitle(entry.Fields, collection.Schema))
+	if title == "" {
+		return fmt.Sprintf("Rewrote the %s entry.", strings.ToLower(label))
+	}
+	return fmt.Sprintf("Rewrote %s.", title)
+}
+
+func replaceEntryFields(current map[string]any, next map[string]any) map[string]any {
+	patch := map[string]any{}
+	for key := range current {
+		if _, ok := next[key]; !ok {
+			patch[key] = nil
+		}
+	}
+	for key, value := range next {
+		patch[key] = value
+	}
+	return patch
 }
 
 func (h *Handler) recordAudit(ctx context.Context, event audit.Event) {
