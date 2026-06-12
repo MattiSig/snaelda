@@ -260,10 +260,6 @@ func (s *Service) SuggestBlock(
 		_ = s.failGenerationJob(ctx, jobID, err)
 		return GenerateResult{}, err
 	}
-	if err := s.incrementTrialPromptUsage(ctx, workspaceID); err != nil {
-		_ = s.failGenerationJob(ctx, jobID, err)
-		return GenerateResult{}, err
-	}
 
 	s.recordAudit(ctx, audit.Event{
 		WorkspaceID: workspaceID,
@@ -384,4 +380,3 @@ func describeBlockSuggestSummary(action string, tone string, displayName string)
 		return fmt.Sprintf("Updated the %s with AI.", strings.ToLower(displayName))
 	}
 }
-

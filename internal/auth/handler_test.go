@@ -437,6 +437,29 @@ func TestTrialProtectedWrite(t *testing.T) {
 	}
 }
 
+func TestGenerationRouteIncludesModelBackedAuthoringEndpoints(t *testing.T) {
+	tests := []struct {
+		path     string
+		expected bool
+	}{
+		{path: "/api/sites/generate", expected: true},
+		{path: "/api/sites/site-1/reprompt", expected: true},
+		{path: "/api/sites/site-1/theme/regenerate", expected: true},
+		{path: "/api/sites/site-1/collections/draft-from-prompt", expected: true},
+		{path: "/api/sites/site-1/collections/col-1/entries/draft-from-prompt", expected: true},
+		{path: "/api/sites/site-1/blocks/block-1/suggest", expected: true},
+		{path: "/api/sites/site-1/blocks/block-1/image-suggest"},
+		{path: "/api/sites/site-1/blocks/block-1/image-apply", expected: true},
+	}
+
+	for _, test := range tests {
+		req := httptest.NewRequest(http.MethodPost, test.path, nil)
+		if got := generationRoute(req); got != test.expected {
+			t.Fatalf("path %s expected %v, got %v", test.path, test.expected, got)
+		}
+	}
+}
+
 func TestRestoreSessionRotatesGuestCookieAndAllowsSessionAccess(t *testing.T) {
 	trialStartedAt := time.Now().UTC().Add(-time.Hour)
 	store := &fakeAuthStore{

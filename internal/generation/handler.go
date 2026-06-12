@@ -867,6 +867,7 @@ func (h *Handler) writeGenerationError(w http.ResponseWriter, r *http.Request, e
 
 func generationErrorDetails(err error) (code string, message string, status int) {
 	var validationErr siteconfig.ValidationError
+	var quotaErr *PromptQuotaExceededError
 	switch {
 	case errors.Is(err, ErrPromptRequired):
 		return "generation_prompt_required", "a prompt is required to generate a draft", http.StatusBadRequest
@@ -906,6 +907,8 @@ func generationErrorDetails(err error) (code string, message string, status int)
 		return "image_suggest_no_candidates", "we could not find new images for this block; try a different query", http.StatusNotFound
 	case errors.Is(err, ErrImageSuggestMissingPhoto):
 		return "image_suggest_missing_photo", "the selected image candidate is incomplete", http.StatusBadRequest
+	case errors.As(err, &quotaErr):
+		return quotaErr.Code, quotaErr.Message, http.StatusForbidden
 	case errors.Is(err, billing.ErrPlanLimitExceeded):
 		return "plan_limit_exceeded", err.Error(), http.StatusForbidden
 	default:

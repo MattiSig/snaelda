@@ -228,6 +228,8 @@ func (s *Server) BuildHandler() (http.Handler, error) {
 		if generationPlanner != nil {
 			collectionsConfig.Drafter = collectionDrafterAdapter{planner: generationPlanner}
 		}
+		collectionsConfig.Logger = s.logger
+		collectionsConfig.AuditRecorder = auditRecorder
 		collections.NewHandlerWithConfig(store, collectionsConfig).Mount(mux, s.auth.RequireSession)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, sites.Module{})

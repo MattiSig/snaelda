@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 
+	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/authorization"
+	"github.com/MattiSig/snaelda/internal/generation"
+	"github.com/MattiSig/snaelda/internal/platform/audit"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
 	"github.com/MattiSig/snaelda/internal/sites"
 )
@@ -23,12 +27,18 @@ type Handler struct {
 	authorizer Authorizer
 	drafter    CollectionDrafter
 	reader     Reader
+	limiter    *generation.GenerationRateLimiter
+	jobs       *generation.PromptActionManager
+	logger     *slog.Logger
+	recorder   *audit.Recorder
 }
 
 // HandlerConfig is the optional wiring for a Handler. Drafter is wired by the
 // API server when an OpenAI key is configured.
 type HandlerConfig struct {
-	Drafter CollectionDrafter
+	Drafter       CollectionDrafter
+	Logger        *slog.Logger
+	AuditRecorder *audit.Recorder
 }
 
 // NewHandler wires a Handler against the sites DB used by the sites module so
@@ -40,11 +50,19 @@ func NewHandler(db sites.DB) *Handler {
 // NewHandlerWithConfig wires a Handler with optional drafter support.
 func NewHandlerWithConfig(db sites.DB, cfg HandlerConfig) *Handler {
 	reader := sites.NewPostgresReader(db)
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Handler{
 		mutator:    NewMutator(reader, sites.NewPostgresWriter(db)),
 		authorizer: authorization.New(db),
 		drafter:    cfg.Drafter,
 		reader:     reader,
+		limiter:    generation.NewGenerationRateLimiter(db, logger),
+		jobs:       generation.NewPromptActionManagerFromDB(db, logger),
+		logger:     logger,
+		recorder:   cfg.AuditRecorder,
 	}
 }
 
@@ -235,6 +253,15 @@ func (h *Handler) draftFromPrompt(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_prompt", "prompt is too long")
 		return
 	}
+	session, _ := builderSessionFromContext(r.Context())
+	userID := ""
+	if session.User != nil {
+		userID = session.User.ID
+	}
+	if !h.limiter.Allow(r.Context(), scope.WorkspaceID, userID, "collection_draft") {
+		writeError(w, http.StatusTooManyRequests, "rate_limited", "too many generation requests; please wait before trying again")
+		return
+	}
 
 	draft, err := h.reader.LoadDraft(r.Context(), siteID)
 	if err != nil {
@@ -246,6 +273,33 @@ func (h *Handler) draftFromPrompt(w http.ResponseWriter, r *http.Request) {
 		existingNames = append(existingNames, c.PluralLabel)
 	}
 
+	jobID, err := h.jobs.CreateJob(r.Context(), generation.PromptActionInput{
+		WorkspaceID: scope.WorkspaceID,
+		UserID:      userID,
+		SiteID:      siteID,
+		Kind:        generation.JobKindCollectionDraft,
+		Prompt:      prompt,
+		Payload: map[string]any{
+			"scope":  "collection",
+			"siteId": siteID,
+			"prompt": prompt,
+		},
+	})
+	if err != nil {
+		writeCollectionError(w, err)
+		return
+	}
+	if err := h.jobs.UpdateProgress(r.Context(), jobID, generation.JobKindCollectionDraft, "prompt.normalize"); err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
+		return
+	}
+	if err := h.jobs.UpdateProgress(r.Context(), jobID, generation.JobKindCollectionDraft, "plan.blocks"); err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
+		return
+	}
+
 	drafted, err := h.drafter.DraftCollection(r.Context(), CollectionDraftRequest{
 		Prompt:              prompt,
 		SiteName:            draft.Site.Name,
@@ -253,11 +307,17 @@ func (h *Handler) draftFromPrompt(w http.ResponseWriter, r *http.Request) {
 		ExistingCollections: existingNames,
 	})
 	if err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
 		if errors.Is(err, ErrCollectionDrafterUnavailable) {
 			writeError(w, http.StatusServiceUnavailable, "drafter_unavailable", "the AI collection drafter is not available")
 			return
 		}
 		writeError(w, http.StatusBadGateway, "drafter_failed", err.Error())
+		return
+	}
+	if err := h.jobs.UpdateProgress(r.Context(), jobID, generation.JobKindCollectionDraft, "validate.repair"); err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
 		return
 	}
 
@@ -268,9 +328,26 @@ func (h *Handler) draftFromPrompt(w http.ResponseWriter, r *http.Request) {
 		Schema:        drafted.Schema,
 	})
 	if err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
 		writeCollectionError(w, err)
 		return
 	}
+	if err := h.jobs.CompleteJob(r.Context(), jobID, siteID, map[string]any{"collection": collection}); err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
+		return
+	}
+	h.recordAudit(r.Context(), audit.Event{
+		WorkspaceID: scope.WorkspaceID,
+		SiteID:      siteID,
+		UserID:      userID,
+		Action:      "collection.draft",
+		Metadata: map[string]any{
+			"jobId":        jobID,
+			"collectionId": collection.ID,
+			"slug":         collection.Slug,
+		},
+	})
 	writeJSON(w, http.StatusCreated, map[string]any{"collection": collection})
 }
 
@@ -358,6 +435,15 @@ func (h *Handler) draftEntriesFromPrompt(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "invalid_prompt", "prompt is too long")
 		return
 	}
+	session, _ := builderSessionFromContext(r.Context())
+	userID := ""
+	if session.User != nil {
+		userID = session.User.ID
+	}
+	if !h.limiter.Allow(r.Context(), scope.WorkspaceID, userID, "entry_draft") {
+		writeError(w, http.StatusTooManyRequests, "rate_limited", "too many generation requests; please wait before trying again")
+		return
+	}
 
 	draft, err := h.reader.LoadDraft(r.Context(), siteID)
 	if err != nil {
@@ -386,6 +472,33 @@ func (h *Handler) draftEntriesFromPrompt(w http.ResponseWriter, r *http.Request)
 			Title: entryTitle(entry.Fields, collection.Schema),
 		})
 	}
+	jobID, err := h.jobs.CreateJob(r.Context(), generation.PromptActionInput{
+		WorkspaceID: scope.WorkspaceID,
+		UserID:      userID,
+		SiteID:      siteID,
+		Kind:        generation.JobKindEntryDraft,
+		Prompt:      prompt,
+		Payload: map[string]any{
+			"scope":        "collection_entries",
+			"siteId":       siteID,
+			"collectionId": collectionID,
+			"prompt":       prompt,
+		},
+	})
+	if err != nil {
+		writeCollectionError(w, err)
+		return
+	}
+	if err := h.jobs.UpdateProgress(r.Context(), jobID, generation.JobKindEntryDraft, "prompt.normalize"); err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
+		return
+	}
+	if err := h.jobs.UpdateProgress(r.Context(), jobID, generation.JobKindEntryDraft, "plan.blocks"); err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
+		return
+	}
 	drafted, err := h.drafter.DraftEntries(r.Context(), EntryDraftRequest{
 		Prompt:   prompt,
 		SiteName: draft.Site.Name,
@@ -399,6 +512,7 @@ func (h *Handler) draftEntriesFromPrompt(w http.ResponseWriter, r *http.Request)
 		ExistingEntries: existingEntries,
 	})
 	if err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
 		if errors.Is(err, ErrCollectionDrafterUnavailable) {
 			writeError(w, http.StatusServiceUnavailable, "drafter_unavailable", "the AI entry drafter is not available")
 			return
@@ -406,21 +520,48 @@ func (h *Handler) draftEntriesFromPrompt(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadGateway, "drafter_failed", err.Error())
 		return
 	}
+	if err := h.jobs.UpdateProgress(r.Context(), jobID, generation.JobKindEntryDraft, "copy.write"); err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
+		return
+	}
+	if err := h.jobs.UpdateProgress(r.Context(), jobID, generation.JobKindEntryDraft, "validate.repair"); err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
+		return
+	}
 
-	created := make([]siteconfig.CollectionEntry, 0, len(drafted.Entries))
+	inputs := make([]CreateEntryInput, 0, len(drafted.Entries))
 	for _, draftEntry := range drafted.Entries {
-		entry, err := h.mutator.CreateEntry(r.Context(), scope.WorkspaceID, siteID, collectionID, CreateEntryInput{
+		inputs = append(inputs, CreateEntryInput{
 			Slug:   strings.TrimSpace(draftEntry.Slug),
 			Fields: sanitizeEntryDraftFields(draftEntry.Fields, collection.Schema),
 			SEO:    draftEntry.SEO,
 			Status: siteconfig.EntryStatusDraft,
 		})
-		if err != nil {
-			writeCollectionError(w, err)
-			return
-		}
-		created = append(created, entry)
 	}
+	created, err := h.mutator.CreateEntries(r.Context(), scope.WorkspaceID, siteID, collectionID, inputs)
+	if err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
+		return
+	}
+	if err := h.jobs.CompleteJob(r.Context(), jobID, siteID, map[string]any{"entries": created}); err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
+		return
+	}
+	h.recordAudit(r.Context(), audit.Event{
+		WorkspaceID: scope.WorkspaceID,
+		SiteID:      siteID,
+		UserID:      userID,
+		Action:      "collection.entries_draft",
+		Metadata: map[string]any{
+			"jobId":        jobID,
+			"collectionId": collectionID,
+			"entryCount":   len(created),
+		},
+	})
 	writeJSON(w, http.StatusCreated, map[string]any{"entries": entriesOrEmpty(created)})
 }
 
@@ -491,6 +632,12 @@ func (h *Handler) reorderEntries(w http.ResponseWriter, r *http.Request) {
 func writeCollectionError(w http.ResponseWriter, err error) {
 	var validationErr siteconfig.ValidationError
 	switch {
+	case errors.Is(err, generation.ErrGenerationRateLimited):
+		writeError(w, http.StatusTooManyRequests, "rate_limited", "too many generation requests; please wait before trying again")
+	case isPromptQuotaError(err, "trial_exhausted"):
+		writeError(w, http.StatusForbidden, "trial_exhausted", err.Error())
+	case isPromptQuotaError(err, "plan_limit_exceeded"):
+		writeError(w, http.StatusForbidden, "plan_limit_exceeded", err.Error())
 	case errors.Is(err, ErrCollectionNotFound):
 		writeError(w, http.StatusNotFound, "collection_not_found", "collection was not found")
 	case errors.Is(err, ErrEntryNotFound):
@@ -526,6 +673,45 @@ func writeCollectionError(w http.ResponseWriter, err error) {
 	default:
 		writeError(w, http.StatusInternalServerError, "collection_write_failed", "could not save collection")
 	}
+}
+
+func builderSessionFromContext(ctx context.Context) (auth.Session, bool) {
+	if session, ok := auth.SessionFromContext(ctx); ok {
+		if session.User == nil {
+			if user, userOK := auth.UserFromContext(ctx); userOK {
+				session.User = &user
+			}
+		}
+		return session, true
+	}
+	if user, ok := auth.UserFromContext(ctx); ok {
+		return auth.Session{
+			Kind:          auth.SessionKindAuthenticated,
+			WorkspaceID:   user.WorkspaceID,
+			WorkspaceRole: user.WorkspaceRole,
+			User:          &user,
+		}, true
+	}
+	return auth.Session{}, false
+}
+
+func (h *Handler) recordAudit(ctx context.Context, event audit.Event) {
+	if h == nil || h.recorder == nil {
+		return
+	}
+	if err := h.recorder.Record(ctx, event); err != nil && h.logger != nil {
+		h.logger.Warn("record audit event",
+			"action", event.Action,
+			"siteId", event.SiteID,
+			"workspaceId", event.WorkspaceID,
+			"error", err.Error(),
+		)
+	}
+}
+
+func isPromptQuotaError(err error, code string) bool {
+	var quotaErr *generation.PromptQuotaExceededError
+	return errors.As(err, &quotaErr) && quotaErr.Code == code
 }
 
 func writeAuthorizationError(w http.ResponseWriter, err error) {

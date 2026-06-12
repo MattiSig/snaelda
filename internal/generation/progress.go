@@ -21,6 +21,8 @@ const (
 	JobKindSiteReprompt    JobKind = "site_reprompt"
 	JobKindThemeRegenerate JobKind = "theme_regenerate"
 	JobKindBlockSuggest    JobKind = "block_suggest"
+	JobKindCollectionDraft JobKind = "collection_draft"
+	JobKindEntryDraft      JobKind = "entry_draft"
 )
 
 type ProgressStep struct {
@@ -36,7 +38,7 @@ type ProgressStep struct {
 // payload interpretation:
 //   - "outline"      → Payload is OutlineResult; PageSlug unused.
 //   - "page-content" → Payload is a single page (title, slug, blocks with
-//                      full props); PageSlug identifies the page.
+//     full props); PageSlug identifies the page.
 type ProgressPartial struct {
 	Kind     string `json:"kind"`
 	PageSlug string `json:"pageSlug,omitempty"`
@@ -190,6 +192,20 @@ func ProgressStepsForKind(kind JobKind, includeAssets bool) []ProgressStep {
 				label string
 			}{name: "plan.blocks", label: "Choosing blocks for each page"},
 		)
+	case JobKindCollectionDraft:
+		names = append(names,
+			struct {
+				name  string
+				label string
+			}{name: "plan.blocks", label: "Designing collection fields"},
+		)
+	case JobKindEntryDraft:
+		names = append(names,
+			struct {
+				name  string
+				label string
+			}{name: "plan.blocks", label: "Drafting collection entries"},
+		)
 	case JobKindThemeRegenerate:
 		names = append(names,
 			struct {
@@ -226,7 +242,7 @@ func ProgressStepsForKind(kind JobKind, includeAssets bool) []ProgressStep {
 			label string
 		}{name: "assets.fetch", label: "Finding starter imagery"})
 	}
-	if kind != JobKindThemeRegenerate {
+	if kind != JobKindThemeRegenerate && kind != JobKindCollectionDraft {
 		names = append(names, struct {
 			name  string
 			label string

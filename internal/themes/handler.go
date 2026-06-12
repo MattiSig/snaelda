@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
+	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/authorization"
 	"github.com/MattiSig/snaelda/internal/generation"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
@@ -17,6 +19,7 @@ import (
 type Handler struct {
 	service    ThemeService
 	authorizer Authorizer
+	limiter    *generation.GenerationRateLimiter
 }
 
 type ThemeService interface {
@@ -49,9 +52,11 @@ type HandlerConfig struct {
 }
 
 func NewHandler(db DB, cfg HandlerConfig) *Handler {
+	logger := slog.Default()
 	return &Handler{
 		service:    NewService(db, ServiceConfig{Regenerator: cfg.Regenerator}),
 		authorizer: authorization.New(db),
+		limiter:    generation.NewGenerationRateLimiter(db, logger),
 	}
 }
 
@@ -124,6 +129,15 @@ func (h *Handler) regenerate(w http.ResponseWriter, r *http.Request) {
 	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
 	if err != nil {
 		writeAuthorizationError(w, err)
+		return
+	}
+	session, _ := builderSessionFromContext(r.Context())
+	userID := ""
+	if session.User != nil {
+		userID = session.User.ID
+	}
+	if !h.limiter.Allow(r.Context(), scope.WorkspaceID, userID, "theme_regenerate") {
+		writeThemeError(w, generation.ErrGenerationRateLimited)
 		return
 	}
 
@@ -279,7 +293,12 @@ func writeThemeError(w http.ResponseWriter, err error) {
 
 func themeErrorDetails(err error) (code string, message string, status int) {
 	var validationErr siteconfig.ValidationError
+	var quotaErr *generation.PromptQuotaExceededError
 	switch {
+	case errors.Is(err, generation.ErrGenerationRateLimited):
+		return "rate_limited", "too many generation requests; please wait before trying again", http.StatusTooManyRequests
+	case errors.As(err, &quotaErr):
+		return quotaErr.Code, quotaErr.Message, http.StatusForbidden
 	case errors.Is(err, ErrNotFound):
 		return "site_not_found", "site was not found", http.StatusNotFound
 	case errors.Is(err, ErrNoThemeChanges):
@@ -309,6 +328,26 @@ func themeErrorDetails(err error) (code string, message string, status int) {
 	default:
 		return "theme_write_failed", "could not save theme", http.StatusInternalServerError
 	}
+}
+
+func builderSessionFromContext(ctx context.Context) (auth.Session, bool) {
+	if session, ok := auth.SessionFromContext(ctx); ok {
+		if session.User == nil {
+			if user, userOK := auth.UserFromContext(ctx); userOK {
+				session.User = &user
+			}
+		}
+		return session, true
+	}
+	if user, ok := auth.UserFromContext(ctx); ok {
+		return auth.Session{
+			Kind:          auth.SessionKindAuthenticated,
+			WorkspaceID:   user.WorkspaceID,
+			WorkspaceRole: user.WorkspaceRole,
+			User:          &user,
+		}, true
+	}
+	return auth.Session{}, false
 }
 
 func writeAuthorizationError(w http.ResponseWriter, err error) {

@@ -1017,6 +1017,8 @@ func (s *fakeGenerationStore) LoadDraft(_ context.Context, siteID string) (sitec
 
 func (s *fakeGenerationStore) Query(_ context.Context, sql string, _ ...any) (pgx.Rows, error) {
 	switch {
+	case strings.Contains(sql, "from guest_sessions"):
+		return &fakeGenerationRows{rows: [][]any{}}, nil
 	case strings.Contains(sql, "from reprompt_history"):
 		rows := make([][]any, 0, len(s.repromptHistory))
 		for _, entry := range s.repromptHistory {
@@ -1048,6 +1050,26 @@ func (s *fakeGenerationStore) QueryRow(_ context.Context, sql string, args ...an
 		}
 		s.jobs[jobID] = fakeGenerationJob{ID: jobID, Status: "running"}
 		return fakeGenerationRow{values: []any{jobID}}
+	case strings.Contains(sql, "returning workspace_id::text"):
+		if s.completeJobErr != nil {
+			return fakeGenerationRow{err: s.completeJobErr}
+		}
+		job := s.jobs[args[2].(string)]
+		job.SiteID = args[0].(string)
+		job.Status = "completed"
+		if err := json.Unmarshal(args[1].([]byte), &job.Output); err != nil {
+			return fakeGenerationRow{err: err}
+		}
+		s.jobs[job.ID] = job
+		return fakeGenerationRow{values: []any{"workspace-1"}}
+	case strings.Contains(sql, "select subscription_live"):
+		return fakeGenerationRow{err: pgx.ErrNoRows}
+	case strings.Contains(sql, "from billing_entitlements"):
+		return fakeGenerationRow{err: pgx.ErrNoRows}
+	case strings.Contains(sql, "from billing_subscriptions"):
+		return fakeGenerationRow{err: pgx.ErrNoRows}
+	case strings.Contains(sql, "from generation_jobs") && strings.Contains(sql, "count(*)"):
+		return fakeGenerationRow{values: []any{0}}
 	case strings.Contains(sql, "select exists("):
 		return fakeGenerationRow{values: []any{s.slugs[args[1].(string)]}}
 	case strings.Contains(sql, "select coalesce(generation_prompt, '')"):
@@ -1135,6 +1157,8 @@ func (s *fakeGenerationStore) Exec(_ context.Context, sql string, args ...any) (
 		}
 		s.jobs[job.ID] = job
 		return pgconn.NewCommandTag("UPDATE 1"), nil
+	case strings.Contains(sql, "update guest_sessions"):
+		return pgconn.NewCommandTag("UPDATE 0"), nil
 	case strings.Contains(sql, "update sites"):
 		if s.siteUpdateErr != nil {
 			return pgconn.CommandTag{}, s.siteUpdateErr
@@ -1204,7 +1228,55 @@ func (s *fakeGenerationStore) Exec(_ context.Context, sql string, args ...any) (
 }
 
 func (s *fakeGenerationStore) BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error) {
+	return &fakeGenerationTx{store: s}, nil
+}
+
+type fakeGenerationTx struct {
+	store *fakeGenerationStore
+}
+
+func (tx *fakeGenerationTx) Begin(context.Context) (pgx.Tx, error) {
+	return tx, nil
+}
+
+func (tx *fakeGenerationTx) Commit(context.Context) error {
+	return nil
+}
+
+func (tx *fakeGenerationTx) Rollback(context.Context) error {
+	return nil
+}
+
+func (tx *fakeGenerationTx) CopyFrom(context.Context, pgx.Identifier, []string, pgx.CopyFromSource) (int64, error) {
+	return 0, errors.New("not implemented")
+}
+
+func (tx *fakeGenerationTx) SendBatch(context.Context, *pgx.Batch) pgx.BatchResults {
+	return nil
+}
+
+func (tx *fakeGenerationTx) LargeObjects() pgx.LargeObjects {
+	return pgx.LargeObjects{}
+}
+
+func (tx *fakeGenerationTx) Prepare(context.Context, string, string) (*pgconn.StatementDescription, error) {
 	return nil, errors.New("not implemented")
+}
+
+func (tx *fakeGenerationTx) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	return tx.store.Exec(ctx, sql, args...)
+}
+
+func (tx *fakeGenerationTx) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	return tx.store.Query(ctx, sql, args...)
+}
+
+func (tx *fakeGenerationTx) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	return tx.store.QueryRow(ctx, sql, args...)
+}
+
+func (tx *fakeGenerationTx) Conn() *pgx.Conn {
+	return nil
 }
 
 type fakeGenerationRow struct {
@@ -1222,6 +1294,8 @@ func (r fakeGenerationRow) Scan(dest ...any) error {
 			*target = value.(string)
 		case *bool:
 			*target = value.(bool)
+		case *int:
+			*target = value.(int)
 		case *[]byte:
 			*target = append([]byte(nil), value.([]byte)...)
 		case *time.Time:

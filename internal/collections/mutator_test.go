@@ -196,3 +196,42 @@ func TestDeleteCollectionInUseRefused(t *testing.T) {
 		t.Fatalf("expected ErrCollectionInUse, got %v", err)
 	}
 }
+
+func TestCreateEntriesPersistsBatchAtomically(t *testing.T) {
+	store := &memoryStore{draft: validDraft()}
+	mutator := NewMutator(store, store)
+
+	collection, err := mutator.CreateCollection(context.Background(), "workspace", "site_test_1", CreateCollectionInput{
+		SingularLabel: "Service",
+		PluralLabel:   "Services",
+		Schema: []siteconfig.FieldDefinition{
+			{Key: "title", Label: "Title", Type: siteconfig.FieldTypeText, Required: true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create collection: %v", err)
+	}
+
+	_, err = mutator.CreateEntries(context.Background(), "workspace", "site_test_1", collection.ID, []CreateEntryInput{
+		{
+			Fields: map[string]any{
+				"title": "Carpentry",
+			},
+		},
+		{
+			Fields: map[string]any{},
+		},
+	})
+	var validationErr siteconfig.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected validation error, got %v", err)
+	}
+
+	savedCollection, err := mutator.GetCollection(context.Background(), "site_test_1", collection.ID)
+	if err != nil {
+		t.Fatalf("get collection: %v", err)
+	}
+	if len(savedCollection.Entries) != 0 {
+		t.Fatalf("expected batch failure to leave entries untouched, got %d", len(savedCollection.Entries))
+	}
+}

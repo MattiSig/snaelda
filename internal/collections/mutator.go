@@ -242,50 +242,70 @@ func (m *Mutator) GetEntry(ctx context.Context, siteID string, collectionID stri
 
 // CreateEntry appends a new entry to a collection.
 func (m *Mutator) CreateEntry(ctx context.Context, workspaceID string, siteID string, collectionID string, input CreateEntryInput) (siteconfig.CollectionEntry, error) {
-	draft, err := m.reader.LoadDraft(ctx, siteID)
+	entries, err := m.CreateEntries(ctx, workspaceID, siteID, collectionID, []CreateEntryInput{input})
 	if err != nil {
 		return siteconfig.CollectionEntry{}, err
+	}
+	return entries[0], nil
+}
+
+// CreateEntries appends multiple new entries to a collection and persists the
+// batch in one draft write so AI-generated entry drafts either all land or
+// none do.
+func (m *Mutator) CreateEntries(ctx context.Context, workspaceID string, siteID string, collectionID string, inputs []CreateEntryInput) ([]siteconfig.CollectionEntry, error) {
+	if len(inputs) == 0 {
+		return []siteconfig.CollectionEntry{}, nil
+	}
+	draft, err := m.reader.LoadDraft(ctx, siteID)
+	if err != nil {
+		return nil, err
 	}
 	collectionIndex := findCollection(draft.Collections, collectionID)
 	if collectionIndex == -1 {
-		return siteconfig.CollectionEntry{}, ErrCollectionNotFound
+		return nil, ErrCollectionNotFound
 	}
 	collection := draft.Collections[collectionIndex]
 
-	titleHint := entryTitle(input.Fields, collection.Schema)
-	slugValue, err := chooseEntrySlug(input.Slug, titleHint, collection.Entries, "")
-	if err != nil {
-		return siteconfig.CollectionEntry{}, err
-	}
+	created := make([]siteconfig.CollectionEntry, 0, len(inputs))
+	entries := append([]siteconfig.CollectionEntry(nil), collection.Entries...)
+	for _, input := range inputs {
+		titleHint := entryTitle(input.Fields, collection.Schema)
+		slugValue, err := chooseEntrySlug(input.Slug, titleHint, entries, "")
+		if err != nil {
+			return nil, err
+		}
 
-	entryID, err := ids.New()
-	if err != nil {
-		return siteconfig.CollectionEntry{}, fmt.Errorf("generate entry id: %w", err)
-	}
-	status := strings.TrimSpace(input.Status)
-	if status == "" {
-		status = siteconfig.EntryStatusDraft
-	}
-	fields := input.Fields
-	if fields == nil {
-		fields = map[string]any{}
-	}
+		entryID, err := ids.New()
+		if err != nil {
+			return nil, fmt.Errorf("generate entry id: %w", err)
+		}
+		status := strings.TrimSpace(input.Status)
+		if status == "" {
+			status = siteconfig.EntryStatusDraft
+		}
+		fields := input.Fields
+		if fields == nil {
+			fields = map[string]any{}
+		}
 
-	entry := siteconfig.CollectionEntry{
-		ID:        entryID,
-		Slug:      slugValue,
-		Fields:    fields,
-		SEO:       input.SEO,
-		Status:    status,
-		SortOrder: len(collection.Entries),
+		entry := siteconfig.CollectionEntry{
+			ID:        entryID,
+			Slug:      slugValue,
+			Fields:    fields,
+			SEO:       input.SEO,
+			Status:    status,
+			SortOrder: len(entries),
+		}
+		entries = append(entries, entry)
+		created = append(created, entry)
 	}
-	collection.Entries = append(collection.Entries, entry)
+	collection.Entries = entries
 	draft.Collections[collectionIndex] = collection
 
 	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
-		return siteconfig.CollectionEntry{}, err
+		return nil, err
 	}
-	return m.GetEntry(ctx, siteID, collectionID, entryID)
+	return created, nil
 }
 
 // UpdateEntry applies the patch and re-saves.

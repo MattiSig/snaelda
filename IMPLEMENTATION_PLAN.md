@@ -20,10 +20,10 @@ Refreshed 2026-06-09 from a spec-to-source audit of `specs/*`, `internal/*`, `ap
   - Lock and consume the token and create the authenticated session in one transaction; require exactly one consumed row.
   - Add replay, concurrent redemption, expiry, purpose, session-creation failure, and rollback tests.
 
-- [ ] Centralize prompt reservation and accounting for every model-backed action.
-  - Atomically enforce trial and paid allowances before work begins, then settle usage consistently on success/failure.
-  - Cover site/page reprompt, block suggest, image apply, theme regeneration, collection drafting, entry drafting, and future AI actions.
-  - Route all actions through shared durable rate limits, generation jobs, audit events, and structured quota errors.
+- [x] Centralize prompt reservation and accounting for every model-backed action.
+  - Added a shared prompt-action manager that atomically admits generation jobs against trial and paid allowances before model work begins, then settles trial usage only on successful completion.
+  - Wired site generation, site/page reprompt, block suggest, image apply, theme regeneration, collection drafting, and entry drafting through shared prompt reservations and generation-job persistence.
+  - Extended model-backed route gating/rate limits and added collection AI audit events plus atomic batch entry persistence so quota errors and job state now stay consistent across the current AI surface.
 
 - [x] Fix form-submission read authorization.
   - Listing submissions must require an authenticated workspace member, matching the update route and the L2-or-paid privacy contract; cookie-only trial sessions must not read inquiries.

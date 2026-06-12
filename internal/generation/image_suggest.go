@@ -427,10 +427,6 @@ func (s *Service) ApplyImageSuggestion(
 		_ = s.failGenerationJob(ctx, jobID, err)
 		return ImageApplyResult{}, err
 	}
-	if err := s.incrementTrialPromptUsage(ctx, workspaceID); err != nil {
-		_ = s.failGenerationJob(ctx, jobID, err)
-		return ImageApplyResult{}, err
-	}
 
 	s.recordAudit(ctx, audit.Event{
 		WorkspaceID: workspaceID,

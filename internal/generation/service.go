@@ -295,10 +295,6 @@ func (s *Service) GenerateWithProgress(ctx context.Context, workspaceID string, 
 		_ = s.failGenerationJob(ctx, jobID, persistErr)
 		return GenerateResult{}, persistErr
 	}
-	if err := s.incrementTrialPromptUsage(ctx, workspaceID); err != nil {
-		_ = s.failGenerationJob(ctx, jobID, err)
-		return GenerateResult{}, err
-	}
 
 	s.recordAudit(ctx, audit.Event{
 		WorkspaceID: workspaceID,
@@ -411,10 +407,6 @@ func (s *Service) RepromptSiteWithProgress(ctx context.Context, workspaceID stri
 		return GenerateResult{}, err
 	}
 	if err := s.completeGenerationJob(ctx, jobID, siteID, plan); err != nil {
-		_ = s.failGenerationJob(ctx, jobID, err)
-		return GenerateResult{}, err
-	}
-	if err := s.incrementTrialPromptUsage(ctx, workspaceID); err != nil {
 		_ = s.failGenerationJob(ctx, jobID, err)
 		return GenerateResult{}, err
 	}
@@ -577,10 +569,6 @@ func (s *Service) RepromptPageWithProgress(ctx context.Context, workspaceID stri
 		_ = s.failGenerationJob(ctx, jobID, err)
 		return GenerateResult{}, err
 	}
-	if err := s.incrementTrialPromptUsage(ctx, workspaceID); err != nil {
-		_ = s.failGenerationJob(ctx, jobID, err)
-		return GenerateResult{}, err
-	}
 
 	savedDraft, err := s.reader.LoadDraft(ctx, siteID)
 	if err != nil {
@@ -627,22 +615,6 @@ func (s *Service) RepromptPageWithProgress(ctx context.Context, workspaceID stri
 		JobID: jobID,
 		Draft: savedDraft,
 	}, nil
-}
-
-func (s *Service) incrementTrialPromptUsage(ctx context.Context, workspaceID string) error {
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		return nil
-	}
-	if _, err := s.db.Exec(ctx, `
-		update guest_sessions
-		set prompts_used = prompts_used + 1,
-		    last_seen_at = now()
-		where workspace_id = $1
-	`, workspaceID); err != nil {
-		return fmt.Errorf("increment trial prompt usage: %w", err)
-	}
-	return nil
 }
 
 func (s *Service) UndoLastDraftRevision(ctx context.Context, workspaceID string, siteID string) (siteconfig.SiteDraft, error) {
@@ -925,75 +897,25 @@ type promptProfile struct {
 }
 
 func (s *Service) createGenerationJob(ctx context.Context, workspaceID string, userID string, kind JobKind, input generationInputContext) (string, error) {
-	inputJSON, err := json.Marshal(input)
-	if err != nil {
-		return "", fmt.Errorf("encode generation input context: %w", err)
-	}
-
-	var jobID string
-	if err := s.db.QueryRow(ctx, `
-		insert into generation_jobs (workspace_id, kind, state, status, prompt, input_context, payload, created_by)
-		values ($1, $2, 'pending', 'queued', $3, $4, $4, nullif($5, '')::uuid)
-		returning id::text
-	`, workspaceID, kind, input.Prompt, inputJSON, userID).Scan(&jobID); err != nil {
-		return "", fmt.Errorf("create generation job: %w", err)
-	}
-	return jobID, nil
+	return s.promptActions().CreateJob(ctx, PromptActionInput{
+		WorkspaceID: workspaceID,
+		UserID:      userID,
+		Kind:        kind,
+		Prompt:      input.Prompt,
+		Payload:     input,
+	})
 }
 
 func (s *Service) completeGenerationJob(ctx context.Context, jobID string, siteID string, plan generationPlan) error {
-	outputJSON, err := json.Marshal(plan)
-	if err != nil {
-		return fmt.Errorf("encode generation output plan: %w", err)
-	}
-
-	if _, err := s.db.Exec(ctx, `
-		update generation_jobs
-		set site_id = $1::uuid,
-		    state = 'succeeded',
-		    status = 'completed',
-		    output_plan = $2,
-		    current_step = 'persist',
-		    error = null,
-		    error_reason = null,
-		    completed_at = now(),
-		    updated_at = now()
-		where id = $3::uuid
-	`, siteID, outputJSON, jobID); err != nil {
-		return fmt.Errorf("complete generation job: %w", err)
-	}
-	return nil
+	return s.promptActions().CompleteJob(ctx, jobID, siteID, plan)
 }
 
 func (s *Service) failGenerationJob(ctx context.Context, jobID string, cause error) error {
-	if jobID == "" {
-		return nil
-	}
-	payload := map[string]any{
-		"message": cause.Error(),
-	}
-	var validationErr siteconfig.ValidationError
-	if errors.As(cause, &validationErr) {
-		payload["issues"] = validationErr.Issues
-	}
-	errorJSON, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("encode generation error: %w", err)
-	}
+	return s.promptActions().FailJob(ctx, jobID, cause)
+}
 
-	if _, err := s.db.Exec(ctx, `
-		update generation_jobs
-		set state = 'failed',
-		    status = 'failed',
-		    error = $1,
-		    error_reason = $2,
-		    completed_at = now(),
-		    updated_at = now()
-		where id = $3::uuid
-	`, errorJSON, generationFailureReason(cause), jobID); err != nil {
-		return fmt.Errorf("mark generation job failed: %w", err)
-	}
-	return nil
+func (s *Service) promptActions() *PromptActionManager {
+	return NewPromptActionManagerFromDB(s.db, s.logger)
 }
 
 func (s *Service) saveSiteMetadata(ctx context.Context, workspaceID string, siteID string, prompt string, plan generationPlan, validationRetryCount int) error {

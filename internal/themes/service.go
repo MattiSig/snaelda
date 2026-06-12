@@ -2,7 +2,6 @@ package themes
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -187,11 +186,11 @@ func (s *Service) RegenerateWithProgress(ctx context.Context, workspaceID string
 	}
 
 	jobID := ""
-	if sink != nil {
-		jobID, err = s.createGenerationJob(ctx, workspaceID, siteID, prompt)
-		if err != nil {
-			return ThemeState{}, err
-		}
+	jobID, err = s.createGenerationJob(ctx, workspaceID, siteID, prompt)
+	if err != nil {
+		return ThemeState{}, err
+	}
+	if sink != nil && jobID != "" {
 		sink.OnJobCreated(jobID)
 		if err := s.emitGenerationProgress(ctx, jobID, "prompt.normalize", sink); err != nil {
 			_ = s.failGenerationJob(ctx, jobID, err)
@@ -303,26 +302,20 @@ func (s *Service) pruneGenerationJobs(ctx context.Context) {
 
 func (s *Service) createGenerationJob(ctx context.Context, workspaceID string, siteID string, prompt string) (string, error) {
 	if s == nil || s.db == nil {
-		return "", errors.New("theme generation jobs unavailable")
+		return "", nil
 	}
-	payloadJSON, err := json.Marshal(map[string]any{
+	payload := map[string]any{
 		"scope":  "theme",
 		"siteId": siteID,
 		"prompt": prompt,
+	}
+	return s.promptActions().CreateJob(ctx, generation.PromptActionInput{
+		WorkspaceID: workspaceID,
+		SiteID:      siteID,
+		Kind:        generation.JobKindThemeRegenerate,
+		Prompt:      prompt,
+		Payload:     payload,
 	})
-	if err != nil {
-		return "", fmt.Errorf("encode theme generation payload: %w", err)
-	}
-
-	var jobID string
-	if err := s.db.QueryRow(ctx, `
-		insert into generation_jobs (site_id, workspace_id, kind, state, status, prompt, input_context, payload)
-		values ($1::uuid, $2::uuid, $3, 'pending', 'queued', $4, $5, $5)
-		returning id::text
-	`, siteID, workspaceID, generation.JobKindThemeRegenerate, prompt, payloadJSON).Scan(&jobID); err != nil {
-		return "", fmt.Errorf("create theme generation job: %w", err)
-	}
-	return jobID, nil
 }
 
 func (s *Service) emitGenerationProgress(ctx context.Context, jobID string, stepName string, sink generation.ProgressSink) error {
@@ -356,52 +349,18 @@ func (s *Service) completeGenerationJob(ctx context.Context, jobID string, siteI
 	if s == nil || s.db == nil || strings.TrimSpace(jobID) == "" {
 		return nil
 	}
-	outputJSON, err := json.Marshal(state)
-	if err != nil {
-		return fmt.Errorf("encode theme generation output: %w", err)
-	}
-	if _, err := s.db.Exec(ctx, `
-		update generation_jobs
-		set site_id = $1::uuid,
-		    state = 'succeeded',
-		    status = 'completed',
-		    output_plan = $2,
-		    current_step = 'persist',
-		    error = null,
-		    error_reason = null,
-		    completed_at = now(),
-		    updated_at = now()
-		where id = $3::uuid
-	`, siteID, outputJSON, jobID); err != nil {
-		return fmt.Errorf("mark theme generation job complete: %w", err)
-	}
-	return nil
+	return s.promptActions().CompleteJob(ctx, jobID, siteID, state)
 }
 
 func (s *Service) failGenerationJob(ctx context.Context, jobID string, cause error) error {
 	if s == nil || s.db == nil || strings.TrimSpace(jobID) == "" {
 		return nil
 	}
-	errorJSON, err := json.Marshal(map[string]string{
-		"reason":  themeFailureReason(cause),
-		"message": cause.Error(),
-	})
-	if err != nil {
-		return fmt.Errorf("encode theme generation error: %w", err)
-	}
-	if _, err := s.db.Exec(ctx, `
-		update generation_jobs
-		set state = 'failed',
-		    status = 'failed',
-		    error = $1,
-		    error_reason = $2,
-		    completed_at = now(),
-		    updated_at = now()
-		where id = $3::uuid
-	`, errorJSON, themeFailureReason(cause), jobID); err != nil {
-		return fmt.Errorf("mark theme generation job failed: %w", err)
-	}
-	return nil
+	return s.promptActions().FailJob(ctx, jobID, cause)
+}
+
+func (s *Service) promptActions() *generation.PromptActionManager {
+	return generation.NewPromptActionManagerFromDB(s.db, nil)
 }
 
 func themeFailureReason(err error) string {

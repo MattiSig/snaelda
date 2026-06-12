@@ -157,7 +157,7 @@ func (h *Handler) blockedTrialRequest(r *http.Request, session Session) (int, st
 	if session.TrialExpired && trialProtectedWrite(r) {
 		return http.StatusForbidden, "subscription_required", "your trial has expired; subscribe to keep editing", true
 	}
-	if generationRoute(r) && session.PromptsUsed >= trialPromptLimit {
+	if generationRoute(r) && h.trialPromptExhausted(r.Context(), session) {
 		return http.StatusForbidden, "trial_exhausted", "your trial has reached its prompt limit", true
 	}
 	return 0, "", "", false
@@ -180,7 +180,44 @@ func trialProtectedWrite(r *http.Request) bool {
 }
 
 func generationRoute(r *http.Request) bool {
-	return r.URL.Path == "/api/sites/generate" || strings.Contains(r.URL.Path, "/reprompt")
+	switch {
+	case r.URL.Path == "/api/sites/generate":
+		return true
+	case strings.Contains(r.URL.Path, "/reprompt"):
+		return true
+	case strings.HasSuffix(r.URL.Path, "/theme/regenerate"):
+		return true
+	case strings.HasSuffix(r.URL.Path, "/collections/draft-from-prompt"):
+		return true
+	case strings.HasSuffix(r.URL.Path, "/entries/draft-from-prompt"):
+		return true
+	case strings.HasSuffix(r.URL.Path, "/suggest") && !strings.HasSuffix(r.URL.Path, "/image-suggest"):
+		return true
+	case strings.HasSuffix(r.URL.Path, "/image-apply"):
+		return true
+	default:
+		return false
+	}
+}
+
+func (h *Handler) trialPromptExhausted(ctx context.Context, session Session) bool {
+	if session.PromptsUsed >= trialPromptLimit {
+		return true
+	}
+	workspaceID := strings.TrimSpace(session.WorkspaceID)
+	if h == nil || h.store == nil || workspaceID == "" {
+		return false
+	}
+	var activeReservations int
+	if err := h.store.QueryRow(ctx, `
+		select count(*)
+		from generation_jobs
+		where workspace_id = $1::uuid
+		  and state = any($2::text[])
+	`, workspaceID, []string{"pending", "running"}).Scan(&activeReservations); err != nil {
+		return false
+	}
+	return session.PromptsUsed+activeReservations >= trialPromptLimit
 }
 
 func (h *Handler) startAnonymousSession(w http.ResponseWriter, r *http.Request) {
