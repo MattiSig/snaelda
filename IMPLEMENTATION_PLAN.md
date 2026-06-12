@@ -59,10 +59,10 @@ Refreshed 2026-06-09 from a spec-to-source audit of `specs/*`, `internal/*`, `ap
   - The diff modal renders each revision through the canonical `SiteDraftRenderer` and overlays identity-aware status badges per block, replacing the positional raw-prop diff with rendered before/after panels plus field-level inline highlights.
   - Added arrow-key change navigation, Enter cycling between before/after/both, Escape close, focus trapping while open, and focus restoration to the opener button (captured in the parent before the trigger button is disabled), with regressions in `RevisionDiffModal.test.tsx` and `RepromptHistoryPanel.test.tsx`.
 
-- [ ] Put collection and entry AI behind shared generation governance.
-  - Persist generated batches atomically instead of entry by entry.
-  - Create jobs, revisions, history, audit events, quota usage, and clear failure states.
-  - Keep the shipped “Prompt up a collection” and “Prompt entries” UX, with generated entries saved as drafts.
+- [x] Put collection and entry AI behind shared generation governance.
+  - Collection and entry drafting now flow through the shared `PromptActionManager` for quota admission, a new `PromptHistoryRecorder` that captures pre/post draft revisions, and `reprompt_history` rows scoped `collection`/`entry` that link back to the generation job.
+  - Audit events and API responses now include the job id, history id, and revision identifiers; the History panel renders the new scope chips alongside site/page/block entries.
+  - Batches still persist atomically through `Mutator.CreateEntries`, generated entries default to draft status, and failures mark the job failed with the model error preserved for retry diagnostics.
 
 - [ ] Complete collection-template authoring.
   - Expose page type and collection selection when creating/editing pages.

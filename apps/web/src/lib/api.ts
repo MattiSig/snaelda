@@ -301,7 +301,13 @@ export type DraftRevisionRecord = {
   createdAt: string;
 };
 
-export type RepromptScope = "site" | "page" | "block" | "entry" | "theme";
+export type RepromptScope =
+  | "site"
+  | "page"
+  | "block"
+  | "collection"
+  | "entry"
+  | "theme";
 
 export type RepromptHistoryRecord = {
   id: string;
@@ -2019,14 +2025,17 @@ export async function draftCollectionFromPrompt(
   siteId: string,
   input: { prompt: string },
 ) {
-  return apiFetch<{ collection: Collection }>(
-    `/api/sites/${siteId}/collections/draft-from-prompt`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
-    },
-  );
+  return apiFetch<{
+    collection: Collection;
+    jobId?: string;
+    historyId?: string;
+    previousRevisionId?: string;
+    resultRevisionId?: string;
+  }>(`/api/sites/${siteId}/collections/draft-from-prompt`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
 }
 
 export async function updateCollection(
@@ -2102,7 +2111,13 @@ export async function draftCollectionEntriesFromPrompt(
   collectionId: string,
   input: { prompt: string },
 ) {
-  return apiFetch<{ entries: CollectionEntry[] }>(
+  return apiFetch<{
+    entries: CollectionEntry[];
+    jobId?: string;
+    historyId?: string;
+    previousRevisionId?: string;
+    resultRevisionId?: string;
+  }>(
     `/api/sites/${siteId}/collections/${collectionId}/entries/draft-from-prompt`,
     {
       method: "POST",

@@ -188,6 +188,8 @@ function scopeLabel(scope: RepromptScope) {
   switch (scope) {
     case 'block':
       return 'Block'
+    case 'collection':
+      return 'Collection'
     case 'entry':
       return 'Entry'
     case 'theme':

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -30,6 +31,7 @@ type Handler struct {
 	reader     Reader
 	limiter    *generation.GenerationRateLimiter
 	jobs       *generation.PromptActionManager
+	history    *generation.PromptHistoryRecorder
 	logger     *slog.Logger
 	recorder   *audit.Recorder
 	billingDB  billing.AccessStore
@@ -63,6 +65,7 @@ func NewHandlerWithConfig(db sites.DB, cfg HandlerConfig) *Handler {
 		reader:     reader,
 		limiter:    generation.NewGenerationRateLimiter(db, logger),
 		jobs:       generation.NewPromptActionManagerFromDB(db, logger),
+		history:    generation.NewPromptHistoryRecorder(db, logger),
 		logger:     logger,
 		recorder:   cfg.AuditRecorder,
 		billingDB:  db,
@@ -337,6 +340,7 @@ func (h *Handler) draftFromPrompt(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	previousDraft := draft
 	collection, err := h.mutator.CreateCollection(r.Context(), scope.WorkspaceID, siteID, CreateCollectionInput{
 		Slug:          strings.TrimSpace(drafted.Slug),
 		SingularLabel: strings.TrimSpace(drafted.SingularLabel),
@@ -348,7 +352,42 @@ func (h *Handler) draftFromPrompt(w http.ResponseWriter, r *http.Request) {
 		writeCollectionError(w, err)
 		return
 	}
-	if err := h.jobs.CompleteJob(r.Context(), jobID, siteID, map[string]any{"collection": collection}); err != nil {
+	nextDraft, err := h.reader.LoadDraft(r.Context(), siteID)
+	if err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
+		return
+	}
+	historyResult, err := h.recordHistory(r.Context(), generation.PromptHistoryInput{
+		WorkspaceID:   scope.WorkspaceID,
+		SiteID:        siteID,
+		UserID:        userID,
+		JobID:         jobID,
+		Scope:         "collection",
+		TargetID:      collection.ID,
+		Prompt:        prompt,
+		ChangeSummary: collectionDraftSummary(collection),
+		PreviousDraft: previousDraft,
+		NextDraft:     nextDraft,
+		Summary: map[string]any{
+			"collectionId":  collection.ID,
+			"slug":          collection.Slug,
+			"singularLabel": collection.SingularLabel,
+			"pluralLabel":   collection.PluralLabel,
+			"fieldCount":    len(collection.Schema),
+		},
+	})
+	if err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
+		return
+	}
+	if err := h.jobs.CompleteJob(r.Context(), jobID, siteID, map[string]any{
+		"collection":         collection,
+		"historyId":          historyResult.HistoryID,
+		"resultRevisionId":   historyResult.ResultRevisionID,
+		"previousRevisionId": historyResult.PreviousRevisionID,
+	}); err != nil {
 		_ = h.jobs.FailJob(r.Context(), jobID, err)
 		writeCollectionError(w, err)
 		return
@@ -359,12 +398,21 @@ func (h *Handler) draftFromPrompt(w http.ResponseWriter, r *http.Request) {
 		UserID:      userID,
 		Action:      "collection.draft",
 		Metadata: map[string]any{
-			"jobId":        jobID,
-			"collectionId": collection.ID,
-			"slug":         collection.Slug,
+			"jobId":              jobID,
+			"collectionId":       collection.ID,
+			"slug":               collection.Slug,
+			"historyId":          historyResult.HistoryID,
+			"previousRevisionId": historyResult.PreviousRevisionID,
+			"resultRevisionId":   historyResult.ResultRevisionID,
 		},
 	})
-	writeJSON(w, http.StatusCreated, map[string]any{"collection": collection})
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"collection":         collection,
+		"jobId":              jobID,
+		"historyId":          historyResult.HistoryID,
+		"previousRevisionId": historyResult.PreviousRevisionID,
+		"resultRevisionId":   historyResult.ResultRevisionID,
+	})
 }
 
 func (h *Handler) listEntries(w http.ResponseWriter, r *http.Request) {
@@ -569,13 +617,52 @@ func (h *Handler) draftEntriesFromPrompt(w http.ResponseWriter, r *http.Request)
 			Status: siteconfig.EntryStatusDraft,
 		})
 	}
+	previousDraft := draft
 	created, err := h.mutator.CreateEntries(r.Context(), scope.WorkspaceID, siteID, collectionID, inputs)
 	if err != nil {
 		_ = h.jobs.FailJob(r.Context(), jobID, err)
 		writeCollectionError(w, err)
 		return
 	}
-	if err := h.jobs.CompleteJob(r.Context(), jobID, siteID, map[string]any{"entries": created}); err != nil {
+	nextDraft, err := h.reader.LoadDraft(r.Context(), siteID)
+	if err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
+		return
+	}
+	entryIDs := make([]string, 0, len(created))
+	for _, entry := range created {
+		entryIDs = append(entryIDs, entry.ID)
+	}
+	historyResult, err := h.recordHistory(r.Context(), generation.PromptHistoryInput{
+		WorkspaceID:   scope.WorkspaceID,
+		SiteID:        siteID,
+		UserID:        userID,
+		JobID:         jobID,
+		Scope:         "entry",
+		TargetID:      collectionID,
+		Prompt:        prompt,
+		ChangeSummary: entryDraftSummary(collection, len(created)),
+		PreviousDraft: previousDraft,
+		NextDraft:     nextDraft,
+		Summary: map[string]any{
+			"collectionId": collectionID,
+			"collectionSlug": collection.Slug,
+			"entryCount":   len(created),
+			"entryIds":     entryIDs,
+		},
+	})
+	if err != nil {
+		_ = h.jobs.FailJob(r.Context(), jobID, err)
+		writeCollectionError(w, err)
+		return
+	}
+	if err := h.jobs.CompleteJob(r.Context(), jobID, siteID, map[string]any{
+		"entries":            created,
+		"historyId":          historyResult.HistoryID,
+		"resultRevisionId":   historyResult.ResultRevisionID,
+		"previousRevisionId": historyResult.PreviousRevisionID,
+	}); err != nil {
 		_ = h.jobs.FailJob(r.Context(), jobID, err)
 		writeCollectionError(w, err)
 		return
@@ -586,12 +673,22 @@ func (h *Handler) draftEntriesFromPrompt(w http.ResponseWriter, r *http.Request)
 		UserID:      userID,
 		Action:      "collection.entries_draft",
 		Metadata: map[string]any{
-			"jobId":        jobID,
-			"collectionId": collectionID,
-			"entryCount":   len(created),
+			"jobId":              jobID,
+			"collectionId":       collectionID,
+			"entryCount":         len(created),
+			"entryIds":           entryIDs,
+			"historyId":          historyResult.HistoryID,
+			"previousRevisionId": historyResult.PreviousRevisionID,
+			"resultRevisionId":   historyResult.ResultRevisionID,
 		},
 	})
-	writeJSON(w, http.StatusCreated, map[string]any{"entries": entriesOrEmpty(created)})
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"entries":            entriesOrEmpty(created),
+		"jobId":              jobID,
+		"historyId":          historyResult.HistoryID,
+		"previousRevisionId": historyResult.PreviousRevisionID,
+		"resultRevisionId":   historyResult.ResultRevisionID,
+	})
 }
 
 func (h *Handler) updateEntry(w http.ResponseWriter, r *http.Request) {
@@ -724,6 +821,49 @@ func builderSessionFromContext(ctx context.Context) (auth.Session, bool) {
 		}, true
 	}
 	return auth.Session{}, false
+}
+
+func (h *Handler) recordHistory(ctx context.Context, input generation.PromptHistoryInput) (generation.PromptHistoryResult, error) {
+	if h == nil || h.history == nil {
+		return generation.PromptHistoryResult{}, nil
+	}
+	result, err := h.history.Record(ctx, input)
+	if err != nil {
+		if h.logger != nil {
+			h.logger.Error("record collection prompt history",
+				"scope", input.Scope,
+				"siteId", input.SiteID,
+				"workspaceId", input.WorkspaceID,
+				"error", err.Error(),
+			)
+		}
+	}
+	return result, err
+}
+
+func collectionDraftSummary(collection siteconfig.Collection) string {
+	label := strings.TrimSpace(collection.PluralLabel)
+	if label == "" {
+		label = strings.TrimSpace(collection.SingularLabel)
+	}
+	if label == "" {
+		return "Drafted a new collection."
+	}
+	return fmt.Sprintf("Drafted the %s collection.", label)
+}
+
+func entryDraftSummary(collection siteconfig.Collection, count int) string {
+	label := strings.TrimSpace(collection.PluralLabel)
+	if label == "" {
+		label = strings.TrimSpace(collection.SingularLabel)
+	}
+	if label == "" {
+		label = "entries"
+	}
+	if count == 1 {
+		return fmt.Sprintf("Drafted 1 %s entry.", label)
+	}
+	return fmt.Sprintf("Drafted %d %s entries.", count, label)
 }
 
 func (h *Handler) recordAudit(ctx context.Context, event audit.Event) {
