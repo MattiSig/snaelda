@@ -1,15 +1,17 @@
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { RepromptHistoryRecord } from '@/lib/api'
+import type { RepromptHistoryRecord, RepromptScope } from '@/lib/api'
 
 type RepromptHistoryPanelProps = {
   reprompts: RepromptHistoryRecord[]
-  activeScope: 'site' | 'page'
+  activeScope: 'site' | 'page' | 'block'
   selectedPageId?: string
   selectedPageTitle?: string
+  selectedBlockId?: string
+  selectedBlockLabel?: string
   activeDiffId?: string
   activeRevertId?: string
-  onActiveScopeChange: (scope: 'site' | 'page') => void
+  onActiveScopeChange: (scope: 'site' | 'page' | 'block') => void
   onShowDiff: (reprompt: RepromptHistoryRecord) => void
   onRevert: (reprompt: RepromptHistoryRecord) => void
 }
@@ -19,6 +21,8 @@ export function RepromptHistoryPanel({
   activeScope,
   selectedPageId,
   selectedPageTitle,
+  selectedBlockId,
+  selectedBlockLabel,
   activeDiffId,
   activeRevertId,
   onActiveScopeChange,
@@ -27,9 +31,20 @@ export function RepromptHistoryPanel({
 }: RepromptHistoryPanelProps) {
   const scopedReprompts = reprompts.filter((reprompt) => {
     if (activeScope === 'page') {
-      return Boolean(selectedPageId) && reprompt.targetId === selectedPageId
+      return (
+        reprompt.scope === 'page' &&
+        Boolean(selectedPageId) &&
+        reprompt.targetId === selectedPageId
+      )
     }
-    return reprompt.scope === 'site'
+    if (activeScope === 'block') {
+      return (
+        reprompt.scope === 'block' &&
+        Boolean(selectedBlockId) &&
+        reprompt.targetId === selectedBlockId
+      )
+    }
+    return true
   })
 
   return (
@@ -61,6 +76,15 @@ export function RepromptHistoryPanel({
           >
             {selectedPageTitle ? `${selectedPageTitle} page` : 'Selected page'}
           </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={activeScope === 'block' ? 'default' : 'outline'}
+            disabled={!selectedBlockId}
+            onClick={() => onActiveScopeChange('block')}
+          >
+            {selectedBlockLabel ? selectedBlockLabel : 'Selected block'}
+          </Button>
         </div>
       </div>
 
@@ -72,12 +96,19 @@ export function RepromptHistoryPanel({
               className="grid gap-3 rounded-[14px] border border-[color-mix(in_oklch,var(--border)_78%,transparent)] bg-[var(--surface-2)] p-4"
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm font-bold text-[var(--paper)]">
-                  {reprompt.changeSummary || reprompt.prompt}
-                </p>
-                <p className="text-xs uppercase tracking-[0.08em] text-[var(--paper-muted)]">
-                  {formatRepromptTime(reprompt.createdAt)}
-                </p>
+                <div className="grid gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-bold text-[var(--paper)]">
+                      {reprompt.changeSummary || reprompt.prompt}
+                    </p>
+                    <span className="rounded-full bg-[color-mix(in_oklch,var(--thread-mauve)_18%,var(--surface-1))] px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--paper-muted)]">
+                      {scopeLabel(reprompt.scope)}
+                    </span>
+                  </div>
+                  <p className="text-xs uppercase tracking-[0.08em] text-[var(--paper-muted)]">
+                    {formatRepromptTime(reprompt.createdAt)}
+                  </p>
+                </div>
               </div>
               <p className="text-sm text-[var(--paper-muted)]">
                 “{reprompt.prompt}”
@@ -107,10 +138,14 @@ export function RepromptHistoryPanel({
                     type="button"
                     size="sm"
                     variant="outline"
-                    disabled={activeRevertId === reprompt.id}
+                    disabled={Boolean(reprompt.undoneAt) || activeRevertId === reprompt.id}
                     onClick={() => onRevert(reprompt)}
                   >
-                    {activeRevertId === reprompt.id ? 'Restoring...' : 'Revert'}
+                    {reprompt.undoneAt
+                      ? 'Restored'
+                      : activeRevertId === reprompt.id
+                        ? 'Restoring...'
+                        : 'Revert'}
                   </Button>
                 </div>
               </div>
@@ -119,9 +154,7 @@ export function RepromptHistoryPanel({
         </div>
       ) : (
         <div className="rounded-[14px] border border-dashed border-[color-mix(in_oklch,var(--border)_68%,var(--thread-teal))] bg-[color-mix(in_oklch,var(--surface-1)_82%,var(--thread-wood))] p-4 text-sm text-[var(--paper-muted)]">
-          {activeScope === 'page'
-            ? 'The selected page has not been rebuilt yet.'
-            : 'This site does not have any rebuild checkpoints yet.'}
+          {emptyStateLabel(activeScope)}
         </div>
       )}
     </div>
@@ -139,4 +172,29 @@ function formatRepromptTime(value: string) {
     hour: 'numeric',
     minute: '2-digit',
   }).format(timestamp)
+}
+
+function emptyStateLabel(scope: 'site' | 'page' | 'block') {
+  if (scope === 'page') {
+    return 'The selected page does not have any AI revisions yet.'
+  }
+  if (scope === 'block') {
+    return 'The selected block does not have any AI revisions yet.'
+  }
+  return 'This site does not have any AI revisions yet.'
+}
+
+function scopeLabel(scope: RepromptScope) {
+  switch (scope) {
+    case 'block':
+      return 'Block'
+    case 'entry':
+      return 'Entry'
+    case 'theme':
+      return 'Theme'
+    case 'page':
+      return 'Page'
+    default:
+      return 'Site'
+  }
 }

@@ -287,7 +287,7 @@ function SiteDetail() {
     RefinementScope | ""
   >("");
   const [repromptHistoryScope, setRepromptHistoryScope] = useState<
-    "site" | "page"
+    "site" | "page" | "block"
   >("site");
   const [isUndoingReprompt, setIsUndoingReprompt] = useState(false);
   const [activeRepromptHistoryId, setActiveRepromptHistoryId] = useState("");
@@ -319,6 +319,7 @@ function SiteDetail() {
   const [isStartingUpgrade, setIsStartingUpgrade] = useState(false);
   const draftRef = useRef<SiteDraft | null>(null);
   const blockSaveChains = useRef(new Map<string, Promise<void>>());
+  const repromptDiffOpenerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     draftRef.current = draft;
@@ -530,6 +531,19 @@ function SiteDetail() {
   const selectedDefinition = selectedBlock
     ? blockDefinitions.get(`${selectedBlock.type}@${selectedBlock.version}`)
     : undefined;
+  const selectedBlockLabel = selectedDefinition?.displayName
+    ? `${selectedDefinition.displayName} block`
+    : selectedBlock
+      ? `${formatRepromptScopeLabel(selectedBlock.type)} block`
+      : "";
+  const resolvedRepromptHistoryScope =
+    repromptHistoryScope === "block" && !selectedBlock
+      ? selectedPage
+        ? "page"
+        : "site"
+      : repromptHistoryScope === "page" && !selectedPage
+        ? "site"
+        : repromptHistoryScope;
 
   function clearBlockedAction() {
     setBlockedActionMessage("");
@@ -1693,18 +1707,20 @@ function SiteDetail() {
     setRepromptStatusMessage("");
 
     try {
-      if (!repromptHistory.length) {
-        setRepromptErrorMessage("There is no rebuild checkpoint to restore.");
+      const latestReprompt = repromptHistory.find(
+        (entry) => !entry.undoneAt,
+      );
+      if (!latestReprompt) {
+        setRepromptErrorMessage("There is no AI checkpoint to restore.");
         return;
       }
-      const latestReprompt = repromptHistory[0];
       setActiveRepromptHistoryId(latestReprompt.id);
       await revertReprompt(siteId, latestReprompt.id);
       await Promise.all([
         refreshDraftState(selectedPage?.id, selectedBlock?.id),
         refreshRepromptHistoryState(),
       ]);
-      setRepromptStatusMessage("Previous draft revision restored.");
+      setRepromptStatusMessage("Previous AI checkpoint restored.");
     } catch (error) {
       if (isDraftConflictError(error)) {
         setRepromptErrorMessage(
@@ -1728,6 +1744,10 @@ function SiteDetail() {
   }
 
   async function handleShowRepromptDiff(reprompt: RepromptHistoryRecord) {
+    repromptDiffOpenerRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     setActiveRepromptDiff(reprompt);
     setActiveRepromptHistoryId(reprompt.id);
     setRepromptDiffPrevious(null);
@@ -3073,29 +3093,33 @@ function SiteDetail() {
           <div>
             <p className={text.eyebrow}>History</p>
             <h2 className="mt-1 text-[1.2rem] font-black leading-[1.02] text-[var(--paper)]">
-              Recent rebuilds
+              Recent AI changes
             </h2>
             <p className={cn(text.p, "mt-2 text-sm")}>
-              Every rebuild leaves a checkpoint. Compare the diff or restore an
-              earlier draft from here.
+              Every AI change leaves a checkpoint. Compare the diff or restore
+              an earlier draft from here.
             </p>
           </div>
           <Button
             type="button"
             size="sm"
             variant="outline"
-            disabled={isUndoingReprompt || !repromptHistory.length}
+            disabled={
+              isUndoingReprompt || !repromptHistory.some((entry) => !entry.undoneAt)
+            }
             onClick={handleUndoReprompt}
           >
-            {isUndoingReprompt ? "Restoring..." : "Restore latest rebuild"}
+            {isUndoingReprompt ? "Restoring..." : "Restore latest AI change"}
           </Button>
         </div>
 
         <RepromptHistoryPanel
           reprompts={repromptHistory}
-          activeScope={repromptHistoryScope}
+          activeScope={resolvedRepromptHistoryScope}
           selectedPageId={selectedPage?.id}
           selectedPageTitle={selectedPage?.title}
+          selectedBlockId={selectedBlock?.id}
+          selectedBlockLabel={selectedBlockLabel}
           activeDiffId={
             isLoadingRepromptDiff ? activeRepromptHistoryId : undefined
           }
@@ -4250,10 +4274,17 @@ function SiteDetail() {
         errorMessage={repromptDiffErrorMessage}
         isLoading={isLoadingRepromptDiff}
         onClose={() => {
+          const opener = repromptDiffOpenerRef.current;
           setActiveRepromptDiff(null);
           setRepromptDiffPrevious(null);
           setRepromptDiffResult(null);
           setRepromptDiffErrorMessage("");
+          repromptDiffOpenerRef.current = null;
+          if (opener) {
+            window.requestAnimationFrame(() => {
+              opener.focus();
+            });
+          }
         }}
       />
     </>
@@ -4541,6 +4572,12 @@ function withPreviewAlpha(color: string, alphaHex: string) {
 function formatThemeLabel(value: string) {
   return value
     .replace(/([A-Z])/g, " $1")
+    .replace(/^./, (char) => char.toUpperCase());
+}
+
+function formatRepromptScopeLabel(value: string) {
+  return value
+    .replaceAll("_", " ")
     .replace(/^./, (char) => char.toUpperCase());
 }
 

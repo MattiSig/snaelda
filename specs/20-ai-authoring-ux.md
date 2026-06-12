@@ -50,6 +50,12 @@ Event shape:
 event: progress
 data: {"step": "plan.pages", "label": "Planning pages and structure", "index": 2, "total": 8}
 
+event: partial
+data: {"kind": "outline", "payload": {"siteName": "...", "pages": [...]}}
+
+event: partial
+data: {"kind": "page-content", "pageSlug": "/about", "payload": {"blocks": [...]}}
+
 event: complete
 data: {"siteId": "...", "draftId": "..."}
 
@@ -57,14 +63,14 @@ event: failed
 data: {"reason": "model_timeout", "message": "We could not finish — please try again."}
 ```
 
-Page reprompt, site reprompt, and theme regeneration use the same event shape over their respective endpoints.
+Page reprompt, site reprompt, and theme regeneration use the same event shape over their respective endpoints. The upstream model response does not need token-by-token streaming for MVP; the decomposed outline/layout/content pipeline provides useful progressive materialization by emitting each completed structural unit.
 
 ### Frontend Behavior
 
-- The "Weaving your draft" copy is replaced with a vertical step list. The active step animates (subtle pulse on the row). Completed steps show a check; pending steps show a dim dot.
+- The generation surface includes a vertical step list alongside the "Weaving your draft" framing. The active step animates (subtle pulse on the row). Completed steps show a check; pending steps show a dim dot.
 - The list is rendered immediately on submit, with all steps initially pending. The first SSE event flips step 1 to in-progress.
-- A skeleton preview of plausible block shapes is rendered to the right of the step list once `plan.blocks` fires, so the user sees the page taking shape before copy lands.
-- If the connection drops, the frontend falls back to polling `GET /api/sites/generate/:jobId` every 2 seconds until the job resolves. Generation must therefore be tracked server-side as a job with `id`, `state`, `currentStep`, `error`.
+- A shadow draft is rendered to the right of the step list. Outline events add planned pages; page-content events replace skeleton blocks as each page completes.
+- If the connection drops, the frontend falls back to polling `GET /api/generation/jobs/:jobId` every 2 seconds until the job resolves. Generation must therefore be tracked server-side as a job with `id`, `state`, `currentStep`, `error`.
 - Generation jobs older than 1 hour are pruned.
 
 ### Backend Job Model

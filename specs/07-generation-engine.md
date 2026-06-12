@@ -73,6 +73,21 @@ The AI should output structured draft data:
 11. Persist as draft site data
 12. Return draft data for the builder preview
 
+## Execution Shape
+
+The canonical generation path is decomposed rather than one monolithic model call:
+
+1. Optionally ask a short clarification interview when the initial prompt leaves consequential ambiguity.
+2. Generate a site outline containing identity, goal, theme selection, and page goals.
+3. Generate an ordered block layout for each page.
+4. Generate props for the selected layout, with page work parallelized under a bounded concurrency limit.
+5. Stream the outline and completed page content to the frontend as partial progress events.
+6. Repair, validate, enrich with approved imagery, and persist the canonical draft.
+
+The legacy single-plan structured-output path remains a fallback when the decomposed planner is unavailable. Both paths must produce the same canonical draft contract and pass the same validation, quota, audit, and persistence rules.
+
+The current decomposed implementation covers static pages. Extending the outline/layout/content contracts to generate collections, entries, collection page types, and bindings remains required to satisfy the full target output above.
+
 ## Suggested AI Stages
 
 ### Step 1: Intent Extraction
@@ -135,11 +150,11 @@ The palette is **derived from `brand.primaryColor`** rather than freely chosen â
 
 For MVP, image generation is not required.
 
-Instead, use a backend Unsplash integration for starter imagery:
+Instead, use the backend Pexels integration for starter imagery:
 
 - model determines whether a page/block needs an image
 - model creates a narrow search query
-- backend tool searches Unsplash
+- backend tool searches Pexels
 - model selects from returned candidates
 
 Recommended default behavior:
@@ -206,6 +221,6 @@ Use model tool/function calling for external lookups needed during generation.
 
 Recommended MVP tool:
 
-- `search_unsplash_images(query, orientation, count)`
+- `search_pexels_images(query, orientation, count)`
 
 The model should never call third-party APIs directly. Your backend owns the tool implementation and returns constrained results back to the model.

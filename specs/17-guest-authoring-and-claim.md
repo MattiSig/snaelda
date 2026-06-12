@@ -225,38 +225,37 @@ Routes accepting either a trial cookie or an authenticated user session (the uni
 ```http
 POST   /api/sites/generate
 POST   /api/sites/:siteId/reprompt
-POST   /api/pages/:pageId/reprompt
+POST   /api/sites/:siteId/pages/:pageId/reprompt
 POST   /api/sites/:siteId/undo
 GET    /api/sites
 GET    /api/sites/:siteId
 PATCH  /api/sites/:siteId
 DELETE /api/sites/:siteId
 POST   /api/sites/:siteId/pages
-PATCH  /api/pages/:pageId
-DELETE /api/pages/:pageId
+PATCH  /api/sites/:siteId/pages/:pageId
+DELETE /api/sites/:siteId/pages/:pageId
 POST   /api/sites/:siteId/pages/reorder
-POST   /api/pages/:pageId/blocks
-PATCH  /api/blocks/:blockId
-DELETE /api/blocks/:blockId
-POST   /api/pages/:pageId/blocks/reorder
-POST   /api/blocks/:blockId/duplicate
+POST   /api/sites/:siteId/pages/:pageId/blocks
+PATCH  /api/sites/:siteId/pages/:pageId/blocks/:blockId
+DELETE /api/sites/:siteId/pages/:pageId/blocks/:blockId
+POST   /api/sites/:siteId/pages/:pageId/blocks/reorder
+POST   /api/sites/:siteId/pages/:pageId/blocks/:blockId/duplicate
 GET    /api/sites/:siteId/theme
 PATCH  /api/sites/:siteId/theme
 POST   /api/sites/:siteId/theme/regenerate
 GET    /api/sites/:siteId/collections
 POST   /api/sites/:siteId/collections
+POST   /api/sites/:siteId/collections/draft-from-prompt
 GET    /api/sites/:siteId/collections/:collectionId
 PATCH  /api/sites/:siteId/collections/:collectionId
 DELETE /api/sites/:siteId/collections/:collectionId
-POST   /api/sites/:siteId/collections/:collectionId/schema/migrate
 GET    /api/sites/:siteId/collections/:collectionId/entries
 POST   /api/sites/:siteId/collections/:collectionId/entries
 GET    /api/sites/:siteId/collections/:collectionId/entries/:entryId
 PATCH  /api/sites/:siteId/collections/:collectionId/entries/:entryId
 DELETE /api/sites/:siteId/collections/:collectionId/entries/:entryId
 POST   /api/sites/:siteId/collections/:collectionId/entries/reorder
-POST   /api/sites/:siteId/collections/:collectionId/entries/generate
-POST   /api/sites/:siteId/collections/:collectionId/entries/:entryId/reprompt
+POST   /api/sites/:siteId/collections/:collectionId/entries/draft-from-prompt
 POST   /api/sites/:siteId/preview-token
 POST   /api/sites/:siteId/publish
 GET    /api/sites/:siteId/versions
@@ -281,12 +280,15 @@ DELETE /api/sites/:siteId/domains/:id
 Trial-session lifecycle and recovery routes:
 
 ```http
+POST   /api/sessions/anonymous             # create or reuse a cookie-bound trial workspace
 POST   /api/sessions/restore               # consume a recovery key, set a fresh cookie
 POST   /api/sessions/recovery-key          # mint or regenerate the workspace recovery link (L1)
 DELETE /api/sessions/recovery-key          # revoke the current recovery link
-POST   /api/sessions/attach-email          # promote to L2; creates users row, sends verify magic link
-GET    /api/sessions/current               # return current session state: layer, prompts_used, trial_ends_at, subscribed flag
+POST   /api/sessions/claim                 # promote to L2; creates users row, sends verify magic link
+GET    /api/sessions/me                    # return current session state: layer, prompts_used, trial_ends_at, subscribed flag
 ```
+
+Schema migration and single-entry reprompt routes remain required additions. All model-backed collection routes must share the same prompt accounting, rate limiting, job tracking, and audit behavior as site/page generation.
 
 Authentication routes:
 
@@ -320,7 +322,7 @@ The builder must surface:
 - a first-generation education modal explaining cookie-only state and the three save options
 - inline upgrade CTAs on `subscription_required` errors that include the failing action's name
 - a `Restore workspace` affordance on the landing page when a recovery URL is pasted
-- a `Continue your draft` affordance on the landing page when a cookie session is detected
+- an `Open workspace` / `Continue editing` affordance on the landing page when a cookie session is detected
 - a `Log in` affordance on the landing page that opens the magic-link form
 
 ## Out Of Scope For MVP

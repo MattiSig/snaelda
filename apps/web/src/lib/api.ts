@@ -294,16 +294,18 @@ export type SiteRepromptResponse = {
 
 export type DraftRevisionRecord = {
   id: string;
-  scope: "site" | "page";
+  scope: RepromptScope;
   targetId?: string;
   prompt: string;
   draft: SiteDraft;
   createdAt: string;
 };
 
+export type RepromptScope = "site" | "page" | "block" | "entry" | "theme";
+
 export type RepromptHistoryRecord = {
   id: string;
-  scope: "site" | "page";
+  scope: RepromptScope;
   targetId?: string;
   prompt: string;
   changeSummary?: string;

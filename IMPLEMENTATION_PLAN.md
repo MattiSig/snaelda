@@ -54,10 +54,10 @@ Refreshed 2026-06-09 from a spec-to-source audit of `specs/*`, `internal/*`, `ap
 - [x] Wire page reprompts through the existing block-aware change-set pipeline.
   - Page reprompts now prefer keep/edit/remove/insert change sets, preserve unaffected block IDs, record the planner-authored summary in history, and fall back cleanly to whole-page regeneration only when the change-set path is unavailable or fails.
 
-- [ ] Make AI history and diffs trustworthy.
-  - Show block- and entry-scoped AI operations in the History panel with summaries and individual revert.
-  - Replace positional raw-prop diffs with identity-aware rendered before/after comparisons.
-  - Add keyboard navigation, Escape behavior, focus trapping/restoration, and before/after/both modes.
+- [x] Make AI history and diffs trustworthy.
+  - The History panel now surfaces block-scoped reprompts alongside site- and page-scoped entries with model-authored summaries and per-row Show diff/Revert actions; the whole-site filter is inclusive so future entry- and theme-scoped records do not disappear.
+  - The diff modal renders each revision through the canonical `SiteDraftRenderer` and overlays identity-aware status badges per block, replacing the positional raw-prop diff with rendered before/after panels plus field-level inline highlights.
+  - Added arrow-key change navigation, Enter cycling between before/after/both, Escape close, focus trapping while open, and focus restoration to the opener button (captured in the parent before the trigger button is disabled), with regressions in `RevisionDiffModal.test.tsx` and `RepromptHistoryPanel.test.tsx`.
 
 - [ ] Put collection and entry AI behind shared generation governance.
   - Persist generated batches atomically instead of entry by entry.

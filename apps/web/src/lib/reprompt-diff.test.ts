@@ -185,4 +185,102 @@ describe('buildRepromptDiff', () => {
     expect(diff[0].blocks[0].status).toBe('added')
     expect(diff[0].blocks[0].afterBlock?.type).toBe('faq')
   })
+
+  it('pairs block-scoped revisions to the owning page and ignores unrelated pages', () => {
+    const previous: DraftRevisionRecord = {
+      id: 'revision-1',
+      scope: 'block',
+      targetId: 'page-2',
+      prompt: 'Tighten the CTA block',
+      createdAt: '2026-05-23T11:10:00Z',
+      draft: buildDraft({
+        pages: [
+          {
+            id: 'page-1',
+            title: 'Home',
+            slug: '/',
+            blocks: [
+              {
+                id: 'block-hero',
+                type: 'hero',
+                version: 'block.v1',
+                props: { headline: 'Welcome' },
+              },
+            ],
+          },
+          {
+            id: 'page-2',
+            title: 'Contact',
+            slug: '/contact',
+            blocks: [
+              {
+                id: 'block-cta',
+                type: 'cta',
+                version: 'block.v1',
+                props: { heading: 'Book a visit' },
+              },
+            ],
+          },
+        ],
+      }),
+    }
+    const result: DraftRevisionRecord = {
+      ...previous,
+      id: 'revision-2',
+      draft: buildDraft({
+        pages: [
+          {
+            id: 'page-1',
+            title: 'Home',
+            slug: '/',
+            blocks: [
+              {
+                id: 'block-hero',
+                type: 'hero',
+                version: 'block.v1',
+                props: { headline: 'Welcome' },
+              },
+            ],
+          },
+          {
+            id: 'page-2',
+            title: 'Contact',
+            slug: '/contact',
+            blocks: [
+              {
+                id: 'block-cta',
+                type: 'cta',
+                version: 'block.v1',
+                props: { heading: 'Book a studio visit today' },
+              },
+            ],
+          },
+        ],
+      }),
+    }
+    const reprompt: RepromptHistoryRecord = {
+      id: 'reprompt-3',
+      scope: 'block',
+      targetId: 'block-cta',
+      prompt: 'Tighten the CTA block',
+      previousRevisionId: previous.id,
+      resultRevisionId: result.id,
+      createdAt: '2026-05-23T11:10:00Z',
+    }
+
+    const diff = buildRepromptDiff(reprompt, previous, result)
+
+    expect(diff).toHaveLength(1)
+    expect(diff[0].title).toBe('Contact')
+    expect(diff[0].blocks).toHaveLength(1)
+    expect(diff[0].blocks[0].fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: 'heading',
+          before: 'Book a visit',
+          after: 'Book a studio visit today',
+        }),
+      ]),
+    )
+  })
 })

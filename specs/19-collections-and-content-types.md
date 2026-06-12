@@ -280,6 +280,7 @@ See [Spec 10](./10-api-surface.md) for the full route list. The collection route
 ```http
 GET    /api/sites/:siteId/collections
 POST   /api/sites/:siteId/collections
+POST   /api/sites/:siteId/collections/draft-from-prompt
 GET    /api/sites/:siteId/collections/:collectionId
 PATCH  /api/sites/:siteId/collections/:collectionId
 DELETE /api/sites/:siteId/collections/:collectionId
@@ -291,14 +292,16 @@ PATCH  /api/sites/:siteId/collections/:collectionId/entries/:entryId
 DELETE /api/sites/:siteId/collections/:collectionId/entries/:entryId
 POST   /api/sites/:siteId/collections/:collectionId/entries/reorder
 
-POST   /api/sites/:siteId/collections/:collectionId/entries/generate
-POST   /api/sites/:siteId/collections/:collectionId/entries/:entryId/reprompt
+POST   /api/sites/:siteId/collections/:collectionId/entries/draft-from-prompt
 ```
 
-Schema-migration routes:
+The shipped prompt routes generate and persist immediately. Collection-schema prompting creates the collection; entry prompting creates entries with `status=draft`. These operations must use shared prompt quotas, jobs, rate limits, audit records, and atomic persistence.
+
+Required additions:
 
 ```http
 POST   /api/sites/:siteId/collections/:collectionId/schema/migrate
+POST   /api/sites/:siteId/collections/:collectionId/entries/:entryId/reprompt
 ```
 
 All routes share the unified-session authorization model in [Spec 17](./17-guest-authoring-and-claim.md). Generation routes count against the trial 25-prompt budget.

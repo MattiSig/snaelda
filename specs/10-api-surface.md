@@ -49,9 +49,17 @@ Collections and their entries are nested under sites, since a collection has no 
 ```http
 GET    /api/sites/:siteId/collections
 POST   /api/sites/:siteId/collections
+POST   /api/sites/:siteId/collections/draft-from-prompt
 GET    /api/sites/:siteId/collections/:collectionId
 PATCH  /api/sites/:siteId/collections/:collectionId
 DELETE /api/sites/:siteId/collections/:collectionId
+```
+
+`POST .../collections/draft-from-prompt` is the shipped AI-assisted collection-schema flow. It validates and persists the proposed collection immediately. It must use the shared generation quota, job, rate-limit, audit, and usage-accounting infrastructure.
+
+Schema migration remains a required addition:
+
+```http
 POST   /api/sites/:siteId/collections/:collectionId/schema/migrate
 ```
 
@@ -64,11 +72,16 @@ GET    /api/sites/:siteId/collections/:collectionId/entries/:entryId
 PATCH  /api/sites/:siteId/collections/:collectionId/entries/:entryId
 DELETE /api/sites/:siteId/collections/:collectionId/entries/:entryId
 POST   /api/sites/:siteId/collections/:collectionId/entries/reorder
-POST   /api/sites/:siteId/collections/:collectionId/entries/generate
-POST   /api/sites/:siteId/collections/:collectionId/entries/:entryId/reprompt
+POST   /api/sites/:siteId/collections/:collectionId/entries/draft-from-prompt
 ```
 
-`POST .../entries/generate` is the AI-assisted entry creation route ("turn these photos into a project", "add a service"). `POST .../entries/:entryId/reprompt` rewrites a single entry's fields. Both count against the trial 25-prompt budget per [Spec 17](./17-guest-authoring-and-claim.md). See [Spec 19](./19-collections-and-content-types.md) for the model and [Spec 07](./07-generation-engine.md) for generation semantics.
+`POST .../entries/draft-from-prompt` is the shipped bulk drafting flow. It persists generated entries with `status=draft`. It counts against prompt allowances and must persist the batch atomically.
+
+Entry-level replacement remains a required addition:
+
+```http
+POST   /api/sites/:siteId/collections/:collectionId/entries/:entryId/reprompt
+```
 
 ## Assets
 
@@ -118,11 +131,12 @@ A single endpoint returns total views, per-page views, and a gap-filled daily tr
 ## Sessions And Recovery
 
 ```http
-GET    /api/sessions/current               # current session state: layer, prompts_used, trial_ends_at, subscribed flag
+POST   /api/sessions/anonymous             # create or reuse a cookie-bound trial workspace
+GET    /api/sessions/me                    # current session state: layer, prompts_used, trial_ends_at, subscribed flag
 POST   /api/sessions/restore               # consume a recovery key, set a fresh cookie
 POST   /api/sessions/recovery-key          # mint or regenerate the workspace recovery link
 DELETE /api/sessions/recovery-key          # revoke the current recovery link
-POST   /api/sessions/attach-email          # promote session to L2; creates users row, sends verify magic link
+POST   /api/sessions/claim                 # promote session to L2; creates users row, sends verify magic link
 ```
 
 ## Authentication
