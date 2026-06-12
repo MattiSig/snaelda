@@ -479,7 +479,27 @@ export type BillingEntitlement = {
   activeSiteLimit?: number;
   monthlyPromptLimit?: number;
   assetStorageLimitBytes?: number;
+  collectionLimit?: number;
+  collectionEntryLimit?: number;
   updatedAt: string;
+};
+
+export type BillingPlan = {
+  id: 'basic' | 'pro';
+  name: string;
+  monthlyPriceUsd: number;
+  activeSiteLimit: number;
+  monthlyPromptLimit: number;
+  assetStorageLimitBytes: number;
+  collectionLimit: number;
+  collectionEntryLimit: number;
+  customDomainsEnabled: boolean;
+  priorityOnceOver: boolean;
+};
+
+export type BillingCatalog = {
+  plans: BillingPlan[];
+  onceOverPriceUsd: number;
 };
 
 export type BillingUsage = {
@@ -532,6 +552,7 @@ export type BillingState = {
   entitlement: BillingEntitlement;
   usage: BillingUsage;
   onceOver: OnceOverState;
+  catalog: BillingCatalog;
 };
 
 export type PublishedSiteResponse = {

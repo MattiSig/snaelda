@@ -3,6 +3,7 @@ package billing
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -37,37 +38,31 @@ type stripeClient interface {
 }
 
 type ServiceConfig struct {
-	Stripe             stripeClient
-	SuccessURL         string
-	CancelURL          string
-	PortalReturnURL    string
-	AppBaseURL         string
-	BasicPriceID       string
-	ProPriceID         string
-	OnceOverPriceID    string
-	ProductName        string
-	EmailSender        email.Sender
-	AuditRecorder      *audit.Recorder
-	DefaultSiteLimit   int
-	DefaultPromptLimit int
-	DefaultAssetBytes  int64
+	Stripe          stripeClient
+	SuccessURL      string
+	CancelURL       string
+	PortalReturnURL string
+	AppBaseURL      string
+	BasicPriceID    string
+	ProPriceID      string
+	OnceOverPriceID string
+	ProductName     string
+	EmailSender     email.Sender
+	AuditRecorder   *audit.Recorder
 }
 
 type Service struct {
-	store              DB
-	stripe             stripeClient
-	successURL         string
-	cancelURL          string
-	portalReturnURL    string
-	appBaseURL         string
-	priceByPlan        map[string]string
-	onceOverPriceID    string
-	productName        string
-	emailSender        email.Sender
-	auditRecorder      *audit.Recorder
-	defaultSiteLimit   int
-	defaultPromptLimit int
-	defaultAssetBytes  int64
+	store           DB
+	stripe          stripeClient
+	successURL      string
+	cancelURL       string
+	portalReturnURL string
+	appBaseURL      string
+	catalog         Catalog
+	onceOverPriceID string
+	productName     string
+	emailSender     email.Sender
+	auditRecorder   *audit.Recorder
 }
 
 type Entitlement struct {
@@ -79,6 +74,8 @@ type Entitlement struct {
 	ActiveSiteLimit        *int      `json:"activeSiteLimit,omitempty"`
 	MonthlyPromptLimit     *int      `json:"monthlyPromptLimit,omitempty"`
 	AssetStorageLimitBytes *int64    `json:"assetStorageLimitBytes,omitempty"`
+	CollectionLimit        *int      `json:"collectionLimit,omitempty"`
+	CollectionEntryLimit   *int      `json:"collectionEntryLimit,omitempty"`
 	UpdatedAt              time.Time `json:"updatedAt"`
 }
 
@@ -106,39 +103,19 @@ func NewService(store DB, cfg ServiceConfig) *Service {
 	if cfg.ProductName == "" {
 		cfg.ProductName = "Snaelda"
 	}
-	if cfg.DefaultSiteLimit == 0 {
-		cfg.DefaultSiteLimit = 3
-	}
-	if cfg.DefaultPromptLimit == 0 {
-		cfg.DefaultPromptLimit = 250
-	}
-	if cfg.DefaultAssetBytes == 0 {
-		cfg.DefaultAssetBytes = 5 << 30
-	}
-
-	priceByPlan := map[string]string{}
-	if strings.TrimSpace(cfg.BasicPriceID) != "" {
-		priceByPlan[planBasic] = strings.TrimSpace(cfg.BasicPriceID)
-	}
-	if strings.TrimSpace(cfg.ProPriceID) != "" {
-		priceByPlan[planPro] = strings.TrimSpace(cfg.ProPriceID)
-	}
 
 	return &Service{
-		store:              store,
-		stripe:             cfg.Stripe,
-		successURL:         strings.TrimSpace(cfg.SuccessURL),
-		cancelURL:          strings.TrimSpace(cfg.CancelURL),
-		portalReturnURL:    strings.TrimSpace(cfg.PortalReturnURL),
-		appBaseURL:         strings.TrimSpace(cfg.AppBaseURL),
-		priceByPlan:        priceByPlan,
-		onceOverPriceID:    strings.TrimSpace(cfg.OnceOverPriceID),
-		productName:        cfg.ProductName,
-		emailSender:        cfg.EmailSender,
-		auditRecorder:      cfg.AuditRecorder,
-		defaultSiteLimit:   cfg.DefaultSiteLimit,
-		defaultPromptLimit: cfg.DefaultPromptLimit,
-		defaultAssetBytes:  cfg.DefaultAssetBytes,
+		store:           store,
+		stripe:          cfg.Stripe,
+		successURL:      strings.TrimSpace(cfg.SuccessURL),
+		cancelURL:       strings.TrimSpace(cfg.CancelURL),
+		portalReturnURL: strings.TrimSpace(cfg.PortalReturnURL),
+		appBaseURL:      strings.TrimSpace(cfg.AppBaseURL),
+		catalog:         NewCatalog(cfg.BasicPriceID, cfg.ProPriceID),
+		onceOverPriceID: strings.TrimSpace(cfg.OnceOverPriceID),
+		productName:     cfg.ProductName,
+		emailSender:     cfg.EmailSender,
+		auditRecorder:   cfg.AuditRecorder,
 	}
 }
 
@@ -168,7 +145,7 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, input CheckoutInput
 		}
 	default:
 		var ok bool
-		priceID, ok = s.priceByPlan[plan]
+		priceID, ok = s.catalog.PriceIDForPlan(plan)
 		if !ok {
 			return "", fmt.Errorf("unknown billing plan %q", plan)
 		}
@@ -241,6 +218,8 @@ func (s *Service) GetEntitlement(ctx context.Context, workspaceID string) (Entit
 	var siteLimit *int
 	var promptLimit *int
 	var assetBytes *int64
+	var collectionLimit *int
+	var collectionEntryLimit *int
 	err := s.store.QueryRow(ctx, `
 		select workspace_id::text,
 		       plan,
@@ -250,6 +229,8 @@ func (s *Service) GetEntitlement(ctx context.Context, workspaceID string) (Entit
 		       active_site_limit,
 		       monthly_prompt_limit,
 		       asset_storage_limit_bytes,
+		       collection_limit,
+		       collection_entry_limit,
 		       updated_at
 		from billing_entitlements
 		where workspace_id = $1
@@ -262,12 +243,16 @@ func (s *Service) GetEntitlement(ctx context.Context, workspaceID string) (Entit
 		&siteLimit,
 		&promptLimit,
 		&assetBytes,
+		&collectionLimit,
+		&collectionEntryLimit,
 		&entitlement.UpdatedAt,
 	)
 	if err == nil {
 		entitlement.ActiveSiteLimit = siteLimit
 		entitlement.MonthlyPromptLimit = promptLimit
 		entitlement.AssetStorageLimitBytes = assetBytes
+		entitlement.CollectionLimit = collectionLimit
+		entitlement.CollectionEntryLimit = collectionEntryLimit
 		return entitlement, nil
 	}
 	if err != pgx.ErrNoRows {
@@ -407,14 +392,10 @@ func (s *Service) handleSubscriptionEvent(ctx context.Context, tx pgx.Tx, subscr
 		return nil
 	}
 
-	plan := normalizePlan(subscription.Plan)
 	live := subscription.Status == "active" || subscription.Status == "trialing"
-	if plan == "" {
-		if live {
-			plan = planBasic
-		} else {
-			plan = planTrial
-		}
+	plan, planDef, err := s.resolveSubscriptionPlan(ctx, tx, subscription)
+	if err != nil {
+		return err
 	}
 
 	if _, err := tx.Exec(ctx, `
@@ -443,12 +424,31 @@ func (s *Service) handleSubscriptionEvent(ctx context.Context, tx pgx.Tx, subscr
 	if status == "" {
 		status = "inactive"
 	}
+	var entitlementPlan string
+	var customDomainsEnabled bool
+	var activeSiteLimit any
+	var monthlyPromptLimit any
+	var assetStorageLimitBytes any
+	var collectionLimit any
+	var collectionEntryLimit any
+	if live {
+		entitlementPlan = plan
+		customDomainsEnabled = planDef.CustomDomainsEnabled
+		activeSiteLimit = planDef.ActiveSiteLimit
+		monthlyPromptLimit = planDef.MonthlyPromptLimit
+		assetStorageLimitBytes = planDef.AssetStorageLimitBytes
+		collectionLimit = planDef.CollectionLimit
+		collectionEntryLimit = planDef.CollectionEntryLimit
+	} else {
+		entitlementPlan = planTrial
+	}
 	if _, err := tx.Exec(ctx, `
 		insert into billing_entitlements (
 			workspace_id, plan, status, subscription_live, custom_domains_enabled,
-			active_site_limit, monthly_prompt_limit, asset_storage_limit_bytes
+			active_site_limit, monthly_prompt_limit, asset_storage_limit_bytes,
+			collection_limit, collection_entry_limit
 		)
-		values ($1, $2, $3, $4, $5, $6, $7, $8)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		on conflict (workspace_id) do update
 		set plan = excluded.plan,
 		    status = excluded.status,
@@ -457,8 +457,10 @@ func (s *Service) handleSubscriptionEvent(ctx context.Context, tx pgx.Tx, subscr
 		    active_site_limit = excluded.active_site_limit,
 		    monthly_prompt_limit = excluded.monthly_prompt_limit,
 		    asset_storage_limit_bytes = excluded.asset_storage_limit_bytes,
+		    collection_limit = excluded.collection_limit,
+		    collection_entry_limit = excluded.collection_entry_limit,
 		    updated_at = now()
-	`, workspaceID, map[bool]string{true: plan, false: planTrial}[live], status, live, live, s.defaultSiteLimit, s.defaultPromptLimit, s.defaultAssetBytes); err != nil {
+	`, workspaceID, entitlementPlan, status, live, customDomainsEnabled, activeSiteLimit, monthlyPromptLimit, assetStorageLimitBytes, collectionLimit, collectionEntryLimit); err != nil {
 		return err
 	}
 
@@ -490,13 +492,17 @@ func (s *Service) handleInvoicePaid(ctx context.Context, tx pgx.Tx, invoice Invo
 		return nil
 	}
 	amount, currency := formatAmount(invoice.AmountPaid, invoice.Currency)
+	planName := humanPlanName(invoice.Plan)
+	if plan, ok := s.catalog.PlanByPriceID(invoice.PriceID); ok {
+		planName = plan.Name
+	}
 	_, err = s.emailSender.SendBillingReceipt(ctx, email.Address{Email: contact.UserEmail, Name: contact.UserName}, email.BillingReceiptTemplateData{
 		ProductName:   s.productName,
 		WorkspaceName: contact.WorkspaceName,
 		Amount:        amount,
 		Currency:      currency,
 		ReceiptURL:    invoice.HostedInvoiceURL,
-		PlanName:      humanPlanName(invoice.Plan),
+		PlanName:      planName,
 	}, "billing_receipt:"+eventID)
 	return err
 }
@@ -527,13 +533,22 @@ func (s *Service) handleInvoicePaymentFailed(ctx context.Context, tx pgx.Tx, inv
 		}
 	}
 
+	planName := humanPlanName(invoice.Plan)
+	if plan, ok := s.catalog.PlanByPriceID(invoice.PriceID); ok {
+		planName = plan.Name
+	}
+
 	_, err = s.emailSender.SendBillingPaymentFailed(ctx, email.Address{Email: contact.UserEmail, Name: contact.UserName}, email.BillingPaymentFailedTemplateData{
 		ProductName:   s.productName,
 		WorkspaceName: contact.WorkspaceName,
-		PlanName:      humanPlanName(invoice.Plan),
+		PlanName:      planName,
 		PortalURL:     portalURL,
 	}, "billing_payment_failed:"+eventID)
 	return err
+}
+
+func (s *Service) Catalog() CatalogResponse {
+	return s.catalog.Response()
 }
 
 func (s *Service) lookupBillingContact(ctx context.Context, workspaceID string) (BillingContact, error) {
@@ -630,12 +645,41 @@ func normalizePlan(value string) string {
 }
 
 func humanPlanName(plan string) string {
-	switch normalizePlan(plan) {
+	switch strings.ToLower(strings.TrimSpace(plan)) {
+	case planTrial:
+		return "Trial"
 	case planPro:
 		return "Pro"
 	default:
 		return "Basic"
 	}
+}
+
+func (s *Service) resolveSubscriptionPlan(ctx context.Context, tx pgx.Tx, subscription SubscriptionEventData) (string, PlanDefinition, error) {
+	if plan, ok := s.catalog.PlanByPriceID(subscription.PriceID); ok {
+		return plan.ID, plan, nil
+	}
+
+	if strings.TrimSpace(subscription.SubscriptionID) != "" {
+		var existingPlan string
+		if err := tx.QueryRow(ctx, `
+			select plan
+			from billing_subscriptions
+			where stripe_subscription_id = $1
+		`, subscription.SubscriptionID).Scan(&existingPlan); err == nil {
+			if plan, ok := s.catalog.PlanByID(existingPlan); ok {
+				return plan.ID, plan, nil
+			}
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return "", PlanDefinition{}, err
+		}
+	}
+
+	if plan, ok := s.catalog.PlanByID(subscription.Plan); ok {
+		return plan.ID, plan, nil
+	}
+
+	return "", PlanDefinition{}, fmt.Errorf("stripe subscription price %q is not configured to a billing plan", strings.TrimSpace(subscription.PriceID))
 }
 
 func formatAmount(amountMinor int64, currency string) (string, string) {

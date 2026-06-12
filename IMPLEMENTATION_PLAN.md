@@ -32,10 +32,10 @@ Refreshed 2026-06-09 from a spec-to-source audit of `specs/*`, `internal/*`, `ap
   - Include brand logos and collection-entry assets in workspace/site ownership validation and published asset allowlisting.
   - Add regressions for public brand logos, collection-bound imagery, foreign-workspace assets, and workspace-level assets.
 
-- [ ] Establish one canonical billing plan catalog.
-  - Align displayed prices, Stripe setup prices, site limits, prompt allowances, storage allowances, and entitlement snapshots.
-  - Derive the purchased plan from trusted Stripe price IDs and propagate plan metadata to subscriptions so Pro Checkout cannot become Basic.
-  - Add collection/entry URL entitlements before programmatic content can exceed plan limits.
+- [x] Establish one canonical billing plan catalog.
+  - Added a shared billing catalog for Basic and Pro so displayed prices, Stripe price wiring, site limits, prompt allowances, storage allowances, and entitlement snapshots all derive from one backend source.
+  - Subscription webhooks now derive the purchased plan from trusted Stripe price IDs, fall back to the existing stored subscription plan when needed, and persist the correct plan metadata so Pro Checkout cannot degrade into Basic.
+  - Entitlements now include collection and collection-entry/detail-URL caps, and the collections authoring routes enforce those limits before manual or AI-driven content creation can exceed the active paid plan.
 
 - [x] Fail production startup when launch-critical services are incomplete.
   - Require HTTPS app/public/billing URLs, non-local public domains, Stripe secret + webhook + configured plans, and production email transport/key.

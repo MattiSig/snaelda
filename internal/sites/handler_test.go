@@ -856,6 +856,8 @@ func (s billingAccessStoreStub) QueryRow(_ context.Context, sql string, _ ...any
 			s.entitlement.ActiveSiteLimit,
 			s.entitlement.MonthlyPromptLimit,
 			s.entitlement.AssetStorageLimitBytes,
+			s.entitlement.CollectionLimit,
+			s.entitlement.CollectionEntryLimit,
 			time.Now().UTC(),
 		}}
 	case strings.Contains(sql, "select count(*)") && strings.Contains(sql, "from sites"):

@@ -84,6 +84,7 @@ type InvoiceEventData struct {
 	Currency         string
 	HostedInvoiceURL string
 	Plan             string
+	PriceID          string
 }
 
 type stripeSDK interface {
@@ -145,6 +146,15 @@ func (s *stripeWrapper) CreateCheckoutSession(ctx context.Context, req CheckoutS
 			"plan":          normalizePlan(req.Plan),
 			"purchase_type": normalizePurchaseType(req.PurchaseType),
 		},
+	}
+	if mode == checkoutModeSubscription {
+		params.SubscriptionData = &stripe.CheckoutSessionCreateSubscriptionDataParams{
+			Metadata: map[string]string{
+				"workspace_id":  req.WorkspaceID,
+				"plan":          normalizePlan(req.Plan),
+				"purchase_type": normalizePurchaseType(req.PurchaseType),
+			},
+		}
 	}
 	if strings.TrimSpace(req.CustomerID) != "" {
 		params.Customer = stripe.String(req.CustomerID)
@@ -283,7 +293,10 @@ func (s *stripeWrapper) ConstructWebhookEvent(payload []byte, header string) (We
 			Lines            struct {
 				Data []struct {
 					Metadata map[string]string `json:"metadata"`
-					Plan     struct {
+					Price    struct {
+						ID string `json:"id"`
+					} `json:"price"`
+					Plan struct {
 						ID string `json:"id"`
 					} `json:"plan"`
 				} `json:"data"`
@@ -301,6 +314,7 @@ func (s *stripeWrapper) ConstructWebhookEvent(payload []byte, header string) (We
 		}
 		if len(data.Lines.Data) > 0 {
 			result.Invoice.Plan = strings.TrimSpace(data.Lines.Data[0].Metadata["plan"])
+			result.Invoice.PriceID = strings.TrimSpace(data.Lines.Data[0].Price.ID)
 			if result.Invoice.Plan == "" {
 				result.Invoice.Plan = data.Lines.Data[0].Plan.ID
 			}

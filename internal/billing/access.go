@@ -17,9 +17,10 @@ type AccessStore interface {
 var ErrSubscriptionRequired = errors.New("subscription required")
 
 type WorkspaceState struct {
-	Entitlement Entitlement   `json:"entitlement"`
-	Usage       Usage         `json:"usage"`
-	OnceOver    OnceOverState `json:"onceOver"`
+	Entitlement Entitlement     `json:"entitlement"`
+	Usage       Usage           `json:"usage"`
+	OnceOver    OnceOverState   `json:"onceOver"`
+	Catalog     CatalogResponse `json:"catalog"`
 }
 
 type Usage struct {
@@ -81,6 +82,7 @@ func LoadWorkspaceState(ctx context.Context, store AccessStore, workspaceID stri
 		Entitlement: entitlement,
 		Usage:       usage,
 		OnceOver:    onceOver,
+		Catalog:     NewCatalog("", "").Response(),
 	}, nil
 }
 
@@ -149,11 +151,75 @@ func EnforceAssetStorageLimit(ctx context.Context, store AccessStore, workspaceI
 	return nil
 }
 
+func EnforceCollectionLimit(ctx context.Context, store AccessStore, workspaceID string, additionalCollections int) error {
+	if additionalCollections <= 0 {
+		return nil
+	}
+	state, err := LoadWorkspaceState(ctx, store, workspaceID)
+	if err != nil {
+		return err
+	}
+	limit := state.Entitlement.CollectionLimit
+	if !state.Entitlement.SubscriptionLive || limit == nil || *limit <= 0 {
+		return nil
+	}
+
+	var collectionCount int
+	if err := store.QueryRow(ctx, `
+		select count(*)
+		from collections c
+		join sites s on s.id = c.site_id
+		where s.workspace_id = $1
+	`, workspaceID).Scan(&collectionCount); err != nil {
+		return err
+	}
+	if collectionCount+additionalCollections > *limit {
+		return &LimitExceededError{
+			Resource: "collections",
+			Message:  fmt.Sprintf("your %s plan includes %d collections; upgrade before adding more", humanPlanName(state.Entitlement.Plan), *limit),
+		}
+	}
+	return nil
+}
+
+func EnforceCollectionEntryLimit(ctx context.Context, store AccessStore, workspaceID string, additionalEntries int) error {
+	if additionalEntries <= 0 {
+		return nil
+	}
+	state, err := LoadWorkspaceState(ctx, store, workspaceID)
+	if err != nil {
+		return err
+	}
+	limit := state.Entitlement.CollectionEntryLimit
+	if !state.Entitlement.SubscriptionLive || limit == nil || *limit <= 0 {
+		return nil
+	}
+
+	var entryCount int
+	if err := store.QueryRow(ctx, `
+		select count(*)
+		from collection_entries ce
+		join sites s on s.id = ce.site_id
+		where s.workspace_id = $1
+	`, workspaceID).Scan(&entryCount); err != nil {
+		return err
+	}
+	if entryCount+additionalEntries > *limit {
+		return &LimitExceededError{
+			Resource: "collection_entries",
+			Message:  fmt.Sprintf("your %s plan includes %d collection entries/detail URLs; upgrade before adding more", humanPlanName(state.Entitlement.Plan), *limit),
+		}
+	}
+	return nil
+}
+
 func loadEntitlement(ctx context.Context, store AccessStore, workspaceID string) (Entitlement, error) {
 	var entitlement Entitlement
 	var siteLimit *int
 	var promptLimit *int
 	var assetBytes *int64
+	var collectionLimit *int
+	var collectionEntryLimit *int
 	err := store.QueryRow(ctx, `
 		select workspace_id::text,
 		       plan,
@@ -163,6 +229,8 @@ func loadEntitlement(ctx context.Context, store AccessStore, workspaceID string)
 		       active_site_limit,
 		       monthly_prompt_limit,
 		       asset_storage_limit_bytes,
+		       collection_limit,
+		       collection_entry_limit,
 		       updated_at
 		from billing_entitlements
 		where workspace_id = $1
@@ -175,12 +243,16 @@ func loadEntitlement(ctx context.Context, store AccessStore, workspaceID string)
 		&siteLimit,
 		&promptLimit,
 		&assetBytes,
+		&collectionLimit,
+		&collectionEntryLimit,
 		&entitlement.UpdatedAt,
 	)
 	if err == nil {
 		entitlement.ActiveSiteLimit = siteLimit
 		entitlement.MonthlyPromptLimit = promptLimit
 		entitlement.AssetStorageLimitBytes = assetBytes
+		entitlement.CollectionLimit = collectionLimit
+		entitlement.CollectionEntryLimit = collectionEntryLimit
 		return entitlement, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {

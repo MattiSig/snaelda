@@ -10,6 +10,7 @@ import (
 
 	"github.com/MattiSig/snaelda/internal/auth"
 	"github.com/MattiSig/snaelda/internal/authorization"
+	"github.com/MattiSig/snaelda/internal/billing"
 	"github.com/MattiSig/snaelda/internal/generation"
 	"github.com/MattiSig/snaelda/internal/platform/audit"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
@@ -31,6 +32,7 @@ type Handler struct {
 	jobs       *generation.PromptActionManager
 	logger     *slog.Logger
 	recorder   *audit.Recorder
+	billingDB  billing.AccessStore
 }
 
 // HandlerConfig is the optional wiring for a Handler. Drafter is wired by the
@@ -63,6 +65,7 @@ func NewHandlerWithConfig(db sites.DB, cfg HandlerConfig) *Handler {
 		jobs:       generation.NewPromptActionManagerFromDB(db, logger),
 		logger:     logger,
 		recorder:   cfg.AuditRecorder,
+		billingDB:  db,
 	}
 }
 
@@ -167,6 +170,12 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	}
 	if payload.Settings != nil {
 		input.Settings = *payload.Settings
+	}
+	if h.billingDB != nil {
+		if err := billing.EnforceCollectionLimit(r.Context(), h.billingDB, scope.WorkspaceID, 1); err != nil {
+			writeCollectionError(w, err)
+			return
+		}
 	}
 	collection, err := h.mutator.CreateCollection(r.Context(), scope.WorkspaceID, siteID, input)
 	if err != nil {
@@ -320,6 +329,13 @@ func (h *Handler) draftFromPrompt(w http.ResponseWriter, r *http.Request) {
 		writeCollectionError(w, err)
 		return
 	}
+	if h.billingDB != nil {
+		if err := billing.EnforceCollectionLimit(r.Context(), h.billingDB, scope.WorkspaceID, 1); err != nil {
+			_ = h.jobs.FailJob(r.Context(), jobID, err)
+			writeCollectionError(w, err)
+			return
+		}
+	}
 
 	collection, err := h.mutator.CreateCollection(r.Context(), scope.WorkspaceID, siteID, CreateCollectionInput{
 		Slug:          strings.TrimSpace(drafted.Slug),
@@ -394,6 +410,12 @@ func (h *Handler) createEntry(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "request body must be valid JSON")
 		return
+	}
+	if h.billingDB != nil {
+		if err := billing.EnforceCollectionEntryLimit(r.Context(), h.billingDB, scope.WorkspaceID, 1); err != nil {
+			writeCollectionError(w, err)
+			return
+		}
 	}
 	entry, err := h.mutator.CreateEntry(r.Context(), scope.WorkspaceID, siteID, collectionID, CreateEntryInput{
 		Slug:   strings.TrimSpace(payload.Slug),
@@ -530,6 +552,13 @@ func (h *Handler) draftEntriesFromPrompt(w http.ResponseWriter, r *http.Request)
 		writeCollectionError(w, err)
 		return
 	}
+	if h.billingDB != nil {
+		if err := billing.EnforceCollectionEntryLimit(r.Context(), h.billingDB, scope.WorkspaceID, len(drafted.Entries)); err != nil {
+			_ = h.jobs.FailJob(r.Context(), jobID, err)
+			writeCollectionError(w, err)
+			return
+		}
+	}
 
 	inputs := make([]CreateEntryInput, 0, len(drafted.Entries))
 	for _, draftEntry := range drafted.Entries {
@@ -637,6 +666,8 @@ func writeCollectionError(w http.ResponseWriter, err error) {
 	case isPromptQuotaError(err, "trial_exhausted"):
 		writeError(w, http.StatusForbidden, "trial_exhausted", err.Error())
 	case isPromptQuotaError(err, "plan_limit_exceeded"):
+		writeError(w, http.StatusForbidden, "plan_limit_exceeded", err.Error())
+	case errors.Is(err, billing.ErrPlanLimitExceeded):
 		writeError(w, http.StatusForbidden, "plan_limit_exceeded", err.Error())
 	case errors.Is(err, ErrCollectionNotFound):
 		writeError(w, http.StatusNotFound, "collection_not_found", "collection was not found")

@@ -104,7 +104,7 @@ func TestHandleWebhookUpdatesEntitlements(t *testing.T) {
 	store.workspaceByCustomer["cus_123"] = "workspace-1"
 
 	service := NewService(store, ServiceConfig{
-		Stripe:          &fakeStripeClient{event: WebhookEvent{ID: "evt_1", Type: "customer.subscription.updated", Subscription: SubscriptionEventData{WorkspaceID: "workspace-1", SubscriptionID: "sub_123", CustomerID: "cus_123", Status: "active", Plan: "pro"}}},
+		Stripe:          &fakeStripeClient{event: WebhookEvent{ID: "evt_1", Type: "customer.subscription.updated", Subscription: SubscriptionEventData{WorkspaceID: "workspace-1", SubscriptionID: "sub_123", CustomerID: "cus_123", Status: "active", Plan: "basic", PriceID: "price_pro"}}},
 		SuccessURL:      "https://app.test/success",
 		CancelURL:       "https://app.test/cancel",
 		PortalReturnURL: "https://app.test/billing",
@@ -125,6 +125,21 @@ func TestHandleWebhookUpdatesEntitlements(t *testing.T) {
 	}
 	if entitlement.Plan != "pro" {
 		t.Fatalf("expected pro plan, got %q", entitlement.Plan)
+	}
+	if entitlement.ActiveSiteLimit == nil || *entitlement.ActiveSiteLimit != 10 {
+		t.Fatalf("expected pro site limit, got %#v", entitlement.ActiveSiteLimit)
+	}
+	if entitlement.MonthlyPromptLimit == nil || *entitlement.MonthlyPromptLimit != 200 {
+		t.Fatalf("expected pro prompt limit, got %#v", entitlement.MonthlyPromptLimit)
+	}
+	if entitlement.AssetStorageLimitBytes == nil || *entitlement.AssetStorageLimitBytes != 20*gibibyte {
+		t.Fatalf("expected pro asset limit, got %#v", entitlement.AssetStorageLimitBytes)
+	}
+	if entitlement.CollectionLimit == nil || *entitlement.CollectionLimit != 25 {
+		t.Fatalf("expected pro collection limit, got %#v", entitlement.CollectionLimit)
+	}
+	if entitlement.CollectionEntryLimit == nil || *entitlement.CollectionEntryLimit != 1000 {
+		t.Fatalf("expected pro collection entry limit, got %#v", entitlement.CollectionEntryLimit)
 	}
 }
 
@@ -603,6 +618,8 @@ func (s *fakeBillingStore) queryRow(sql string, args ...any) pgx.Row {
 			entitlement.ActiveSiteLimit,
 			entitlement.MonthlyPromptLimit,
 			entitlement.AssetStorageLimitBytes,
+			entitlement.CollectionLimit,
+			entitlement.CollectionEntryLimit,
 			entitlement.UpdatedAt,
 		}}
 	case strings.Contains(sql, "select exists(select 1 from billing_events"):
@@ -713,19 +730,23 @@ func (s *fakeBillingStore) exec(sql string, args ...any) (pgconn.CommandTag, err
 		s.subscriptions[subscription.SubscriptionID] = subscription
 	case strings.Contains(sql, "insert into billing_entitlements"):
 		workspaceID := args[0].(string)
-		siteLimit := args[5].(int)
-		promptLimit := args[6].(int)
-		assetBytes := args[7].(int64)
 		now := time.Now().UTC()
+		siteLimit := intPointerFromAny(args[5])
+		promptLimit := intPointerFromAny(args[6])
+		assetBytes := int64PointerFromAny(args[7])
+		collectionLimit := intPointerFromAny(args[8])
+		entryLimit := intPointerFromAny(args[9])
 		s.entitlements[workspaceID] = Entitlement{
 			WorkspaceID:            workspaceID,
 			Plan:                   args[1].(string),
 			Status:                 args[2].(string),
 			SubscriptionLive:       args[3].(bool),
 			CustomDomainsEnabled:   args[4].(bool),
-			ActiveSiteLimit:        &siteLimit,
-			MonthlyPromptLimit:     &promptLimit,
-			AssetStorageLimitBytes: &assetBytes,
+			ActiveSiteLimit:        siteLimit,
+			MonthlyPromptLimit:     promptLimit,
+			AssetStorageLimitBytes: assetBytes,
+			CollectionLimit:        collectionLimit,
+			CollectionEntryLimit:   entryLimit,
 			UpdatedAt:              now,
 		}
 	case strings.Contains(sql, "update workspaces") && strings.Contains(sql, "set plan = $2"):
@@ -883,6 +904,34 @@ func stringPointer(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+func intPointerFromAny(value any) *int {
+	if value == nil {
+		return nil
+	}
+	switch typed := value.(type) {
+	case int:
+		return &typed
+	case *int:
+		return typed
+	default:
+		return nil
+	}
+}
+
+func int64PointerFromAny(value any) *int64 {
+	if value == nil {
+		return nil
+	}
+	switch typed := value.(type) {
+	case int64:
+		return &typed
+	case *int64:
+		return typed
+	default:
+		return nil
+	}
 }
 
 type fakeBillingRows struct {

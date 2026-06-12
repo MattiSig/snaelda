@@ -57,6 +57,8 @@ func (s *promptGovernanceStore) QueryRow(_ context.Context, sql string, args ...
 			s.entitlement.ActiveSiteLimit,
 			s.entitlement.MonthlyPromptLimit,
 			s.entitlement.AssetStorageLimitBytes,
+			s.entitlement.CollectionLimit,
+			s.entitlement.CollectionEntryLimit,
 			s.entitlement.UpdatedAt,
 		}}
 	case strings.Contains(sql, "from billing_subscriptions"):

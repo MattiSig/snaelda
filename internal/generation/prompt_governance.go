@@ -250,6 +250,8 @@ func (m *PromptActionManager) enforcePromptQuota(ctx context.Context, tx promptA
 	var siteLimit *int
 	var promptLimit *int
 	var assetBytes *int64
+	var collectionLimit *int
+	var collectionEntryLimit *int
 	err := tx.QueryRow(ctx, `
 		select workspace_id::text,
 		       plan,
@@ -259,6 +261,8 @@ func (m *PromptActionManager) enforcePromptQuota(ctx context.Context, tx promptA
 		       active_site_limit,
 		       monthly_prompt_limit,
 		       asset_storage_limit_bytes,
+		       collection_limit,
+		       collection_entry_limit,
 		       updated_at
 		from billing_entitlements
 		where workspace_id = $1::uuid
@@ -272,6 +276,8 @@ func (m *PromptActionManager) enforcePromptQuota(ctx context.Context, tx promptA
 		&siteLimit,
 		&promptLimit,
 		&assetBytes,
+		&collectionLimit,
+		&collectionEntryLimit,
 		&entitlement.UpdatedAt,
 	)
 	switch {
@@ -279,6 +285,8 @@ func (m *PromptActionManager) enforcePromptQuota(ctx context.Context, tx promptA
 		entitlement.ActiveSiteLimit = siteLimit
 		entitlement.MonthlyPromptLimit = promptLimit
 		entitlement.AssetStorageLimitBytes = assetBytes
+		entitlement.CollectionLimit = collectionLimit
+		entitlement.CollectionEntryLimit = collectionEntryLimit
 	case errors.Is(err, pgx.ErrNoRows):
 		entitlement.WorkspaceID = workspaceID
 	default:

@@ -34,20 +34,17 @@ type Handler struct {
 func NewHandler(store DB, cfg HandlerConfig) *Handler {
 	return &Handler{
 		service: NewService(store, ServiceConfig{
-			Stripe:             NewStripeClient(cfg.StripeSecretKey, cfg.StripeWebhookSecret),
-			SuccessURL:         cfg.BillingSuccessURL,
-			CancelURL:          cfg.BillingCancelURL,
-			PortalReturnURL:    cfg.BillingPortalReturnURL,
-			AppBaseURL:         cfg.AppBaseURL,
-			BasicPriceID:       cfg.BasicPriceID,
-			ProPriceID:         cfg.ProPriceID,
-			OnceOverPriceID:    cfg.OnceOverPriceID,
-			ProductName:        cfg.ProductName,
-			EmailSender:        cfg.EmailSender,
-			AuditRecorder:      cfg.AuditRecorder,
-			DefaultSiteLimit:   3,
-			DefaultPromptLimit: 250,
-			DefaultAssetBytes:  5 << 30,
+			Stripe:          NewStripeClient(cfg.StripeSecretKey, cfg.StripeWebhookSecret),
+			SuccessURL:      cfg.BillingSuccessURL,
+			CancelURL:       cfg.BillingCancelURL,
+			PortalReturnURL: cfg.BillingPortalReturnURL,
+			AppBaseURL:      cfg.AppBaseURL,
+			BasicPriceID:    cfg.BasicPriceID,
+			ProPriceID:      cfg.ProPriceID,
+			OnceOverPriceID: cfg.OnceOverPriceID,
+			ProductName:     cfg.ProductName,
+			EmailSender:     cfg.EmailSender,
+			AuditRecorder:   cfg.AuditRecorder,
 		}),
 	}
 }
@@ -138,6 +135,7 @@ func (h *Handler) entitlements(w http.ResponseWriter, r *http.Request) {
 		writeBillingError(w, http.StatusInternalServerError, "billing_entitlements_failed", err.Error())
 		return
 	}
+	state.Catalog = h.service.Catalog()
 	writeBillingJSON(w, http.StatusOK, state)
 }
 

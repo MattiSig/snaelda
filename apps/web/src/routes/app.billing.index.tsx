@@ -12,10 +12,10 @@ import {
   getBillingState,
   getCurrentSession,
   updateOnceOver,
+  type BillingPlan,
   type BillingState,
   type BuilderSession,
 } from '@/lib/api'
-import { ONCE_OVER_PRICE_USD, PLANS, type PlanPricing } from '@/lib/billing-plans'
 import { emptyState, form, paddedPanel, text } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 
@@ -172,6 +172,7 @@ function BillingPage() {
   }
 
   const { entitlement, usage } = billingState
+  const { catalog } = billingState
   const onceOver = billingState.onceOver
   const trialEndsLabel = session.trialExpiresAt
     ? new Date(session.trialExpiresAt).toLocaleDateString()
@@ -243,7 +244,7 @@ function BillingPage() {
         ) : null}
 
         <div className="mt-6 grid gap-4 lg:grid-cols-2">
-          {PLANS.map((plan) => {
+          {catalog.plans.map((plan) => {
             const isCurrent = entitlement.plan === plan.id && entitlement.subscriptionLive
             const isLoading = isStartingCheckout === plan.id
             return (
@@ -347,7 +348,7 @@ function BillingPage() {
             <div className="grid gap-3 md:grid-cols-3">
               <StatusTile
                 label="Price"
-                value={`$${ONCE_OVER_PRICE_USD}`}
+                value={`$${catalog.onceOverPriceUsd}`}
                 hint="One-time charge. Buy as many passes as you like."
               />
               <StatusTile
@@ -394,8 +395,8 @@ function BillingPage() {
                       : checkoutBlockedByEmail
                         ? 'Add an email above'
                         : onceOver.status === 'delivered'
-                          ? `Buy another once-over · $${ONCE_OVER_PRICE_USD}`
-                          : `Buy once-over · $${ONCE_OVER_PRICE_USD}`}
+                          ? `Buy another once-over · $${catalog.onceOverPriceUsd}`
+                          : `Buy once-over · $${catalog.onceOverPriceUsd}`}
                     <ArrowUpRight className="size-4" />
                   </Button>
                 </div>
@@ -542,16 +543,17 @@ function PlanCard({
   disabled,
   onSelect,
 }: {
-  plan: PlanPricing
+  plan: BillingPlan
   ctaLabel: string
   disabled: boolean
   onSelect: () => void
 }) {
+  const isRecommended = plan.id === 'basic'
   return (
     <article
       className={cn(
         'grid gap-5 rounded-[16px] border bg-[var(--surface-2)] p-6',
-        plan.isRecommended
+        isRecommended
           ? 'border-[color-mix(in_oklch,var(--thread-gold)_55%,var(--border))] shadow-[0_0_0_1px_color-mix(in_oklch,var(--thread-gold)_22%,transparent)]'
           : 'border-border',
       )}
@@ -560,30 +562,32 @@ function PlanCard({
         <div className="grid gap-1">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-lg font-black text-[var(--paper)]">{plan.name}</p>
-            {plan.isRecommended ? (
+            {isRecommended ? (
               <span className="rounded-full border border-[color-mix(in_oklch,var(--thread-gold)_70%,var(--border))] bg-[color-mix(in_oklch,var(--thread-gold)_18%,var(--surface-1))] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--paper)]">
                 Recommended
               </span>
             ) : null}
           </div>
-          <p className="text-sm text-[var(--paper-muted)]">{plan.tagline}</p>
+          <p className="text-sm text-[var(--paper-muted)]">{planTagline(plan)}</p>
         </div>
       </div>
       <div className="grid gap-1">
         <p className="flex items-baseline gap-2">
           <span className="text-[2.4rem] font-black leading-none tabular-nums text-[var(--paper)]">
-            ${plan.priceMonthly}
+            ${plan.monthlyPriceUsd}
           </span>
           <span className="text-sm text-[var(--paper-muted)]">/ month</span>
         </p>
       </div>
       <ul className="grid gap-2 text-sm">
-        {plan.features.map((feature) => (
+        {planFeatures(plan).map((feature) => (
           <li key={feature.label} className="flex items-center gap-2">
             {feature.included ? (
               <Check
-                className="size-4 shrink-0"
-                style={{ color: plan.accent }}
+                className={cn(
+                  'size-4 shrink-0',
+                  plan.id === 'pro' ? 'text-[var(--thread-teal)]' : 'text-[var(--thread-gold)]',
+                )}
                 aria-hidden="true"
               />
             ) : (
@@ -608,7 +612,7 @@ function PlanCard({
         type="button"
         onClick={onSelect}
         disabled={disabled}
-        variant={plan.isRecommended ? 'default' : 'outline'}
+        variant={isRecommended ? 'default' : 'outline'}
       >
         {ctaLabel}
         <ArrowUpRight className="size-4" />
@@ -668,6 +672,27 @@ function humanPlan(plan: string) {
       return 'Basic'
     default:
       return 'Trial'
+  }
+}
+
+function planFeatures(plan: BillingPlan) {
+  return [
+    { label: `${plan.monthlyPromptLimit} prompts / month`, included: true },
+    { label: `${plan.activeSiteLimit} active sites`, included: true },
+    { label: `${formatBytes(plan.assetStorageLimitBytes)} asset storage`, included: true },
+    { label: `${plan.collectionLimit} collections`, included: true },
+    { label: `${plan.collectionEntryLimit} collection entries / detail URLs`, included: true },
+    { label: 'Custom domains', included: plan.customDomainsEnabled },
+    { label: 'Priority once-over slots', included: plan.priorityOnceOver },
+  ]
+}
+
+function planTagline(plan: BillingPlan) {
+  switch (plan.id) {
+    case 'pro':
+      return 'Multiple sites or heavier iteration on one.'
+    default:
+      return 'A small business site and its next rounds of edits.'
   }
 }
 
