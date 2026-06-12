@@ -47,12 +47,12 @@ Refreshed 2026-06-09 from a spec-to-source audit of `specs/*`, `internal/*`, `ap
 
 ## P1 — Core Product And AI Experience
 
-- [ ] Make site-wide reprompting revise existing content.
-  - Matching page slugs currently preserve all blocks, so a successful site reprompt can leave copy unchanged.
-  - Use the current draft as context while still applying the requested direction to affected pages.
+- [x] Make site-wide reprompting revise existing content.
+  - Slug-matched pages now re-enter the reprompt pipeline instead of being copied through unchanged, so site-wide direction changes actually rewrite existing copy.
+  - When the block-aware planner is available, matched pages preserve stable page and untouched block identities while applying the new direction from the current draft context; navigation is then resynced against the revised pages.
 
-- [ ] Wire page reprompts through the existing block-aware change-set pipeline.
-  - Preserve unaffected blocks and IDs; apply keep/edit/remove/insert operations; retain targeted undo/history and recover cleanly from partial model failure.
+- [x] Wire page reprompts through the existing block-aware change-set pipeline.
+  - Page reprompts now prefer keep/edit/remove/insert change sets, preserve unaffected block IDs, record the planner-authored summary in history, and fall back cleanly to whole-page regeneration only when the change-set path is unavailable or fails.
 
 - [ ] Make AI history and diffs trustworthy.
   - Show block- and entry-scoped AI operations in the History panel with summaries and individual revert.

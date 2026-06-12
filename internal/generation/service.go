@@ -527,12 +527,11 @@ func (s *Service) RepromptPageWithProgress(ctx context.Context, workspaceID stri
 		return GenerateResult{}, err
 	}
 
-	pagePlan, err := s.buildPageRepromptPlan(ctx, currentDraft, page, prompt)
+	pageResult, err := s.repromptPage(ctx, currentDraft, page, prompt)
 	if err != nil {
 		_ = s.failGenerationJob(ctx, jobID, err)
 		return GenerateResult{}, err
 	}
-	nextPage := replaceDraftPage(page, pagePlan)
 	if err := tracker.emit(ctx, "copy.write"); err != nil {
 		_ = s.failGenerationJob(ctx, jobID, err)
 		return GenerateResult{}, err
@@ -544,7 +543,7 @@ func (s *Service) RepromptPageWithProgress(ctx context.Context, workspaceID stri
 
 	nextDraft := currentDraft
 	nextDraft.Pages = append([]siteconfig.PageDraft(nil), currentDraft.Pages...)
-	nextDraft.Pages[pageIndex] = nextPage
+	nextDraft.Pages[pageIndex] = pageResult.Page
 	nextDraft.Navigation = syncRepromptNavigation(currentDraft.Navigation, nextDraft.Pages)
 
 	if err := tracker.emit(ctx, "persist"); err != nil {
@@ -561,7 +560,7 @@ func (s *Service) RepromptPageWithProgress(ctx context.Context, workspaceID stri
 		SiteGoal:     currentDraft.Site.SEO.Description,
 		ThemePreset:  metadata.themePreset(),
 		Theme:        currentDraft.Theme,
-		Pages:        []generationPagePlan{pagePlan},
+		Pages:        []generationPagePlan{pageResult.Plan},
 		AssetsNeeded: metadata.assetsNeeded(),
 		Assumptions:  metadata.assumptions(),
 	}
@@ -590,7 +589,7 @@ func (s *Service) RepromptPageWithProgress(ctx context.Context, workspaceID stri
 		Scope:              "page",
 		TargetID:           pageID,
 		Prompt:             prompt,
-		ChangeSummary:      summarizeReprompt("page", savedDraft, pageID),
+		ChangeSummary:      firstNonEmpty(pageResult.ChangeSummary, summarizeReprompt("page", savedDraft, pageID)),
 		PreviousRevisionID: previousRevisionID,
 		ResultRevisionID:   resultRevisionID,
 		JobID:              jobID,
@@ -606,9 +605,9 @@ func (s *Service) RepromptPageWithProgress(ctx context.Context, workspaceID stri
 		Metadata: map[string]any{
 			"jobId":  jobID,
 			"pageId": pageID,
-			"title":  pagePlan.Title,
-			"slug":   pagePlan.Slug,
-			"blocks": len(pagePlan.Blocks),
+			"title":  pageResult.Plan.Title,
+			"slug":   pageResult.Plan.Slug,
+			"blocks": len(pageResult.Plan.Blocks),
 		},
 	})
 	return GenerateResult{
@@ -854,6 +853,12 @@ type generationBlockPlan struct {
 	Type    string         `json:"type"`
 	Purpose string         `json:"purpose"`
 	Props   map[string]any `json:"props"`
+}
+
+type repromptPageResult struct {
+	Page          siteconfig.PageDraft
+	Plan          generationPagePlan
+	ChangeSummary string
 }
 
 type siteMetadata struct {
@@ -1324,7 +1329,52 @@ func includePageInNavigation(page siteconfig.PageDraft) bool {
 	return value
 }
 
+func (s *Service) repromptPage(
+	ctx context.Context,
+	draft siteconfig.SiteDraft,
+	page siteconfig.PageDraft,
+	prompt string,
+) (repromptPageResult, error) {
+	nextPage, plan, changeSummary, err := s.applyPageChangeSetWithSummary(ctx, draft, page, prompt)
+	if err == nil {
+		return repromptPageResult{
+			Page:          nextPage,
+			Plan:          plan,
+			ChangeSummary: changeSummary,
+		}, nil
+	}
+	if !errors.Is(err, ErrPageChangeSetUnavailable) && !errors.Is(err, ErrPageChangeSetEmpty) && s.logger != nil {
+		s.logger.Warn("page change-set reprompt failed; falling back",
+			"siteId", draft.Site.ID,
+			"pageId", page.ID,
+			"error", err.Error(),
+		)
+	}
+
+	plan, err = s.buildWholePageRepromptPlan(ctx, draft, page, prompt)
+	if err != nil {
+		return repromptPageResult{}, err
+	}
+	return repromptPageResult{
+		Page: replaceDraftPage(page, plan),
+		Plan: plan,
+	}, nil
+}
+
 func (s *Service) buildPageRepromptPlan(
+	ctx context.Context,
+	draft siteconfig.SiteDraft,
+	page siteconfig.PageDraft,
+	prompt string,
+) (generationPagePlan, error) {
+	result, err := s.repromptPage(ctx, draft, page, prompt)
+	if err != nil {
+		return generationPagePlan{}, err
+	}
+	return result.Plan, nil
+}
+
+func (s *Service) buildWholePageRepromptPlan(
 	ctx context.Context,
 	draft siteconfig.SiteDraft,
 	page siteconfig.PageDraft,

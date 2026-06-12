@@ -18,9 +18,9 @@ import (
 const maxParallelBlockRewrites = 4
 
 // applyPageChangeSet runs the diff-style page reprompt:
-//   1. ask the change-set planner which blocks to keep, edit, remove, insert;
-//   2. preserve "keep" blocks verbatim with their existing IDs;
-//   3. rewrite "edit" and seed "insert" blocks via SuggestBlockProps in parallel.
+//  1. ask the change-set planner which blocks to keep, edit, remove, insert;
+//  2. preserve "keep" blocks verbatim with their existing IDs;
+//  3. rewrite "edit" and seed "insert" blocks via SuggestBlockProps in parallel.
 //
 // Returns the updated PageDraft and a summary plan suitable for the metadata /
 // completeGenerationJob path. When the planner or block suggester is not
@@ -32,22 +32,32 @@ func (s *Service) applyPageChangeSet(
 	page siteconfig.PageDraft,
 	prompt string,
 ) (siteconfig.PageDraft, generationPagePlan, error) {
+	nextPage, plan, _, err := s.applyPageChangeSetWithSummary(ctx, draft, page, prompt)
+	return nextPage, plan, err
+}
+
+func (s *Service) applyPageChangeSetWithSummary(
+	ctx context.Context,
+	draft siteconfig.SiteDraft,
+	page siteconfig.PageDraft,
+	prompt string,
+) (siteconfig.PageDraft, generationPagePlan, string, error) {
 	if s.pageChangeSetPlanner == nil || s.suggester == nil {
-		return siteconfig.PageDraft{}, generationPagePlan{}, ErrPageChangeSetUnavailable
+		return siteconfig.PageDraft{}, generationPagePlan{}, "", ErrPageChangeSetUnavailable
 	}
 
 	request := buildPageChangeSetRequest(draft, page, prompt)
 	response, err := s.pageChangeSetPlanner.PlanPageChanges(ctx, request)
 	if err != nil {
-		return siteconfig.PageDraft{}, generationPagePlan{}, err
+		return siteconfig.PageDraft{}, generationPagePlan{}, "", err
 	}
 	if len(response.Operations) == 0 {
-		return siteconfig.PageDraft{}, generationPagePlan{}, ErrPageChangeSetEmpty
+		return siteconfig.PageDraft{}, generationPagePlan{}, "", ErrPageChangeSetEmpty
 	}
 
 	pending, err := resolveChangeSetOperations(page, response.Operations)
 	if err != nil {
-		return siteconfig.PageDraft{}, generationPagePlan{}, err
+		return siteconfig.PageDraft{}, generationPagePlan{}, "", err
 	}
 
 	finalBlocks := make([]siteconfig.BlockInstance, len(pending))
@@ -70,14 +80,14 @@ func (s *Service) applyPageChangeSet(
 		}
 	}
 	if err := g.Wait(); err != nil {
-		return siteconfig.PageDraft{}, generationPagePlan{}, err
+		return siteconfig.PageDraft{}, generationPagePlan{}, "", err
 	}
 
 	nextPage := page
 	nextPage.Blocks = finalBlocks
 
 	plan := summarizePageForMetadata(page, finalBlocks)
-	return nextPage, plan, nil
+	return nextPage, plan, strings.TrimSpace(response.ChangeSummary), nil
 }
 
 // pendingBlock captures a single output slot before its props are produced.

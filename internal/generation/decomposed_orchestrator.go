@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/MattiSig/snaelda/internal/siteconfig"
 	"golang.org/x/sync/errgroup"
@@ -112,8 +113,9 @@ func (s *Service) generateDraftDecomposed(
 // repromptSiteDecomposed runs the site reprompt through the decomposed
 // pipeline: ask the outline planner to produce a new outline given the
 // current outline + reprompt directive, then for each page in the new outline
-// either (a) preserve the existing page's blocks when its slug matches, or
-// (b) run the per-page layout + content calls for new/replaced pages.
+// either (a) revise the matching draft page from its current blocks when the
+// slug survives, or (b) run the per-page layout + content calls for new or
+// structurally replaced pages.
 //
 // Returns ErrDecomposedPlannerUnavailable when the planner is not configured.
 func (s *Service) repromptSiteDecomposed(
@@ -162,27 +164,32 @@ func (s *Service) repromptSiteDecomposed(
 	}
 
 	pagePlans := make([]generationPagePlan, len(outline.Pages))
-	preservedBlocks := make(map[int][]siteconfig.BlockInstance)
+	revisedPages := make([]siteconfig.PageDraft, len(outline.Pages))
 
 	pageGroup, pageCtx := errgroup.WithContext(ctx)
 	pageGroup.SetLimit(maxParallelPageContent)
 	for i, page := range outline.Pages {
 		i, page := i, page
-		if existing, ok := existingPagesBySlug[page.Slug]; ok && len(existing.Blocks) > 0 {
-			// Slug preserved → keep existing blocks. The outline may update
-			// title/SEO; per-page content call is skipped entirely.
-			preservedBlocks[i] = existing.Blocks
-			pagePlans[i] = generationPagePlan{
-				Title:  page.Title,
-				Slug:   page.Slug,
-				Goal:   page.Goal,
-				SEO:    page.SEO,
-				Blocks: blocksToPlan(existing.Blocks),
-			}
-			partialEmitter.emitPageContent(ctx, page.Slug, pagePlans[i])
-			continue
-		}
 		pageGroup.Go(func() error {
+			if existing, ok := existingPagesBySlug[page.Slug]; ok {
+				pagePrompt := repromptDirectiveForPage(prompt, page)
+				result, err := s.repromptPage(pageCtx, currentDraft, existing, pagePrompt)
+				if err != nil {
+					return fmt.Errorf("reprompt existing page %s: %w", page.Slug, err)
+				}
+				result.Page.Title = firstNonEmpty(page.Title, existing.Title)
+				result.Page.SEO = page.SEO
+				result.Page.Slug = page.Slug
+				result.Plan.Title = result.Page.Title
+				result.Plan.SEO = result.Page.SEO
+				result.Plan.Slug = result.Page.Slug
+				result.Plan.Goal = page.Goal
+				revisedPages[i] = result.Page
+				pagePlans[i] = result.Plan
+				partialEmitter.emitPageContent(pageCtx, page.Slug, pagePlans[i])
+				return nil
+			}
+
 			pagePlan, err := s.buildPagePlanFromLayout(pageCtx, outline.SiteName, outline.SiteGoal, currentDraft.Brand, page, outline.Pages, nil)
 			if err != nil {
 				return fmt.Errorf("reprompt compose page %s: %w", page.Slug, err)
@@ -215,15 +222,30 @@ func (s *Service) repromptSiteDecomposed(
 	if err != nil {
 		return generationPlan{}, siteconfig.SiteDraft{}, err
 	}
-	// Restore preserved block instances (with original IDs) so frontend
-	// references survive the reprompt.
-	for pageIndex, blocks := range preservedBlocks {
+	for pageIndex, page := range revisedPages {
 		if pageIndex >= len(draft.Pages) {
 			continue
 		}
-		draft.Pages[pageIndex].Blocks = blocks
+		if page.ID == "" {
+			continue
+		}
+		draft.Pages[pageIndex] = page
 	}
+	draft.Navigation = syncRepromptNavigation(currentDraft.Navigation, draft.Pages)
 	return plan, draft, nil
+}
+
+func repromptDirectiveForPage(sitePrompt string, page OutlinePage) string {
+	directive := strings.TrimSpace(sitePrompt)
+	if directive == "" {
+		directive = "Refresh this page to match the latest site direction."
+	}
+
+	title := firstNonEmpty(strings.TrimSpace(page.Title), "this page")
+	if goal := strings.TrimSpace(page.Goal); goal != "" {
+		return fmt.Sprintf("Apply this site-wide direction to %q while preserving unaffected sections.\nDirection: %s\nPage goal: %s", title, directive, goal)
+	}
+	return fmt.Sprintf("Apply this site-wide direction to %q while preserving unaffected sections.\nDirection: %s", title, directive)
 }
 
 func (s *Service) buildPagePlanFromLayout(

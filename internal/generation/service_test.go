@@ -295,6 +295,32 @@ func (f *fakeChangeSetPlanner) PlanPageChanges(_ context.Context, request PageCh
 	return f.response, f.err
 }
 
+type dynamicChangeSetPlanner struct {
+	requests []PageChangeSetRequest
+}
+
+func (p *dynamicChangeSetPlanner) PlanPageChanges(_ context.Context, request PageChangeSetRequest) (PageChangeSetResponse, error) {
+	p.requests = append(p.requests, request)
+	operations := make([]PageChangeSetOperation, 0, len(request.Page.Blocks))
+	for index, block := range request.Page.Blocks {
+		action := PageChangeSetActionKeep
+		purpose := ""
+		if index == 0 {
+			action = PageChangeSetActionEdit
+			purpose = "Refresh the lead section to match the latest direction."
+		}
+		operations = append(operations, PageChangeSetOperation{
+			Action:  action,
+			BlockID: block.BlockID,
+			Purpose: purpose,
+		})
+	}
+	return PageChangeSetResponse{
+		Operations:    operations,
+		ChangeSummary: "Refined the page without replacing untouched sections.",
+	}, nil
+}
+
 type fakeClarifyingPlanner struct {
 	request   ClarifyingQuestionsRequest
 	questions []ClarifyingQuestion
@@ -382,6 +408,33 @@ func (r *recordingBlockSuggester) SuggestBlockProps(_ context.Context, request B
 	return r.response, nil
 }
 
+type transformBlockSuggester struct {
+	requests []BlockSuggestRequest
+}
+
+func (s *transformBlockSuggester) SuggestBlockProps(_ context.Context, request BlockSuggestRequest) (BlockSuggestResponse, error) {
+	s.requests = append(s.requests, request)
+
+	props := deepCloneProps(request.Block.Props)
+	for _, key := range []string{"headline", "heading", "subheadline", "body", "eyebrow"} {
+		value, ok := props[key].(string)
+		if !ok || strings.TrimSpace(value) == "" {
+			continue
+		}
+		props[key] = value + " Refined."
+		return BlockSuggestResponse{
+			Props:         props,
+			ChangeSummary: "Refined the lead section.",
+		}, nil
+	}
+
+	props["headline"] = "Refined section"
+	return BlockSuggestResponse{
+		Props:         props,
+		ChangeSummary: "Refined the lead section.",
+	}, nil
+}
+
 func TestRepromptPageUsesWholePageLayoutAndRegeneratesBlockIDs(t *testing.T) {
 	store := newFakeGenerationStore()
 	planner := &fakeDecomposedPlanner{
@@ -467,6 +520,70 @@ func TestRepromptPageUsesWholePageLayoutAndRegeneratesBlockIDs(t *testing.T) {
 	}
 }
 
+func TestRepromptPageUsesChangeSetAndPreservesUntouchedBlockIDs(t *testing.T) {
+	store := newFakeGenerationStore()
+	changeSetPlanner := &dynamicChangeSetPlanner{}
+	suggester := &transformBlockSuggester{}
+	decomposedPlanner := &fakeDecomposedPlanner{}
+	service := Service{
+		db:                   store,
+		reader:               store,
+		writer:               store,
+		suggester:            suggester,
+		pageChangeSetPlanner: changeSetPlanner,
+		decomposedPlanner:    decomposedPlanner,
+	}
+
+	initial, err := service.Generate(context.Background(), "workspace-1", "user-1", GenerateInput{
+		Name:   "North Light Studio",
+		Prompt: "A calm portfolio site for a photography studio that needs a gallery.",
+	})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	targetPage := initial.Draft.Pages[0]
+	if len(targetPage.Blocks) < 2 {
+		t.Fatalf("expected at least two blocks on the target page, got %d", len(targetPage.Blocks))
+	}
+	originalFirstHeadline, _ := targetPage.Blocks[0].Props["headline"].(string)
+
+	result, err := service.RepromptPage(context.Background(), "workspace-1", "user-1", initial.Draft.Site.ID, targetPage.ID, RepromptInput{
+		Prompt: "Make the opening stronger while keeping the rest intact.",
+	})
+	if err != nil {
+		t.Fatalf("reprompt page: %v", err)
+	}
+
+	updatedPage := result.Draft.Pages[0]
+	if len(updatedPage.Blocks) != len(targetPage.Blocks) {
+		t.Fatalf("expected change-set reprompt to keep block count stable, got %d from %d", len(updatedPage.Blocks), len(targetPage.Blocks))
+	}
+	if updatedPage.Blocks[0].ID != targetPage.Blocks[0].ID {
+		t.Fatalf("expected edited block id to stay stable, got %#v", updatedPage.Blocks[0])
+	}
+	if updatedPage.Blocks[0].Props["headline"] == originalFirstHeadline {
+		t.Fatalf("expected edited block copy to change, got %#v", updatedPage.Blocks[0].Props)
+	}
+	for index := 1; index < len(targetPage.Blocks); index++ {
+		if updatedPage.Blocks[index].ID != targetPage.Blocks[index].ID {
+			t.Fatalf("expected untouched block %d to keep its id, got %#v", index, updatedPage.Blocks[index])
+		}
+	}
+	if len(changeSetPlanner.requests) != 1 {
+		t.Fatalf("expected one change-set planning request, got %d", len(changeSetPlanner.requests))
+	}
+	if len(suggester.requests) != 1 {
+		t.Fatalf("expected one rewritten block, got %d", len(suggester.requests))
+	}
+	if len(decomposedPlanner.layoutRequests) != 0 || len(decomposedPlanner.contentRequests) != 0 {
+		t.Fatalf("expected whole-page generation path to be skipped, got %#v %#v", decomposedPlanner.layoutRequests, decomposedPlanner.contentRequests)
+	}
+	if len(store.repromptHistory) != 1 || store.repromptHistory[0].ChangeSummary != "Refined the page without replacing untouched sections." {
+		t.Fatalf("expected change-set summary to reach history, got %#v", store.repromptHistory)
+	}
+}
+
 func TestRepromptPageFallsBackWhenChangeSetEmpty(t *testing.T) {
 	store := newFakeGenerationStore()
 	planner := &fakeChangeSetPlanner{response: PageChangeSetResponse{}}
@@ -496,6 +613,83 @@ func TestRepromptPageFallsBackWhenChangeSetEmpty(t *testing.T) {
 	}
 	if len(suggester.requests) != 0 {
 		t.Fatalf("expected fallback path to skip per-block rewrites, got %d", len(suggester.requests))
+	}
+}
+
+func TestRepromptSiteRewritesMatchingPagesInsteadOfCopyingBlocksVerbatim(t *testing.T) {
+	store := newFakeGenerationStore()
+	changeSetPlanner := &dynamicChangeSetPlanner{}
+	suggester := &transformBlockSuggester{}
+	decomposedPlanner := &fakeDecomposedPlanner{}
+	service := Service{
+		db:                   store,
+		reader:               store,
+		writer:               store,
+		suggester:            suggester,
+		pageChangeSetPlanner: changeSetPlanner,
+		decomposedPlanner:    decomposedPlanner,
+	}
+
+	initial, err := service.Generate(context.Background(), "workspace-1", "user-1", GenerateInput{
+		Name:   "North Light Studio",
+		Prompt: "A calm portfolio site for a photography studio that needs a gallery.",
+	})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	outlinePages := make([]OutlinePage, 0, len(initial.Draft.Pages))
+	initialPageIDs := make(map[string]string, len(initial.Draft.Pages))
+	initialHeadlines := make(map[string]string, len(initial.Draft.Pages))
+	for _, page := range initial.Draft.Pages {
+		outlinePages = append(outlinePages, OutlinePage{
+			Title: page.Title,
+			Slug:  page.Slug,
+			Goal:  "Refresh the existing copy for this page.",
+			SEO:   page.SEO,
+		})
+		initialPageIDs[page.Slug] = page.ID
+		if len(page.Blocks) > 0 {
+			initialHeadlines[page.Slug], _ = page.Blocks[0].Props["headline"].(string)
+		}
+	}
+	decomposedPlanner.outline = OutlineResult{
+		SiteName:       initial.Draft.Site.Name,
+		SiteGoal:       initial.Draft.Site.SEO.Description,
+		ThemeSelection: siteconfig.DetectThemeSelection(initial.Draft.Theme),
+		Pages:          outlinePages,
+	}
+
+	result, err := service.RepromptSite(context.Background(), "workspace-1", "user-1", initial.Draft.Site.ID, RepromptInput{
+		Prompt: "Make the whole site feel more premium without throwing away the current structure.",
+	})
+	if err != nil {
+		t.Fatalf("reprompt site: %v", err)
+	}
+
+	if len(changeSetPlanner.requests) != len(initial.Draft.Pages) {
+		t.Fatalf("expected one change-set plan per existing page, got %d", len(changeSetPlanner.requests))
+	}
+	if len(decomposedPlanner.layoutRequests) != 0 || len(decomposedPlanner.contentRequests) != 0 {
+		t.Fatalf("expected existing pages to avoid full page regeneration, got %#v %#v", decomposedPlanner.layoutRequests, decomposedPlanner.contentRequests)
+	}
+	if len(suggester.requests) != len(initial.Draft.Pages) {
+		t.Fatalf("expected one block rewrite per page, got %d", len(suggester.requests))
+	}
+
+	for _, page := range result.Draft.Pages {
+		if page.ID != initialPageIDs[page.Slug] {
+			t.Fatalf("expected preserved page identity for %s, got %#v", page.Slug, page)
+		}
+		if len(page.Blocks) == 0 {
+			t.Fatalf("expected revised page blocks for %s", page.Slug)
+		}
+		if page.Blocks[0].ID == "" {
+			t.Fatalf("expected revised page to keep a real first block id for %s", page.Slug)
+		}
+		if before := initialHeadlines[page.Slug]; before != "" && page.Blocks[0].Props["headline"] == before {
+			t.Fatalf("expected first block copy to change for %s, got %#v", page.Slug, page.Blocks[0].Props)
+		}
 	}
 }
 
