@@ -99,6 +99,7 @@ type collectionRow struct {
 	SingularLabel string
 	PluralLabel   string
 	Schema        []siteconfig.FieldDefinition
+	SchemaVersion int
 	Settings      siteconfig.CollectionSettings
 	SortOrder     int
 }
@@ -402,6 +403,7 @@ func (r *PostgresReader) loadCollections(ctx context.Context, siteID string) ([]
 		       singular_label,
 		       plural_label,
 		       schema,
+		       schema_version,
 		       settings,
 		       sort_order
 		from collections
@@ -424,6 +426,7 @@ func (r *PostgresReader) loadCollections(ctx context.Context, siteID string) ([]
 			&collection.SingularLabel,
 			&collection.PluralLabel,
 			&schemaJSON,
+			&collection.SchemaVersion,
 			&settingsJSON,
 			&collection.SortOrder,
 		); err != nil {
@@ -571,12 +574,17 @@ func AssembleDraft(rows NormalizedDraftRows) siteconfig.SiteDraft {
 	}
 	collections := make([]siteconfig.Collection, 0, len(rows.Collections))
 	for _, row := range rows.Collections {
+		schemaVersion := row.SchemaVersion
+		if schemaVersion < 1 {
+			schemaVersion = 1
+		}
 		collections = append(collections, siteconfig.Collection{
 			ID:            row.ID,
 			Slug:          row.Slug,
 			SingularLabel: row.SingularLabel,
 			PluralLabel:   row.PluralLabel,
 			Schema:        row.Schema,
+			SchemaVersion: schemaVersion,
 			Settings:      row.Settings,
 			SortOrder:     row.SortOrder,
 			Entries:       entriesByCollection[row.ID],

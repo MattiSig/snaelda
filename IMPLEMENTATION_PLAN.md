@@ -74,9 +74,11 @@ Refreshed 2026-06-09 from a spec-to-source audit of `specs/*`, `internal/*`, `ap
   - The editor now uses real typed controls for rich text, assets, asset lists, references, dates, locations, enum multi-select, email, phone, and URLs.
   - Entry-level AI rewrite now records revision history with summaries, diff/revert actions, and checkpoint restoration.
 
-- [ ] Make collection schema changes safe.
-  - Add schema versions plus migration preview/apply APIs.
-  - Require explicit mappings for rename/type/remove changes and block destructive direct replacement until entries migrate successfully.
+- [x] Make collection schema changes safe.
+  - Collections now carry a `schemaVersion` column persisted through the sites reader/writer; legacy collections default to v1 and are bumped on destructive change.
+  - `PATCH /api/sites/:siteId/collections/:collectionId` rejects destructive schema changes with `schema_migration_required` and a structured diff; only additive edits flow through the legacy path.
+  - New `POST /api/sites/:siteId/collections/:collectionId/schema/migrate` supports `mode=preview` (returns diff + entries-affected count without persisting) and `mode=apply` (atomically rewrites entry field maps, persists the new schema, and bumps the version).
+  - The Schema editor surfaces a migration modal that maps renames, drops, and retype-clears, previews entry impact, and applies the migration only when every destructive change is acknowledged.
 
 - [ ] Finish collection runtime behavior.
   - Implement `defaultSort`, `exposeDetailUrls`, collection SEO templates, detail-route gating, and plan limits.

@@ -187,7 +187,16 @@ func (m *Mutator) UpdateCollection(ctx context.Context, workspaceID string, site
 		collection.PluralLabel = plural
 	}
 	if input.Schema != nil {
-		collection.Schema = normalizeSchema(input.Schema)
+		proposed := normalizeSchema(input.Schema)
+		diff := DiffSchemas(collection.Schema, proposed, nil)
+		if diff.Destructive {
+			return siteconfig.Collection{}, &SchemaMigrationRequiredError{
+				CollectionID: collection.ID,
+				Diff:         diff,
+				Unmapped:     destructiveChanges(diff),
+			}
+		}
+		collection.Schema = proposed
 	}
 	if input.Settings != nil {
 		collection.Settings = *input.Settings
@@ -198,6 +207,133 @@ func (m *Mutator) UpdateCollection(ctx context.Context, workspaceID string, site
 		return siteconfig.Collection{}, err
 	}
 	return m.findInLoadedDraft(ctx, siteID, collectionID)
+}
+
+// PreviewSchemaMigration returns the structured diff and migration plan that
+// would result from applying the proposed schema and mappings, without
+// touching the persisted draft.
+func (m *Mutator) PreviewSchemaMigration(ctx context.Context, siteID string, collectionID string, proposed []siteconfig.FieldDefinition, mappings []FieldMapping) (MigrationPlan, error) {
+	draft, err := m.reader.LoadDraft(ctx, siteID)
+	if err != nil {
+		return MigrationPlan{}, err
+	}
+	index := findCollection(draft.Collections, collectionID)
+	if index == -1 {
+		return MigrationPlan{}, ErrCollectionNotFound
+	}
+	collection := draft.Collections[index]
+	normalized := normalizeSchema(proposed)
+	classified, err := classifyMappings(mappings)
+	if err != nil {
+		return MigrationPlan{}, err
+	}
+	diff := DiffSchemas(collection.Schema, normalized, classified.renames)
+	plan := MigrationPlan{
+		Diff:            diff,
+		Mappings:        append([]FieldMapping(nil), mappings...),
+		EntriesAffected: countAffectedEntries(collection.Entries, diff, classified),
+		UnmappedChanges: requireMappings(diff, classified),
+	}
+	plan.NewSchemaVersion = nextSchemaVersion(collection.SchemaVersion, diff)
+	return plan, nil
+}
+
+// MigrateSchema applies the proposed schema and mappings to the current
+// collection, transforming entry values and persisting the new schema. The
+// schema version bumps for destructive migrations so later consumers can
+// detect that historical entry shapes changed.
+func (m *Mutator) MigrateSchema(ctx context.Context, workspaceID string, siteID string, collectionID string, proposed []siteconfig.FieldDefinition, mappings []FieldMapping) (siteconfig.Collection, MigrationPlan, error) {
+	draft, err := m.reader.LoadDraft(ctx, siteID)
+	if err != nil {
+		return siteconfig.Collection{}, MigrationPlan{}, err
+	}
+	index := findCollection(draft.Collections, collectionID)
+	if index == -1 {
+		return siteconfig.Collection{}, MigrationPlan{}, ErrCollectionNotFound
+	}
+	collection := draft.Collections[index]
+	normalized := normalizeSchema(proposed)
+	classified, err := classifyMappings(mappings)
+	if err != nil {
+		return siteconfig.Collection{}, MigrationPlan{}, err
+	}
+	diff := DiffSchemas(collection.Schema, normalized, classified.renames)
+	unmapped := requireMappings(diff, classified)
+	plan := MigrationPlan{
+		Diff:             diff,
+		Mappings:         append([]FieldMapping(nil), mappings...),
+		EntriesAffected:  countAffectedEntries(collection.Entries, diff, classified),
+		UnmappedChanges:  unmapped,
+		NewSchemaVersion: nextSchemaVersion(collection.SchemaVersion, diff),
+	}
+	if len(unmapped) > 0 {
+		return siteconfig.Collection{}, plan, &SchemaMigrationIncompleteError{
+			CollectionID: collectionID,
+			Diff:         diff,
+			Unmapped:     unmapped,
+		}
+	}
+
+	migratedEntries := applyMigrationToEntries(collection.Entries, diff, classified)
+	collection.Entries = migratedEntries
+	collection.Schema = normalized
+	if diff.Destructive {
+		collection.SchemaVersion = plan.NewSchemaVersion
+	} else if collection.SchemaVersion < 1 {
+		collection.SchemaVersion = 1
+	}
+	draft.Collections[index] = collection
+	if err := m.writer.SaveDraft(ctx, workspaceID, draft); err != nil {
+		return siteconfig.Collection{}, plan, err
+	}
+	updated, err := m.GetCollection(ctx, siteID, collectionID)
+	if err != nil {
+		return siteconfig.Collection{}, plan, err
+	}
+	return updated, plan, nil
+}
+
+func countAffectedEntries(entries []siteconfig.CollectionEntry, diff SchemaDiff, classified classifiedMappings) int {
+	if len(entries) == 0 {
+		return 0
+	}
+	keysWithImpact := map[string]bool{}
+	for _, change := range diff.Changes {
+		switch change.Kind {
+		case SchemaChangeRetyped, SchemaChangeRemoved:
+			if change.OldField != nil {
+				keysWithImpact[change.OldField.Key] = true
+			}
+		case SchemaChangeRenamed:
+			if change.OldField != nil {
+				keysWithImpact[change.OldField.Key] = true
+			}
+		}
+	}
+	for newKey, oldKey := range classified.renames {
+		_ = newKey
+		keysWithImpact[oldKey] = true
+	}
+	affected := 0
+	for _, entry := range entries {
+		for key := range entry.Fields {
+			if keysWithImpact[key] {
+				affected++
+				break
+			}
+		}
+	}
+	return affected
+}
+
+func nextSchemaVersion(current int, diff SchemaDiff) int {
+	if current < 1 {
+		current = 1
+	}
+	if diff.Destructive {
+		return current + 1
+	}
+	return current
 }
 
 // DeleteCollection removes a collection if no pages bind to it.

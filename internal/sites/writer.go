@@ -144,12 +144,17 @@ func normalizeDraft(draft siteconfig.SiteDraft) (NormalizedDraftRows, error) {
 		if sortOrder == 0 {
 			sortOrder = index
 		}
+		schemaVersion := collection.SchemaVersion
+		if schemaVersion < 1 {
+			schemaVersion = 1
+		}
 		collections = append(collections, collectionRow{
 			ID:            collection.ID,
 			Slug:          collection.Slug,
 			SingularLabel: collection.SingularLabel,
 			PluralLabel:   collection.PluralLabel,
 			Schema:        schema,
+			SchemaVersion: schemaVersion,
 			Settings:      collection.Settings,
 			SortOrder:     sortOrder,
 		})
@@ -409,19 +414,24 @@ func replaceCollectionsAndEntries(ctx context.Context, tx pgx.Tx, siteID string,
 		if err != nil {
 			return fmt.Errorf("encode collection settings %s: %w", collection.ID, err)
 		}
+		schemaVersion := collection.SchemaVersion
+		if schemaVersion < 1 {
+			schemaVersion = 1
+		}
 		tag, err := tx.Exec(ctx, `
-			insert into collections (id, site_id, slug, singular_label, plural_label, schema, settings, sort_order)
-			values ($1, $2, $3, $4, $5, $6, $7, $8)
+			insert into collections (id, site_id, slug, singular_label, plural_label, schema, schema_version, settings, sort_order)
+			values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 			on conflict (id) do update
 			set slug = excluded.slug,
 			    singular_label = excluded.singular_label,
 			    plural_label = excluded.plural_label,
 			    schema = excluded.schema,
+			    schema_version = excluded.schema_version,
 			    settings = excluded.settings,
 			    sort_order = excluded.sort_order,
 			    updated_at = now()
 			where collections.site_id = excluded.site_id
-		`, collection.ID, siteID, collection.Slug, collection.SingularLabel, collection.PluralLabel, schemaJSON, settingsJSON, collection.SortOrder)
+		`, collection.ID, siteID, collection.Slug, collection.SingularLabel, collection.PluralLabel, schemaJSON, schemaVersion, settingsJSON, collection.SortOrder)
 		if err != nil {
 			return fmt.Errorf("save collection row %s: %w", collection.ID, err)
 		}

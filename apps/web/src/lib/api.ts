@@ -12,6 +12,9 @@ export type APIErrorPayload = {
     code: string;
     message: string;
   }>;
+  diff?: unknown;
+  unmapped?: unknown;
+  [key: string]: unknown;
 };
 
 export class APIError extends Error {
@@ -216,9 +219,42 @@ export type Collection = {
   singularLabel: string;
   pluralLabel: string;
   schema: FieldDefinition[];
+  schemaVersion?: number;
   settings?: CollectionSettings;
   sortOrder: number;
   entries?: CollectionEntry[];
+};
+
+export type SchemaChangeKind =
+  | "added"
+  | "removed"
+  | "renamed"
+  | "retyped"
+  | "modified";
+
+export type SchemaChange = {
+  kind: SchemaChangeKind;
+  oldField?: FieldDefinition;
+  newField?: FieldDefinition;
+};
+
+export type SchemaDiff = {
+  changes: SchemaChange[];
+  destructive: boolean;
+};
+
+export type SchemaFieldMapping = {
+  action: "rename" | "drop" | "retype_clear";
+  oldKey?: string;
+  newKey?: string;
+};
+
+export type SchemaMigrationPlan = {
+  diff: SchemaDiff;
+  mappings: SchemaFieldMapping[];
+  entriesAffected: number;
+  unmappedChanges?: SchemaChange[];
+  newSchemaVersion: number;
 };
 
 export type ImageCredit = {
@@ -2069,6 +2105,36 @@ export async function deleteCollection(siteId: string, collectionId: string) {
   return apiFetch<null>(`/api/sites/${siteId}/collections/${collectionId}`, {
     method: "DELETE",
   });
+}
+
+export async function previewCollectionSchemaMigration(
+  siteId: string,
+  collectionId: string,
+  input: { schema: FieldDefinition[]; mappings?: SchemaFieldMapping[] },
+) {
+  return apiFetch<{ plan: SchemaMigrationPlan }>(
+    `/api/sites/${siteId}/collections/${collectionId}/schema/migrate`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "preview", ...input }),
+    },
+  );
+}
+
+export async function applyCollectionSchemaMigration(
+  siteId: string,
+  collectionId: string,
+  input: { schema: FieldDefinition[]; mappings?: SchemaFieldMapping[] },
+) {
+  return apiFetch<{ collection: Collection; plan: SchemaMigrationPlan }>(
+    `/api/sites/${siteId}/collections/${collectionId}/schema/migrate`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "apply", ...input }),
+    },
+  );
 }
 
 export async function listCollectionEntries(

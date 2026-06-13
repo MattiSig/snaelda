@@ -13,4 +13,11 @@ var (
 	ErrEntryOrderInvalid       = errors.New("entry reorder must include every entry exactly once")
 	ErrNoCollectionChanges     = errors.New("collection update requires at least one change")
 	ErrNoEntryChanges          = errors.New("entry update requires at least one change")
+	// ErrSchemaMigrationRequired is returned when a schema change would lose
+	// or invalidate stored entry data and the caller has not gone through the
+	// /schema/migrate endpoint with explicit mappings.
+	ErrSchemaMigrationRequired = errors.New("destructive schema change requires the migrate endpoint with explicit mappings")
+	// ErrSchemaMigrationIncomplete is returned when the migrate endpoint is
+	// called without mappings for every destructive change.
+	ErrSchemaMigrationIncomplete = errors.New("schema migration is missing acknowledgements for at least one destructive change")
 )

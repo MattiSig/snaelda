@@ -91,14 +91,15 @@ var (
 // Collection is a user-defined typed list of structured entries (services,
 // projects, menu items, etc.) owned by a site.
 type Collection struct {
-	ID            string              `json:"id"`
-	Slug          string              `json:"slug"`
-	SingularLabel string              `json:"singularLabel"`
-	PluralLabel   string              `json:"pluralLabel"`
-	Schema        []FieldDefinition   `json:"schema"`
-	Settings      CollectionSettings  `json:"settings,omitempty"`
-	SortOrder     int                 `json:"sortOrder"`
-	Entries       []CollectionEntry   `json:"entries,omitempty"`
+	ID            string             `json:"id"`
+	Slug          string             `json:"slug"`
+	SingularLabel string             `json:"singularLabel"`
+	PluralLabel   string             `json:"pluralLabel"`
+	Schema        []FieldDefinition  `json:"schema"`
+	SchemaVersion int                `json:"schemaVersion,omitempty"`
+	Settings      CollectionSettings `json:"settings,omitempty"`
+	SortOrder     int                `json:"sortOrder"`
+	Entries       []CollectionEntry  `json:"entries,omitempty"`
 }
 
 // CollectionSettings holds collection-level options. Kept narrow on purpose

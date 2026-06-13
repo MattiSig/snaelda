@@ -1,5 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowLeft, FolderTree, Plus, Sparkles, Trash2 } from "lucide-react";
 import { EntryWorkspace } from "@/components/collections/EntryWorkspace";
 import { Button } from "@/components/ui/button";
@@ -11,14 +11,53 @@ import {
   type Collection,
   type CollectionFieldType,
   type FieldDefinition,
+  type SchemaChange,
+  type SchemaDiff,
+  type SchemaFieldMapping,
+  type SchemaMigrationPlan,
+  applyCollectionSchemaMigration,
   createCollection,
   listCollections,
   draftCollectionFromPrompt,
   deleteCollection,
+  previewCollectionSchemaMigration,
   updateCollection,
 } from "@/lib/api";
 import { actions, emptyState, form, paddedPanel, text } from "@/lib/styles";
 import { cn } from "@/lib/utils";
+
+type SchemaSaveResult =
+  | { status: "saved" }
+  | { status: "conflict" }
+  | { status: "error" }
+  | {
+      status: "migration_required";
+      diff: SchemaDiff;
+      unmapped: SchemaChange[];
+    };
+
+function extractMigrationDetails(
+  error: unknown,
+): { diff: SchemaDiff; unmapped: SchemaChange[] } | null {
+  if (!(error instanceof APIError)) return null;
+  const payload = error.payload;
+  if (!payload) return null;
+  const errorObject =
+    typeof payload.error === "object" && payload.error !== null
+      ? payload.error
+      : null;
+  const code = errorObject?.code ?? payload.code;
+  if (
+    code !== "schema_migration_required" &&
+    code !== "schema_migration_incomplete"
+  ) {
+    return null;
+  }
+  const diff = payload.diff as SchemaDiff | undefined;
+  const unmappedRaw = (payload.unmapped ?? []) as SchemaChange[];
+  if (!diff) return null;
+  return { diff, unmapped: unmappedRaw };
+}
 
 const FIELD_TYPE_LABELS: Record<CollectionFieldType, string> = {
   text: "Short text",
@@ -234,7 +273,7 @@ export function CollectionsPanel({
   async function handleSchemaSave(
     collectionId: string,
     schema: FieldDefinition[],
-  ) {
+  ): Promise<SchemaSaveResult> {
     try {
       const response = await updateCollection(siteId, collectionId, { schema });
       setErrorMessage("");
@@ -243,19 +282,94 @@ export function CollectionsPanel({
           collection.id === collectionId ? response.collection : collection,
         ),
       );
+      return { status: "saved" };
     } catch (error) {
       if (isDraftConflictError(error)) {
         await refreshCollections(collectionId);
         setErrorMessage(
           "This draft changed in another tab or request. The latest collections were reloaded; apply your change again.",
         );
-        return;
+        return { status: "conflict" };
+      }
+      const migrationRequired = extractMigrationDetails(error);
+      if (migrationRequired) {
+        return {
+          status: "migration_required",
+          diff: migrationRequired.diff,
+          unmapped: migrationRequired.unmapped,
+        };
       }
       setErrorMessage(
         error instanceof APIError
           ? error.message
           : "Could not save collection schema.",
       );
+      return { status: "error" };
+    }
+  }
+
+  async function handleSchemaMigrate(
+    collectionId: string,
+    schema: FieldDefinition[],
+    mappings: SchemaFieldMapping[],
+  ): Promise<SchemaSaveResult> {
+    try {
+      const response = await applyCollectionSchemaMigration(
+        siteId,
+        collectionId,
+        { schema, mappings },
+      );
+      setErrorMessage("");
+      setCollections((prev) =>
+        prev.map((collection) =>
+          collection.id === collectionId ? response.collection : collection,
+        ),
+      );
+      return { status: "saved" };
+    } catch (error) {
+      if (isDraftConflictError(error)) {
+        await refreshCollections(collectionId);
+        setErrorMessage(
+          "This draft changed in another tab or request. The latest collections were reloaded; apply your change again.",
+        );
+        return { status: "conflict" };
+      }
+      const migrationRequired = extractMigrationDetails(error);
+      if (migrationRequired) {
+        return {
+          status: "migration_required",
+          diff: migrationRequired.diff,
+          unmapped: migrationRequired.unmapped,
+        };
+      }
+      setErrorMessage(
+        error instanceof APIError
+          ? error.message
+          : "Could not apply schema migration.",
+      );
+      return { status: "error" };
+    }
+  }
+
+  async function handleSchemaPreview(
+    collectionId: string,
+    schema: FieldDefinition[],
+    mappings: SchemaFieldMapping[],
+  ): Promise<SchemaMigrationPlan | null> {
+    try {
+      const response = await previewCollectionSchemaMigration(
+        siteId,
+        collectionId,
+        { schema, mappings },
+      );
+      return response.plan;
+    } catch (error) {
+      setErrorMessage(
+        error instanceof APIError
+          ? error.message
+          : "Could not preview schema migration.",
+      );
+      return null;
     }
   }
 
@@ -388,6 +502,12 @@ export function CollectionsPanel({
               collections={collections}
               onDelete={() => handleDelete(selected.id)}
               onSchemaSave={(schema) => handleSchemaSave(selected.id, schema)}
+              onSchemaPreview={(schema, mappings) =>
+                handleSchemaPreview(selected.id, schema, mappings)
+              }
+              onSchemaMigrate={(schema, mappings) =>
+                handleSchemaMigrate(selected.id, schema, mappings)
+              }
               onEntriesChanged={(entries) => {
                 setCollections((prev) =>
                   prev.map((collection) =>
@@ -544,13 +664,23 @@ function CollectionDetailPanel({
   collections,
   onDelete,
   onSchemaSave,
+  onSchemaPreview,
+  onSchemaMigrate,
   onEntriesChanged,
 }: {
   siteId: string;
   collection: Collection;
   collections: Collection[];
   onDelete: () => void;
-  onSchemaSave: (schema: FieldDefinition[]) => void;
+  onSchemaSave: (schema: FieldDefinition[]) => Promise<SchemaSaveResult>;
+  onSchemaPreview: (
+    schema: FieldDefinition[],
+    mappings: SchemaFieldMapping[],
+  ) => Promise<SchemaMigrationPlan | null>;
+  onSchemaMigrate: (
+    schema: FieldDefinition[],
+    mappings: SchemaFieldMapping[],
+  ) => Promise<SchemaSaveResult>;
   onEntriesChanged: (entries: Collection["entries"]) => void;
 }) {
   const [tab, setTab] = useState<"entries" | "schema">("entries");
@@ -597,7 +727,12 @@ function CollectionDetailPanel({
       </div>
 
       {tab === "schema" ? (
-        <SchemaEditor schema={collection.schema} onSave={onSchemaSave} />
+        <SchemaEditor
+          schema={collection.schema}
+          onSave={onSchemaSave}
+          onPreview={onSchemaPreview}
+          onMigrate={onSchemaMigrate}
+        />
       ) : (
         <EntryWorkspace
           siteId={siteId}
@@ -613,15 +748,31 @@ function CollectionDetailPanel({
 function SchemaEditor({
   schema,
   onSave,
+  onPreview,
+  onMigrate,
 }: {
   schema: FieldDefinition[];
-  onSave: (schema: FieldDefinition[]) => void;
+  onSave: (schema: FieldDefinition[]) => Promise<SchemaSaveResult>;
+  onPreview: (
+    schema: FieldDefinition[],
+    mappings: SchemaFieldMapping[],
+  ) => Promise<SchemaMigrationPlan | null>;
+  onMigrate: (
+    schema: FieldDefinition[],
+    mappings: SchemaFieldMapping[],
+  ) => Promise<SchemaSaveResult>;
 }) {
   const [appliedSchema, setAppliedSchema] = useState(schema);
   const [draft, setDraft] = useState<FieldDefinition[]>(schema);
+  const [migrationState, setMigrationState] = useState<{
+    schema: FieldDefinition[];
+    diff: SchemaDiff;
+  } | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   if (appliedSchema !== schema) {
     setAppliedSchema(schema);
     setDraft(schema);
+    setMigrationState(null);
   }
 
   function updateField(index: number, patch: Partial<FieldDefinition>) {
@@ -646,8 +797,34 @@ function SchemaEditor({
     setDraft((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function handleSave() {
-    onSave(draft);
+  async function handleSave() {
+    setIsSaving(true);
+    try {
+      const result = await onSave(draft);
+      if (result.status === "migration_required") {
+        setMigrationState({ schema: draft, diff: result.diff });
+      }
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleMigrationApply(mappings: SchemaFieldMapping[]) {
+    if (!migrationState) return;
+    setIsSaving(true);
+    try {
+      const result = await onMigrate(migrationState.schema, mappings);
+      if (result.status === "saved") {
+        setMigrationState(null);
+      } else if (result.status === "migration_required") {
+        setMigrationState({
+          schema: migrationState.schema,
+          diff: result.diff,
+        });
+      }
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -736,9 +913,395 @@ function SchemaEditor({
           <Plus className="size-4" />
           Add field
         </Button>
-        <Button type="button" onClick={handleSave}>
-          Save schema
+        <Button type="button" onClick={handleSave} disabled={isSaving}>
+          {isSaving ? "Saving…" : "Save schema"}
         </Button>
+      </div>
+      {migrationState ? (
+        <SchemaMigrationModal
+          diff={migrationState.diff}
+          isApplying={isSaving}
+          onPreview={(mappings) => onPreview(migrationState.schema, mappings)}
+          onCancel={() => setMigrationState(null)}
+          onApply={handleMigrationApply}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function SchemaMigrationModal({
+  diff,
+  isApplying,
+  onPreview,
+  onCancel,
+  onApply,
+}: {
+  diff: SchemaDiff;
+  isApplying: boolean;
+  onPreview: (
+    mappings: SchemaFieldMapping[],
+  ) => Promise<SchemaMigrationPlan | null>;
+  onCancel: () => void;
+  onApply: (mappings: SchemaFieldMapping[]) => Promise<void> | void;
+}) {
+  const removedFields = diff.changes
+    .filter((change) => change.kind === "removed" && change.oldField)
+    .map((change) => change.oldField as FieldDefinition);
+  const addedFields = diff.changes
+    .filter((change) => change.kind === "added" && change.newField)
+    .map((change) => change.newField as FieldDefinition);
+  const retypedFields = diff.changes
+    .filter((change) => change.kind === "retyped")
+    .map((change) => ({
+      from: change.oldField as FieldDefinition,
+      to: change.newField as FieldDefinition,
+    }));
+  const renamedFields = diff.changes
+    .filter((change) => change.kind === "renamed")
+    .map((change) => ({
+      from: change.oldField as FieldDefinition,
+      to: change.newField as FieldDefinition,
+    }));
+  const modifiedFields = diff.changes
+    .filter(
+      (change) =>
+        change.kind === "modified" && change.oldField && change.newField,
+    )
+    .map((change) => ({
+      from: change.oldField as FieldDefinition,
+      to: change.newField as FieldDefinition,
+    }));
+
+  // For each removed field the user can either rename it into one of the
+  // added fields (carry values forward) or acknowledge the drop.
+  type RemovalChoice =
+    | { action: "drop" }
+    | { action: "rename"; newKey: string };
+  const [removalChoices, setRemovalChoices] = useState<
+    Record<string, RemovalChoice>
+  >(() => {
+    const initial: Record<string, RemovalChoice> = {};
+    for (const field of removedFields) {
+      initial[field.key] = { action: "drop" };
+    }
+    return initial;
+  });
+  const [retypeAcks, setRetypeAcks] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    for (const change of retypedFields) {
+      initial[change.from.key] = false;
+    }
+    return initial;
+  });
+  const [plan, setPlan] = useState<SchemaMigrationPlan | null>(null);
+  const [planError, setPlanError] = useState("");
+
+  const mappings: SchemaFieldMapping[] = [];
+  for (const field of removedFields) {
+    const choice = removalChoices[field.key];
+    if (!choice) continue;
+    if (choice.action === "drop") {
+      mappings.push({ action: "drop", oldKey: field.key });
+    } else if (choice.action === "rename") {
+      mappings.push({
+        action: "rename",
+        oldKey: field.key,
+        newKey: choice.newKey,
+      });
+    }
+  }
+  for (const change of retypedFields) {
+    if (retypeAcks[change.from.key]) {
+      mappings.push({ action: "retype_clear", oldKey: change.from.key });
+    }
+  }
+  for (const change of renamedFields) {
+    mappings.push({
+      action: "rename",
+      oldKey: change.from.key,
+      newKey: change.to.key,
+    });
+  }
+
+  const claimedAddedKeys = new Set(
+    Object.values(removalChoices)
+      .filter((choice): choice is { action: "rename"; newKey: string } =>
+        choice ? choice.action === "rename" : false,
+      )
+      .map((choice) => choice.newKey),
+  );
+
+  const allRetypesAcknowledged = retypedFields.every(
+    (change) => retypeAcks[change.from.key],
+  );
+
+  function canApply() {
+    if (isApplying) return false;
+    if (!allRetypesAcknowledged) return false;
+    return Object.values(removalChoices).every(
+      (choice) =>
+        choice.action === "drop" ||
+        (choice.action === "rename" && choice.newKey),
+    );
+  }
+
+  async function refreshPlan() {
+    setPlanError("");
+    const result = await onPreview(mappings);
+    if (!result) {
+      setPlanError("Could not preview migration.");
+      return;
+    }
+    setPlan(result);
+  }
+
+  const previewRequested = useRef(false);
+  useEffect(() => {
+    if (previewRequested.current) return;
+    previewRequested.current = true;
+    const previewMappings: SchemaFieldMapping[] = [];
+    void onPreview(previewMappings).then((result) => {
+      if (result) {
+        setPlan(result);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="schema-migration-title"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+    >
+      <div className="w-full max-w-2xl overflow-y-auto rounded-[14px] border border-border bg-[var(--surface-1)] p-5 shadow-xl">
+        <header className="mb-3 grid gap-1">
+          <h3 id="schema-migration-title" className={text.sectionTitle}>
+            Confirm schema migration
+          </h3>
+          <p className={text.muted}>
+            This change rewrites how existing entries are stored. Map removed
+            fields onto new fields or acknowledge that their data will be
+            dropped. Type changes clear the stored value.
+          </p>
+        </header>
+
+        <div className="grid gap-3">
+          {renamedFields.length > 0 ? (
+            <section className="grid gap-2 rounded-md border border-border bg-[var(--surface-2)] p-3">
+              <p className={text.label}>Renames</p>
+              <ul className="grid gap-1 text-sm">
+                {renamedFields.map((change) => (
+                  <li key={`${change.from.key}-${change.to.key}`}>
+                    <span className="font-medium">{change.from.label}</span>{" "}
+                    <span className="text-[var(--paper-muted)]">
+                      (<code>{change.from.key}</code>) →{" "}
+                      <span className="font-medium text-[var(--paper)]">
+                        {change.to.label}
+                      </span>{" "}
+                      (<code>{change.to.key}</code>)
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          {removedFields.length > 0 ? (
+            <section className="grid gap-2 rounded-md border border-border bg-[var(--surface-2)] p-3">
+              <p className={text.label}>Removed fields</p>
+              <ul className="grid gap-2">
+                {removedFields.map((field) => {
+                  const choice = removalChoices[field.key];
+                  const availableTargets = addedFields.filter(
+                    (added) =>
+                      !claimedAddedKeys.has(added.key) ||
+                      (choice?.action === "rename" &&
+                        choice.newKey === added.key),
+                  );
+                  return (
+                    <li
+                      key={field.key}
+                      className="grid gap-2 rounded-md border border-border bg-[var(--surface-1)] p-3"
+                    >
+                      <div className="text-sm">
+                        <span className="font-medium">{field.label}</span>{" "}
+                        <span className="text-[var(--paper-muted)]">
+                          (<code>{field.key}</code>,{" "}
+                          {FIELD_TYPE_LABELS[field.type]})
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-3 text-sm">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            checked={choice?.action === "drop"}
+                            onChange={() =>
+                              setRemovalChoices((prev) => ({
+                                ...prev,
+                                [field.key]: { action: "drop" },
+                              }))
+                            }
+                          />
+                          Drop values for {field.label}
+                        </label>
+                        {availableTargets.length > 0 ? (
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="radio"
+                              checked={choice?.action === "rename"}
+                              onChange={() =>
+                                setRemovalChoices((prev) => ({
+                                  ...prev,
+                                  [field.key]: {
+                                    action: "rename",
+                                    newKey: availableTargets[0].key,
+                                  },
+                                }))
+                              }
+                            />
+                            Carry values into
+                            <Select
+                              value={
+                                choice?.action === "rename"
+                                  ? choice.newKey
+                                  : availableTargets[0]?.key
+                              }
+                              onChange={(event) =>
+                                setRemovalChoices((prev) => ({
+                                  ...prev,
+                                  [field.key]: {
+                                    action: "rename",
+                                    newKey: event.target.value,
+                                  },
+                                }))
+                              }
+                              disabled={choice?.action !== "rename"}
+                              className="w-auto"
+                            >
+                              {availableTargets.map((target) => (
+                                <option key={target.key} value={target.key}>
+                                  {target.label} ({target.key})
+                                </option>
+                              ))}
+                            </Select>
+                          </label>
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ) : null}
+
+          {retypedFields.length > 0 ? (
+            <section className="grid gap-2 rounded-md border border-border bg-[var(--surface-2)] p-3">
+              <p className={text.label}>Type changes</p>
+              <ul className="grid gap-2">
+                {retypedFields.map((change) => (
+                  <li key={change.from.key} className="grid gap-1 text-sm">
+                    <div>
+                      <span className="font-medium">{change.from.label}</span>{" "}
+                      <span className="text-[var(--paper-muted)]">
+                        (<code>{change.from.key}</code>):{" "}
+                        {FIELD_TYPE_LABELS[change.from.type]} →{" "}
+                        {FIELD_TYPE_LABELS[change.to.type]}
+                      </span>
+                    </div>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(retypeAcks[change.from.key])}
+                        onChange={(event) =>
+                          setRetypeAcks((prev) => ({
+                            ...prev,
+                            [change.from.key]: event.target.checked,
+                          }))
+                        }
+                      />
+                      Clear existing values on entries (cannot be undone).
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          {modifiedFields.length > 0 ? (
+            <section className="grid gap-2 rounded-md border border-border bg-[var(--surface-2)] p-3">
+              <p className={text.label}>Other changes</p>
+              <ul className="grid gap-1 text-sm">
+                {modifiedFields.map((change) => (
+                  <li key={change.from.key}>
+                    <span className="font-medium">{change.to.label}</span>{" "}
+                    <span className="text-[var(--paper-muted)]">
+                      (<code>{change.from.key}</code>) — label, required, or
+                      validation updated
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          {addedFields.length > 0 ? (
+            <section className="grid gap-1 rounded-md border border-border bg-[var(--surface-2)] p-3">
+              <p className={text.label}>New fields</p>
+              <ul className="grid gap-1 text-sm">
+                {addedFields.map((field) => (
+                  <li key={field.key}>
+                    <span className="font-medium">{field.label}</span>{" "}
+                    <span className="text-[var(--paper-muted)]">
+                      (<code>{field.key}</code>, {FIELD_TYPE_LABELS[field.type]}
+                      ) — existing entries start empty
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          {plan ? (
+            <p className={text.muted}>
+              {plan.entriesAffected === 0
+                ? "No entries currently store the affected fields."
+                : plan.entriesAffected === 1
+                  ? "1 entry will be updated by this migration."
+                  : `${plan.entriesAffected} entries will be updated by this migration.`}{" "}
+              Schema version will become v{plan.newSchemaVersion}.
+            </p>
+          ) : null}
+          {planError ? <p className={text.error}>{planError}</p> : null}
+        </div>
+
+        <footer className="mt-5 flex flex-wrap justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void refreshPlan()}
+            disabled={isApplying}
+          >
+            Refresh preview
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            disabled={isApplying}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            disabled={!canApply()}
+            onClick={() => void onApply(mappings)}
+          >
+            {isApplying ? "Applying…" : "Apply migration"}
+          </Button>
+        </footer>
       </div>
     </div>
   );

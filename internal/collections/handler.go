@@ -80,6 +80,7 @@ func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.
 	mux.Handle("GET /api/sites/{siteId}/collections/{collectionId}", requireUser(http.HandlerFunc(h.get)))
 	mux.Handle("PATCH /api/sites/{siteId}/collections/{collectionId}", requireUser(http.HandlerFunc(h.update)))
 	mux.Handle("DELETE /api/sites/{siteId}/collections/{collectionId}", requireUser(http.HandlerFunc(h.delete)))
+	mux.Handle("POST /api/sites/{siteId}/collections/{collectionId}/schema/migrate", requireUser(http.HandlerFunc(h.migrateSchema)))
 
 	mux.Handle("GET /api/sites/{siteId}/collections/{collectionId}/entries", requireUser(http.HandlerFunc(h.listEntries)))
 	mux.Handle("POST /api/sites/{siteId}/collections/{collectionId}/entries", requireUser(http.HandlerFunc(h.createEntry)))
@@ -243,6 +244,56 @@ type draftEntriesFromPromptRequest struct {
 
 type repromptEntryRequest struct {
 	Prompt string `json:"prompt"`
+}
+
+type migrateSchemaRequest struct {
+	Mode     string                       `json:"mode,omitempty"`
+	Schema   []siteconfig.FieldDefinition `json:"schema"`
+	Mappings []FieldMapping               `json:"mappings,omitempty"`
+}
+
+func (h *Handler) migrateSchema(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	collectionID := r.PathValue("collectionId")
+	scope, err := h.authorizer.RequireSite(r.Context(), siteID, authorization.RoleOwner, authorization.RoleEditor)
+	if err != nil {
+		writeAuthorizationError(w, err)
+		return
+	}
+	var payload migrateSchemaRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "request body must be valid JSON")
+		return
+	}
+	if payload.Schema == nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "schema is required")
+		return
+	}
+	mode := strings.ToLower(strings.TrimSpace(payload.Mode))
+	if mode == "" {
+		mode = "preview"
+	}
+	switch mode {
+	case "preview":
+		plan, err := h.mutator.PreviewSchemaMigration(r.Context(), siteID, collectionID, payload.Schema, payload.Mappings)
+		if err != nil {
+			writeCollectionError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"plan": plan})
+	case "apply":
+		collection, plan, err := h.mutator.MigrateSchema(r.Context(), scope.WorkspaceID, siteID, collectionID, payload.Schema, payload.Mappings)
+		if err != nil {
+			writeCollectionError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"collection": collection,
+			"plan":       plan,
+		})
+	default:
+		writeError(w, http.StatusBadRequest, "invalid_request", "mode must be preview or apply")
+	}
 }
 
 func (h *Handler) draftFromPrompt(w http.ResponseWriter, r *http.Request) {
@@ -1000,7 +1051,27 @@ func (h *Handler) reorderEntries(w http.ResponseWriter, r *http.Request) {
 
 func writeCollectionError(w http.ResponseWriter, err error) {
 	var validationErr siteconfig.ValidationError
+	var migrationRequired *SchemaMigrationRequiredError
+	var migrationIncomplete *SchemaMigrationIncompleteError
 	switch {
+	case errors.As(err, &migrationRequired):
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error": map[string]string{
+				"code":    "schema_migration_required",
+				"message": "this change would lose or invalidate stored entry data; call the schema/migrate endpoint with explicit mappings",
+			},
+			"diff":     migrationRequired.Diff,
+			"unmapped": migrationRequired.Unmapped,
+		})
+	case errors.As(err, &migrationIncomplete):
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error": map[string]string{
+				"code":    "schema_migration_incomplete",
+				"message": "the migration is missing acknowledgements for at least one destructive change",
+			},
+			"diff":     migrationIncomplete.Diff,
+			"unmapped": migrationIncomplete.Unmapped,
+		})
 	case errors.Is(err, generation.ErrGenerationRateLimited):
 		writeError(w, http.StatusTooManyRequests, "rate_limited", "too many generation requests; please wait before trying again")
 	case isPromptQuotaError(err, "trial_exhausted"):
