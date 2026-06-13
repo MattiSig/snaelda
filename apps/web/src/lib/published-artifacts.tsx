@@ -75,6 +75,7 @@ export function buildPublishedArtifactBundle(
   }
 
   const renderedRoutes: RenderedRoute[] = [];
+  const seenPaths = new Set<string>();
 
   for (const page of snapshot.pages) {
     if (page.type === "collection_detail") {
@@ -91,12 +92,22 @@ export function buildPublishedArtifactBundle(
         (entry) => !entry.status || entry.status === "published",
       );
       for (const entry of publishedEntries) {
+        const path = `/${collection.slug}/${entry.slug}`;
+        if (seenPaths.has(path)) {
+          continue;
+        }
+        seenPaths.add(path);
         renderedRoutes.push(
           renderCollectionEntry({ ...input, snapshot }, page, collection, entry),
         );
       }
       continue;
     }
+    const path = page.slug === "/" ? "/" : page.slug;
+    if (seenPaths.has(path)) {
+      continue;
+    }
+    seenPaths.add(path);
     renderedRoutes.push(renderStaticOrIndexPage({ ...input, snapshot }, page));
   }
 
@@ -243,7 +254,7 @@ function renderCollectionEntry(
   const entryPath = buildEntryPagePath(collection, entry);
   const filePath = buildPageArtifactPath(entryPath);
   const title = resolveEntryTitle(input, collection, entry, templatePage);
-  const description = resolveEntryDescription(input, entry);
+  const description = resolveEntryDescription(input, entry, collection);
   const canonicalUrl = buildCanonicalURL(input, entryPath);
 
   const transformedPage: SnapshotPage = {
@@ -444,6 +455,14 @@ function resolveEntryTitle(
   const entrySeoTitle = entry.seo?.title?.trim();
   if (entrySeoTitle) return entrySeoTitle;
 
+  const templateOutput = applySEOTemplate(
+    collection.settings?.seoTitleTemplate,
+    input.snapshot.site.name,
+    collection,
+    entry,
+  );
+  if (templateOutput) return templateOutput;
+
   const entryTitle = typeof entry.fields.title === "string"
     ? entry.fields.title.trim()
     : "";
@@ -462,10 +481,26 @@ function resolveEntryTitle(
 function resolveEntryDescription(
   input: PublishedArtifactRenderInput,
   entry: CollectionEntry,
+  collection: Collection,
 ) {
   const seo = entry.seo?.description?.trim();
   if (seo) return seo;
 
+  const templateOutput = applySEOTemplate(
+    collection.settings?.seoDescriptionTemplate,
+    input.snapshot.site.name,
+    collection,
+    entry,
+  );
+  if (templateOutput) return templateOutput;
+
+  return resolveEntryDescriptionFromTemplateOrFields(input, entry);
+}
+
+function resolveEntryDescriptionFromTemplateOrFields(
+  input: PublishedArtifactRenderInput,
+  entry: CollectionEntry,
+) {
   const summary = typeof entry.fields.summary === "string"
     ? entry.fields.summary.trim()
     : "";
@@ -482,6 +517,57 @@ function resolveEntryDescription(
     input.snapshot.site.seo?.description ||
     `Discover more from ${input.snapshot.site.name}.`
   );
+}
+
+// applySEOTemplate substitutes {{entry.field}}, {{collection.*}}, and
+// {{site.name}} placeholders. Returns an empty string when the template is
+// missing or when any required placeholder cannot be resolved — the caller
+// then falls back to the legacy automatic derivation.
+function applySEOTemplate(
+  template: string | undefined,
+  siteName: string,
+  collection: Collection,
+  entry: CollectionEntry,
+): string {
+  const raw = template?.trim();
+  if (!raw) return "";
+
+  const entryTitle = typeof entry.fields.title === "string"
+    ? entry.fields.title.trim()
+    : "";
+
+  let resolvable = true;
+  const replaced = raw.replace(
+    /\{\{\s*([a-zA-Z][a-zA-Z0-9_.]*)\s*\}\}/g,
+    (_match, ref: string) => {
+      const [namespace, ...rest] = ref.split(".");
+      const key = rest.join(".");
+      if (namespace === "site" && key === "name") {
+        return siteName;
+      }
+      if (namespace === "collection") {
+        if (key === "singularLabel") return collection.singularLabel;
+        if (key === "pluralLabel") return collection.pluralLabel;
+        if (key === "slug") return collection.slug;
+      }
+      if (namespace === "entry") {
+        if (key === "title") return entryTitle;
+        if (key === "slug") return entry.slug;
+        const value = entry.fields[key];
+        if (typeof value === "string") return value.trim();
+        if (typeof value === "number" || typeof value === "boolean") {
+          return String(value);
+        }
+      }
+      resolvable = false;
+      return "";
+    },
+  );
+
+  if (!resolvable) return "";
+  const cleaned = replaced.trim();
+  if (!cleaned) return "";
+  return cleaned;
 }
 
 function escapeXML(value: string) {

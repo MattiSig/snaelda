@@ -105,9 +105,46 @@ type Collection struct {
 // CollectionSettings holds collection-level options. Kept narrow on purpose
 // so the runtime contract is the single source of truth.
 type CollectionSettings struct {
-	DefaultSort      string `json:"defaultSort,omitempty"`
-	ExposeDetailURLs bool   `json:"exposeDetailUrls,omitempty"`
+	DefaultSort            string `json:"defaultSort,omitempty"`
+	ExposeDetailURLs       bool   `json:"exposeDetailUrls,omitempty"`
+	SEOTitleTemplate       string `json:"seoTitleTemplate,omitempty"`
+	SEODescriptionTemplate string `json:"seoDescriptionTemplate,omitempty"`
 }
+
+// Allowed values for CollectionSettings.DefaultSort. `manual` honors the
+// entry SortOrder authored in the editor; `title` sorts case-insensitively
+// on the title field; `newest`/`oldest` sort by SortOrder with `newest`
+// putting the highest SortOrder first.
+const (
+	CollectionSortManual = "manual"
+	CollectionSortTitle  = "title"
+	CollectionSortNewest = "newest"
+	CollectionSortOldest = "oldest"
+)
+
+var supportedCollectionSorts = set(
+	CollectionSortManual,
+	CollectionSortTitle,
+	CollectionSortNewest,
+	CollectionSortOldest,
+)
+
+// SupportedCollectionSorts returns the registry of allowed defaultSort
+// values, in declaration order.
+func SupportedCollectionSorts() []string {
+	return []string{
+		CollectionSortManual,
+		CollectionSortTitle,
+		CollectionSortNewest,
+		CollectionSortOldest,
+	}
+}
+
+const (
+	maxCollectionSEOTemplateLen = 240
+)
+
+var seoTemplatePattern = regexp.MustCompile(`\{\{\s*([a-zA-Z][a-zA-Z0-9_.]*)\s*\}\}`)
 
 // FieldDefinition describes a single typed field on a collection.
 type FieldDefinition struct {
@@ -172,9 +209,72 @@ func validateCollections(path string, collections []Collection, c *collector) ma
 		}
 		validateRequiredText(child(colPath, "singularLabel"), collection.SingularLabel, 1, 60, c)
 		validateRequiredText(child(colPath, "pluralLabel"), collection.PluralLabel, 1, 60, c)
+		validateCollectionSettings(child(colPath, "settings"), collection, c)
 		validateCollection(colPath, collection, c)
 	}
 	return byID
+}
+
+// validateCollectionSettings asserts that settings only carry supported
+// values. defaultSort must be one of the registered options; SEO templates
+// have a length cap and may only reference fields that exist on the schema.
+func validateCollectionSettings(path string, collection Collection, c *collector) {
+	settings := collection.Settings
+	if settings.DefaultSort != "" && !supportedCollectionSorts[settings.DefaultSort] {
+		c.add(child(path, "defaultSort"), "invalid_value", "defaultSort must be manual, title, newest, or oldest")
+	}
+	fieldsByKey := map[string]bool{}
+	for _, field := range collection.Schema {
+		if field.Key != "" {
+			fieldsByKey[field.Key] = true
+		}
+	}
+	validateSEOTemplate(child(path, "seoTitleTemplate"), settings.SEOTitleTemplate, fieldsByKey, c)
+	validateSEOTemplate(child(path, "seoDescriptionTemplate"), settings.SEODescriptionTemplate, fieldsByKey, c)
+}
+
+// validateSEOTemplate enforces the template length cap, rejects HTML, and
+// rejects placeholders that do not resolve to a field on the schema.
+func validateSEOTemplate(path string, value string, fieldsByKey map[string]bool, c *collector) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return
+	}
+	if len(trimmed) > maxCollectionSEOTemplateLen {
+		c.add(path, "invalid_length", "SEO template is too long")
+	}
+	validatePlainText(path, value, c)
+	for _, match := range seoTemplatePattern.FindAllStringSubmatch(value, -1) {
+		ref := match[1]
+		key, rest, _ := strings.Cut(ref, ".")
+		switch key {
+		case "entry":
+			fieldKey := strings.TrimSpace(rest)
+			if fieldKey == "" {
+				c.add(path, "invalid_value", "entry placeholder must include a field key")
+				continue
+			}
+			// Built-in entry attributes that resolve at render time.
+			if fieldKey == "slug" || fieldKey == "title" {
+				continue
+			}
+			if !fieldsByKey[fieldKey] {
+				c.add(path, "unresolved_reference", "entry placeholder references unknown field "+fieldKey)
+			}
+		case "collection":
+			rest = strings.TrimSpace(rest)
+			if rest != "singularLabel" && rest != "pluralLabel" && rest != "slug" {
+				c.add(path, "invalid_value", "collection placeholder must reference singularLabel, pluralLabel, or slug")
+			}
+		case "site":
+			rest = strings.TrimSpace(rest)
+			if rest != "name" {
+				c.add(path, "invalid_value", "site placeholder must reference name")
+			}
+		default:
+			c.add(path, "unresolved_reference", "SEO template placeholder is not supported")
+		}
+	}
 }
 
 func validateCollection(path string, collection Collection, c *collector) {

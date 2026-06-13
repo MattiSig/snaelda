@@ -80,9 +80,12 @@ Refreshed 2026-06-09 from a spec-to-source audit of `specs/*`, `internal/*`, `ap
   - New `POST /api/sites/:siteId/collections/:collectionId/schema/migrate` supports `mode=preview` (returns diff + entries-affected count without persisting) and `mode=apply` (atomically rewrites entry field maps, persists the new schema, and bumps the version).
   - The Schema editor surfaces a migration modal that maps renames, drops, and retype-clears, previews entry impact, and applies the migration only when every destructive change is acknowledged.
 
-- [ ] Finish collection runtime behavior.
-  - Implement `defaultSort`, `exposeDetailUrls`, collection SEO templates, detail-route gating, and plan limits.
-  - Decide the canonical collection-detail slug/uniqueness model, then align schema, validation, persistence, routes, and specs.
+- [x] Finish collection runtime behavior.
+  - Collection settings now validate `defaultSort` against a closed `manual/title/newest/oldest` registry, and `seoTitleTemplate`/`seoDescriptionTemplate` against a closed `{{entry.*}}`/`{{collection.*}}`/`{{site.name}}` placeholder set with field-existence checks.
+  - The index block honors `collection.settings.defaultSort` when its own `sort` prop is empty, and links to detail pages only when the collection exposes detail URLs (settings flag true OR a `collection_detail` template binds).
+  - Publishing now honors that same gating helper, deduplicates entry URLs, and feeds the SEO templates into the per-entry title/description fallbacks; per-entry SEO still wins when present.
+  - Cross-page/collection URL validation reserves `/{collection.slug}` from static page slugs (with the `collection_index` carve-out) and rejects published entry URLs that collide with static pages.
+  - Plan limits remain enforced at every entry create/duplicate/draft-from-prompt site; the new editor Settings tab writes settings through the existing PATCH route, and Spec 19 documents the canonical settings shape and URL namespace rules.
 
 - [ ] Reconcile the collection block contracts.
   - Add real collection pickers and correctly typed number/boolean controls.

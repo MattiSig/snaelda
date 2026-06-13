@@ -58,6 +58,7 @@ type CollectionContext = {
   collectionsById: Map<string, Collection>;
   activeCollection?: Collection;
   activeEntry?: CollectionEntry;
+  exposesDetailUrlsById: Map<string, boolean>;
 };
 
 export function SiteDraftRenderer({
@@ -115,6 +116,10 @@ export function SiteDraftRenderer({
       : [];
   const collectionsById = new Map<string, Collection>(
     siteCollections.map((collection) => [collection.id, collection] as const),
+  );
+  const exposesDetailUrlsById = computeCollectionDetailExposure(
+    siteCollections,
+    site.pages,
   );
 
   const firstRenderedPage = renderedPages[0];
@@ -223,6 +228,7 @@ export function SiteDraftRenderer({
             activeCollection: pageActiveCollection,
             activeEntry:
               page.type === 'collection_detail' ? activeEntry : undefined,
+            exposesDetailUrlsById,
           };
 
           return (
@@ -549,6 +555,13 @@ function renderSiteBlock({
           key={block.id}
           props={block.props}
           collection={collectionCtx.activeCollection}
+          exposesDetailUrls={
+            collectionCtx.activeCollection
+              ? (collectionCtx.exposesDetailUrlsById.get(
+                  collectionCtx.activeCollection.id,
+                ) ?? false)
+              : false
+          }
           linkMode={linkMode}
           siteSlug={siteSlug}
           publishedBasePath={publishedBasePath}
@@ -2122,18 +2135,21 @@ function CollectionListBlock({
 function CollectionIndexBlock({
   props,
   collection,
+  exposesDetailUrls,
   linkMode,
   siteSlug,
   publishedBasePath,
 }: {
   props: Record<string, unknown>;
   collection?: Collection;
+  exposesDetailUrls: boolean;
   linkMode: 'anchors' | 'published';
   siteSlug?: string;
   publishedBasePath?: string;
 }) {
   const layout = asText(props.layout) || 'grid';
-  const sort = asText(props.sort) || 'manual';
+  const sort =
+    asText(props.sort) || collection?.settings?.defaultSort || 'manual';
   const entries = sortEntries(
     filterPublishedEntries(collection?.entries),
     sort,
@@ -2161,6 +2177,7 @@ function CollectionIndexBlock({
                 linkMode={linkMode}
                 siteSlug={siteSlug}
                 publishedBasePath={publishedBasePath}
+                linkToDetail={exposesDetailUrls}
               />
             ))}
           </div>
@@ -2263,29 +2280,24 @@ function CollectionEntryCard({
   linkMode,
   siteSlug,
   publishedBasePath,
+  linkToDetail = true,
 }: {
   entry: CollectionEntry;
   collection: Collection;
   linkMode: 'anchors' | 'published';
   siteSlug?: string;
   publishedBasePath?: string;
+  linkToDetail?: boolean;
 }) {
   const title = asText(entry.fields.title) || entry.slug;
   const summary = asText(entry.fields.summary);
   const cover =
     asImageRef(entry.fields.cover) || asImageRef(entry.fields.image);
-  const href = buildCollectionEntryHref(
-    collection,
-    entry,
-    linkMode,
-    siteSlug,
-    publishedBasePath,
-  );
-  return (
-    <a
-      href={href}
-      className="group grid gap-4 rounded-[var(--radius-inner)] border border-[color-mix(in_oklch,var(--color-border)_45%,transparent)] bg-[var(--color-surface)] p-5 transition-transform hover:-translate-y-px"
-    >
+  const cardClass =
+    'group grid gap-4 rounded-[var(--radius-inner)] border border-[color-mix(in_oklch,var(--color-border)_45%,transparent)] bg-[var(--color-surface)] p-5 transition-transform';
+
+  const inner = (
+    <>
       {cover ? (
         <AssetImage
           image={cover}
@@ -2308,6 +2320,23 @@ function CollectionEntryCard({
           </p>
         ) : null}
       </div>
+    </>
+  );
+
+  if (!linkToDetail) {
+    return <div className={cardClass}>{inner}</div>;
+  }
+
+  const href = buildCollectionEntryHref(
+    collection,
+    entry,
+    linkMode,
+    siteSlug,
+    publishedBasePath,
+  );
+  return (
+    <a href={href} className={cn(cardClass, 'hover:-translate-y-px')}>
+      {inner}
     </a>
   );
 }
@@ -2364,17 +2393,44 @@ function filterPublishedEntries(entries?: CollectionEntry[]) {
 function sortEntries(entries: CollectionEntry[], sort: string) {
   if (sort === 'title') {
     return [...entries].sort((a, b) =>
-      asText(a.fields.title).localeCompare(asText(b.fields.title)),
+      asText(a.fields.title).localeCompare(asText(b.fields.title), undefined, {
+        sensitivity: 'base',
+      }),
     );
   }
   // Manual / newest / oldest fall back to entry.sortOrder since entries
-  // don't carry publishedAt in the snapshot.
+  // don't carry publishedAt in the snapshot. `newest` returns highest
+  // SortOrder first; `oldest` returns lowest first.
   return [...entries].sort((a, b) => {
     const left = a.sortOrder ?? 0;
     const right = b.sortOrder ?? 0;
-    if (sort === 'oldest') return right - left;
+    if (sort === 'newest') return right - left;
     return left - right;
   });
+}
+
+// computeCollectionDetailExposure mirrors the backend rule in publishing.go:
+// a collection exposes detail URLs when settings.exposeDetailUrls is true or
+// a collection_detail page binds to it.
+function computeCollectionDetailExposure(
+  collections: Collection[],
+  pages: Array<{ type?: string; collectionId?: string }>,
+) {
+  const hasDetailTemplate = new Set<string>();
+  for (const page of pages) {
+    if (page.type === 'collection_detail' && page.collectionId) {
+      hasDetailTemplate.add(page.collectionId);
+    }
+  }
+  const result = new Map<string, boolean>();
+  for (const collection of collections) {
+    result.set(
+      collection.id,
+      Boolean(collection.settings?.exposeDetailUrls) ||
+        hasDetailTemplate.has(collection.id),
+    );
+  }
+  return result;
 }
 
 function collectionGridClassName(layout: string) {

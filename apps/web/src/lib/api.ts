@@ -196,9 +196,20 @@ export type FieldDefinition = {
   };
 };
 
+export type CollectionDefaultSort = "manual" | "title" | "newest" | "oldest";
+
+export const collectionDefaultSortOptions: CollectionDefaultSort[] = [
+  "manual",
+  "title",
+  "newest",
+  "oldest",
+];
+
 export type CollectionSettings = {
-  defaultSort?: string;
+  defaultSort?: CollectionDefaultSort;
   exposeDetailUrls?: boolean;
+  seoTitleTemplate?: string;
+  seoDescriptionTemplate?: string;
 };
 
 export type CollectionEntry = {

@@ -56,6 +56,7 @@ func (v Validator) ValidateDraft(draft SiteDraft) error {
 	v.validateTheme("theme", draft.Theme, &c)
 	collectionsByID := validateCollections("collections", draft.Collections, &c)
 	pageIDs := v.validatePages("pages", draft.Pages, false, collectionsByID, &c)
+	validateCollectionURLNamespace("pages", draft.Pages, draft.Collections, false, &c)
 	v.validateNavigation("navigation", draft.Navigation, pageIDs, &c)
 	return c.err()
 }
@@ -73,6 +74,7 @@ func (v Validator) ValidatePublishedSnapshot(snapshot PublishedSnapshot) error {
 	v.validateTheme("theme", snapshot.Theme, &c)
 	collectionsByID := validateCollections("collections", snapshot.Collections, &c)
 	pageIDs := v.validatePages("pages", snapshot.Pages, true, collectionsByID, &c)
+	validateCollectionURLNamespace("pages", snapshot.Pages, snapshot.Collections, true, &c)
 	v.validateNavigation("navigation", snapshot.Navigation, pageIDs, &c)
 	return c.err()
 }
@@ -429,6 +431,96 @@ func validateTokenMap(path string, values map[string]any, allowed map[string]boo
 		case string, int, int64, float64:
 		default:
 			c.add(fieldPath, "invalid_type", "token value must be a string or number")
+		}
+	}
+}
+
+// validateCollectionURLNamespace asserts the public URL contract between
+// pages and collections:
+//
+//   - When a collection exposes detail URLs (settings.exposeDetailUrls=true
+//     or a collection_detail page binds to it), the `/{collection.slug}`
+//     prefix is reserved; the only static or collection_index page allowed
+//     to occupy `/{collection.slug}` is one that binds to the same
+//     collection.
+//   - When the snapshot is being published, every published entry URL
+//     `/{collection.slug}/{entry.slug}` must not collide with another
+//     page's slug.
+func validateCollectionURLNamespace(path string, pages []PageDraft, collections []Collection, publishing bool, c *collector) {
+	if len(collections) == 0 {
+		return
+	}
+	hasDetailTemplate := map[string]bool{}
+	for _, page := range pages {
+		if page.Type == PageTypeCollectionDetail && page.CollectionID != "" {
+			hasDetailTemplate[page.CollectionID] = true
+		}
+	}
+	exposesDetailURLs := func(collection Collection) bool {
+		return collection.Settings.ExposeDetailURLs || hasDetailTemplate[collection.ID]
+	}
+
+	collectionByPrefix := map[string]string{}
+	for _, collection := range collections {
+		if collection.Slug == "" {
+			continue
+		}
+		if exposesDetailURLs(collection) {
+			collectionByPrefix["/"+collection.Slug] = collection.ID
+		}
+	}
+
+	for index, page := range pages {
+		// collection_detail page slugs are editor-visible template
+		// addresses, not public URLs; skip them.
+		if page.Type == PageTypeCollectionDetail {
+			continue
+		}
+		if page.Slug == "" || page.Slug == "/" {
+			continue
+		}
+		if collectionID, reserved := collectionByPrefix[page.Slug]; reserved {
+			if page.CollectionID == collectionID {
+				continue
+			}
+			pagePath := fmt.Sprintf("%s[%d]", path, index)
+			c.add(child(pagePath, "slug"), "collection_prefix_conflict", "page slug collides with a collection that exposes detail URLs")
+		}
+	}
+
+	if !publishing {
+		return
+	}
+
+	pageSlugs := map[string]bool{}
+	for _, page := range pages {
+		if page.Type == PageTypeCollectionDetail {
+			continue
+		}
+		if page.Status == PageStatusDraft {
+			continue
+		}
+		if page.Slug == "" {
+			continue
+		}
+		pageSlugs[page.Slug] = true
+	}
+	for ci, collection := range collections {
+		if !exposesDetailURLs(collection) || collection.Slug == "" {
+			continue
+		}
+		for ei, entry := range collection.Entries {
+			if entry.Status != "" && entry.Status != EntryStatusPublished {
+				continue
+			}
+			if entry.Slug == "" {
+				continue
+			}
+			entryURL := "/" + collection.Slug + "/" + entry.Slug
+			if pageSlugs[entryURL] {
+				entryPath := fmt.Sprintf("collections[%d].entries[%d]", ci, ei)
+				c.add(child(entryPath, "slug"), "entry_url_conflict", "entry URL collides with an existing page slug")
+			}
 		}
 	}
 }

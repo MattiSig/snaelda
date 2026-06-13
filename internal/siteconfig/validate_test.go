@@ -521,6 +521,218 @@ func hasIssue(t *testing.T, err error, code string) bool {
 	return validationErr.Has(code)
 }
 
+func TestValidateDraftRejectsInvalidCollectionDefaultSort(t *testing.T) {
+	draft := validDraft()
+	draft.Collections = []Collection{{
+		ID:            "col_services",
+		Slug:          "services",
+		SingularLabel: "Service",
+		PluralLabel:   "Services",
+		Schema: []FieldDefinition{
+			{Key: "title", Label: "Title", Type: FieldTypeText, Required: true},
+		},
+		Settings: CollectionSettings{DefaultSort: "alphabetic"},
+	}}
+	err := ValidateDraft(draft)
+	if !hasIssue(t, err, "invalid_value") {
+		t.Fatalf("expected invalid_value on defaultSort, got %v", err)
+	}
+}
+
+func TestValidateDraftAcceptsRegisteredCollectionDefaultSort(t *testing.T) {
+	for _, sort := range SupportedCollectionSorts() {
+		t.Run(sort, func(t *testing.T) {
+			draft := validDraft()
+			draft.Collections = []Collection{{
+				ID:            "col_services",
+				Slug:          "services",
+				SingularLabel: "Service",
+				PluralLabel:   "Services",
+				Schema: []FieldDefinition{
+					{Key: "title", Label: "Title", Type: FieldTypeText, Required: true},
+				},
+				Settings: CollectionSettings{DefaultSort: sort},
+			}}
+			if err := ValidateDraft(draft); err != nil {
+				t.Fatalf("expected sort %q to validate, got %v", sort, err)
+			}
+		})
+	}
+}
+
+func TestValidateDraftRejectsUnknownSEOTemplatePlaceholder(t *testing.T) {
+	draft := validDraft()
+	draft.Collections = []Collection{{
+		ID:            "col_services",
+		Slug:          "services",
+		SingularLabel: "Service",
+		PluralLabel:   "Services",
+		Schema: []FieldDefinition{
+			{Key: "title", Label: "Title", Type: FieldTypeText, Required: true},
+		},
+		Settings: CollectionSettings{
+			SEOTitleTemplate: "{{entry.unknown_field}} | {{site.name}}",
+		},
+	}}
+	err := ValidateDraft(draft)
+	if !hasIssue(t, err, "unresolved_reference") {
+		t.Fatalf("expected unresolved_reference on SEO template, got %v", err)
+	}
+}
+
+func TestValidateDraftAcceptsValidSEOTemplates(t *testing.T) {
+	draft := validDraft()
+	draft.Collections = []Collection{{
+		ID:            "col_services",
+		Slug:          "services",
+		SingularLabel: "Service",
+		PluralLabel:   "Services",
+		Schema: []FieldDefinition{
+			{Key: "title", Label: "Title", Type: FieldTypeText, Required: true},
+			{Key: "summary", Label: "Summary", Type: FieldTypeLongText},
+		},
+		Settings: CollectionSettings{
+			SEOTitleTemplate:       "{{entry.title}} | {{site.name}}",
+			SEODescriptionTemplate: "{{entry.summary}}",
+		},
+	}}
+	if err := ValidateDraft(draft); err != nil {
+		t.Fatalf("expected valid SEO templates to pass, got %v", err)
+	}
+}
+
+func TestValidateDraftRejectsPageSlugCollidingWithCollectionPrefix(t *testing.T) {
+	draft := validDraft()
+	draft.Pages = append(draft.Pages, PageDraft{
+		ID:    "page_services_static",
+		Title: "Services",
+		Slug:  "/services",
+		Blocks: []BlockInstance{
+			{
+				ID:      "block_text",
+				Type:    "text_section",
+				Version: BlockVersionV1,
+				Props:   map[string]any{"heading": "Services", "body": "List", "alignment": "left", "width": "default"},
+			},
+		},
+	})
+	draft.Collections = []Collection{{
+		ID:            "col_services",
+		Slug:          "services",
+		SingularLabel: "Service",
+		PluralLabel:   "Services",
+		Schema: []FieldDefinition{
+			{Key: "title", Label: "Title", Type: FieldTypeText, Required: true},
+		},
+		Settings: CollectionSettings{ExposeDetailURLs: true},
+	}}
+	err := ValidateDraft(draft)
+	if !hasIssue(t, err, "collection_prefix_conflict") {
+		t.Fatalf("expected collection_prefix_conflict, got %v", err)
+	}
+}
+
+func TestValidateDraftAcceptsCollectionIndexBoundToSameSlug(t *testing.T) {
+	draft := validDraft()
+	draft.Pages = append(draft.Pages, PageDraft{
+		ID:           "page_services_index",
+		Title:        "Services",
+		Slug:         "/services",
+		Type:         PageTypeCollectionIndex,
+		CollectionID: "col_services",
+		Blocks: []BlockInstance{
+			{
+				ID:      "block_text",
+				Type:    "text_section",
+				Version: BlockVersionV1,
+				Props:   map[string]any{"heading": "Services", "body": "List", "alignment": "left", "width": "default"},
+			},
+		},
+	})
+	draft.Collections = []Collection{{
+		ID:            "col_services",
+		Slug:          "services",
+		SingularLabel: "Service",
+		PluralLabel:   "Services",
+		Schema: []FieldDefinition{
+			{Key: "title", Label: "Title", Type: FieldTypeText, Required: true},
+		},
+		Settings: CollectionSettings{ExposeDetailURLs: true},
+	}}
+	if err := ValidateDraft(draft); err != nil {
+		t.Fatalf("expected collection_index bound to same slug to validate, got %v", err)
+	}
+}
+
+func TestValidatePublishedSnapshotRejectsEntryURLCollidingWithPage(t *testing.T) {
+	draft := validDraft()
+	snapshot := PublishedSnapshot{
+		SchemaVersion: SiteConfigVersionV1,
+		Site: PublishedSite{
+			ID:            draft.Site.ID,
+			Name:          draft.Site.Name,
+			DefaultLocale: draft.Site.DefaultLocale,
+			SEO: SEOConfig{
+				Title:       draft.Site.Name,
+				Description: "Calm design systems for focused teams.",
+			},
+		},
+		Brand: BrandConfig{
+			BusinessName: draft.Site.Name,
+			PrimaryColor: "#3c78ad",
+		},
+		Theme:      draft.Theme,
+		Navigation: NavigationConfig{Primary: []NavigationItem{{Label: "Home", PageID: "page_home"}}},
+		Pages: []PageDraft{
+			{
+				ID:     "page_home",
+				Title:  "Home",
+				Slug:   "/",
+				SEO:    SEOConfig{Title: "Home", Description: "Welcome."},
+				Blocks: draft.Pages[0].Blocks,
+			},
+			{
+				ID:     "page_static_collision",
+				Title:  "Scaffolding rentals",
+				Slug:   "/services/scaffolding",
+				Status: PageStatusPublished,
+				SEO:    SEOConfig{Title: "Scaffolding", Description: "Static page."},
+				Blocks: draft.Pages[0].Blocks,
+			},
+			{
+				ID:           "page_service_detail",
+				Title:        "Service detail",
+				Slug:         "/services-template",
+				Type:         PageTypeCollectionDetail,
+				CollectionID: "col_services",
+				SEO:          SEOConfig{Title: "Detail", Description: "Template."},
+				Blocks:       []BlockInstance{},
+			},
+		},
+		Collections: []Collection{{
+			ID:            "col_services",
+			Slug:          "services",
+			SingularLabel: "Service",
+			PluralLabel:   "Services",
+			Schema: []FieldDefinition{
+				{Key: "title", Label: "Title", Type: FieldTypeText, Required: true},
+			},
+			Entries: []CollectionEntry{
+				{
+					ID:     "entry_a",
+					Slug:   "scaffolding",
+					Status: EntryStatusPublished,
+					Fields: map[string]any{"title": "Scaffolding"},
+				},
+			},
+		}},
+	}
+	err := ValidatePublishedSnapshot(snapshot)
+	if !hasIssue(t, err, "entry_url_conflict") {
+		t.Fatalf("expected entry_url_conflict, got %v", err)
+	}
+}
+
 func validDraft() SiteDraft {
 	return SiteDraft{
 		Site: DraftSite{

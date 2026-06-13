@@ -9,13 +9,16 @@ import { Select } from "@/components/ui/select";
 import {
   APIError,
   type Collection,
+  type CollectionDefaultSort,
   type CollectionFieldType,
+  type CollectionSettings,
   type FieldDefinition,
   type SchemaChange,
   type SchemaDiff,
   type SchemaFieldMapping,
   type SchemaMigrationPlan,
   applyCollectionSchemaMigration,
+  collectionDefaultSortOptions,
   createCollection,
   listCollections,
   draftCollectionFromPrompt,
@@ -270,6 +273,38 @@ export function CollectionsPanel({
     }
   }
 
+  async function handleSettingsSave(
+    collectionId: string,
+    settings: CollectionSettings,
+  ): Promise<"saved" | "conflict" | "error"> {
+    try {
+      const response = await updateCollection(siteId, collectionId, {
+        settings,
+      });
+      setErrorMessage("");
+      setCollections((prev) =>
+        prev.map((collection) =>
+          collection.id === collectionId ? response.collection : collection,
+        ),
+      );
+      return "saved";
+    } catch (error) {
+      if (isDraftConflictError(error)) {
+        await refreshCollections(collectionId);
+        setErrorMessage(
+          "This draft changed in another tab or request. The latest collections were reloaded; apply your change again.",
+        );
+        return "conflict";
+      }
+      setErrorMessage(
+        error instanceof APIError
+          ? error.message
+          : "Could not save collection settings.",
+      );
+      return "error";
+    }
+  }
+
   async function handleSchemaSave(
     collectionId: string,
     schema: FieldDefinition[],
@@ -508,6 +543,9 @@ export function CollectionsPanel({
               onSchemaMigrate={(schema, mappings) =>
                 handleSchemaMigrate(selected.id, schema, mappings)
               }
+              onSettingsSave={(settings) =>
+                handleSettingsSave(selected.id, settings)
+              }
               onEntriesChanged={(entries) => {
                 setCollections((prev) =>
                   prev.map((collection) =>
@@ -666,6 +704,7 @@ function CollectionDetailPanel({
   onSchemaSave,
   onSchemaPreview,
   onSchemaMigrate,
+  onSettingsSave,
   onEntriesChanged,
 }: {
   siteId: string;
@@ -681,9 +720,12 @@ function CollectionDetailPanel({
     schema: FieldDefinition[],
     mappings: SchemaFieldMapping[],
   ) => Promise<SchemaSaveResult>;
+  onSettingsSave: (
+    settings: CollectionSettings,
+  ) => Promise<"saved" | "conflict" | "error">;
   onEntriesChanged: (entries: Collection["entries"]) => void;
 }) {
-  const [tab, setTab] = useState<"entries" | "schema">("entries");
+  const [tab, setTab] = useState<"entries" | "schema" | "settings">("entries");
 
   return (
     <section className={cn(paddedPanel, "grid gap-4")}>
@@ -724,6 +766,15 @@ function CollectionDetailPanel({
         >
           Schema
         </Button>
+        <Button
+          type="button"
+          variant={tab === "settings" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setTab("settings")}
+          aria-pressed={tab === "settings"}
+        >
+          Settings
+        </Button>
       </div>
 
       {tab === "schema" ? (
@@ -733,6 +784,8 @@ function CollectionDetailPanel({
           onPreview={onSchemaPreview}
           onMigrate={onSchemaMigrate}
         />
+      ) : tab === "settings" ? (
+        <SettingsEditor collection={collection} onSave={onSettingsSave} />
       ) : (
         <EntryWorkspace
           siteId={siteId}
@@ -744,6 +797,143 @@ function CollectionDetailPanel({
     </section>
   );
 }
+
+function SettingsEditor({
+  collection,
+  onSave,
+}: {
+  collection: Collection;
+  onSave: (
+    settings: CollectionSettings,
+  ) => Promise<"saved" | "conflict" | "error">;
+}) {
+  const [defaultSort, setDefaultSort] = useState<CollectionDefaultSort>(
+    (collection.settings?.defaultSort as CollectionDefaultSort) ?? "manual",
+  );
+  const [exposeDetailUrls, setExposeDetailUrls] = useState(
+    Boolean(collection.settings?.exposeDetailUrls),
+  );
+  const [seoTitleTemplate, setSeoTitleTemplate] = useState(
+    collection.settings?.seoTitleTemplate ?? "",
+  );
+  const [seoDescriptionTemplate, setSeoDescriptionTemplate] = useState(
+    collection.settings?.seoDescriptionTemplate ?? "",
+  );
+  const [isSaving, setIsSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsSaving(true);
+    try {
+      const result = await onSave({
+        defaultSort,
+        exposeDetailUrls,
+        seoTitleTemplate: seoTitleTemplate.trim() || undefined,
+        seoDescriptionTemplate: seoDescriptionTemplate.trim() || undefined,
+      });
+      if (result === "saved") {
+        setSavedAt(Date.now());
+      }
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <form className={form.grid} onSubmit={handleSubmit}>
+      <div className={form.field}>
+        <label className={text.label} htmlFor="collection-default-sort">
+          Default sort
+        </label>
+        <Select
+          id="collection-default-sort"
+          value={defaultSort}
+          onChange={(event) =>
+            setDefaultSort(event.target.value as CollectionDefaultSort)
+          }
+        >
+          {collectionDefaultSortOptions.map((option) => (
+            <option key={option} value={option}>
+              {DEFAULT_SORT_LABELS[option]}
+            </option>
+          ))}
+        </Select>
+        <p className={form.hint}>
+          Index pages use this order when their block does not override it.
+        </p>
+      </div>
+
+      <div className={form.field}>
+        <label className={cn(text.label, "flex items-center gap-2")}>
+          <input
+            type="checkbox"
+            checked={exposeDetailUrls}
+            onChange={(event) => setExposeDetailUrls(event.target.checked)}
+          />
+          Expose public detail URLs
+        </label>
+        <p className={form.hint}>
+          Reserves the <code>/{collection.slug}</code> prefix from other page
+          slugs and lets index cards link to per-entry pages even before a
+          detail template exists. Detail URLs are also emitted automatically
+          when a <code>collection_detail</code> page binds to this collection;
+          to stop emitting them, delete that page.
+        </p>
+      </div>
+
+      <div className={form.field}>
+        <label className={text.label} htmlFor="collection-seo-title">
+          SEO title template
+        </label>
+        <Input
+          id="collection-seo-title"
+          value={seoTitleTemplate}
+          placeholder="{{entry.title}} | {{site.name}}"
+          onChange={(event) => setSeoTitleTemplate(event.target.value)}
+        />
+        <p className={form.hint}>
+          Use{" "}
+          <code>{"{{entry.field}}"}</code>,{" "}
+          <code>{"{{collection.singularLabel}}"}</code>, and{" "}
+          <code>{"{{site.name}}"}</code>. Per-entry SEO overrides this.
+        </p>
+      </div>
+
+      <div className={form.field}>
+        <label className={text.label} htmlFor="collection-seo-description">
+          SEO description template
+        </label>
+        <Textarea
+          id="collection-seo-description"
+          value={seoDescriptionTemplate}
+          rows={2}
+          placeholder="{{entry.summary}}"
+          onChange={(event) => setSeoDescriptionTemplate(event.target.value)}
+        />
+        <p className={form.hint}>
+          Falls back to the entry summary or details when blank or unresolved.
+        </p>
+      </div>
+
+      <div className={actions.row}>
+        <Button type="submit" disabled={isSaving}>
+          {isSaving ? "Saving…" : "Save settings"}
+        </Button>
+        {savedAt ? (
+          <span className={text.muted}>Saved</span>
+        ) : null}
+      </div>
+    </form>
+  );
+}
+
+const DEFAULT_SORT_LABELS: Record<CollectionDefaultSort, string> = {
+  manual: "Manual (use the order you set in the entries list)",
+  title: "Title (A → Z)",
+  newest: "Newest first",
+  oldest: "Oldest first",
+};
 
 function SchemaEditor({
   schema,

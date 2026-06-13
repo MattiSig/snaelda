@@ -32,7 +32,7 @@ A collection has:
 - `singularLabel` (e.g. `Service`)
 - `pluralLabel` (e.g. `Services`)
 - `schema` — ordered list of field definitions
-- `settings` — collection-level options (default sort, whether entries have public detail URLs, default SEO template)
+- `settings` — collection-level options (default sort, whether entries have public detail URLs, default SEO templates; see [Collection Settings](#collection-settings) below)
 - `sortOrder` — ordering of collections in the editor
 
 Constraints:
@@ -77,6 +77,33 @@ Each field definition has:
 - `validation` — per-type constraints (max length, min/max number, allowed asset kinds)
 
 Schemas are versioned on the collection. A non-additive schema change (rename, type change, remove required field) requires a migration step that maps old entries forward.
+
+### Collection Settings
+
+`settings` is a typed JSON object on each collection. All fields are optional and default to permissive zero values so legacy collections keep working.
+
+```json
+{
+  "defaultSort": "manual",
+  "exposeDetailUrls": true,
+  "seoTitleTemplate": "{{entry.title}} | {{site.name}}",
+  "seoDescriptionTemplate": "{{entry.summary}}"
+}
+```
+
+- `defaultSort` — one of `manual` (entry `sortOrder`), `title` (A → Z), `newest` (highest `sortOrder` first), `oldest` (lowest first). The collection_index block honors this when its own `sort` prop is empty.
+- `exposeDetailUrls` — when true (or when a `collection_detail` page binds to the collection), the runtime renders one HTML page per published entry under `/{collection.slug}/{entry.slug}`, reserves the `/{collection.slug}` URL prefix from static page slugs, and lets index cards link to the per-entry pages. When false and no detail template exists, no entry URLs are emitted.
+- `seoTitleTemplate` / `seoDescriptionTemplate` — string templates that fill in the page metadata when an entry leaves its own `seo` blank. Placeholders may reference `entry.{fieldKey}`, `entry.title`, `entry.slug`, `collection.singularLabel`, `collection.pluralLabel`, `collection.slug`, or `site.name`. Unknown or unresolved placeholders fall through to the automatic per-field fallback chain (entry SEO → entry title/summary → site SEO).
+
+### URL Namespace Rules
+
+Collections and pages share the same public URL namespace, so the platform validates the two together:
+
+- Collection `slug` is unique per site (database constraint).
+- When a collection exposes detail URLs, no static or `collection_index` page may use the same `/{collection.slug}` slug — except a `collection_index` page that binds to the same collection (which is the natural index for that prefix).
+- Entry slug is unique per collection (database constraint).
+- At publish time the snapshot must not contain a static page whose slug equals any published entry URL `/{collection.slug}/{entry.slug}`. Publishing fails with `entry_url_conflict` when it does.
+- `collection_detail` page slugs are editor-visible template addresses, not public URLs; they never produce a public route.
 
 ### Collection Entry
 

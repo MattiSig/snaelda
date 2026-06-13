@@ -818,6 +818,7 @@ type expectedPagePath struct {
 
 func expectedPagePaths(snapshot siteconfig.PublishedSnapshot, collectionsByID map[string]siteconfig.Collection) []expectedPagePath {
 	out := make([]expectedPagePath, 0, len(snapshot.Pages))
+	seen := map[string]bool{}
 	for _, page := range snapshot.Pages {
 		if page.Status == siteconfig.PageStatusDraft {
 			continue
@@ -827,23 +828,57 @@ func expectedPagePaths(snapshot siteconfig.PublishedSnapshot, collectionsByID ma
 			if !ok {
 				continue
 			}
+			// Honor the per-collection opt-out: when settings explicitly
+			// disable detail URLs, the template still exists in the editor
+			// but emits no public artifacts.
+			if !collectionExposesDetailURLs(collection, snapshot.Pages) {
+				continue
+			}
 			for _, entry := range collection.Entries {
 				if entry.Status != "" && entry.Status != siteconfig.EntryStatusPublished {
 					continue
 				}
+				path := collectionEntryPagePath(collection, entry)
+				if seen[path] {
+					continue
+				}
+				seen[path] = true
 				out = append(out, expectedPagePath{
-					pagePath: collectionEntryPagePath(collection, entry),
+					pagePath: path,
 					source:   "collection_detail:" + page.ID + ":" + entry.ID,
 				})
 			}
 			continue
 		}
+		path := normalizePublishedPagePath(page.Slug)
+		if seen[path] {
+			continue
+		}
+		seen[path] = true
 		out = append(out, expectedPagePath{
-			pagePath: normalizePublishedPagePath(page.Slug),
+			pagePath: path,
 			source:   "page:" + page.ID,
 		})
 	}
 	return out
+}
+
+// collectionExposesDetailURLs reports whether the collection should produce
+// public detail-page artifacts. The canonical rule is: a collection exposes
+// detail URLs when either the explicit settings flag is true OR a
+// collection_detail template binds to it (legacy behavior preserved for
+// existing draft/published data). To opt out, the user must clear all
+// detail templates AND set settings.exposeDetailUrls=false.
+func collectionExposesDetailURLs(collection siteconfig.Collection, pages []siteconfig.PageDraft) bool {
+	if collection.Settings.ExposeDetailURLs {
+		return true
+	}
+	for _, page := range pages {
+		if page.Type == siteconfig.PageTypeCollectionDetail && page.CollectionID == collection.ID {
+			return true
+		}
+	}
+	return false
 }
 
 // collectionEntryPagePath is the canonical URL for a single collection entry.
