@@ -459,6 +459,17 @@ function SiteDetail() {
   useEffect(() => {
     let isMounted = true;
 
+    listSiteFormSubmissions(siteId)
+      .then((submissionResponse) => {
+        if (isMounted) {
+          setFormSubmissions(submissionResponse.submissions);
+        }
+      })
+      .catch(() => {
+        // Trial sessions can't read form submissions; leave the list empty
+        // so the rest of the builder still loads.
+      });
+
     Promise.all([
       getSiteDraft(siteId),
       listSiteVersions(siteId),
@@ -467,7 +478,6 @@ function SiteDetail() {
       getSiteTheme(siteId),
       listRepromptHistory(siteId),
       listSiteAssets(siteId),
-      listSiteFormSubmissions(siteId),
     ])
       .then(
         ([
@@ -478,7 +488,6 @@ function SiteDetail() {
           themeResponse,
           repromptHistoryResponse,
           assetResponse,
-          submissionResponse,
         ]) => {
           if (!isMounted) {
             return;
@@ -494,7 +503,6 @@ function SiteDetail() {
           setThemeOptions(themeResponse.options);
           setRepromptHistory(repromptHistoryResponse.reprompts);
           setSiteAssets(assetResponse.assets);
-          setFormSubmissions(submissionResponse.submissions);
           syncSiteFields(draftResponse.draft);
           const initialPage = draftResponse.draft.pages[0] ?? null;
           replaceDraft(draftResponse.draft);
