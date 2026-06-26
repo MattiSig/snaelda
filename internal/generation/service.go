@@ -670,6 +670,15 @@ func (s *Service) enrichDraftWithStarterImagery(ctx context.Context, workspaceID
 	if !draftImageSlotsChanged(draft, enriched) {
 		return draft, false
 	}
+	// The caller just persisted the draft, which bumped the row's revision but
+	// did not update the in-memory copy. Re-sync from the reader so the
+	// optimistic-concurrency check in SaveDraft uses the current revision
+	// instead of the pre-save value.
+	if s.reader != nil {
+		if current, err := s.reader.LoadDraft(ctx, draft.Site.ID); err == nil {
+			enriched.Revision = current.Revision
+		}
+	}
 	if err := s.writer.SaveDraft(ctx, workspaceID, enriched); err != nil {
 		if s.logger != nil {
 			s.logger.Warn("persist starter imagery enrichment", "siteId", draft.Site.ID, "error", err.Error())
