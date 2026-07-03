@@ -54,7 +54,7 @@ describe('ReturningWorkspacePrompt', () => {
     render(<ReturningWorkspacePrompt session={session} locale="is" />)
 
     expect(screen.getByText('Vinnusvæðið þitt bíður')).toBeTruthy()
-    expect(screen.getByText('Prufuvinnusvæðið þitt')).toBeTruthy()
+    expect(screen.getByText('Þitt prufuvinnusvæðið')).toBeTruthy()
   })
 
   it('identifies an authenticated workspace by its owner', () => {
