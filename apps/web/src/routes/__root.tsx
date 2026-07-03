@@ -18,6 +18,14 @@ import { topbar } from "~/lib/styles";
 import "~/styles/app.css";
 
 export const Route = createRootRoute({
+  loader: () => ({
+    // Runtime server env (not import.meta.env): the Docker image is built
+    // without Railway variables, so a VITE_ var would inline as undefined.
+    gaMeasurementId:
+      typeof process !== "undefined"
+        ? (process.env.GA_MEASUREMENT_ID ?? "")
+        : "",
+  }),
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -80,6 +88,18 @@ function RootDocument({ children }: { children: ReactNode }) {
         return loaderData?.hostedPublic ?? null;
       })
       .find((value) => value?.isHostedPublic) ?? null;
+
+  const rootLoaderData = matches[0]?.loaderData as
+    | { gaMeasurementId?: string }
+    | undefined;
+  const rawGaId = rootLoaderData?.gaMeasurementId ?? "";
+  // Only the Snaelda marketing/app surface is measured — customers' hosted
+  // sites must not carry our analytics tag. The ID lands in an inline script,
+  // so accept only the strict GA4 shape.
+  const gaMeasurementId =
+    !hostedPublic?.isHostedPublic && /^G-[A-Z0-9]+$/.test(rawGaId)
+      ? rawGaId
+      : "";
   // Hosted public sites render their content locale; the published-site
   // localization work replaces this `en` fallback with the site's default
   // locale. The app + marketing surface follows the visitor's resolved locale.
@@ -109,6 +129,33 @@ function RootDocument({ children }: { children: ReactNode }) {
     <html lang={htmlLang} className="dark" suppressHydrationWarning>
       <head>
         <HeadContent />
+        {gaMeasurementId ? (
+          <>
+            <script
+              async
+              src={`https://www.googletagmanager.com/gtag/js?id=${gaMeasurementId}`}
+            />
+            <script
+              dangerouslySetInnerHTML={{
+                __html: [
+                  "window.dataLayer = window.dataLayer || [];",
+                  "function gtag(){dataLayer.push(arguments);}",
+                  // Consent Mode v2, everything denied by default: EEA
+                  // visitors get cookieless pings only until a consent
+                  // banner exists to grant analytics_storage.
+                  "gtag('consent', 'default', {",
+                  "  ad_storage: 'denied',",
+                  "  ad_user_data: 'denied',",
+                  "  ad_personalization: 'denied',",
+                  "  analytics_storage: 'denied',",
+                  "});",
+                  "gtag('js', new Date());",
+                  `gtag('config', '${gaMeasurementId}');`,
+                ].join("\n"),
+              }}
+            />
+          </>
+        ) : null}
       </head>
       <body>
         {showChrome ? (
