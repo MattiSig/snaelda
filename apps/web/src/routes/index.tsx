@@ -2,6 +2,8 @@ import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import type { CSSProperties, FormEvent } from 'react'
 import { useEffect, useState } from 'react'
 import { ArrowRight, Globe, Sparkles } from 'lucide-react'
+import { HeroDemo } from '@/components/HeroDemo'
+import { HeroScrollCue } from '@/components/HeroScrollCue'
 import { PublishedSitePage } from '@/components/PublishedSitePage'
 import {
   APIError,
@@ -16,6 +18,14 @@ import {
   loadPublishedSitePageData,
 } from '@/lib/published-site'
 import { getHostedPublicSiteContext } from '@/lib/public-site'
+import { translator, type Locale } from '@/lib/i18n'
+import {
+  DEFAULT_LOCALE,
+  coerceLocale,
+  ogLocale,
+  resolveRequestLocale,
+  useLocale,
+} from '@/lib/locale'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -25,11 +35,19 @@ export const Route = createFileRoute('/')({
       typeof search.restore === 'string' && search.restore.length > 0
         ? search.restore
         : undefined
-    return restore ? { restore } : {}
+    const lang = coerceLocale(search.lang) ?? undefined
+    return {
+      ...(restore ? { restore } : {}),
+      ...(lang ? { lang } : {}),
+    }
   },
   loader: async () => {
-    const hostedPublic = await getHostedPublicSiteContext()
+    const [hostedPublic, locale] = await Promise.all([
+      getHostedPublicSiteContext(),
+      resolveRequestLocale(),
+    ])
     return {
+      locale,
       hostedPublic,
       published: hostedPublic.isHostedPublic
         ? await loadPublishedSitePageData(() =>
@@ -41,9 +59,43 @@ export const Route = createFileRoute('/')({
         : { site: null, errorMessage: '' },
     }
   },
-  head: ({ loaderData }) => buildPublishedPageHead(loaderData?.published.site),
+  head: ({ loaderData }) => {
+    const base = buildPublishedPageHead(loaderData?.published.site)
+    // A hosted public site owns its own head (including its content locale);
+    // only the marketing landing announces the visitor-resolved locale.
+    if (loaderData?.hostedPublic.isHostedPublic) {
+      return base
+    }
+    const locale = coerceLocale(loaderData?.locale) ?? DEFAULT_LOCALE
+    return {
+      ...base,
+      meta: [
+        ...(base.meta ?? []),
+        { property: 'og:locale', content: ogLocale(locale) },
+      ],
+    }
+  },
   component: Home,
 })
+
+const HERO_DEMO_ENABLED =
+  (import.meta as ImportMeta & { env: { VITE_HERO_DEMO_ENABLED?: string } }).env
+    .VITE_HERO_DEMO_ENABLED === 'true'
+
+const heroDemoSources = [
+  {
+    src: '/media/hero-demo/hero-768.webm',
+    type: 'video/webm' as const,
+    media: '(max-width: 640px)',
+  },
+  {
+    src: '/media/hero-demo/hero-768.mp4',
+    type: 'video/mp4' as const,
+    media: '(max-width: 640px)',
+  },
+  { src: '/media/hero-demo/hero-1280.webm', type: 'video/webm' as const },
+  { src: '/media/hero-demo/hero-1280.mp4', type: 'video/mp4' as const },
+]
 
 const landingTheme = {
   backgroundColor: '#131411',
@@ -64,30 +116,44 @@ const landingTheme = {
   '--thread-violet': '#b58ad0',
 } as CSSProperties
 
-const spunFor: Array<{ label: string; tone: string }> = [
-  { label: 'shops', tone: 'var(--thread-mauve)' },
-  { label: 'studios', tone: 'var(--thread-gold)' },
-  { label: 'services', tone: 'var(--thread-teal)' },
-  { label: 'contractors', tone: 'var(--thread-coral)' },
-  { label: 'side projects', tone: 'var(--thread-violet)' },
-  { label: 'everything in between', tone: 'var(--thread-mauve)' },
-]
-
-const landingPromptChips = [
-  'Make it warm and local',
-  'Include booking',
-  'Keep it simple',
-  'Make it feel premium',
-]
-
 function Home() {
   const navigate = useNavigate()
+  const locale = useLocale()
+  const tr = translator(locale)
   const { hostedPublic, published } = Route.useLoaderData()
   const search = Route.useSearch()
   const [prompt, setPrompt] = useState('')
   const [restoreMessage, setRestoreMessage] = useState('')
   const [isStartingWorkspace, setIsStartingWorkspace] = useState(false)
   const [currentSession, setCurrentSession] = useState<BuilderSession | null>(null)
+
+  const spunFor: Array<{ id: string; label: string; tone: string }> = [
+    { id: 'shops', label: tr('landing.madeFor.shops'), tone: 'var(--thread-mauve)' },
+    { id: 'studios', label: tr('landing.madeFor.studios'), tone: 'var(--thread-gold)' },
+    { id: 'services', label: tr('landing.madeFor.services'), tone: 'var(--thread-teal)' },
+    {
+      id: 'contractors',
+      label: tr('landing.madeFor.contractors'),
+      tone: 'var(--thread-coral)',
+    },
+    {
+      id: 'side-projects',
+      label: tr('landing.madeFor.sideProjects'),
+      tone: 'var(--thread-violet)',
+    },
+    {
+      id: 'everything-else',
+      label: tr('landing.madeFor.everythingElse'),
+      tone: 'var(--thread-mauve)',
+    },
+  ]
+
+  const landingPromptChips = [
+    tr('landing.chips.warmLocal'),
+    tr('landing.chips.booking'),
+    tr('landing.chips.simple'),
+    tr('landing.chips.premium'),
+  ]
 
   useEffect(() => {
     if (hostedPublic.isHostedPublic) {
@@ -121,10 +187,10 @@ function Home() {
       .then(() => navigate({ to: '/app' }))
       .catch((error) => {
         setRestoreMessage(
-          error instanceof APIError ? error.message : 'Could not restore that workspace',
+          error instanceof APIError ? error.message : tr('landing.error.restore'),
         )
       })
-  }, [navigate, search.restore])
+  }, [navigate, search.restore, tr])
 
   async function handleGuestStart(promptOverride?: string) {
     setIsStartingWorkspace(true)
@@ -137,7 +203,7 @@ function Home() {
       })
     } catch (error) {
       setRestoreMessage(
-        error instanceof APIError ? error.message : 'Could not start a workspace',
+        error instanceof APIError ? error.message : tr('landing.error.start'),
       )
       setIsStartingWorkspace(false)
     }
@@ -191,7 +257,7 @@ function Home() {
               to="/app"
               className="inline-flex min-h-11 items-center gap-2 rounded-full border border-[color-mix(in_oklch,var(--thread-teal)_52%,var(--border))] bg-[color-mix(in_oklch,var(--surface-2)_76%,transparent)] px-4 text-sm font-bold text-[var(--paper)] transition-[background,border-color,color,transform] hover:-translate-y-px hover:border-[var(--thread-teal)] hover:bg-[var(--surface-2)]"
             >
-              Open workspace
+              {tr('landing.nav.openWorkspace')}
               <ArrowRight aria-hidden className="size-4" />
             </Link>
           ) : (
@@ -199,7 +265,7 @@ function Home() {
               to="/login"
               className="text-sm font-semibold text-[var(--paper-muted)] underline-offset-4 transition-colors hover:text-[var(--thread-gold)] hover:underline"
             >
-              Log in
+              {tr('landing.nav.login')}
             </Link>
           )}
         </div>
@@ -213,14 +279,13 @@ function Home() {
           />
 
           <h1 className='max-w-4xl text-[clamp(3rem,8vw,5.6rem)] font-semibold leading-[0.95] tracking-[-0.025em] text-[color-mix(in_oklch,var(--thread-mauve)_70%,white)] [font-family:"Literata","Iowan_Old_Style","Palatino_Linotype",serif]'>
-            Spin up a website.{' '}
+            {tr('landing.hero.titleLead')}{' '}
             <span className="italic font-normal text-[var(--paper-muted)]">
-              A real one.
+              {tr('landing.hero.titleAccent')}
             </span>
           </h1>
           <p className="mt-6 max-w-xl text-[1.05rem] leading-8 text-[var(--paper-muted)] md:text-[1.125rem]">
-            Describe what you do. Snaelda lays down a real first draft, ready
-            to refine, tweak, and publish.
+            {tr('landing.hero.subtitle')}
           </p>
 
           {restoreMessage ? (
@@ -230,7 +295,7 @@ function Home() {
           ) : null}
 
           {currentSession ? (
-            <ReturningWorkspacePrompt session={currentSession} />
+            <ReturningWorkspacePrompt session={currentSession} locale={locale} />
           ) : null}
 
           <form
@@ -250,8 +315,8 @@ function Home() {
             <input
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
-              placeholder="A cozy pottery studio in Portland..."
-              aria-label="Describe your business"
+              placeholder={tr('landing.form.placeholder')}
+              aria-label={tr('landing.form.ariaLabel')}
               className="min-h-14 w-full rounded-[14px] border border-transparent bg-transparent py-3.5 pl-12 pr-4 text-base text-[var(--paper)] outline-none placeholder:text-[color-mix(in_oklch,var(--paper-muted)_60%,transparent)] md:text-lg"
             />
             <Button
@@ -263,16 +328,16 @@ function Home() {
             >
               <Globe className="size-4.5" />
               {isStartingWorkspace
-                ? 'Opening workspace...'
+                ? tr('landing.form.submitOpening')
                 : currentSession
-                  ? 'Start another site'
-                  : 'Spin my site'}
+                  ? tr('landing.form.submitAnother')
+                  : tr('landing.form.submitStart')}
             </Button>
           </form>
 
           <div className="mt-4 flex w-full max-w-2xl flex-wrap items-center justify-center gap-2">
             <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[color-mix(in_oklch,var(--paper-muted)_72%,transparent)]">
-              Add direction
+              {tr('landing.chips.label')}
             </span>
             {landingPromptChips.map((chip) => (
               <button
@@ -291,44 +356,60 @@ function Home() {
           </div>
 
           <p className="mt-4 max-w-xl text-sm text-[color-mix(in_oklch,var(--paper-muted)_76%,transparent)]">
-            The first draft is not the final word. Once it lands, keep shaping
-            the site from the preview or the AI refine panel.
+            {tr('landing.form.helper')}
           </p>
 
           <p className="mt-5 text-xs text-[color-mix(in_oklch,var(--paper-muted)_70%,transparent)]">
-            By continuing, you agree to our{' '}
+            {tr('landing.consent.prefix')}{' '}
             <Link
               to="/terms"
               className="font-semibold text-[var(--paper-muted)] underline underline-offset-4 hover:text-[var(--paper)]"
             >
-              Terms
+              {tr('landing.consent.terms')}
             </Link>{' '}
-            and{' '}
+            {tr('landing.consent.and')}{' '}
             <Link
               to="/privacy"
               className="font-semibold text-[var(--paper-muted)] underline underline-offset-4 hover:text-[var(--paper)]"
             >
-              Privacy Policy
+              {tr('landing.consent.privacy')}
             </Link>
             .
           </p>
+
+          {HERO_DEMO_ENABLED ? (
+            <div className="mt-8 md:mt-10">
+              <HeroScrollCue targetId="hero-demo" />
+            </div>
+          ) : null}
         </div>
       </section>
+
+      {HERO_DEMO_ENABLED ? (
+        <section className="relative z-10 mx-auto w-full max-w-[1180px] px-6 pt-20 pb-8 md:px-8 md:pt-28 md:pb-12">
+          <HeroDemo
+            id="hero-demo"
+            posterSrc="/media/hero-demo/poster.webp"
+            sources={heroDemoSources}
+            eyebrow={tr('landing.demo.eyebrow')}
+            caption={tr('landing.demo.caption')}
+          />
+        </section>
+      ) : null}
 
       <div className="relative">
         <section className="relative z-10 mx-auto w-full max-w-[1100px] px-6 pt-24 pb-24 md:px-8 md:pt-28 md:pb-32">
           <div className="grid gap-x-12 gap-y-6 md:grid-cols-[minmax(0,1fr)_minmax(0,2.2fr)] md:items-start">
             <div className="text-sm font-semibold uppercase tracking-[0.18em] text-[color-mix(in_oklch,var(--thread-mauve)_72%,var(--paper))] md:pt-3">
-              How it spins
+              {tr('landing.spins.eyebrow')}
             </div>
             <p className='text-balance text-[clamp(1.45rem,2.6vw,2rem)] font-normal leading-[1.35] text-[var(--paper)] [font-family:"Literata","Iowan_Old_Style","Palatino_Linotype",serif]'>
-              Prompt your idea. Snaelda lays down a real first draft: pages,
-              structure, copy, the works.{' '}
+              {tr('landing.spins.lead')}{' '}
               <span className="text-[var(--paper-muted)]">
-                Tweak whatever feels off in a lightweight editor.
+                {tr('landing.spins.mid')}
               </span>{' '}
               <span className="text-[color-mix(in_oklch,var(--paper-muted)_70%,transparent)]">
-                Publish when it feels right. Point your domain when it feels like home.
+                {tr('landing.spins.tail')}
               </span>
             </p>
           </div>
@@ -336,21 +417,21 @@ function Home() {
 
         <section className="relative z-10 mx-auto w-full max-w-[1100px] border-t border-[color-mix(in_oklch,var(--border)_36%,transparent)] px-6 py-20 md:px-8 md:py-28">
           <p className='text-balance text-[clamp(1.4rem,2.5vw,1.95rem)] font-normal leading-[1.45] text-[var(--paper-muted)] [font-family:"Literata","Iowan_Old_Style","Palatino_Linotype",serif]'>
-            Made for{' '}
+            {tr('landing.madeFor.prefix')}{' '}
             {spunFor.map((item, index) => (
-              <span key={item.label}>
+              <span key={item.id}>
                 <span style={{ color: item.tone }} className="font-medium">
                   {item.label}
                 </span>
                 {index < spunFor.length - 2
-                  ? ', '
+                  ? tr('landing.madeFor.sep')
                   : index === spunFor.length - 2
-                    ? ', and '
-                    : '. '}
+                    ? tr('landing.madeFor.lastSep')
+                    : tr('landing.madeFor.end')}
               </span>
             ))}
             <span className="text-[color-mix(in_oklch,var(--paper-muted)_72%,transparent)]">
-              Small operations that need a website, not a website project.
+              {tr('landing.madeFor.tail')}
             </span>
           </p>
         </section>
@@ -367,18 +448,18 @@ function Home() {
           </Link>
           <nav className="flex flex-wrap items-center gap-6 text-sm font-semibold text-[var(--paper-muted)]">
             <Link to="/terms" className="transition-colors hover:text-[var(--paper)]">
-              Terms
+              {tr('landing.footer.terms')}
             </Link>
             <Link to="/privacy" className="transition-colors hover:text-[var(--paper)]">
-              Privacy
+              {tr('landing.footer.privacy')}
             </Link>
             {currentSession ? (
               <Link to="/app" className="transition-colors hover:text-[var(--thread-teal)]">
-                Open workspace
+                {tr('landing.nav.openWorkspace')}
               </Link>
             ) : (
               <Link to="/login" className="transition-colors hover:text-[var(--thread-gold)]">
-                Log in
+                {tr('landing.nav.login')}
               </Link>
             )}
           </nav>
@@ -390,19 +471,24 @@ function Home() {
 
 export function ReturningWorkspacePrompt({
   session,
+  locale = DEFAULT_LOCALE,
 }: {
   session: BuilderSession
+  locale?: Locale
 }) {
+  const tr = translator(locale)
   const ownerLabel =
     session.user?.name ||
     session.user?.email ||
-    (session.kind === 'trial' ? 'Your trial workspace' : 'Your workspace')
+    (session.kind === 'trial'
+      ? tr('landing.returning.fallbackTrial')
+      : tr('landing.returning.fallbackWorkspace'))
 
   return (
     <div className="mt-8 flex w-full max-w-2xl flex-col items-center justify-between gap-4 rounded-[16px] border border-[color-mix(in_oklch,var(--thread-teal)_42%,var(--border))] bg-[color-mix(in_oklch,var(--thread-teal)_8%,var(--surface-1))] px-5 py-4 text-left sm:flex-row">
       <div className="min-w-0">
         <p className="text-xs font-bold uppercase tracking-[0.12em] text-[var(--thread-teal)]">
-          Your workspace is waiting
+          {tr('landing.returning.eyebrow')}
         </p>
         <p className="mt-1 truncate text-sm text-[var(--paper-muted)]">
           {ownerLabel}
@@ -412,7 +498,7 @@ export function ReturningWorkspacePrompt({
         to="/app"
         className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-[var(--thread-teal)] px-5 text-sm font-bold text-[var(--ink)] transition-[background,transform] hover:-translate-y-px hover:bg-[color-mix(in_oklch,var(--thread-teal)_86%,white)]"
       >
-        Continue editing
+        {tr('landing.returning.cta')}
         <ArrowRight aria-hidden className="size-4" />
       </Link>
     </div>

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { DefaultCatchBoundary } from "~/components/DefaultCatchBoundary";
 import { NotFound } from "~/components/NotFound";
 import type { HostedPublicSiteContext } from "~/lib/public-site";
+import { useLocale } from "~/lib/locale";
 import { topbar } from "~/lib/styles";
 import "~/styles/app.css";
 
@@ -51,6 +52,7 @@ export const Route = createRootRoute({
 
 function RootDocument({ children }: { children: ReactNode }) {
   const matches = useMatches();
+  const visitorLocale = useLocale();
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
@@ -78,6 +80,10 @@ function RootDocument({ children }: { children: ReactNode }) {
         return loaderData?.hostedPublic ?? null;
       })
       .find((value) => value?.isHostedPublic) ?? null;
+  // Hosted public sites render their content locale; the published-site
+  // localization work replaces this `en` fallback with the site's default
+  // locale. The app + marketing surface follows the visitor's resolved locale.
+  const htmlLang = hostedPublic?.isHostedPublic ? "en" : visitorLocale;
   const showChrome =
     !hostedPublic?.isHostedPublic &&
     pathname !== "/" &&
@@ -100,7 +106,7 @@ function RootDocument({ children }: { children: ReactNode }) {
   }
 
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html lang={htmlLang} className="dark" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>

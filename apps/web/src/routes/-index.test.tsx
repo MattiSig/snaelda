@@ -35,13 +35,26 @@ describe('ReturningWorkspacePrompt', () => {
       workspaceRole: 'owner',
     }
 
-    render(<ReturningWorkspacePrompt session={session} />)
+    render(<ReturningWorkspacePrompt session={session} locale="en" />)
 
     expect(screen.getByText('Your workspace is waiting')).toBeTruthy()
     expect(screen.getByText('Your trial workspace')).toBeTruthy()
     expect(screen.getByRole('link', { name: /continue editing/i }).getAttribute('href')).toBe(
       '/app',
     )
+  })
+
+  it('renders the Icelandic catalog when the locale is is', () => {
+    const session: BuilderSession = {
+      kind: 'trial',
+      workspaceId: 'workspace-1',
+      workspaceRole: 'owner',
+    }
+
+    render(<ReturningWorkspacePrompt session={session} locale="is" />)
+
+    expect(screen.getByText('Vinnusvæðið þitt bíður')).toBeTruthy()
+    expect(screen.getByText('Prufuvinnusvæðið þitt')).toBeTruthy()
   })
 
   it('identifies an authenticated workspace by its owner', () => {

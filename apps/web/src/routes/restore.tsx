@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react'
 import { APIError, restoreWorkspace } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { layout, paddedPanel, text } from '@/lib/styles'
+import { translator } from '@/lib/i18n'
+import { useLocale } from '@/lib/locale'
 
 export const Route = createFileRoute('/restore')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -13,6 +15,7 @@ export const Route = createFileRoute('/restore')({
 
 function RestoreRoute() {
   const navigate = useNavigate()
+  const tr = translator(useLocale())
   const search = Route.useSearch()
   const [message, setMessage] = useState('')
 
@@ -25,19 +28,19 @@ function RestoreRoute() {
       .then(() => navigate({ to: '/app' }))
       .catch((error) => {
         setMessage(
-          error instanceof APIError ? error.message : 'Could not restore that workspace',
+          error instanceof APIError ? error.message : tr('restore.error'),
         )
       })
-  }, [navigate, search.k])
+  }, [navigate, search.k, tr])
 
-  const visibleMessage = message || (search.k
-    ? 'Restoring your workspace...'
-    : 'Workspace recovery link is missing a key.')
+  const visibleMessage =
+    message ||
+    (search.k ? tr('restore.inProgress') : tr('restore.missingKey'))
 
   return (
     <main className={cn(layout.pageShell, layout.narrowShell, 'pt-14')}>
       <section className={paddedPanel}>
-        <p className={text.eyebrow}>Workspace recovery</p>
+        <p className={text.eyebrow}>{tr('restore.eyebrow')}</p>
         <h1 className={cn(text.h2, 'mt-2')}>{visibleMessage}</h1>
       </section>
     </main>

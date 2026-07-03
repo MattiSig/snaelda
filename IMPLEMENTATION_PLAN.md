@@ -1,206 +1,106 @@
 # Implementation Plan
 
-Refreshed 2026-06-09 from a spec-to-source audit of `specs/*`, `internal/*`, `apps/*`, and `cmd/*`. This is an execution queue, not a shipped-work changelog. Every open item below was confirmed against the current source. Items are sorted by priority; correctness, security, data integrity, and paid conversion come before feature expansion.
+Refreshed 2026-07-03 from the adopted GTM strategy ([docs/nordic-gtm-strategy.md](docs/nordic-gtm-strategy.md)), the spec weave that implemented it (Specs 21–23 plus amendments to 01/04/07/13/15/17/18), and a six-agent spec-to-source verification fan-out over `internal/*`, `apps/*`, `cmd/*`. This is an execution queue, not a changelog; every open item was confirmed against current source with file:line evidence. The previous plan is archived at [docs/archive/IMPLEMENTATION_PLAN-2026-06-09.md](docs/archive/IMPLEMENTATION_PLAN-2026-06-09.md); its still-open items are carried forward below, reprioritized under the GTM lens.
 
-## P0 — Launch Blockers
+Priority order: **Iceland localization first** (the stated first goal), then the rest of GTM Phase 0 (ISK pricing, Icelandic emails, trust layer), then re-spin (the GTM centerpiece), then carried-forward correctness, hardening, and cleanup.
 
-- [x] Prevent draft mutations from damaging the active published version.
-  - Draft persistence now archives removed pages out of the current draft instead of deleting rows still referenced by published form submissions and analytics.
-  - Current-draft reads and site page counts ignore archived rows, while the database preserves published-page identity so later republish and rollback flows can still resolve historical submissions and analytics correctly.
-  - Added unit coverage plus a real-Postgres integration test for live forms, analytics, later republish, and rollback.
+## P0 — Icelandic Landing (Spec 22)
 
-- [x] Add concurrency control to canonical draft writes.
-  - Draft persistence now uses a canonical `sites.draft_revision` compare-and-swap precondition so overlapping save attempts fail with `draft_conflict` instead of silently overwriting newer changes.
-  - The builder now serializes inline saves per block and reloads canonical state on conflict; collections surfaces also refresh cleanly when a stale write is rejected.
+The public marketing surface is ~35 hardcoded English strings on `index.tsx` plus ~16 on `login.tsx`/`restore.tsx`, with zero i18n infrastructure and `<html lang="en">` hardcoded at `apps/web/src/routes/__root.tsx:103`.
 
-- [x] Honor page publication status.
-  - Exclude `status=draft` pages from published snapshots, navigation, sitemap, artifacts, collection routes, forms, and analytics while keeping them editable and previewable.
+- [~] Write the Icelandic landing copy (founder task; prerequisite for everything below). ~50 strings across landing, login, restore: hero, "How it spins", "Made for", prompt chips, CTAs, errors, consent line. Natively written, not translated — natural small-business register per Spec 22 tone rules; the "serious result, un-serious process" personality must survive the language switch. **A first native Icelandic draft now lives in the `is` catalog in `apps/web/src/lib/i18n.ts` (hero "Spunnin vefsíða. Alvöru vefur.", etc.); still needs founder QA/sign-off before launch.**
+- [x] Build the typed locale-dictionary module at `apps/web/src/lib/i18n.ts`: `LOCALES = ['is', 'en']`, a `Strings` record type keyed by string IDs, `is` + `en` catalogs both satisfying it (TypeScript enforces completeness), and a `t(locale, key)` helper. No i18n framework for Phase 0 — at ~50 strings and 2 locales a hand-rolled module is the right size for a solo dev; migrate to a real framework only when builder-UI localization starts (hundreds of strings). **Done: `en` catalog is the typed source of truth, `is` satisfies `Strings`, plus a `translator(locale)` convenience binding. Catalog-parity unit tests in `i18n.test.ts`.**
+- [x] Build the locale resolver at `apps/web/src/lib/locale.ts`: `?lang=` param → `localStorage` → `Accept-Language` → default `'is'` for the Iceland phase; constrained to the allow-list; `useLocale()` hook plus an SSR-safe resolver for head tags. **Done: pure `resolveLocale`/`localeFromAcceptLanguage` (quality-weight aware), `resolveRequestLocale` server fn for SSR head tags, `useLocale()` seeded from the SSR value (via loader data) and layered with `useSyncExternalStore` for the client `localStorage`/`navigator` signals — no hydration flash. Resolver unit tests in `locale.test.ts`.**
+- [x] Replace hardcoded strings in `index.tsx` (~35, including the `spunFor` array and its hardcoded English conjunctions), `login.tsx` (~12), and `restore.tsx` (~4) with `t()` calls. **Done: all three surfaces render from the catalog; `madeFor` conjunctions are locale-keyed (`, `/` og `/`. ` for `is`). `ReturningWorkspacePrompt` takes a `locale` prop so it stays router-free for tests.**
+- [x] Make `<html lang>` dynamic in `__root.tsx:103` and emit `og:locale` (`is_IS`/`en_US`) from the landing route `head()`. **Done: root `<html lang>` follows the visitor locale for the app/marketing surface (hosted public sites keep `en` until the published-site localization item lands); landing `head()` appends `og:locale`. Verified SSR + client via curl matrix and Playwright.**
+- [ ] Defer legal pages (`terms.tsx`, `privacy.tsx`, ~110 strings): Icelandic legal text needs lawyer review, not a copy sprint; English is acceptable for MVP per Spec 22.
 
-- [x] Make magic-link redemption atomically single-use.
-  - Lock and consume the token and create the authenticated session in one transaction; require exactly one consumed row.
-  - Add replay, concurrent redemption, expiry, purpose, session-creation failure, and rollback tests.
+## P0 — Icelandic Site Generation (Specs 07 + 22)
 
-- [x] Centralize prompt reservation and accounting for every model-backed action.
-  - Added a shared prompt-action manager that atomically admits generation jobs against trial and paid allowances before model work begins, then settles trial usage only on successful completion.
-  - Wired site generation, site/page reprompt, block suggest, image apply, theme regeneration, collection drafting, and entry drafting through shared prompt reservations and generation-job persistence.
-  - Extended model-backed route gating/rate limits and added collection AI audit events plus atomic batch entry persistence so quota errors and job state now stay consistent across the current AI surface.
+`preferredLanguage` is accepted end-to-end but consumed nowhere: the UI never sends it, no system prompt contains a language instruction, and `internal/generation/service.go:2233` literally emits "Default locale is English." as a generated assumption. The Icelandic slug transliteration table already exists and is tested (`internal/platform/slugs/slugs.go` — þ→th, ð→d, æ→ae, "Snælda & Þing" → "snaelda-thing"); only the AI prompts need slug instructions.
 
-- [x] Fix form-submission read authorization.
-  - Listing submissions must require an authenticated workspace member, matching the update route and the L2-or-paid privacy contract; cookie-only trial sessions must not read inquiries.
+- [ ] Send `preferredLanguage` from the frontend: add it to the `streamGenerateSite` call at `app.index.tsx:253` (the API type already accepts it — this is the silent-drop bug), carry the landing-page locale into workspace start, and add `PreferredLanguage` to the interview request struct (`internal/generation/handler.go:81`).
+- [ ] Thread `PreferredLanguage` through every AI request struct and system prompt. Missing from: `PageLayoutRequest` (decomposed.go:63), `PageContentRequest` (decomposed.go:88 — **the primary copy stage**), `BlockSuggestRequest` (block_suggest.go:60), `CollectionDraftRequest` (openai.go:1037), `EntryDraftRequest` (openai.go:1052), `EntryRewriteRequest` (openai.go:1083), `ClarifyingQuestionsRequest` (interview.go:36), `PageChangeSetRequest` (page_change_set.go:42). Add a language clause to each system prompt with the Spec 22 Icelandic tone guidance; `changeSummary` strings are user-visible and must also conform.
+- [ ] Fix the locale drops in existing flows: `repromptSiteDecomposed` (decomposed_orchestrator.go:137) and `SuggestBlock` (block_suggest.go:137) both have `currentDraft.Site.DefaultLocale` available and don't forward it.
+- [ ] Stop hardcoding `DefaultLocale: "en"` at site creation: `sites/mutator.go:1216` (`starterDraft`) and `mutator.go:89`; add `DefaultLocale` to `CreateSiteInput`; constrain `sites.default_locale` to `('is','en')` via migration check.
+- [ ] Convert the deterministic fallback copy to locale-keyed string tables: the 14 English-only functions in `internal/generation/service.go` (`homeHeadline`, `homeSubheadline`, `aboutIntro`, `workProcessCopy`, `siteGoalForCategory`, `footerTagline`, `pricingPlansForProfile`, `testimonialItemsForProfile`, `faqItemsForProfile`, `teamPeopleForProfile`, the six page-plan builders) plus `starterDraft` copy and the `"Home"` nav label (mutator.go:1228). Remove the "Default locale is English." assumption (service.go:2233). Structure first, translations slot in after.
+- [ ] Add Icelandic slug instructions to the three AI prompts that generate slugs directly (`outlinePlannerSystemPrompt`, `collectionDrafterSystemPrompt`, `collectionEntryDrafterSystemPrompt` in openai.go) so "Þjónusta" becomes `/thjonusta`; extend `slugs_test.go` with the full Icelandic table.
+- [ ] Add the language-conformance validation step (Spec 22: English must never leak into an Icelandic draft): hook between `repairGenerationPlan` and `buildDraftFromPlan` in `decomposed_orchestrator.go:97–103` and in the legacy retry loop (service.go:802–816), routing violations into the existing `feedback.ValidationIssues` retry mechanism. Lightweight detector; exempt proper nouns and user-provided verbatim text.
+- [ ] Localize published-site platform strings, keyed by the published snapshot's `DefaultLocale`: form success message (`internal/forms/service.go:35`) and validation error templates (service.go:327–453), the `og:locale` + `<html lang>` gap in published artifacts (`published-site.ts:26` sets neither), the English fallback description (`published-artifacts.tsx:213`).
+- [ ] Evaluate a stronger copy-stage model for `is` output (Spec 07 allows a per-stage model split); validate with real Icelandic prompts before Phase 1 reference builds.
 
-- [x] Validate and serve every asset-reference location.
-  - Include brand logos and collection-entry assets in workspace/site ownership validation and published asset allowlisting.
-  - Add regressions for public brand logos, collection-bound imagery, foreign-workspace assets, and workspace-level assets.
+## P1 — GTM Phase 0 Remainder: ISK Pricing, Icelandic Email, Trust (Specs 15 + 18 + 04)
 
-- [x] Establish one canonical billing plan catalog.
-  - Added a shared billing catalog for Basic and Pro so displayed prices, Stripe price wiring, site limits, prompt allowances, storage allowances, and entitlement snapshots all derive from one backend source.
-  - Subscription webhooks now derive the purchased plan from trusted Stripe price IDs, fall back to the existing stored subscription plan when needed, and persist the correct plan metadata so Pro Checkout cannot degrade into Basic.
-  - Entitlements now include collection and collection-entry/detail-URL caps, and the collections authoring routes enforce those limits before manual or AI-driven content creation can exceed the active paid plan.
+- [ ] ISK catalog and per-currency price IDs (`internal/billing/catalog.go`): rename plan `basic` → `site` across catalog/service/access/tests, replace `MonthlyPriceUSD`/`OnceOverPriceUSD` with ISK-first per-currency fields (2900 / 6900 / 13900 — zero-decimal), extend `NewCatalog` to per-currency price IDs registered in `plansByPrice` (webhook plan derivation at service.go:659 depends on this map), rename env vars to `STRIPE_PRICE_SITE_ISK` / `STRIPE_PRICE_PRO_ISK` / `STRIPE_PRICE_ONCE_OVER_ISK` in `.env.example` + `internal/platform/config`, and make `CreateCheckoutSession` (service.go:148) select the price by workspace currency.
+- [ ] Fix receipt amount formatting for zero-decimal currencies: `formatAmount` (service.go:685–691) always divides by 100 — ISK 2900 would render "29.00". Emit `2.900` with Icelandic thousands separator; test ISK passthrough.
+- [ ] Currency-aware billing UI: remove the four hardcoded `$` sites in `app.billing.index.tsx` (lines 351, 398, 399, 577), update `BillingPlan`/`BillingCatalog` types in `api.ts` (547–563), render via `Intl.NumberFormat('is-IS', { currency: 'ISK', maximumFractionDigits: 0 })`, update `plan.id` union for `site`.
+- [ ] `workspaces.locale` column + plumbing (migration 000026, `default 'is'`, checked to `('is','en')`): supply at both workspace-creation sites (`internal/auth/handler.go:682`, `:1205`), select in `lookupBillingContactTx` (billing/service.go:562), drive builder `<html lang>` and the email locale.
+- [ ] Locale-keyed email templates (Spec 18): restructure `internal/email/templates/` into `is/`/`en/` subdirectories, update the `//go:embed` glob, add `locale` through `renderTemplate` → all `Render*` → all `Send*` helpers with `en` fallback, write the eight Icelandic template variants (subject + text + HTML), add per-locale parity tests.
+- [ ] Implement the structured Footer contact contract + Spec 04 trust props: migrate free-form address/hours to the structured shapes, add `businessId` (kennitala) and `showMadeWith` props, and emit real `PostalAddress` + `openingHoursSpecification` JSON-LD (`published-artifacts.tsx:398–411` currently stuffs the whole blob into `streetAddress`). Carried from the old plan and now load-bearing for the Iceland trust footer.
+- [ ] Regenerate the block-registry golden fixture — `TestBlockRegistryContractFixtureMatchesGoldenFile` currently fails (`internal/siteconfig/contract_fixture_test.go:79`), and the footer prop additions above change the contract anyway. `go test ./...` must pass again.
+- [ ] Landing trust layer (content work, ships with the Icelandic landing): EU-hosted claim (verify residency per Spec 13 before claiming it), "built and personally checked by one developer you can reach," GDPR clarity, accessibility statement.
 
-- [x] Fail production startup when launch-critical services are incomplete.
-  - Require HTTPS app/public/billing URLs, non-local public domains, Stripe secret + webhook + configured plans, and production email transport/key.
-  - Treat explicitly configured S3 artifact storage failures as fatal instead of silently falling back to local disk.
+## P2 — Re-spin v1 + Public Before/After Demo (Spec 21)
 
-- [x] Complete the Once-over delivery workflow.
-  - Added an operator-authorized pending queue route in the builder plus backend queue and delivery endpoints.
-  - Delivery now persists video URL, next steps, and `delivered_at`; flips the workspace status in one transaction; sends `once_over_delivered` with an idempotency key; and records an audit event.
+No re-spin code exists (verified: zero hits). The substrate is strong: `assets.Service.ImportExternal` (assets/service.go:275) already does server-side ingest with `SourceURL` provenance; the SSE streaming loop (generation/handler.go:706), `GenerateInput` contract (service.go:48), anonymous-session/claim machinery (auth/handler.go:110, :885), preview tokens, and three durable rate-limiter patterns are all reusable. Build order:
 
-## P1 — Core Product And AI Experience
+- [ ] `respin_imports` entity: migration (table + `normalized_url` index + nullable `generation_jobs.respin_import_id`), store layer in `internal/respin/`. Unclaimed demo imports create a real trial workspace up front (the existing `createTrialSession` path) so the `assets.workspace_id` constraint holds.
+- [ ] SSRF-guarded fetcher: custom dialer that resolves DNS, rejects private/loopback/link-local/metadata ranges, pins the vetted IP, re-checks every redirect hop (cap 5); 10s timeout, 5 MB cap; readability-style extraction; content-sufficiency check; same-origin discovery capped at ~5 pages. Headless fallback is deferred to v1.1 — degrade to the prompt flow when plain fetch is insufficient.
+- [ ] LLM stages: classify (vertical/locale/tone), structured field extraction (name, services, hours, contact, about, testimonials — nullable), copy rewrite into the target language per Spec 22. Daily LLM cost budget for the unauthenticated tier with a friendly busy response.
+- [ ] Brand/asset pull: logo heuristics (icon links, og:image, header img scoring), primary color (CSS custom props, theme-color meta, logo dominant color), hero photos — all through the SSRF client into `ImportExternal`; asset ownership transfers on claim, unclaimed assets GC'd with the import cache.
+- [ ] Composer: extracted fields + brand + classification → exactly `generation.GenerateInput` (the Spec 07 contract), then `GenerateWithProgress`; degraded compose path records `degradation_reason` and pre-fills the prompt flow — never a dead end.
+- [ ] Public endpoints + guards: `POST /api/respin` (normalize, cache by URL, SSRF pre-check, per-IP limit via the auth IP-limiter pattern), SSE progress, preview (demo-scoped preview token), claim (binds workspace, books one prompt via `PromptActionManager`), share; session-bound `POST /api/sites/respin` for existing workspaces; global concurrency semaphore.
+- [ ] Publish gate: re-spin-originated drafts (`generation_jobs.respin_import_id is not null`) require L2 claim before first publish — one guard in the existing publish handler (Spec 17 divergence).
+- [ ] Before/after UI: `/respin` URL input → progress view → side-by-side source screenshot vs draft preview → "Sign up to keep it" claim modal; graceful degrade messaging.
+- [ ] Shareable artifact: frozen share page by slug + composed before/after OG image (the Facebook-group distribution asset).
+- [ ] The 50-site Icelandic QA loop (operational, Spec 21): run re-spin against real Icelandic sites, grade, fix blocks/prompts. Gates the Phase 1 launch and feeds the first vertical block set (Spec 23 — blocked on choosing the vertical, an open product decision).
 
-- [x] Make site-wide reprompting revise existing content.
-  - Slug-matched pages now re-enter the reprompt pipeline instead of being copied through unchanged, so site-wide direction changes actually rewrite existing copy.
-  - When the block-aware planner is available, matched pages preserve stable page and untouched block identities while applying the new direction from the current draft context; navigation is then resynced against the revised pages.
+## P3 — Carried-Forward Correctness (verified still open 2026-07-03)
 
-- [x] Wire page reprompts through the existing block-aware change-set pipeline.
-  - Page reprompts now prefer keep/edit/remove/insert change sets, preserve unaffected block IDs, record the planner-authored summary in history, and fall back cleanly to whole-page regeneration only when the change-set path is unavailable or fails.
+- [ ] Magic-link anti-enumeration remainder: existing-account failure paths return 500 while unknown emails get 200 (auth/handler.go:1001–1043 vs :417), and the email-keyed rate limit only runs after existence is confirmed.
+- [ ] Tenant integrity composite constraints — all five still absent across 25 migrations (block/page/site, entry/collection/site, page/collection/site, asset/workspace/site, published-version/site).
+- [ ] Public URL correctness remainder: site-slug change never invalidates published artifacts (sites/handler.go:278–307 doesn't call `InvalidateSite`); no URL remapping when a custom domain is removed while published.
+- [ ] Analytics correctness remainder: SSR loaders don't forward the visitor User-Agent (`publicAPIRequest`, api.ts:771–782 — Node UA reaches crawler filtering); collection-entry views are recorded under the template page's ID.
+- [ ] Asset lifecycle: alt/delete APIs exist but no UI calls them; no rename in the API; no usage surface; `Delete` does no reference check and the S3-then-DB sequence can orphan.
+- [ ] Custom-domain truthful state machine: only active/pending exist; no TLS/failed states, no cert ownership tracking (feeds the .is/ISNIC work in Spec 13).
+- [ ] Collection block contracts remainder: `collection-picker` and number/boolean editor controls fall through to text inputs; `showFilters`/`showSort` props never read by the renderer; block versioning is a passthrough no-op.
+- [ ] Inline authoring keyboard/touch accessibility: block selection is click-only, 28px touch targets, no aria-live save status, no focus traps in drawer/inserter/picker/toolbar menus.
+- [ ] Billing/email acceptance coverage remainder: no tests for payment-failed/cancellation/downgrade/portal webhooks, 5 of 8 templates untested, no Mailpit round-trip or Resend error-classification tests.
 
-- [x] Make AI history and diffs trustworthy.
-  - The History panel now surfaces block-scoped reprompts alongside site- and page-scoped entries with model-authored summaries and per-row Show diff/Revert actions; the whole-site filter is inclusive so future entry- and theme-scoped records do not disappear.
-  - The diff modal renders each revision through the canonical `SiteDraftRenderer` and overlays identity-aware status badges per block, replacing the positional raw-prop diff with rendered before/after panels plus field-level inline highlights.
-  - Added arrow-key change navigation, Enter cycling between before/after/both, Escape close, focus trapping while open, and focus restoration to the opener button (captured in the parent before the trigger button is disabled), with regressions in `RevisionDiffModal.test.tsx` and `RepromptHistoryPanel.test.tsx`.
+## P4 — Hardening and Product Depth (all verified still open)
 
-- [x] Put collection and entry AI behind shared generation governance.
-  - Collection and entry drafting now flow through the shared `PromptActionManager` for quota admission, a new `PromptHistoryRecorder` that captures pre/post draft revisions, and `reprompt_history` rows scoped `collection`/`entry` that link back to the generation job.
-  - Audit events and API responses now include the job id, history id, and revision identifiers; the History panel renders the new scope chips alongside site/page/block entries.
-  - Batches still persist atomically through `Mutator.CreateEntries`, generated entries default to draft status, and failures mark the job failed with the model error preserved for retry diagnostics.
+- [ ] Builder loading resilience: single `Promise.all` at app.sites.$siteId.index.tsx:473 fails the whole builder if any panel call fails.
+- [ ] Draft-preview form semantics: preview-token pages submit forms live; decide authenticated draft path vs disabled state with copy.
+- [ ] Expose "published with draft changes" (no comparison logic exists anywhere).
+- [ ] Caching/artifact hardening: unbounded in-memory publish cache, `cdnPurger` never wired, no partial-S3-upload cleanup.
+- [ ] Atomic rate-limit admission: count-then-insert races in auth and forms limiters.
+- [ ] Complete block versioning: `type@version` dispatch, real migrations, historical snapshot rendering.
+- [ ] Generation progress lifecycle: no job cancellation endpoint; imagery step ordering; persistent background completion feedback.
+- [ ] Extend initial generation to structured content (collections/entries/bindings in the first generation pass — currently only the standalone draft-from-prompt endpoints).
+- [ ] Trial/email UX remainder: "Already have an account" and resend affordances, standardized exhausted-trial CTA metadata, first-generation education decision.
+- [ ] Inquiry management: search, pagination, spam signals, export (export overlaps the GTM CSV-export escape hatch — pull forward if Phase 1 customers ask).
+- [ ] Decompose oversized modules (builder route 4,781 lines; generation service 2,358; openai adapter 1,584; publishing service 1,477).
 
-- [x] Complete collection-template authoring.
-  - Page create form now exposes `static` / `collection_index` / `collection_detail` and a collection picker; the edit form surfaces the (immutable) type and an editable bound-collection picker for collection-typed pages.
-  - `UpdateBlock` now accepts a validated `bindings` map through the API, mutator, and write path; existing draft validation rejects bindings outside `collection_detail`, unbindable props, or type-mismatched fields.
-  - The block details drawer renders typed binding controls per bindable prop in `collection_detail` templates, only offering compatible entry fields; duplication now copies bindings to the new block instance.
+## P5 — Cleanup
 
-- [x] Build the complete entry workspace.
-  - Entry authoring now supports edit, duplicate, reorder, SEO, status, and schema-aware validation flows, with successful writes clearing stale collection-level errors after later saves.
-  - The editor now uses real typed controls for rich text, assets, asset lists, references, dates, locations, enum multi-select, email, phone, and URLs.
-  - Entry-level AI rewrite now records revision history with summaries, diff/revert actions, and checkpoint restoration.
-
-- [x] Make collection schema changes safe.
-  - Collections now carry a `schemaVersion` column persisted through the sites reader/writer; legacy collections default to v1 and are bumped on destructive change.
-  - `PATCH /api/sites/:siteId/collections/:collectionId` rejects destructive schema changes with `schema_migration_required` and a structured diff; only additive edits flow through the legacy path.
-  - New `POST /api/sites/:siteId/collections/:collectionId/schema/migrate` supports `mode=preview` (returns diff + entries-affected count without persisting) and `mode=apply` (atomically rewrites entry field maps, persists the new schema, and bumps the version).
-  - The Schema editor surfaces a migration modal that maps renames, drops, and retype-clears, previews entry impact, and applies the migration only when every destructive change is acknowledged.
-
-- [x] Finish collection runtime behavior.
-  - Collection settings now validate `defaultSort` against a closed `manual/title/newest/oldest` registry, and `seoTitleTemplate`/`seoDescriptionTemplate` against a closed `{{entry.*}}`/`{{collection.*}}`/`{{site.name}}` placeholder set with field-existence checks.
-  - The index block honors `collection.settings.defaultSort` when its own `sort` prop is empty, and links to detail pages only when the collection exposes detail URLs (settings flag true OR a `collection_detail` template binds).
-  - Publishing now honors that same gating helper, deduplicates entry URLs, and feeds the SEO templates into the per-entry title/description fallbacks; per-entry SEO still wins when present.
-  - Cross-page/collection URL validation reserves `/{collection.slug}` from static page slugs (with the `collection_index` carve-out) and rejects published entry URLs that collide with static pages.
-  - Plan limits remain enforced at every entry create/duplicate/draft-from-prompt site; the new editor Settings tab writes settings through the existing PATCH route, and Spec 19 documents the canonical settings shape and URL namespace rules.
-
-- [ ] Reconcile the collection block contracts.
-  - Add real collection pickers and correctly typed number/boolean controls.
-  - Implement field mapping, sorting, filtering, layouts, and visitor-facing filters promised by the registry/spec.
-  - Version incompatible changes rather than silently changing old snapshots.
-
-- [ ] Make asset lifecycle operations safe and usable.
-  - Wire rename/alt/delete UI to the existing APIs.
-  - Show usage locations, refuse referenced deletion, and avoid object/database inconsistency when deletion fails.
-
-- [ ] Fix public URL and SEO correctness.
-  - Generate canonical, sitemap, robots, and artifact URLs for the active hostname.
-  - Handle custom-domain activation, site-slug changes, and rollback without stale hosts or broken asset URLs.
-  - Return real HTTP 404/other statuses for missing public sites and pages instead of soft-404 HTML.
-
-- [ ] Preserve analytics correctness through SSR and draft changes.
-  - Forward the visitor user agent so crawler filtering sees the requester rather than the Node runtime.
-  - Keep historical published page labels stable and distinguish collection-entry paths from their template page.
-
-- [ ] Define a truthful custom-domain activation state machine.
-  - Separate ownership verification, DNS routing readiness, TLS provisioning, active, and failed states.
-  - Automate provider registration/certificates or require an explicit operator activation gate.
-  - Document wildcard DNS, trusted proxies, forwarded host/protocol handling, and certificate ownership.
-
-- [ ] Strengthen tenant integrity in Postgres.
-  - Add composite constraints for block/page/site, entry/collection/site, page/collection/site, asset/workspace/site, and published-version/site relationships.
-
-- [ ] Preserve magic-link anti-enumeration behavior.
-  - Return indistinguishable responses for known, unknown, rate-limited, and mailer-failure cases.
-  - Rate-limit the submitted normalized address independently of whether an account exists.
-
-- [ ] Make inline authoring keyboard- and touch-accessible.
-  - Make block selection keyboard-operable, expose actions on focus/touch, use adequate target sizes, announce saves/errors, and focus-manage menus, drawers, and dialogs.
-
-- [ ] Implement the structured Footer contact contract.
-  - Migrate free-form address/hours to structured address and daily hours.
-  - Emit correct `PostalAddress` and opening-hours JSON-LD.
-
-- [ ] Add billing and email acceptance coverage.
-  - Use signed realistic Stripe payloads for plan mapping, replay, cancellation/downgrade, failed payment, portal, Once-over isolation, and entitlement enforcement.
-  - Test every email template/call site, text/HTML parity, Mailpit round-trip, Resend error classification, and retry behavior.
-
-## P2 — Hardening And Product Depth
-
-- [ ] Make builder loading resilient.
-  - Load the canonical draft independently from billing, domains, assets, submissions, history, theme, and versions; give optional panels their own skeleton, retry, and error state.
-
-- [ ] Decide draft-preview form semantics.
-  - Either add an authenticated draft-submission path or disable submission in draft preview with accurate explanatory copy.
-
-- [ ] Expose “published with draft changes”.
-  - Compare the active snapshot with the current draft and make republish status visible in site lists and the builder.
-
-- [ ] Harden caching and artifact storage.
-  - Add bounded cache size/TTL, explicit public-render cache headers, cross-replica invalidation or a real CDN purger, and cleanup of partial S3 bundle uploads.
-
-- [ ] Make rate-limit admission atomic.
-  - Replace count-then-insert races for auth, forms, and generation; document fail-open/fail-closed policy and test concurrent requests.
-
-- [ ] Complete block versioning.
-  - Dispatch renderers by `type@version`, run registered migrations deliberately, and preserve historical snapshot rendering.
-  - Reconcile the Stats contract as a new version and add only validated responsive/theme dimensions that materially help generated sites.
-
-- [ ] Finish generation progress lifecycle.
-  - Report imagery work in the correct order, add job cancellation, and support persistent background completion/failure feedback.
-  - Upstream token streaming is optional after measuring the current decomposed outline/layout/content pipeline; progressive page materialization already exists.
-
-- [ ] Extend initial generation to structured content.
-  - Generate collections, entries, collection pages, and bindings when the prompt calls for them.
-  - Add asset-aware project creation, location fanout, FAQ-from-services, single-entry rewrite, and empty-page suggestions only after shared governance is in place.
-
-- [ ] Finish trial and email UX.
-  - Standardize exhausted-trial error codes/CTA metadata.
-  - Remove “claim before publishing” misinformation, add “Already have an account” and resend affordances, and decide whether first-generation education remains a modal or becomes inline guidance.
-
-- [ ] Improve inquiry management.
-  - Add search, pagination, status filters, spam signals, delete/export only if validated by user need, and accessible async announcements.
-
-- [ ] Restore contract and browser coverage.
-  - Regenerate and review the block-registry golden fixture; `go test ./...` currently fails only on this contract.
-  - Strengthen tests for editor value types, page status, collection types/bindings, rapid edits, preview forms, assets, keyboard/touch, mobile, dark mode, domains, and billing transitions.
-
-- [ ] Decompose oversized modules after behavior stabilizes.
-  - Split the builder route, public renderer, generation service, and OpenAI adapter along existing domain boundaries without changing contracts.
-
-## P3 — Cleanup
-
-- [ ] Remove obsolete `/api/workspaces`, `/api/pages`, and `/api/blocks` placeholder packages, routes, and tests now superseded by `internal/sites`.
-
-- [ ] Remove unused environment declarations after verifying production deployment requirements, including stale Unsplash and Railway variables.
-
-- [ ] Record billing, domain, and Once-over access-changing events in the application audit log.
+- [ ] Remove placeholder `internal/pages`, `internal/workspaces`, `internal/blocks` modules and their 501 routes (api/server.go:220, 238–239).
+- [ ] Purge stale `UNSPLASH_*` / `RAILWAY_API_TOKEN` from `.env.example` (already gone from Go config); the Stripe price var rename lands with the P1 billing item.
+- [ ] Record billing/domain audit events: `auditRecorder` is injected but never called in billing (service.go:65,118); domains has no audit at all. Spec 15 now formally requires the billing events.
 
 ## Spec Debt
 
-- [ ] Update Specs 01–03 for the shipped clarification interview, iterative AI workflow, global header/navigation chrome, current block registry, and trial publishing.
+- [ ] Reconcile Specs 01–03 with shipped behavior: clarification interview, iterative AI workflow, header/nav chrome, trial publishing (the GTM weave added forward-looking scope but did not backfill these).
+- [ ] Spec 20: document the shipped collection/entry history scope chips.
+- [ ] Reconcile collection-template slug/uniqueness rules across Specs 05/06/12.
+- [ ] Backfill Spec 06 from migrations 000021–000025 (page-identity preservation, collection schema versioning) and the upcoming locale/respin migrations.
+- [ ] Spec 13: document the actual TLS/proxy/wildcard/forwarded-host operational contract (the GTM weave added ISNIC/EU notes only).
+- [ ] Spec 17/19: verify trial-banner and collection-runtime behavior are fully reflected.
 
-- [ ] Finish reconciling Specs 07 and 20 with block/image AI behavior and the remaining governance/history gaps; the decomposed pipeline, partial SSE events, shadow draft, and Pexels drift are now documented.
+## Deferred (demand-pulled, per GTM guardrails — do not pre-build)
 
-- [ ] Finish reconciling Specs 10, 17, and 19 with the current restore/trial banner flow; nested routes, session naming, and shipped collection/entry prompt routes are now documented.
-
-- [ ] Reconcile collection-template slug and uniqueness rules across Specs 05, 06, and 12 before changing migrations.
-
-- [ ] Backfill Spec 06 from all deployed migrations and document the chosen stable page identity model for publishing, forms, and analytics.
-
-- [ ] Update Spec 13 with the actual hosting, proxy, wildcard-domain, custom-domain, and TLS operational contract.
-
-- [ ] Resolve Once-over purchase/intake/delivery policy drift across Spec 15, Spec 18, and `docs/once-over-workflow.md`.
-
-## Confirmed Shipped Baseline
-
-- [x] Landing-page continuation for an active workspace and interrupted guest-generation recovery.
-- [x] Conditional clarification interview before generation.
-- [x] Decomposed outline, per-page layout/content generation, progressive SSE partials, polling recovery, and shadow-draft UI.
-- [x] Static page CRUD/SEO/navigation; block add/edit/hide/duplicate/delete/reorder; inline text/image editing.
-- [x] Site/page reprompt history foundation, revisions, revert, block AI rewrite, and image replacement.
-- [x] Theme editing/regeneration, required dark mode, asset upload/library, submission triage, preview links, publishing, rollback, analytics, custom-domain CRUD, billing foundation, and transactional-email transports.
-- [x] Collection CRUD, schema editing, the complete entry workspace, public collection rendering, and generic AI collection/entry drafting.
+- Sweden phase: `sv` locale, SEK prices, Swish, du-form tone rules, the rendered-sites WCAG 2.1 AA spec formalization, Fortnox.
+- Ops layer beyond CSV export: pipeline view, booking, follow-up drafts.
+- Headless fetch for JS-walled sites (re-spin v1.1), re-spin language toggle on the preview.
+- Privacy/data-protection spec, multi-site Pro marketing, larger-LLM tier.
+- Icelandic legal-page translation (lawyer review).
+- Founding-50 cap mechanics — blocked on the open GTM decision in [GTM.md](GTM.md).
