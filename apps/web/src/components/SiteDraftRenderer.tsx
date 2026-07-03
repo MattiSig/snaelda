@@ -814,13 +814,19 @@ function FullPageHeroBlock({
         isFirst && '-mt-[var(--preview-header-height,88px)] pt-[var(--preview-header-height,88px)]',
       )}
     >
+      {/* The backdrop image stays at the bottom of the paint order but must
+          remain hover-reachable in the editor: the layers above it are
+          pointer-transparent, and `background` lets its hover controls escape
+          into this stacking context instead of being trapped beneath them. */}
       <InlineEditableImage
         blockId={blockId}
         path={['image']}
         image={image}
         emptyLabel="Add full-page hero image"
-        className="absolute inset-0 -z-20"
+        className="absolute inset-0"
         rounded={false}
+        background
+        overlayPosition="center"
       >
         {image ? (
           <AssetImage
@@ -842,10 +848,10 @@ function FullPageHeroBlock({
       </InlineEditableImage>
       <div
         aria-hidden="true"
-        className="absolute inset-0 -z-10 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.55)_0%,rgba(0,0,0,0.15)_35%,rgba(0,0,0,0.25)_60%,rgba(0,0,0,0.75)_100%)]"
+        className="pointer-events-none absolute inset-0 z-10 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.55)_0%,rgba(0,0,0,0.15)_35%,rgba(0,0,0,0.25)_60%,rgba(0,0,0,0.75)_100%)]"
       />
-      <div className="relative mx-auto flex w-full max-w-[1180px] flex-col justify-end px-[max(1.25rem,4vw)] pb-[clamp(48px,8vw,96px)] pt-[clamp(72px,12vw,160px)]">
-        <div className="grid max-w-[40ch] gap-5 text-[#F9F7F2] [text-wrap:balance]">
+      <div className="pointer-events-none relative z-20 mx-auto flex w-full max-w-[1180px] flex-col justify-end px-[max(1.25rem,4vw)] pb-[clamp(48px,8vw,96px)] pt-[clamp(72px,12vw,160px)]">
+        <div className="pointer-events-auto grid max-w-[40ch] gap-5 text-[#F9F7F2] [text-wrap:balance]">
           <InlineEditableText
             blockId={blockId}
             path={['eyebrow']}

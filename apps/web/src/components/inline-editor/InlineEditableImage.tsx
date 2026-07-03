@@ -20,6 +20,7 @@ export function InlineEditableImage({
   className,
   overlayPosition = 'corner',
   rounded = true,
+  background = false,
   children,
 }: {
   blockId: string;
@@ -29,6 +30,13 @@ export function InlineEditableImage({
   className?: string;
   overlayPosition?: 'corner' | 'center';
   rounded?: boolean;
+  /**
+   * Set when the image is a block-filling backdrop with sibling layers
+   * stacked above it (e.g. the full-page hero). Drops the isolate so the
+   * hover controls' z-index competes in the parent stacking context instead
+   * of being trapped beneath those sibling layers.
+   */
+  background?: boolean;
   children: ReactNode;
 }) {
   const ctx = useInlineEditor();
@@ -115,7 +123,8 @@ export function InlineEditableImage({
   return (
     <div
       className={cn(
-        'group/image relative isolate inline-block w-full',
+        'group/image relative inline-block w-full',
+        !background && 'isolate',
         rounded && 'rounded-[var(--radius-inner)]',
         className,
       )}
