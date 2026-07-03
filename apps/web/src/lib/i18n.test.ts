@@ -9,7 +9,7 @@ describe('i18n catalogs', () => {
   it('returns locale-specific copy for a shared key', () => {
     expect(t('en', 'landing.hero.titleAccent')).toBe('A real one.')
     expect(t('is', 'landing.hero.titleAccent')).toBe(
-      'spunnin upp á mínútum.',
+      'spunninn upp á mínútum.',
     )
   })
 

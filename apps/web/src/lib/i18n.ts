@@ -97,7 +97,7 @@ const is: Strings = {
   'landing.nav.openWorkspace': 'Opna vinnusvæði',
   'landing.nav.login': 'Skrá inn',
   'landing.hero.titleLead': 'Þinn vefur,',
-  'landing.hero.titleAccent': 'spunnin upp á mínútum.',
+  'landing.hero.titleAccent': 'spunninn upp á mínútum.',
   'landing.hero.subtitle':
     'Lýstu hvernig vefurinn á að vera, hvað þú gerir. Snælda spinnur upp fyrsta uppkastið. Fyrir þig að fínpússa og birta.',
   'landing.error.restore': 'Ekki tókst að endurheimta vinnusvæðið',
