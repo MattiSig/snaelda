@@ -193,15 +193,16 @@ func (s *Service) draftBlockForChangeSet(
 	}
 
 	resp, err := s.suggester.SuggestBlockProps(ctx, BlockSuggestRequest{
-		Action:       BlockSuggestActionRewrite,
-		Instruction:  instruction,
-		Block:        block,
-		Definition:   definition,
-		PageTitle:    page.Title,
-		PageSlug:     page.Slug,
-		SiteName:     draft.Site.Name,
-		SiteGoal:     draft.Site.SEO.Description,
-		NeighborText: pendingNeighborText(allPending, index),
+		Action:            BlockSuggestActionRewrite,
+		Instruction:       instruction,
+		Block:             block,
+		Definition:        definition,
+		PageTitle:         page.Title,
+		PageSlug:          page.Slug,
+		SiteName:          draft.Site.Name,
+		SiteGoal:          draft.Site.SEO.Description,
+		PreferredLanguage: draft.Site.DefaultLocale,
+		NeighborText:      pendingNeighborText(allPending, index),
 	})
 	if err != nil {
 		return siteconfig.BlockInstance{}, err
@@ -275,13 +276,14 @@ func buildPageChangeSetRequest(
 	}
 
 	return PageChangeSetRequest{
-		SiteName:        draft.Site.Name,
-		SiteGoal:        draft.Site.SEO.Description,
-		Brand:           draft.Brand,
-		Page:            PageChangeSetPage{Title: page.Title, Slug: page.Slug, Blocks: summaries},
-		NeighborPages:   neighbors,
-		InsertableTypes: insertable,
-		Prompt:          prompt,
+		SiteName:          draft.Site.Name,
+		SiteGoal:          draft.Site.SEO.Description,
+		PreferredLanguage: draft.Site.DefaultLocale,
+		Brand:             draft.Brand,
+		Page:              PageChangeSetPage{Title: page.Title, Slug: page.Slug, Blocks: summaries},
+		NeighborPages:     neighbors,
+		InsertableTypes:   insertable,
+		Prompt:            prompt,
 	}
 }
 

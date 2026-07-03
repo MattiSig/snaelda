@@ -373,6 +373,7 @@ func (h *Handler) draftFromPrompt(w http.ResponseWriter, r *http.Request) {
 		Prompt:              prompt,
 		SiteName:            draft.Site.Name,
 		SiteGoal:            draft.Site.SEO.Description,
+		PreferredLanguage:   draft.Site.DefaultLocale,
 		ExistingCollections: existingNames,
 	})
 	if err != nil {
@@ -627,9 +628,10 @@ func (h *Handler) draftEntriesFromPrompt(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	drafted, err := h.drafter.DraftEntries(r.Context(), EntryDraftRequest{
-		Prompt:   prompt,
-		SiteName: draft.Site.Name,
-		SiteGoal: draft.Site.SEO.Description,
+		Prompt:            prompt,
+		SiteName:          draft.Site.Name,
+		SiteGoal:          draft.Site.SEO.Description,
+		PreferredLanguage: draft.Site.DefaultLocale,
 		Collection: EntryDraftCollection{
 			SingularLabel: collection.SingularLabel,
 			PluralLabel:   collection.PluralLabel,
@@ -885,9 +887,10 @@ func (h *Handler) repromptEntry(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rewritten, err := h.drafter.RewriteEntry(r.Context(), EntryRewriteRequest{
-		Prompt:   prompt,
-		SiteName: draft.Site.Name,
-		SiteGoal: draft.Site.SEO.Description,
+		Prompt:            prompt,
+		SiteName:          draft.Site.Name,
+		SiteGoal:          draft.Site.SEO.Description,
+		PreferredLanguage: draft.Site.DefaultLocale,
 		Collection: EntryDraftCollection{
 			SingularLabel: collection.SingularLabel,
 			PluralLabel:   collection.PluralLabel,

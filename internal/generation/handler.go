@@ -79,10 +79,11 @@ type generateRequest struct {
 }
 
 type interviewRequest struct {
-	Name          string                 `json:"name,omitempty"`
-	Prompt        string                 `json:"prompt"`
-	Brand         siteconfig.BrandConfig `json:"brand,omitempty"`
-	OptionalHints map[string]string      `json:"optionalHints,omitempty"`
+	Name              string                 `json:"name,omitempty"`
+	Prompt            string                 `json:"prompt"`
+	PreferredLanguage string                 `json:"preferredLanguage,omitempty"`
+	Brand             siteconfig.BrandConfig `json:"brand,omitempty"`
+	OptionalHints     map[string]string      `json:"optionalHints,omitempty"`
 }
 
 type interviewResponse struct {
@@ -272,10 +273,11 @@ func (h *Handler) interview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	questions, err := h.service.BuildInterviewQuestions(r.Context(), GenerateInput{
-		Name:          strings.TrimSpace(payload.Name),
-		Prompt:        prompt,
-		Brand:         payload.Brand,
-		OptionalHints: trimOptionalHints(payload.OptionalHints),
+		Name:              strings.TrimSpace(payload.Name),
+		Prompt:            prompt,
+		PreferredLanguage: strings.TrimSpace(payload.PreferredLanguage),
+		Brand:             payload.Brand,
+		OptionalHints:     trimOptionalHints(payload.OptionalHints),
 	})
 	if err != nil {
 		h.writeGenerationError(w, r, err)

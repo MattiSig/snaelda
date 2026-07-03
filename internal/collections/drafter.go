@@ -25,6 +25,7 @@ type CollectionDraftRequest struct {
 	Prompt              string   `json:"prompt"`
 	SiteName            string   `json:"siteName,omitempty"`
 	SiteGoal            string   `json:"siteGoal,omitempty"`
+	PreferredLanguage   string   `json:"preferredLanguage,omitempty"`
 	ExistingCollections []string `json:"existingCollections,omitempty"`
 }
 
@@ -40,11 +41,12 @@ type CollectionDraftResponse struct {
 // EntryDraftRequest is the structured payload sent to the drafter when the
 // user wants starter rows for an existing collection.
 type EntryDraftRequest struct {
-	Prompt          string               `json:"prompt"`
-	SiteName        string               `json:"siteName,omitempty"`
-	SiteGoal        string               `json:"siteGoal,omitempty"`
-	Collection      EntryDraftCollection `json:"collection"`
-	ExistingEntries []EntryDraftExisting `json:"existingEntries,omitempty"`
+	Prompt            string               `json:"prompt"`
+	SiteName          string               `json:"siteName,omitempty"`
+	SiteGoal          string               `json:"siteGoal,omitempty"`
+	PreferredLanguage string               `json:"preferredLanguage,omitempty"`
+	Collection        EntryDraftCollection `json:"collection"`
+	ExistingEntries   []EntryDraftExisting `json:"existingEntries,omitempty"`
 }
 
 type EntryDraftCollection struct {
@@ -72,11 +74,12 @@ type EntryDraft struct {
 // EntryRewriteRequest is the structured payload sent to the drafter when the
 // user wants AI to revise one existing entry in place.
 type EntryRewriteRequest struct {
-	Prompt     string               `json:"prompt"`
-	SiteName   string               `json:"siteName,omitempty"`
-	SiteGoal   string               `json:"siteGoal,omitempty"`
-	Collection EntryDraftCollection `json:"collection"`
-	Entry      EntryDraft           `json:"entry"`
+	Prompt            string               `json:"prompt"`
+	SiteName          string               `json:"siteName,omitempty"`
+	SiteGoal          string               `json:"siteGoal,omitempty"`
+	PreferredLanguage string               `json:"preferredLanguage,omitempty"`
+	Collection        EntryDraftCollection `json:"collection"`
+	Entry             EntryDraft           `json:"entry"`
 }
 
 // EntryRewriteResponse returns the revised entry fields plus a concise

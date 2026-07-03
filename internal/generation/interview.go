@@ -34,10 +34,11 @@ type ClarifyingQuestionPlanner interface {
 // ClarifyingQuestionsRequest carries the same minimal context the outline
 // planner will receive — just enough for the model to decide what's missing.
 type ClarifyingQuestionsRequest struct {
-	Prompt        string                 `json:"prompt"`
-	NameHint      string                 `json:"nameHint,omitempty"`
-	Brand         siteconfig.BrandConfig `json:"brand,omitempty"`
-	OptionalHints map[string]string      `json:"optionalHints,omitempty"`
+	Prompt            string                 `json:"prompt"`
+	NameHint          string                 `json:"nameHint,omitempty"`
+	PreferredLanguage string                 `json:"preferredLanguage,omitempty"`
+	Brand             siteconfig.BrandConfig `json:"brand,omitempty"`
+	OptionalHints     map[string]string      `json:"optionalHints,omitempty"`
 }
 
 // ClarifyingQuestion is a single intake-form question. ID is opaque to the
@@ -45,11 +46,11 @@ type ClarifyingQuestionsRequest struct {
 // drives the input control: single-select, multi-select, or short free-text.
 // Options are model-suggested chips; the frontend always offers a "skip" too.
 type ClarifyingQuestion struct {
-	ID       string   `json:"id"`
-	Prompt   string   `json:"prompt"`
-	Kind     string   `json:"kind"`
-	Options  []string `json:"options,omitempty"`
-	Helper   string   `json:"helper,omitempty"`
+	ID      string   `json:"id"`
+	Prompt  string   `json:"prompt"`
+	Kind    string   `json:"kind"`
+	Options []string `json:"options,omitempty"`
+	Helper  string   `json:"helper,omitempty"`
 }
 
 // ClarifyingAnswer is the user's response to a single ClarifyingQuestion.

@@ -68,7 +68,7 @@ func (s *Service) generateDraftDecomposed(
 	for i, page := range outline.Pages {
 		i, page := i, page
 		pageGroup.Go(func() error {
-			pagePlan, err := s.buildPagePlanFromLayout(pageCtx, outline.SiteName, outline.SiteGoal, input.Brand, page, outline.Pages, input.InterviewAnswers)
+			pagePlan, err := s.buildPagePlanFromLayout(pageCtx, outline.SiteName, outline.SiteGoal, input.PreferredLanguage, input.Brand, page, outline.Pages, input.InterviewAnswers)
 			if err != nil {
 				return fmt.Errorf("compose page %s: %w", page.Slug, err)
 			}
@@ -135,10 +135,11 @@ func (s *Service) repromptSiteDecomposed(
 		return generationPlan{}, siteconfig.SiteDraft{}, err
 	}
 	outline, err := s.decomposedPlanner.BuildOutline(ctx, OutlineRequest{
-		Prompt:         prompt,
-		NameHint:       currentDraft.Site.Name,
-		Brand:          currentDraft.Brand,
-		CurrentOutline: &currentOutline,
+		Prompt:            prompt,
+		NameHint:          currentDraft.Site.Name,
+		PreferredLanguage: currentDraft.Site.DefaultLocale,
+		Brand:             currentDraft.Brand,
+		CurrentOutline:    &currentOutline,
 	})
 	if err != nil {
 		return generationPlan{}, siteconfig.SiteDraft{}, fmt.Errorf("reprompt outline: %w", err)
@@ -190,7 +191,7 @@ func (s *Service) repromptSiteDecomposed(
 				return nil
 			}
 
-			pagePlan, err := s.buildPagePlanFromLayout(pageCtx, outline.SiteName, outline.SiteGoal, currentDraft.Brand, page, outline.Pages, nil)
+			pagePlan, err := s.buildPagePlanFromLayout(pageCtx, outline.SiteName, outline.SiteGoal, currentDraft.Site.DefaultLocale, currentDraft.Brand, page, outline.Pages, nil)
 			if err != nil {
 				return fmt.Errorf("reprompt compose page %s: %w", page.Slug, err)
 			}
@@ -252,18 +253,20 @@ func (s *Service) buildPagePlanFromLayout(
 	ctx context.Context,
 	siteName string,
 	siteGoal string,
+	preferredLanguage string,
 	brand siteconfig.BrandConfig,
 	page OutlinePage,
 	outline []OutlinePage,
 	interviewAnswers []ClarifyingAnswer,
 ) (generationPagePlan, error) {
 	layout, err := s.decomposedPlanner.BuildPageLayout(ctx, PageLayoutRequest{
-		SiteName:         siteName,
-		SiteGoal:         siteGoal,
-		Brand:            brand,
-		Page:             page,
-		Outline:          outline,
-		InterviewAnswers: interviewAnswers,
+		SiteName:          siteName,
+		SiteGoal:          siteGoal,
+		PreferredLanguage: preferredLanguage,
+		Brand:             brand,
+		Page:              page,
+		Outline:           outline,
+		InterviewAnswers:  interviewAnswers,
 	})
 	if err != nil {
 		return generationPagePlan{}, fmt.Errorf("layout page: %w", err)
@@ -273,13 +276,14 @@ func (s *Service) buildPagePlanFromLayout(
 	}
 
 	content, err := s.decomposedPlanner.BuildPageContent(ctx, PageContentRequest{
-		SiteName:         siteName,
-		SiteGoal:         siteGoal,
-		Brand:            brand,
-		Page:             page,
-		Outline:          outline,
-		Layout:           layout.Blocks,
-		InterviewAnswers: interviewAnswers,
+		SiteName:          siteName,
+		SiteGoal:          siteGoal,
+		PreferredLanguage: preferredLanguage,
+		Brand:             brand,
+		Page:              page,
+		Outline:           outline,
+		Layout:            layout.Blocks,
+		InterviewAnswers:  interviewAnswers,
 	})
 	if err != nil {
 		return generationPagePlan{}, fmt.Errorf("write page content: %w", err)

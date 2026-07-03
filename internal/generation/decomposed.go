@@ -61,12 +61,13 @@ type OutlinePage struct {
 // PageLayoutRequest tells the per-page layout planner everything it needs to
 // pick an ordered block list without writing full block props.
 type PageLayoutRequest struct {
-	SiteName         string                 `json:"siteName"`
-	SiteGoal         string                 `json:"siteGoal,omitempty"`
-	Brand            siteconfig.BrandConfig `json:"brand,omitempty"`
-	Page             OutlinePage            `json:"page"`
-	Outline          []OutlinePage          `json:"outline"`
-	InterviewAnswers []ClarifyingAnswer     `json:"interviewAnswers,omitempty"`
+	SiteName          string                 `json:"siteName"`
+	SiteGoal          string                 `json:"siteGoal,omitempty"`
+	PreferredLanguage string                 `json:"preferredLanguage,omitempty"`
+	Brand             siteconfig.BrandConfig `json:"brand,omitempty"`
+	Page              OutlinePage            `json:"page"`
+	Outline           []OutlinePage          `json:"outline"`
+	InterviewAnswers  []ClarifyingAnswer     `json:"interviewAnswers,omitempty"`
 }
 
 // PageLayoutResult is the model's chosen ordered block skeleton for one page.
@@ -86,13 +87,14 @@ type PageLayoutBlock struct {
 // PageContentRequest tells the per-page composer to fill props for the already
 // selected ordered layout. It no longer chooses block types or order.
 type PageContentRequest struct {
-	SiteName         string                 `json:"siteName"`
-	SiteGoal         string                 `json:"siteGoal,omitempty"`
-	Brand            siteconfig.BrandConfig `json:"brand,omitempty"`
-	Page             OutlinePage            `json:"page"`
-	Outline          []OutlinePage          `json:"outline"`
-	Layout           []PageLayoutBlock      `json:"layout"`
-	InterviewAnswers []ClarifyingAnswer     `json:"interviewAnswers,omitempty"`
+	SiteName          string                 `json:"siteName"`
+	SiteGoal          string                 `json:"siteGoal,omitempty"`
+	PreferredLanguage string                 `json:"preferredLanguage,omitempty"`
+	Brand             siteconfig.BrandConfig `json:"brand,omitempty"`
+	Page              OutlinePage            `json:"page"`
+	Outline           []OutlinePage          `json:"outline"`
+	Layout            []PageLayoutBlock      `json:"layout"`
+	InterviewAnswers  []ClarifyingAnswer     `json:"interviewAnswers,omitempty"`
 }
 
 // PageContentResult is the selected layout filled with full props.

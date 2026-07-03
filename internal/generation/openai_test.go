@@ -341,3 +341,65 @@ func TestOpenAIPlannerReturnsRefusal(t *testing.T) {
 		t.Fatalf("expected refusal error, got %v", err)
 	}
 }
+
+// captureSystemPrompt spins up a fake OpenAI-compatible endpoint that records
+// the system message of the structured completion and replies with a minimal
+// valid page-content payload, so tests can assert what prompt the model saw.
+func captureSystemPrompt(t *testing.T, request PageContentRequest) string {
+	t.Helper()
+	var requestBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{
+				"message": map[string]any{
+					"content": `{"blocks":[{"type":"hero","props":{"variant":"standard","headline":"Halló","layout":"centered"}}]}`,
+				},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	planner, err := NewOpenAIPlanner(OpenAIPlannerConfig{
+		APIKey:  "test-key",
+		Model:   "gpt-5-mini",
+		BaseURL: server.URL,
+	})
+	if err != nil {
+		t.Fatalf("new planner: %v", err)
+	}
+	request.Layout = []PageLayoutBlock{{Type: "hero", Purpose: "Open.", ContentBrief: "Opener.", VariantHint: "standard"}}
+	if _, err := planner.BuildPageContent(context.Background(), request); err != nil {
+		t.Fatalf("build page content: %v", err)
+	}
+	messages := requestBody["messages"].([]any)
+	return messages[0].(map[string]any)["content"].(string)
+}
+
+func TestLanguageDirectiveThreadsIntoIcelandicPrompt(t *testing.T) {
+	system := captureSystemPrompt(t, PageContentRequest{
+		SiteName:          "Snælda Hárstofa",
+		SiteGoal:          "Bóka tíma.",
+		PreferredLanguage: "is",
+		Page:              OutlinePage{Title: "Forsíða", Slug: "/", Goal: "Kynna stofuna."},
+	})
+	for _, marker := range []string{"íslenska", "LANGUAGE CONTRACT", "thjonusta"} {
+		if !strings.Contains(system, marker) {
+			t.Fatalf("expected Icelandic directive marker %q in system prompt, got: %s", marker, system)
+		}
+	}
+}
+
+func TestLanguageDirectiveAbsentForEnglishPrompt(t *testing.T) {
+	system := captureSystemPrompt(t, PageContentRequest{
+		SiteName:          "Downtown Barbers",
+		SiteGoal:          "Book appointments.",
+		PreferredLanguage: "en",
+		Page:              OutlinePage{Title: "Home", Slug: "/", Goal: "Introduce the shop."},
+	})
+	if strings.Contains(system, "LANGUAGE CONTRACT") || strings.Contains(system, "íslenska") {
+		t.Fatalf("expected no language directive for English site, got: %s", system)
+	}
+}

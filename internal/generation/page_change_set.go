@@ -40,13 +40,14 @@ type PageChangeSetPlanner interface {
 // catalog and no full block registry — only the block types already on the
 // page plus a short list of allowed insertable types.
 type PageChangeSetRequest struct {
-	SiteName       string                 `json:"siteName"`
-	SiteGoal       string                 `json:"siteGoal,omitempty"`
-	Brand          siteconfig.BrandConfig `json:"brand,omitempty"`
-	Page           PageChangeSetPage      `json:"page"`
-	NeighborPages  []NeighborPage         `json:"neighborPages,omitempty"`
-	InsertableTypes []InsertableBlockType `json:"insertableTypes,omitempty"`
-	Prompt         string                 `json:"prompt"`
+	SiteName          string                 `json:"siteName"`
+	SiteGoal          string                 `json:"siteGoal,omitempty"`
+	PreferredLanguage string                 `json:"preferredLanguage,omitempty"`
+	Brand             siteconfig.BrandConfig `json:"brand,omitempty"`
+	Page              PageChangeSetPage      `json:"page"`
+	NeighborPages     []NeighborPage         `json:"neighborPages,omitempty"`
+	InsertableTypes   []InsertableBlockType  `json:"insertableTypes,omitempty"`
+	Prompt            string                 `json:"prompt"`
 }
 
 // PageChangeSetPage is the in-flight description of the page being reprompted.

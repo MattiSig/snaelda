@@ -58,16 +58,17 @@ type BlockSuggester interface {
 // props (which the model rewrites), and the surrounding site context (page
 // title, neighboring blocks) the model uses to keep the suggestion grounded.
 type BlockSuggestRequest struct {
-	Action       string
-	Tone         string
-	Instruction  string
-	Block        siteconfig.BlockInstance
-	Definition   siteconfig.BlockDefinition
-	PageTitle    string
-	PageSlug     string
-	SiteName     string
-	SiteGoal     string
-	NeighborText []string
+	Action            string
+	Tone              string
+	Instruction       string
+	Block             siteconfig.BlockInstance
+	Definition        siteconfig.BlockDefinition
+	PageTitle         string
+	PageSlug          string
+	SiteName          string
+	SiteGoal          string
+	PreferredLanguage string
+	NeighborText      []string
 }
 
 // BlockSuggestResponse is the result of a block-suggest call. Props must
@@ -155,16 +156,17 @@ func (s *Service) SuggestBlock(
 	}
 
 	suggestResp, err := s.suggester.SuggestBlockProps(ctx, BlockSuggestRequest{
-		Action:       action,
-		Tone:         tone,
-		Instruction:  instruction,
-		Block:        block,
-		Definition:   definition,
-		PageTitle:    page.Title,
-		PageSlug:     page.Slug,
-		SiteName:     currentDraft.Site.Name,
-		SiteGoal:     currentDraft.Site.SEO.Description,
-		NeighborText: collectNeighborText(page.Blocks, blockIndex),
+		Action:            action,
+		Tone:              tone,
+		Instruction:       instruction,
+		Block:             block,
+		Definition:        definition,
+		PageTitle:         page.Title,
+		PageSlug:          page.Slug,
+		SiteName:          currentDraft.Site.Name,
+		SiteGoal:          currentDraft.Site.SEO.Description,
+		PreferredLanguage: currentDraft.Site.DefaultLocale,
+		NeighborText:      collectNeighborText(page.Blocks, blockIndex),
 	})
 	if err != nil {
 		_ = s.failGenerationJob(ctx, jobID, err)

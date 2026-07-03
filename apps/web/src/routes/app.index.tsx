@@ -24,6 +24,7 @@ import {
 } from '@/lib/api'
 import { actions, emptyState, form, paddedPanel, ribbonPanel, siteCard, text } from '@/lib/styles'
 import { cn } from '@/lib/utils'
+import { useLocale } from '@/lib/locale'
 
 export const Route = createFileRoute('/app/')({
   component: SitesIndex,
@@ -74,6 +75,7 @@ function reduceShadowPages(
 
 function SitesIndex() {
   const navigate = useNavigate()
+  const locale = useLocale()
   const locationSearch = useRouterState({ select: (state) => state.location.search })
   const routeSearch = locationSearch as Record<string, unknown>
   const promptFromUrl =
@@ -199,6 +201,7 @@ function SitesIndex() {
       const response = await fetchClarifyingQuestions({
         name: nameValue.trim() || undefined,
         prompt: trimmedPrompt,
+        preferredLanguage: locale,
       })
       if (!response.questions || response.questions.length === 0) {
         await runGeneration({
@@ -254,6 +257,7 @@ function SitesIndex() {
         {
           name: nameValue,
           prompt: trimmedPrompt,
+          preferredLanguage: locale,
           interviewAnswers: interviewAnswers.length > 0 ? interviewAnswers : undefined,
         },
         {

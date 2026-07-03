@@ -78,9 +78,29 @@ type Mutator interface {
 }
 
 type CreateSiteInput struct {
-	Name   string
-	Slug   string
-	Prompt string
+	Name          string
+	Slug          string
+	Prompt        string
+	DefaultLocale string
+}
+
+// supportedSiteLocales is the site content-locale allow-list (Spec 22). Site
+// creation constrains default_locale to this set; the same allow-list is
+// enforced at the storage layer by the sites.default_locale check constraint.
+var supportedSiteLocales = map[string]bool{"is": true, "en": true}
+
+// resolveSiteLocale normalizes a requested content locale to the supported
+// allow-list, defaulting to "en" when it is unset or unsupported. It matches on
+// the primary subtag so "is-IS" resolves to "is".
+func resolveSiteLocale(value string) string {
+	locale := strings.ToLower(strings.TrimSpace(value))
+	if idx := strings.IndexAny(locale, "-_"); idx > 0 {
+		locale = locale[:idx]
+	}
+	if supportedSiteLocales[locale] {
+		return locale
+	}
+	return "en"
 }
 
 type UpdateSiteInput struct {
@@ -114,9 +134,9 @@ type CreateBlockInput struct {
 }
 
 type UpdateBlockInput struct {
-	Props    map[string]any
-	Hidden   *bool
-	Bindings map[string]siteconfig.BlockBinding
+	Props       map[string]any
+	Hidden      *bool
+	Bindings    map[string]siteconfig.BlockBinding
 	SetBindings bool
 }
 
@@ -195,7 +215,7 @@ func (m *PostgresMutator) CreateSite(ctx context.Context, workspaceID string, in
 		return siteconfig.SiteDraft{}, err
 	}
 
-	draft, err := starterDraft(name, slugValue, input.Prompt)
+	draft, err := starterDraft(name, slugValue, input.Prompt, resolveSiteLocale(input.DefaultLocale))
 	if err != nil {
 		return siteconfig.SiteDraft{}, err
 	}
@@ -1173,7 +1193,7 @@ func cloneBindings(value map[string]siteconfig.BlockBinding) map[string]siteconf
 	return cloned
 }
 
-func starterDraft(name string, slugValue string, prompt string) (siteconfig.SiteDraft, error) {
+func starterDraft(name string, slugValue string, prompt string, defaultLocale string) (siteconfig.SiteDraft, error) {
 	siteID, err := ids.New()
 	if err != nil {
 		return siteconfig.SiteDraft{}, fmt.Errorf("generate site id: %w", err)
@@ -1213,7 +1233,7 @@ func starterDraft(name string, slugValue string, prompt string) (siteconfig.Site
 			Name:          name,
 			Slug:          slugValue,
 			Status:        "draft",
-			DefaultLocale: "en",
+			DefaultLocale: resolveSiteLocale(defaultLocale),
 			SEO: siteconfig.SEOConfig{
 				Title:       name,
 				Description: subheadline,

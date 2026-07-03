@@ -108,13 +108,14 @@ type openAIBlockSuggestPayload struct {
 // only carries the directive, page context, and the list of allowed type
 // names for inserts.
 type pageChangeSetRequestPayload struct {
-	SiteName        string                 `json:"siteName"`
-	SiteGoal        string                 `json:"siteGoal,omitempty"`
-	Brand           siteconfig.BrandConfig `json:"brand,omitempty"`
-	Page            PageChangeSetPage      `json:"page"`
-	NeighborPages   []NeighborPage         `json:"neighborPages,omitempty"`
-	InsertableTypes []string               `json:"insertableTypes,omitempty"`
-	Prompt          string                 `json:"prompt"`
+	SiteName          string                 `json:"siteName"`
+	SiteGoal          string                 `json:"siteGoal,omitempty"`
+	PreferredLanguage string                 `json:"preferredLanguage,omitempty"`
+	Brand             siteconfig.BrandConfig `json:"brand,omitempty"`
+	Page              PageChangeSetPage      `json:"page"`
+	NeighborPages     []NeighborPage         `json:"neighborPages,omitempty"`
+	InsertableTypes   []string               `json:"insertableTypes,omitempty"`
+	Prompt            string                 `json:"prompt"`
 }
 
 func NewOpenAIPlanner(cfg OpenAIPlannerConfig) (*OpenAIPlanner, error) {
@@ -202,7 +203,7 @@ func (p *OpenAIPlanner) BuildPlan(ctx context.Context, input generationInputCont
 	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
 		Name:   "site_generation_plan",
 		Schema: generationPlanSchema(),
-		System: cachedSiteContext() + "\n\n" + themeCatalogContext() + "\n\n" + layoutBlockCatalogContext() + "\n\n" + generationPlannerSystemPrompt,
+		System: cachedSiteContext() + "\n\n" + themeCatalogContext() + "\n\n" + layoutBlockCatalogContext() + "\n\n" + generationPlannerSystemPrompt + languageDirective(input.PreferredLanguage),
 		User:   string(userJSON),
 		Strict: true,
 	}, &responsePayload); err != nil {
@@ -305,7 +306,7 @@ func (p *OpenAIPlanner) BuildOutline(ctx context.Context, request OutlineRequest
 	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
 		Name:   "site_outline",
 		Schema: schema,
-		System: cachedSiteContext() + "\n\n" + themeCatalogContext() + "\n\n" + outlinePlannerSystemPrompt,
+		System: cachedSiteContext() + "\n\n" + themeCatalogContext() + "\n\n" + outlinePlannerSystemPrompt + languageDirective(request.PreferredLanguage),
 		User:   string(userJSON),
 		Strict: true,
 	}, &responsePayload); err != nil {
@@ -330,7 +331,7 @@ func (p *OpenAIPlanner) BuildPageLayout(ctx context.Context, request PageLayoutR
 	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
 		Name:   "page_layout",
 		Schema: pageLayoutSchema(defaultAllowedBlockTypes()),
-		System: cachedSiteContext() + "\n\n" + layoutBlockCatalogContext() + "\n\n" + pageLayoutSystemPrompt,
+		System: cachedSiteContext() + "\n\n" + layoutBlockCatalogContext() + "\n\n" + pageLayoutSystemPrompt + languageDirective(request.PreferredLanguage),
 		User:   string(userJSON),
 		Strict: true,
 	}, &responsePayload); err != nil {
@@ -402,7 +403,7 @@ func (p *OpenAIPlanner) BuildPageContent(ctx context.Context, request PageConten
 	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
 		Name:   "page_content",
 		Schema: schema,
-		System: cachedSiteContext() + "\n\n" + pageContentSystemPrompt,
+		System: cachedSiteContext() + "\n\n" + pageContentSystemPrompt + languageDirective(request.PreferredLanguage),
 		User:   string(userJSON),
 		Strict: true,
 	}, &responsePayload); err != nil {
@@ -614,7 +615,7 @@ func (p *OpenAIPlanner) BuildClarifyingQuestions(ctx context.Context, request Cl
 	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
 		Name:   "clarifying_questions",
 		Schema: schema,
-		System: clarifyingQuestionsSystemPrompt,
+		System: clarifyingQuestionsSystemPrompt + languageDirective(request.PreferredLanguage),
 		User:   string(userJSON),
 		Strict: true,
 	}, &responsePayload); err != nil {
@@ -644,13 +645,14 @@ func (p *OpenAIPlanner) PlanPageChanges(ctx context.Context, request PageChangeS
 	// cached system prefix). Send only the allowed type names for the model
 	// to reference when inserting.
 	payload := pageChangeSetRequestPayload{
-		SiteName:        request.SiteName,
-		SiteGoal:        request.SiteGoal,
-		Brand:           request.Brand,
-		Page:            request.Page,
-		NeighborPages:   request.NeighborPages,
-		InsertableTypes: insertableTypeNames,
-		Prompt:          request.Prompt,
+		SiteName:          request.SiteName,
+		SiteGoal:          request.SiteGoal,
+		PreferredLanguage: request.PreferredLanguage,
+		Brand:             request.Brand,
+		Page:              request.Page,
+		NeighborPages:     request.NeighborPages,
+		InsertableTypes:   insertableTypeNames,
+		Prompt:            request.Prompt,
 	}
 	userJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -696,7 +698,7 @@ func (p *OpenAIPlanner) PlanPageChanges(ctx context.Context, request PageChangeS
 	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
 		Name:   "page_change_set",
 		Schema: schema,
-		System: cachedSiteContext() + "\n\n" + pageChangeSetSystemPrompt,
+		System: cachedSiteContext() + "\n\n" + pageChangeSetSystemPrompt + languageDirective(request.PreferredLanguage),
 		User:   string(userJSON),
 		Strict: true,
 	}, &responsePayload); err != nil {
@@ -760,17 +762,18 @@ func (p *OpenAIPlanner) SuggestBlockProps(ctx context.Context, request BlockSugg
 	}
 
 	payload := map[string]any{
-		"action":           request.Action,
-		"tone":             request.Tone,
-		"instruction":      request.Instruction,
-		"blockType":        request.Block.Type,
-		"blockDisplayName": request.Definition.DisplayName,
-		"currentProps":     request.Block.Props,
-		"pageTitle":        request.PageTitle,
-		"pageSlug":         request.PageSlug,
-		"siteName":         request.SiteName,
-		"siteGoal":         request.SiteGoal,
-		"neighbors":        request.NeighborText,
+		"action":            request.Action,
+		"tone":              request.Tone,
+		"instruction":       request.Instruction,
+		"blockType":         request.Block.Type,
+		"blockDisplayName":  request.Definition.DisplayName,
+		"currentProps":      request.Block.Props,
+		"pageTitle":         request.PageTitle,
+		"pageSlug":          request.PageSlug,
+		"siteName":          request.SiteName,
+		"siteGoal":          request.SiteGoal,
+		"neighbors":         request.NeighborText,
+		"preferredLanguage": request.PreferredLanguage,
 	}
 	userJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -791,7 +794,7 @@ func (p *OpenAIPlanner) SuggestBlockProps(ctx context.Context, request BlockSugg
 	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
 		Name:   "block_suggest",
 		Schema: schema,
-		System: cachedSiteContext() + "\n\n" + blockSuggestSystemPrompt,
+		System: cachedSiteContext() + "\n\n" + blockSuggestSystemPrompt + languageDirective(request.PreferredLanguage),
 		User:   string(userJSON),
 		Strict: true,
 	}, &responsePayload); err != nil {
@@ -871,7 +874,7 @@ func (p *OpenAIPlanner) DraftCollection(ctx context.Context, request CollectionD
 	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
 		Name:   "collection_draft",
 		Schema: schema,
-		System: collectionDrafterSystemPrompt,
+		System: collectionDrafterSystemPrompt + languageDirective(request.PreferredLanguage),
 		User:   string(userJSON),
 		Strict: false,
 	}, &response); err != nil {
@@ -948,7 +951,7 @@ func (p *OpenAIPlanner) DraftEntries(ctx context.Context, request EntryDraftRequ
 	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
 		Name:   "collection_entry_draft",
 		Schema: schema,
-		System: collectionEntryDrafterSystemPrompt,
+		System: collectionEntryDrafterSystemPrompt + languageDirective(request.PreferredLanguage),
 		User:   string(userJSON),
 		Strict: false,
 	}, &response); err != nil {
@@ -1013,7 +1016,7 @@ func (p *OpenAIPlanner) RewriteEntry(ctx context.Context, request EntryRewriteRe
 	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
 		Name:   "collection_entry_rewrite",
 		Schema: schema,
-		System: collectionEntryRewriteSystemPrompt,
+		System: collectionEntryRewriteSystemPrompt + languageDirective(request.PreferredLanguage),
 		User:   string(userJSON),
 		Strict: false,
 	}, &response); err != nil {
@@ -1038,6 +1041,7 @@ type CollectionDraftRequest struct {
 	Prompt              string   `json:"prompt"`
 	SiteName            string   `json:"siteName,omitempty"`
 	SiteGoal            string   `json:"siteGoal,omitempty"`
+	PreferredLanguage   string   `json:"preferredLanguage,omitempty"`
 	ExistingCollections []string `json:"existingCollections,omitempty"`
 }
 
@@ -1051,11 +1055,12 @@ type CollectionDraftResponse struct {
 
 // EntryDraftRequest mirrors the collections package's entry drafter contract.
 type EntryDraftRequest struct {
-	Prompt          string               `json:"prompt"`
-	SiteName        string               `json:"siteName,omitempty"`
-	SiteGoal        string               `json:"siteGoal,omitempty"`
-	Collection      EntryDraftCollection `json:"collection"`
-	ExistingEntries []EntryDraftExisting `json:"existingEntries,omitempty"`
+	Prompt            string               `json:"prompt"`
+	SiteName          string               `json:"siteName,omitempty"`
+	SiteGoal          string               `json:"siteGoal,omitempty"`
+	PreferredLanguage string               `json:"preferredLanguage,omitempty"`
+	Collection        EntryDraftCollection `json:"collection"`
+	ExistingEntries   []EntryDraftExisting `json:"existingEntries,omitempty"`
 }
 
 type EntryDraftCollection struct {
@@ -1081,11 +1086,12 @@ type EntryDraft struct {
 }
 
 type EntryRewriteRequest struct {
-	Prompt     string               `json:"prompt"`
-	SiteName   string               `json:"siteName,omitempty"`
-	SiteGoal   string               `json:"siteGoal,omitempty"`
-	Collection EntryDraftCollection `json:"collection"`
-	Entry      EntryDraft           `json:"entry"`
+	Prompt            string               `json:"prompt"`
+	SiteName          string               `json:"siteName,omitempty"`
+	SiteGoal          string               `json:"siteGoal,omitempty"`
+	PreferredLanguage string               `json:"preferredLanguage,omitempty"`
+	Collection        EntryDraftCollection `json:"collection"`
+	Entry             EntryDraft           `json:"entry"`
 }
 
 type EntryRewriteResponse struct {

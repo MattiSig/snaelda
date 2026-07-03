@@ -1212,6 +1212,7 @@ export type InterviewResponse = {
 export async function fetchClarifyingQuestions(input: {
   name?: string;
   prompt: string;
+  preferredLanguage?: string;
   brand?: BrandConfig;
   optionalHints?: Record<string, string>;
 }) {

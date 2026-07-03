@@ -681,6 +681,7 @@ func (a collectionDrafterAdapter) DraftCollection(ctx context.Context, request c
 		Prompt:              request.Prompt,
 		SiteName:            request.SiteName,
 		SiteGoal:            request.SiteGoal,
+		PreferredLanguage:   request.PreferredLanguage,
 		ExistingCollections: request.ExistingCollections,
 	})
 	if err != nil {
@@ -696,9 +697,10 @@ func (a collectionDrafterAdapter) DraftCollection(ctx context.Context, request c
 
 func (a collectionDrafterAdapter) DraftEntries(ctx context.Context, request collections.EntryDraftRequest) (collections.EntryDraftResponse, error) {
 	resp, err := a.planner.DraftEntries(ctx, generation.EntryDraftRequest{
-		Prompt:   request.Prompt,
-		SiteName: request.SiteName,
-		SiteGoal: request.SiteGoal,
+		Prompt:            request.Prompt,
+		SiteName:          request.SiteName,
+		SiteGoal:          request.SiteGoal,
+		PreferredLanguage: request.PreferredLanguage,
 		Collection: generation.EntryDraftCollection{
 			SingularLabel: request.Collection.SingularLabel,
 			PluralLabel:   request.Collection.PluralLabel,
@@ -723,9 +725,10 @@ func (a collectionDrafterAdapter) DraftEntries(ctx context.Context, request coll
 
 func (a collectionDrafterAdapter) RewriteEntry(ctx context.Context, request collections.EntryRewriteRequest) (collections.EntryRewriteResponse, error) {
 	resp, err := a.planner.RewriteEntry(ctx, generation.EntryRewriteRequest{
-		Prompt:   request.Prompt,
-		SiteName: request.SiteName,
-		SiteGoal: request.SiteGoal,
+		Prompt:            request.Prompt,
+		SiteName:          request.SiteName,
+		SiteGoal:          request.SiteGoal,
+		PreferredLanguage: request.PreferredLanguage,
 		Collection: generation.EntryDraftCollection{
 			SingularLabel: request.Collection.SingularLabel,
 			PluralLabel:   request.Collection.PluralLabel,
