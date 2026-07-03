@@ -306,6 +306,9 @@ function SiteDetail() {
   const [repromptDiffErrorMessage, setRepromptDiffErrorMessage] = useState("");
   const [activeSubmissionId, setActiveSubmissionId] = useState("");
   const [publishErrorMessage, setPublishErrorMessage] = useState("");
+  const [publishValidationIssues, setPublishValidationIssues] = useState<
+    Array<{ path: string; code: string; message: string }>
+  >([]);
   const [publishStatusMessage, setPublishStatusMessage] = useState("");
   const [domainErrorMessage, setDomainErrorMessage] = useState("");
   const [domainStatusMessage, setDomainStatusMessage] = useState("");
@@ -2005,6 +2008,7 @@ function SiteDetail() {
   async function handlePublish() {
     setIsPublishing(true);
     setPublishErrorMessage("");
+    setPublishValidationIssues([]);
     setPublishStatusMessage("");
     clearBlockedAction();
 
@@ -2024,6 +2028,9 @@ function SiteDetail() {
       setPublishErrorMessage(
         error instanceof APIError ? error.message : "Could not publish site",
       );
+      if (error instanceof APIError && error.payload?.issues?.length) {
+        setPublishValidationIssues(error.payload.issues);
+      }
     } finally {
       setIsPublishing(false);
     }
@@ -4290,6 +4297,16 @@ function SiteDetail() {
 
         {publishErrorMessage ? (
           <p className={text.error}>{publishErrorMessage}</p>
+        ) : null}
+        {publishValidationIssues.length > 0 ? (
+          <ul className="space-y-1 text-sm text-[var(--paper-muted)]">
+            {publishValidationIssues.map((issue) => (
+              <li key={`${issue.path}-${issue.code}`}>
+                <span className="font-mono text-xs">{issue.path}</span>{" "}
+                {issue.message}
+              </li>
+            ))}
+          </ul>
         ) : null}
         {publishStatusMessage ? (
           <p className={text.success}>{publishStatusMessage}</p>

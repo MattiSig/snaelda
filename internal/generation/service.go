@@ -1171,10 +1171,14 @@ func buildDraftFromPlan(plan generationPlan, slugValue string, preferredLanguage
 		}
 
 		pages = append(pages, siteconfig.PageDraft{
-			ID:     pageID,
-			Title:  pagePlan.Title,
-			Slug:   pagePlan.Slug,
-			Status: siteconfig.PageStatusDraft,
+			ID:    pageID,
+			Title: pagePlan.Title,
+			Slug:  pagePlan.Slug,
+			// Generated pages ship publish-ready: the site-level publish action
+			// is the gate, and per-page draft status is a user's opt-out. If
+			// every generated page stayed "draft", the publish snapshot would
+			// filter them all out and a fresh site could never go live.
+			Status: siteconfig.PageStatusPublished,
 			SEO:    pagePlan.SEO,
 			Blocks: blocks,
 		})

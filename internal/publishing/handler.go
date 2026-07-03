@@ -449,6 +449,15 @@ func (h *Handler) writePublishError(w http.ResponseWriter, r *http.Request, err 
 	case errors.Is(err, ErrHostnameConflict):
 		writeError(w, http.StatusConflict, "published_hostname_conflict", "published hostname is already in use")
 	case errors.As(err, &validationErr):
+		logger := h.logger
+		if logger == nil {
+			logger = slog.Default()
+		}
+		logger.Warn("publish blocked by validation",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"issues", validationErr.Error(),
+		)
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"error": map[string]string{
 				"code":    "invalid_publish_snapshot",

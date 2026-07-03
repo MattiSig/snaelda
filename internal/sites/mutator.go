@@ -1253,9 +1253,10 @@ func starterDraft(name string, slugValue string, prompt string, defaultLocale st
 		},
 		Pages: []siteconfig.PageDraft{
 			{
-				ID:    pageID,
-				Title: sc.NavHome,
-				Slug:  "/",
+				ID:     pageID,
+				Title:  sc.NavHome,
+				Slug:   "/",
+				Status: siteconfig.PageStatusPublished,
 				SEO: siteconfig.SEOConfig{
 					Title:       name,
 					Description: subheadline,
