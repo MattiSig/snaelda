@@ -58,3 +58,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# Raw source media (large screen captures, not served)
+apps/web/public/media/**/_raw/
