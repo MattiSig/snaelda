@@ -1219,9 +1219,12 @@ func starterDraft(name string, slugValue string, prompt string, defaultLocale st
 		return siteconfig.SiteDraft{}, fmt.Errorf("generate cta block id: %w", err)
 	}
 
+	locale := resolveSiteLocale(defaultLocale)
+	sc := starterCopyFor(locale)
+
 	subheadline := strings.TrimSpace(prompt)
 	if subheadline == "" {
-		subheadline = "Start from a structured draft with real pages, editable sections, and a preview route that stays on the same site contract."
+		subheadline = sc.DefaultSubheadline
 	}
 	if len(subheadline) > 280 {
 		subheadline = subheadline[:277] + "..."
@@ -1233,7 +1236,7 @@ func starterDraft(name string, slugValue string, prompt string, defaultLocale st
 			Name:          name,
 			Slug:          slugValue,
 			Status:        "draft",
-			DefaultLocale: resolveSiteLocale(defaultLocale),
+			DefaultLocale: locale,
 			SEO: siteconfig.SEOConfig{
 				Title:       name,
 				Description: subheadline,
@@ -1245,13 +1248,13 @@ func starterDraft(name string, slugValue string, prompt string, defaultLocale st
 		},
 		Navigation: siteconfig.NavigationConfig{
 			Primary: []siteconfig.NavigationItem{
-				{Label: "Home", PageID: pageID},
+				{Label: sc.NavHome, PageID: pageID},
 			},
 		},
 		Pages: []siteconfig.PageDraft{
 			{
 				ID:    pageID,
-				Title: "Home",
+				Title: sc.NavHome,
 				Slug:  "/",
 				SEO: siteconfig.SEOConfig{
 					Title:       name,
@@ -1264,10 +1267,10 @@ func starterDraft(name string, slugValue string, prompt string, defaultLocale st
 						Version: siteconfig.BlockVersionV1,
 						Props: map[string]any{
 							"eyebrow":     name,
-							"headline":    "A welcoming first draft for " + name,
+							"headline":    sc.heroHeadline(name),
 							"subheadline": subheadline,
 							"primaryCta": map[string]any{
-								"label": "Review the draft",
+								"label": sc.HeroCTALabel,
 								"href":  "#next-step",
 							},
 							"layout": "split-left",
@@ -1278,8 +1281,8 @@ func starterDraft(name string, slugValue string, prompt string, defaultLocale st
 						Type:    "text_section",
 						Version: siteconfig.BlockVersionV1,
 						Props: map[string]any{
-							"heading":   "What this starter gives you",
-							"body":      "A single-page site scaffold with validated blocks, a saved draft, and room to tune the copy before generation and publishing are wired in.",
+							"heading":   sc.TextHeading,
+							"body":      sc.TextBody,
 							"alignment": "left",
 							"width":     "default",
 						},
@@ -1289,21 +1292,21 @@ func starterDraft(name string, slugValue string, prompt string, defaultLocale st
 						Type:    "features_grid",
 						Version: siteconfig.BlockVersionV1,
 						Props: map[string]any{
-							"heading": "Ready for the next loop",
-							"intro":   "The prototype keeps each section inside the maintained registry so preview and publish can stay consistent later.",
+							"heading": sc.FeaturesHeading,
+							"intro":   sc.FeaturesIntro,
 							"columns": 3,
 							"items": []any{
 								map[string]any{
-									"title": "Structured draft",
-									"body":  "Every page and block is validated application data.",
+									"title": sc.Feature1Title,
+									"body":  sc.Feature1Body,
 								},
 								map[string]any{
-									"title": "Builder-friendly",
-									"body":  "Site metadata can be edited without breaking the stored draft.",
+									"title": sc.Feature2Title,
+									"body":  sc.Feature2Body,
 								},
 								map[string]any{
-									"title": "Preview-ready",
-									"body":  "The React preview reads the same draft shape the API serves.",
+									"title": sc.Feature3Title,
+									"body":  sc.Feature3Body,
 								},
 							},
 						},
@@ -1313,10 +1316,10 @@ func starterDraft(name string, slugValue string, prompt string, defaultLocale st
 						Type:    "cta_band",
 						Version: siteconfig.BlockVersionV1,
 						Props: map[string]any{
-							"heading": "Next step",
-							"body":    "Refine the name or slug now, then move into richer page and block editing.",
+							"heading": sc.CTAHeading,
+							"body":    sc.CTABody,
 							"cta": map[string]any{
-								"label": "Stay in the builder",
+								"label": sc.CTALabel,
 								"href":  "/app/sites/" + siteID,
 							},
 							"variant": "accent",

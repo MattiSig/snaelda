@@ -94,7 +94,7 @@ func (s *Service) generateDraftDecomposed(
 		Pages:          pagePlans,
 		Assumptions:    outline.Assumptions,
 	}
-	plan = repairGenerationPlan(plan)
+	plan = repairGenerationPlan(plan, input.PreferredLanguage)
 
 	slugValue, err := s.createSlug(ctx, workspaceID, input.SlugHint, plan.SiteName)
 	if err != nil {
@@ -217,7 +217,7 @@ func (s *Service) repromptSiteDecomposed(
 		Pages:          pagePlans,
 		Assumptions:    outline.Assumptions,
 	}
-	plan = repairGenerationPlan(plan)
+	plan = repairGenerationPlan(plan, currentDraft.Site.DefaultLocale)
 
 	draft, err := buildDraftFromPlan(plan, currentDraft.Site.Slug, "", currentDraft.Brand)
 	if err != nil {

@@ -16,7 +16,7 @@ var (
 	generatedSlugReplacer          = regexp.MustCompile(`[^a-z0-9]+`)
 )
 
-func repairGenerationPlan(plan generationPlan) generationPlan {
+func repairGenerationPlan(plan generationPlan, locale string) generationPlan {
 	themeSelection := siteconfig.ThemeSelection{}
 	if hasThemeSelection(plan.ThemeSelection) {
 		themeSelection = normalizeThemeSelection(plan.ThemeSelection)
@@ -24,7 +24,7 @@ func repairGenerationPlan(plan generationPlan) generationPlan {
 
 	repaired := generationPlan{
 		SiteName:       firstNonEmpty(cleanGeneratedText(plan.SiteName, 120), "Small Good Studio"),
-		SiteGoal:       firstNonEmpty(cleanGeneratedText(plan.SiteGoal, 180), siteGoalForCategory("business")),
+		SiteGoal:       firstNonEmpty(cleanGeneratedText(plan.SiteGoal, 180), siteGoalForCategory(categoryBusiness, locale)),
 		ThemePreset:    normalizeGeneratedThemePreset(firstNonEmpty(plan.ThemeSelection.Palette, plan.ThemePreset)),
 		ThemeSelection: themeSelection,
 		AssetsNeeded:   repairAssetsNeeded(plan.AssetsNeeded),

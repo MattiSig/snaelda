@@ -120,7 +120,7 @@ func TestGenerateRetriesPlannerAfterValidationFailure(t *testing.T) {
 		writer: store,
 		planner: func(_ context.Context, input generationInputContext, feedback generationPlanFeedback) (generationPlan, error) {
 			feedbacks = append(feedbacks, feedback)
-			return buildGenerationPlan(input.NameHint, input.Prompt), nil
+			return buildGenerationPlan(input.NameHint, input.Prompt, input.PreferredLanguage), nil
 		},
 	}
 
@@ -969,7 +969,7 @@ func TestGenerateFailsAfterValidationRetryExhausted(t *testing.T) {
 		writer: store,
 		planner: func(_ context.Context, input generationInputContext, feedback generationPlanFeedback) (generationPlan, error) {
 			planCalls++
-			return buildGenerationPlan(input.NameHint, input.Prompt), nil
+			return buildGenerationPlan(input.NameHint, input.Prompt, input.PreferredLanguage), nil
 		},
 	}
 
@@ -1096,7 +1096,7 @@ func TestRepairGenerationPlanRepairsSafeIssues(t *testing.T) {
 			"<p>Default locale is English.</p>",
 			"<p>Default locale is English.</p>",
 		},
-	})
+	}, "")
 
 	if repaired.SiteName != "North Light Studio" {
 		t.Fatalf("expected sanitized site name, got %q", repaired.SiteName)

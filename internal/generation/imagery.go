@@ -62,7 +62,7 @@ func (s *Service) applyStarterImagery(ctx context.Context, workspaceID string, u
 		return draft
 	}
 
-	profile := profilePrompt(prompt)
+	profile := profilePrompt(prompt, draft.Site.DefaultLocale)
 	for pageIndex := range draft.Pages {
 		page := &draft.Pages[pageIndex]
 		for blockIndex := range page.Blocks {

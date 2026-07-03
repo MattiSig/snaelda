@@ -57,7 +57,7 @@ func TestRepairGenerationPlanConvertsWrongBlockWhenModelIntendedContactForm(t *t
 		},
 	}
 
-	repaired := repairGenerationPlan(plan)
+	repaired := repairGenerationPlan(plan, "")
 
 	contactPage := repaired.Pages[1]
 	formIndex := blockIndex(contactPage.Blocks, "contact_form")
@@ -116,7 +116,7 @@ func TestRepairGenerationPlanDoesNotMakeContactPageFormMandatory(t *testing.T) {
 		},
 	}
 
-	repaired := repairGenerationPlan(plan)
+	repaired := repairGenerationPlan(plan, "")
 
 	if blockIndex(repaired.Pages[1].Blocks, "contact_form") != -1 {
 		t.Fatalf("did not expect contact page to gain mandatory contact_form, got %#v", repaired.Pages[1].Blocks)
