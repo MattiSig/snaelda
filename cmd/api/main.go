@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/MattiSig/snaelda/internal/api"
+	"github.com/MattiSig/snaelda/internal/generation"
 	"github.com/MattiSig/snaelda/internal/platform/config"
 	"github.com/MattiSig/snaelda/internal/platform/database"
 )
@@ -33,6 +34,10 @@ func main() {
 		os.Exit(1)
 	}
 	defer dbPool.Close()
+
+	if err := generation.FailInterruptedJobs(startupCtx, dbPool, logger); err != nil {
+		logger.Warn("recover interrupted generation jobs", "error", err)
+	}
 
 	server := api.NewServer(api.ServerConfig{
 		Config:   cfg,
