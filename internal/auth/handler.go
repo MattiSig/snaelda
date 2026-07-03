@@ -243,6 +243,11 @@ func (h *Handler) startAnonymousSession(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Starting a fresh trial is an explicit identity choice; drop any stale
+	// auth cookies so a later background refresh cannot resurrect the old
+	// signed-in identity over this trial.
+	http.SetCookie(w, h.accessCookie("", -1))
+	http.SetCookie(w, h.refreshCookie("", -1))
 	http.SetCookie(w, h.guestCookie(token, int(h.refreshTokenTTL.Seconds())))
 	http.SetCookie(w, h.csrfCookie(csrfToken, int(h.refreshTokenTTL.Seconds())))
 	writeAuthJSON(w, http.StatusCreated, sessionResponse{Session: session})
@@ -615,10 +620,23 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) resolveSession(r *http.Request) (Session, error) {
-	if session, err := h.resolveAuthenticatedSession(r); err == nil {
-		return session, nil
+	authSession, authErr := h.resolveAuthenticatedSession(r)
+	if authErr != nil {
+		return h.resolveTrialSession(r)
 	}
-	return h.resolveTrialSession(r)
+	// An unclaimed guest trial in another workspace is an in-progress guest
+	// flow: the guest cookie was set by an explicit "start fresh" action,
+	// while the access token can reappear via a background refresh from a
+	// stale refresh cookie. Preferring the token here would silently swap
+	// the user's identity mid-session, so the trial wins. Explicit login and
+	// restore both clear the opposing cookies, and a claimed trial shares
+	// its workspace with the token, so this only fires on the stale case.
+	if trialSession, err := h.resolveTrialSession(r); err == nil &&
+		!trialSession.IsClaimed() &&
+		trialSession.WorkspaceID != authSession.WorkspaceID {
+		return trialSession, nil
+	}
+	return authSession, nil
 }
 
 func (h *Handler) resolveAuthenticatedSession(r *http.Request) (Session, error) {

@@ -27,6 +27,7 @@ type fakeAuthStore struct {
 	guestTrialStartedAt    time.Time
 	guestTrialExpiresAt    time.Time
 	guestHasRecoveryKey    bool
+	guestClaimedByUserID   string
 }
 
 func (s *fakeAuthStore) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
@@ -63,7 +64,7 @@ func (s *fakeAuthStore) QueryRow(_ context.Context, sql string, args ...any) pgx
 			s.guestTrialStartedAt,
 			s.guestTrialExpiresAt,
 			nil,
-			"",
+			s.guestClaimedByUserID,
 			s.guestHasRecoveryKey,
 			"",
 			"",
@@ -340,6 +341,78 @@ func TestRequireUserRejectsMissingCookie(t *testing.T) {
 
 	if res.Code != http.StatusUnauthorized {
 		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, res.Code)
+	}
+}
+
+func TestResolveSessionPrefersUnclaimedTrialOverAccessToken(t *testing.T) {
+	cases := []struct {
+		name              string
+		guestWorkspaceID  string
+		claimedByUserID   string
+		wantWorkspaceID   string
+		wantTrialResolved bool
+	}{
+		{
+			name:              "unclaimed trial in another workspace wins over the token",
+			guestWorkspaceID:  "workspace-guest",
+			wantWorkspaceID:   "workspace-guest",
+			wantTrialResolved: true,
+		},
+		{
+			name:             "claimed trial defers to the authenticated session",
+			guestWorkspaceID: "workspace-guest",
+			claimedByUserID:  "user-1",
+			wantWorkspaceID:  "workspace-1",
+		},
+		{
+			name:             "same-workspace trial defers to the authenticated session",
+			guestWorkspaceID: "workspace-1",
+			wantWorkspaceID:  "workspace-1",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &fakeAuthStore{
+				sessionID:            "session-1",
+				guestSessionID:       "guest-1",
+				guestWorkspaceID:     tc.guestWorkspaceID,
+				guestCookieHash:      tokenHash("guest-token"),
+				guestTrialStartedAt:  time.Now().UTC(),
+				guestTrialExpiresAt:  time.Now().UTC().Add(4 * 24 * time.Hour),
+				guestClaimedByUserID: tc.claimedByUserID,
+			}
+			tokens := newHandlerTestTokenManager(t)
+			handler := NewHandler(HandlerConfig{Store: store, Tokens: tokens})
+
+			accessToken, _, err := tokens.IssueForSession(User{
+				ID:            "user-1",
+				Email:         "demo@snaelda.local",
+				WorkspaceID:   "workspace-1",
+				WorkspaceRole: "owner",
+			}, "session-1")
+			if err != nil {
+				t.Fatalf("issue access token: %v", err)
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "/api/sessions/me", nil)
+			req.AddCookie(&http.Cookie{Name: AccessTokenCookieName, Value: accessToken})
+			req.AddCookie(&http.Cookie{Name: GuestSessionCookieName, Value: "guest-token"})
+
+			session, err := handler.resolveSession(req)
+			if err != nil {
+				t.Fatalf("resolve session: %v", err)
+			}
+			if session.WorkspaceID != tc.wantWorkspaceID {
+				t.Fatalf("expected workspace %q, got %q", tc.wantWorkspaceID, session.WorkspaceID)
+			}
+			if tc.wantTrialResolved && session.Kind != SessionKindTrial {
+				t.Fatalf("expected trial session, got %q", session.Kind)
+			}
+			if !tc.wantTrialResolved && session.Kind != SessionKindAuthenticated {
+				t.Fatalf("expected authenticated session, got %q", session.Kind)
+			}
+		})
 	}
 }
 

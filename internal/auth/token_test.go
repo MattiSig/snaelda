@@ -60,7 +60,14 @@ func TestTokenManagerRejectsTamperedToken(t *testing.T) {
 		t.Fatalf("issue token: %v", err)
 	}
 
-	tampered := strings.TrimSuffix(token, token[len(token)-1:]) + "x"
+	// Swap the final signature character for a different one; appending a
+	// fixed character would leave the token untouched whenever the signature
+	// already ends with it.
+	replacement := "x"
+	if strings.HasSuffix(token, replacement) {
+		replacement = "y"
+	}
+	tampered := token[:len(token)-1] + replacement
 	if _, err := manager.Validate(tampered); err != ErrTokenInvalid {
 		t.Fatalf("expected invalid token error, got %v", err)
 	}
