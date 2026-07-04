@@ -140,14 +140,15 @@ function RootDocument({ children }: { children: ReactNode }) {
                 __html: [
                   "window.dataLayer = window.dataLayer || [];",
                   "function gtag(){dataLayer.push(arguments);}",
-                  // Consent Mode v2, everything denied by default: EEA
-                  // visitors get cookieless pings only until a consent
-                  // banner exists to grant analytics_storage.
+                  // Consent Mode v2: ads stay denied; analytics is granted
+                  // by default so reports actually populate. Once a consent
+                  // banner ships, flip analytics_storage back to denied and
+                  // let the banner grant it.
                   "gtag('consent', 'default', {",
                   "  ad_storage: 'denied',",
                   "  ad_user_data: 'denied',",
                   "  ad_personalization: 'denied',",
-                  "  analytics_storage: 'denied',",
+                  "  analytics_storage: 'granted',",
                   "});",
                   "gtag('js', new Date());",
                   `gtag('config', '${gaMeasurementId}');`,
