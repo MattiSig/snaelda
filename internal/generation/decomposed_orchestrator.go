@@ -96,6 +96,14 @@ func (s *Service) generateDraftDecomposed(
 	}
 	plan = repairGenerationPlan(plan, input.PreferredLanguage)
 
+	// English must never leak into an Icelandic draft (Spec 22). The decomposed
+	// pipeline has no retry loop of its own, so surface any leak as a
+	// ValidationError: the caller falls back to generateDraftWithRetry, which
+	// re-runs the plan with these issues threaded into the planner feedback.
+	if issues := detectLanguageConformanceIssues(plan, input.PreferredLanguage, verbatimExemptionFromInput(input)); len(issues) > 0 {
+		return generationPlan{}, siteconfig.SiteDraft{}, siteconfig.ValidationError{Issues: issues}
+	}
+
 	slugValue, err := s.createSlug(ctx, workspaceID, input.SlugHint, plan.SiteName)
 	if err != nil {
 		return generationPlan{}, siteconfig.SiteDraft{}, err
