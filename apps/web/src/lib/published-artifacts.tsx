@@ -39,6 +39,7 @@ type PublishedArtifactManifest = {
   schemaVersion: "published_artifacts.v1";
   siteSlug: string;
   hostname?: string;
+  defaultLocale?: string;
   version: SiteVersion;
   pages: Array<{
     pageId: string;
@@ -64,6 +65,29 @@ type RenderedRoute = {
   localBusinessJsonLd?: Record<string, unknown>;
   html: string;
 };
+
+// publishedSiteLocale resolves a published snapshot's content locale down to a
+// supported primary subtag ("is-IS" -> "is"), defaulting to "en". Published
+// artifacts and their metadata must follow the site's own locale, not the
+// visitor's (Spec 22).
+export function publishedSiteLocale(snapshot: PublishedSnapshot): string {
+  const raw = snapshot.site.defaultLocale?.trim().toLowerCase() ?? "";
+  const primary = raw.split(/[-_]/)[0];
+  return primary === "is" ? "is" : "en";
+}
+
+// fallbackPageDescription supplies a locale-appropriate meta description when a
+// page and its site both omit one, so an Icelandic site never falls back to
+// English boilerplate.
+function fallbackPageDescription(siteName: string, locale: string): string {
+  return locale === "is" ? `Heimsæktu ${siteName}.` : `Visit ${siteName}.`;
+}
+
+function fallbackEntryDescription(siteName: string, locale: string): string {
+  return locale === "is"
+    ? `Skoðaðu meira frá ${siteName}.`
+    : `Discover more from ${siteName}.`;
+}
 
 export function buildPublishedArtifactBundle(
   input: PublishedArtifactRenderInput,
@@ -127,6 +151,7 @@ export function buildPublishedArtifactBundle(
     schemaVersion: "published_artifacts.v1",
     siteSlug: input.siteSlug,
     hostname: input.hostname || undefined,
+    defaultLocale: publishedSiteLocale(input.snapshot),
     version: input.version,
     pages: renderedRoutes.map(
       ({
@@ -210,7 +235,10 @@ function renderStaticOrIndexPage(
   const description =
     page.seo?.description ||
     input.snapshot.site.seo?.description ||
-    `Visit ${input.snapshot.site.name}.`;
+    fallbackPageDescription(
+      input.snapshot.site.name,
+      publishedSiteLocale(input.snapshot),
+    );
   const canonicalUrl = buildCanonicalURL(input, page.slug);
   const ogImageUrl = deriveOGImageURL(input.siteSlug, page);
   const localBusinessJsonLd = buildLocalBusinessJsonLd(
@@ -515,7 +543,10 @@ function resolveEntryDescriptionFromTemplateOrFields(
 
   return (
     input.snapshot.site.seo?.description ||
-    `Discover more from ${input.snapshot.site.name}.`
+    fallbackEntryDescription(
+      input.snapshot.site.name,
+      publishedSiteLocale(input.snapshot),
+    )
   );
 }
 

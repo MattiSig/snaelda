@@ -618,6 +618,7 @@ export type BillingState = {
 export type PublishedSiteResponse = {
   siteSlug: string;
   hostname?: string;
+  defaultLocale?: string;
   brand?: BrandConfig;
   publicUrl: string;
   version: SiteVersion;

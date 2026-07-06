@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { DefaultCatchBoundary } from "~/components/DefaultCatchBoundary";
 import { NotFound } from "~/components/NotFound";
 import type { HostedPublicSiteContext } from "~/lib/public-site";
+import { publishedSiteHtmlLang } from "~/lib/published-site";
 import { useLocale } from "~/lib/locale";
 import { topbar } from "~/lib/styles";
 import "~/styles/app.css";
@@ -58,6 +59,30 @@ export const Route = createRootRoute({
   shellComponent: RootDocument,
 });
 
+// resolvePublishedLocaleFromMatches finds the published site's content locale in
+// the active route matches. `/public/*` routes expose it as `site.defaultLocale`
+// on their loader data; the custom-domain catch-all nests it under
+// `published.site`. Returns null when no published site is in the tree.
+function resolvePublishedLocaleFromMatches(
+  matches: ReturnType<typeof useMatches>,
+): string | null {
+  for (const match of matches) {
+    const loaderData = match.loaderData as
+      | {
+          site?: { defaultLocale?: string } | null;
+          published?: { site?: { defaultLocale?: string } | null };
+        }
+      | undefined;
+    const locale =
+      loaderData?.site?.defaultLocale ??
+      loaderData?.published?.site?.defaultLocale;
+    if (locale) {
+      return locale;
+    }
+  }
+  return null;
+}
+
 function RootDocument({ children }: { children: ReactNode }) {
   const matches = useMatches();
   const visitorLocale = useLocale();
@@ -100,10 +125,17 @@ function RootDocument({ children }: { children: ReactNode }) {
     !hostedPublic?.isHostedPublic && /^G-[A-Z0-9]+$/.test(rawGaId)
       ? rawGaId
       : "";
-  // Hosted public sites render their content locale; the published-site
-  // localization work replaces this `en` fallback with the site's default
-  // locale. The app + marketing surface follows the visitor's resolved locale.
-  const htmlLang = hostedPublic?.isHostedPublic ? "en" : visitorLocale;
+  // A published site renders its own content locale, independent of the
+  // visitor's UI locale (Spec 22). The public routes surface it via loader data
+  // (`/public/*` as `site`, custom-domain hosting as `published.site`); when
+  // present it wins for both the app-hosted and custom-domain paths. The app +
+  // marketing surface falls back to the visitor's resolved locale.
+  const publishedLocale = resolvePublishedLocaleFromMatches(matches);
+  const htmlLang = publishedLocale
+    ? publishedSiteHtmlLang(publishedLocale)
+    : hostedPublic?.isHostedPublic
+      ? "en"
+      : visitorLocale;
   const showChrome =
     !hostedPublic?.isHostedPublic &&
     pathname !== "/" &&

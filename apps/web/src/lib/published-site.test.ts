@@ -5,6 +5,8 @@ import {
   buildAppSitemapXML,
   buildPublishedPageHead,
   buildPublishedPageURL,
+  publishedOGLocale,
+  publishedSiteHtmlLang,
 } from "./published-site";
 
 describe("published site helpers", () => {
@@ -25,6 +27,36 @@ describe("published site helpers", () => {
       name: "twitter:description",
       content: "Drop by the studio this weekend.",
     });
+  });
+
+  it("emits og:locale en_US when the site has no locale", () => {
+    const result = buildPublishedPageHead(buildPathPublishedSite());
+    expect(result.meta).toContainEqual({
+      property: "og:locale",
+      content: "en_US",
+    });
+  });
+
+  it("emits the Icelandic og:locale for an Icelandic site", () => {
+    const result = buildPublishedPageHead({
+      ...buildPathPublishedSite(),
+      defaultLocale: "is-IS",
+    });
+    expect(result.meta).toContainEqual({
+      property: "og:locale",
+      content: "is_IS",
+    });
+  });
+
+  it("reduces published locales to supported html lang and og tags", () => {
+    expect(publishedSiteHtmlLang("is-IS")).toBe("is");
+    expect(publishedSiteHtmlLang("IS")).toBe("is");
+    expect(publishedSiteHtmlLang("en-US")).toBe("en");
+    expect(publishedSiteHtmlLang("")).toBe("en");
+    expect(publishedSiteHtmlLang(undefined)).toBe("en");
+    expect(publishedSiteHtmlLang("de")).toBe("en");
+    expect(publishedOGLocale("is")).toBe("is_IS");
+    expect(publishedOGLocale("en")).toBe("en_US");
   });
 
   it("builds page urls for hosted domains without the local public prefix", () => {

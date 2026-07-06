@@ -230,6 +230,40 @@ describe('buildPublishedArtifactBundle', () => {
     expect(homeFile?.body).toContain('Scaffolding rentals')
   })
 
+  it('records the site default locale in the manifest', () => {
+    const snapshot = buildSnapshot()
+    snapshot.site.defaultLocale = 'is-IS'
+    const bundle = buildPublishedArtifactBundle(buildBaseInput(snapshot))
+    const manifestFile = bundle.files.find(
+      (file) => file.path === 'manifest.json',
+    )
+    const manifest = JSON.parse(manifestFile!.body) as {
+      defaultLocale?: string
+    }
+    expect(manifest.defaultLocale).toBe('is')
+  })
+
+  it('falls back to an Icelandic meta description for Icelandic sites', () => {
+    const snapshot = buildSnapshot()
+    snapshot.site.defaultLocale = 'is'
+    // Strip every description source so the locale fallback is exercised.
+    snapshot.site.seo = { title: 'Norðurljós', description: '' }
+    snapshot.pages = snapshot.pages.map((page) =>
+      page.slug === '/'
+        ? { ...page, seo: { title: 'Heim', description: '' } }
+        : page,
+    )
+    const bundle = buildPublishedArtifactBundle(buildBaseInput(snapshot))
+    const manifestFile = bundle.files.find(
+      (file) => file.path === 'manifest.json',
+    )
+    const manifest = JSON.parse(manifestFile!.body) as {
+      pages: Array<{ pagePath: string; description: string }>
+    }
+    const home = manifest.pages.find((page) => page.pagePath === '/')
+    expect(home?.description).toBe('Heimsæktu Demo Studio.')
+  })
+
   it('lists every entry URL in the manifest and sitemap', () => {
     const bundle = buildPublishedArtifactBundle(buildBaseInput(buildSnapshot()))
     const manifestFile = bundle.files.find(

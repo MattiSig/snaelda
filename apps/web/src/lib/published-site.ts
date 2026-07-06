@@ -32,6 +32,7 @@ export function buildPublishedPageHead(site?: PublishedSiteResponse | null) {
   const description = site.page.description;
   const canonicalUrl = site.page.canonicalUrl || buildPublishedPageURL(site);
   const brandName = site.brand?.businessName?.trim() || site.siteSlug;
+  const ogLocale = publishedOGLocale(site.defaultLocale);
 
   return {
     links: [{ rel: "canonical", href: canonicalUrl }],
@@ -43,6 +44,7 @@ export function buildPublishedPageHead(site?: PublishedSiteResponse | null) {
       { property: "og:title", content: title },
       { property: "og:description", content: description },
       { property: "og:url", content: canonicalUrl },
+      { property: "og:locale", content: ogLocale },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:title", content: title },
       { name: "twitter:description", content: description },
@@ -141,6 +143,20 @@ function resolvePublishedRoutePath(
   return normalizedPath === "/"
     ? `/public/${site.siteSlug}`
     : `/public/${site.siteSlug}${normalizedPath}`;
+}
+
+// publishedSiteHtmlLang reduces a published site's default locale to a
+// supported `<html lang>` value ("is-IS" -> "is"), defaulting to "en". Published
+// pages carry their own content locale, independent of the visitor's UI locale.
+export function publishedSiteHtmlLang(defaultLocale?: string | null): string {
+  const primary = (defaultLocale ?? "").trim().toLowerCase().split(/[-_]/)[0];
+  return primary === "is" ? "is" : "en";
+}
+
+// publishedOGLocale maps the published locale to an Open Graph locale tag
+// (`is_IS` / `en_US`).
+export function publishedOGLocale(defaultLocale?: string | null): string {
+  return publishedSiteHtmlLang(defaultLocale) === "is" ? "is_IS" : "en_US";
 }
 
 function getPublishedSiteErrorMessage(error: unknown, fallbackMessage: string) {

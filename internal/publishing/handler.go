@@ -242,12 +242,13 @@ func (h *Handler) getPublishedSite(w http.ResponseWriter, r *http.Request) {
 	h.recordPageView(r, result)
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"siteSlug":  result.SiteSlug,
-		"hostname":  result.Hostname,
-		"publicUrl": h.publicURL(result.SiteSlug, result.Hostname, result.PagePath),
-		"version":   result.Version,
-		"pagePath":  result.PagePath,
-		"page":      result.Page,
+		"siteSlug":      result.SiteSlug,
+		"hostname":      result.Hostname,
+		"defaultLocale": result.DefaultLocale,
+		"publicUrl":     h.publicURL(result.SiteSlug, result.Hostname, result.PagePath),
+		"version":       result.Version,
+		"pagePath":      result.PagePath,
+		"page":          result.Page,
 	})
 }
 
@@ -268,12 +269,13 @@ func (h *Handler) getPublishedSiteByHostname(w http.ResponseWriter, r *http.Requ
 	h.recordPageView(r, result)
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"siteSlug":  result.SiteSlug,
-		"hostname":  result.Hostname,
-		"publicUrl": h.publicURL(result.SiteSlug, result.Hostname, result.PagePath),
-		"version":   result.Version,
-		"pagePath":  result.PagePath,
-		"page":      result.Page,
+		"siteSlug":      result.SiteSlug,
+		"hostname":      result.Hostname,
+		"defaultLocale": result.DefaultLocale,
+		"publicUrl":     h.publicURL(result.SiteSlug, result.Hostname, result.PagePath),
+		"version":       result.Version,
+		"pagePath":      result.PagePath,
+		"page":          result.Page,
 	})
 }
 
