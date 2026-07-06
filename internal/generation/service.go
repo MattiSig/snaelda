@@ -795,6 +795,19 @@ func (s *Service) generateDraftWithRetry(ctx context.Context, workspaceID string
 			}
 		}
 
+		if issues := detectLanguageConformanceIssues(plan, input.PreferredLanguage, verbatimExemptionFromInput(input)); len(issues) > 0 {
+			if attempt < maxGenerationValidationAttempts {
+				feedback.ValidationIssues = issues
+				continue
+			}
+			if s.logger != nil {
+				s.logger.Warn("language conformance issues remain after retries; proceeding with draft",
+					"workspaceId", workspaceID,
+					"issueCount", len(issues),
+				)
+			}
+		}
+
 		slugValue, err := s.createSlug(ctx, workspaceID, input.SlugHint, plan.SiteName)
 		if err != nil {
 			return generationPlan{}, siteconfig.SiteDraft{}, attempt - 1, err
