@@ -485,6 +485,7 @@ type fakeWorkspace struct {
 	createdByUserID  string
 	stripeCustomerID string
 	plan             string
+	locale           string
 	onceOverStatus   string
 }
 
@@ -597,6 +598,7 @@ func (s *fakeBillingStore) queryRow(sql string, args ...any) pgx.Row {
 			firstNonEmpty(user.email, s.customersByWorkspace[workspace.id].email),
 			user.name,
 			workspace.stripeCustomerID,
+			firstNonEmpty(workspace.locale, "is"),
 		}}
 	case strings.Contains(sql, "from billing_customers") && strings.Contains(sql, "where workspace_id = $1"):
 		customer := s.customersByWorkspace[args[0].(string)]

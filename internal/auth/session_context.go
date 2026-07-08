@@ -18,6 +18,7 @@ type Session struct {
 	Kind             SessionKind `json:"kind"`
 	WorkspaceID      string      `json:"workspaceId"`
 	WorkspaceRole    string      `json:"workspaceRole"`
+	WorkspaceLocale  string      `json:"workspaceLocale,omitempty"`
 	IsOperator       bool        `json:"isOperator,omitempty"`
 	User             *User       `json:"user,omitempty"`
 	GuestSessionID   string      `json:"guestSessionId,omitempty"`

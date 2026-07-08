@@ -22,6 +22,7 @@ import {
 } from '@/lib/api'
 import { actions, form, layout, paddedPanel, text } from '@/lib/styles'
 import { cn } from '@/lib/utils'
+import { setWorkspaceLocale } from '@/lib/workspace-locale'
 
 export const Route = createFileRoute('/app')({
   component: AppLayout,
@@ -55,6 +56,7 @@ function AppLayout() {
       .then((nextSession) => {
         if (isMounted) {
           setSession(nextSession)
+          setWorkspaceLocale(nextSession.workspaceLocale)
           setClaimEmail(nextSession.user?.email ?? '')
           setClaimName(nextSession.user?.name ?? '')
         }

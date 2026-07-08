@@ -47,6 +47,7 @@ export type BuilderSession = {
   kind: "authenticated" | "trial";
   workspaceId: string;
   workspaceRole: string;
+  workspaceLocale?: "is" | "en";
   isOperator?: boolean;
   user?: AuthUser;
   guestSessionId?: string;
@@ -1168,9 +1169,18 @@ export async function login(email: string, name?: string) {
 
 export async function startAnonymousSession(options?: {
   freshIfBlocked?: boolean;
+  locale?: string;
 }) {
-  const path = options?.freshIfBlocked
-    ? "/api/sessions/anonymous?freshIfBlocked=true"
+  const params = new URLSearchParams();
+  if (options?.freshIfBlocked) {
+    params.set("freshIfBlocked", "true");
+  }
+  if (options?.locale) {
+    params.set("locale", options.locale);
+  }
+  const query = params.toString();
+  const path = query
+    ? `/api/sessions/anonymous?${query}`
     : "/api/sessions/anonymous";
   return apiFetch<SessionResponse>(path, {
     method: "POST",
