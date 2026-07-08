@@ -46,14 +46,14 @@ type planSpec struct {
 
 func main() {
 	var (
-		key           = flag.String("key", os.Getenv("STRIPE_SECRET_KEY"), "Stripe secret key (defaults to STRIPE_SECRET_KEY env var)")
-		webhookURL    = flag.String("webhook-url", "http://localhost:8080/api/billing/webhook", "Public webhook URL the API can be reached at")
-		basicCents    = flag.Int64("basic-cents", 1900, "Basic plan monthly price in cents")
-		proCents      = flag.Int64("pro-cents", 4900, "Pro plan monthly price in cents")
-		onceOverCents = flag.Int64("once-over-cents", 9900, "Once-over add-on price in cents")
-		currency      = flag.String("currency", "usd", "Three-letter currency code")
-		allowLive     = flag.Bool("allow-live", false, "Required to run against a sk_live_… key")
-		skipWebhook   = flag.Bool("skip-webhook", false, "Skip webhook endpoint creation (use when developing locally with `stripe listen`)")
+		key            = flag.String("key", os.Getenv("STRIPE_SECRET_KEY"), "Stripe secret key (defaults to STRIPE_SECRET_KEY env var)")
+		webhookURL     = flag.String("webhook-url", "http://localhost:8080/api/billing/webhook", "Public webhook URL the API can be reached at")
+		siteAmount     = flag.Int64("site-amount", 2900, "Site plan monthly price in the currency's smallest unit (ISK is zero-decimal, so this is whole krónur)")
+		proAmount      = flag.Int64("pro-amount", 6900, "Pro plan monthly price in the currency's smallest unit")
+		onceOverAmount = flag.Int64("once-over-amount", 13900, "Once-over add-on price in the currency's smallest unit")
+		currency       = flag.String("currency", "isk", "Three-letter currency code")
+		allowLive      = flag.Bool("allow-live", false, "Required to run against a sk_live_… key")
+		skipWebhook    = flag.Bool("skip-webhook", false, "Skip webhook endpoint creation (use when developing locally with `stripe listen`)")
 	)
 	flag.Parse()
 
@@ -72,11 +72,12 @@ func main() {
 
 	stripe.Key = *key
 
+	ccy := strings.ToUpper(strings.TrimSpace(*currency))
 	fmt.Printf("Snaelda Stripe setup — %s mode\n", mode)
 	fmt.Printf("Webhook URL: %s\n", *webhookURL)
-	fmt.Printf("Basic:       $%.2f/month\n", float64(*basicCents)/100)
-	fmt.Printf("Pro:         $%.2f/month\n", float64(*proCents)/100)
-	fmt.Printf("Once-over:   $%.2f one-time\n\n", float64(*onceOverCents)/100)
+	fmt.Printf("Site:        %d %s/month\n", *siteAmount, ccy)
+	fmt.Printf("Pro:         %d %s/month\n", *proAmount, ccy)
+	fmt.Printf("Once-over:   %d %s one-time\n\n", *onceOverAmount, ccy)
 
 	if live {
 		fmt.Print("Live keys affect real customers. Type 'yes' to continue: ")
@@ -88,9 +89,9 @@ func main() {
 	}
 
 	plans := []planSpec{
-		{slug: "basic", product: "Snaelda Basic", lookupKey: "snaelda_basic_monthly", amount: *basicCents, currency: *currency, interval: string(stripe.PriceRecurringIntervalMonth)},
-		{slug: "pro", product: "Snaelda Pro", lookupKey: "snaelda_pro_monthly", amount: *proCents, currency: *currency, interval: string(stripe.PriceRecurringIntervalMonth)},
-		{slug: "once_over", product: "Snaelda Once-over review", lookupKey: "snaelda_once_over", amount: *onceOverCents, currency: *currency, interval: ""},
+		{slug: "site", product: "Snaelda Site", lookupKey: "snaelda_site_monthly", amount: *siteAmount, currency: *currency, interval: string(stripe.PriceRecurringIntervalMonth)},
+		{slug: "pro", product: "Snaelda Pro", lookupKey: "snaelda_pro_monthly", amount: *proAmount, currency: *currency, interval: string(stripe.PriceRecurringIntervalMonth)},
+		{slug: "once_over", product: "Snaelda Once-over review", lookupKey: "snaelda_once_over", amount: *onceOverAmount, currency: *currency, interval: ""},
 	}
 
 	results := make(map[string]string, len(plans))
@@ -104,9 +105,9 @@ func main() {
 
 	fmt.Println()
 	fmt.Println("Env vars to add to your .env (or Railway/Render/Fly secrets):")
-	fmt.Printf("STRIPE_PRICE_BASIC=%s\n", results["basic"])
-	fmt.Printf("STRIPE_PRICE_PRO=%s\n", results["pro"])
-	fmt.Printf("STRIPE_PRICE_ONCE_OVER=%s\n", results["once_over"])
+	fmt.Printf("STRIPE_PRICE_SITE_ISK=%s\n", results["site"])
+	fmt.Printf("STRIPE_PRICE_PRO_ISK=%s\n", results["pro"])
+	fmt.Printf("STRIPE_PRICE_ONCE_OVER_ISK=%s\n", results["once_over"])
 
 	if !*skipWebhook {
 		secret, reused, err := ensureWebhook(*webhookURL)

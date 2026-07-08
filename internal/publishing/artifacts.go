@@ -22,6 +22,7 @@ type ArtifactManifest struct {
 	SchemaVersion string                 `json:"schemaVersion"`
 	SiteSlug      string                 `json:"siteSlug"`
 	Hostname      string                 `json:"hostname,omitempty"`
+	DefaultLocale string                 `json:"defaultLocale,omitempty"`
 	Version       VersionSummary         `json:"version"`
 	Pages         []ArtifactManifestPage `json:"pages"`
 	Files         []string               `json:"files,omitempty"`

@@ -320,9 +320,9 @@ func TestLoadRequiresStripePriceWhenStripeSecretIsSet(t *testing.T) {
 	t.Setenv("APP_ENV", "test")
 	unsetStorageEnv(t)
 	t.Setenv("STRIPE_SECRET_KEY", "sk_test_123")
-	t.Setenv("STRIPE_PRICE_BASIC", "")
-	t.Setenv("STRIPE_PRICE_PRO", "")
-	t.Setenv("STRIPE_PRICE_ONCE_OVER", "")
+	t.Setenv("STRIPE_PRICE_SITE_ISK", "")
+	t.Setenv("STRIPE_PRICE_PRO_ISK", "")
+	t.Setenv("STRIPE_PRICE_ONCE_OVER_ISK", "")
 
 	if _, err := Load(); err == nil {
 		t.Fatal("expected stripe price error")
@@ -405,8 +405,8 @@ func setProductionEnv(t *testing.T) {
 	t.Setenv("BILLING_PORTAL_RETURN_URL", "https://app.snaelda.test/app/billing")
 	t.Setenv("STRIPE_SECRET_KEY", "sk_live_123")
 	t.Setenv("STRIPE_WEBHOOK_SECRET", "whsec_123")
-	t.Setenv("STRIPE_PRICE_BASIC", "price_basic")
-	t.Setenv("STRIPE_PRICE_PRO", "price_pro")
+	t.Setenv("STRIPE_PRICE_SITE_ISK", "price_site")
+	t.Setenv("STRIPE_PRICE_PRO_ISK", "price_pro")
 	t.Setenv("EMAIL_TRANSPORT", "resend")
 	t.Setenv("RESEND_API_KEY", "re_123")
 }

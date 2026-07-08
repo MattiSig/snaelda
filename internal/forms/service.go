@@ -32,7 +32,6 @@ var (
 var (
 	submissionPhonePattern  = regexp.MustCompile(`^[0-9+()./\-\s]{7,30}$`)
 	allowedSubmissionStatus = map[string]bool{"new": true, "reviewed": true, "resolved": true, "spam": true}
-	defaultSuccessMessage   = "Thanks. Your message is on its way."
 )
 
 type DB interface {
@@ -86,6 +85,7 @@ type resolvedForm struct {
 	PageTitle      string
 	Definition     siteconfig.FormDefinition
 	SuccessMessage string
+	Locale         string
 }
 
 type ServiceConfig struct {
@@ -130,7 +130,7 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (SubmitResult, 
 
 	rawPayload, honeypotFields := extractHoneypotFields(input.Payload)
 
-	payload, err := normalizeSubmissionPayload(form.Definition, rawPayload)
+	payload, err := normalizeSubmissionPayload(form.Definition, rawPayload, form.Locale)
 	if err != nil {
 		return SubmitResult{}, err
 	}
@@ -173,7 +173,7 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (SubmitResult, 
 
 	return SubmitResult{
 		Submission:     submission,
-		SuccessMessage: firstNonEmpty(strings.TrimSpace(form.SuccessMessage), defaultSuccessMessage),
+		SuccessMessage: firstNonEmpty(strings.TrimSpace(form.SuccessMessage), formCopyForLocale(form.Locale).successMessage),
 	}, nil
 }
 
@@ -256,7 +256,7 @@ func (s *Service) resolveForm(ctx context.Context, siteID string, blockID string
 		return resolvedForm{}, ErrSiteNotPublished
 	}
 
-	form, found, err := findFormInPages(snapshot.Site.Name, snapshot.Pages, blockID)
+	form, found, err := findFormInPages(snapshot.Site.Name, snapshot.Site.DefaultLocale, snapshot.Pages, blockID)
 	if err != nil {
 		return resolvedForm{}, err
 	}
@@ -297,7 +297,7 @@ func (s *Service) loadPublishedSnapshot(ctx context.Context, siteID string) (sit
 	return snapshot, true, nil
 }
 
-func findFormInPages(siteName string, pages []siteconfig.PageDraft, blockID string) (resolvedForm, bool, error) {
+func findFormInPages(siteName string, locale string, pages []siteconfig.PageDraft, blockID string) (resolvedForm, bool, error) {
 	for _, page := range pages {
 		for _, block := range page.Blocks {
 			if block.ID != blockID {
@@ -318,17 +318,19 @@ func findFormInPages(siteName string, pages []siteconfig.PageDraft, blockID stri
 				PageTitle:      page.Title,
 				Definition:     definition,
 				SuccessMessage: successMessage,
+				Locale:         locale,
 			}, true, nil
 		}
 	}
 	return resolvedForm{}, false, nil
 }
 
-func normalizeSubmissionPayload(definition siteconfig.FormDefinition, payload map[string]any) (map[string]any, error) {
+func normalizeSubmissionPayload(definition siteconfig.FormDefinition, payload map[string]any, locale string) (map[string]any, error) {
 	if payload == nil {
 		payload = map[string]any{}
 	}
 
+	msgs := formCopyForLocale(locale)
 	issues := []siteconfig.Issue{}
 	normalized := map[string]any{}
 	knownFields := map[string]siteconfig.FormField{}
@@ -341,7 +343,7 @@ func normalizeSubmissionPayload(definition siteconfig.FormDefinition, payload ma
 				issues = append(issues, siteconfig.Issue{
 					Path:    "payload." + field.Name,
 					Code:    "required",
-					Message: field.Label + " is required",
+					Message: msgs.required(field.Label),
 				})
 			}
 			continue
@@ -352,7 +354,7 @@ func normalizeSubmissionPayload(definition siteconfig.FormDefinition, payload ma
 			issues = append(issues, siteconfig.Issue{
 				Path:    "payload." + field.Name,
 				Code:    "invalid_type",
-				Message: field.Label + " must be a string",
+				Message: msgs.invalidType(field.Label),
 			})
 			continue
 		}
@@ -364,7 +366,7 @@ func normalizeSubmissionPayload(definition siteconfig.FormDefinition, payload ma
 				issues = append(issues, siteconfig.Issue{
 					Path:    "payload." + field.Name,
 					Code:    "invalid_length",
-					Message: field.Label + " must be between 1 and 120 characters",
+					Message: msgs.lengthRange(field.Label, 1, 120),
 				})
 				continue
 			}
@@ -376,7 +378,7 @@ func normalizeSubmissionPayload(definition siteconfig.FormDefinition, payload ma
 				issues = append(issues, siteconfig.Issue{
 					Path:    "payload." + field.Name,
 					Code:    "invalid_email",
-					Message: field.Label + " must be a valid email address",
+					Message: msgs.invalidEmail(field.Label),
 				})
 				continue
 			}
@@ -388,7 +390,7 @@ func normalizeSubmissionPayload(definition siteconfig.FormDefinition, payload ma
 				issues = append(issues, siteconfig.Issue{
 					Path:    "payload." + field.Name,
 					Code:    "invalid_phone",
-					Message: field.Label + " must be a valid phone number",
+					Message: msgs.invalidPhone(field.Label),
 				})
 				continue
 			}
@@ -397,7 +399,7 @@ func normalizeSubmissionPayload(definition siteconfig.FormDefinition, payload ma
 				issues = append(issues, siteconfig.Issue{
 					Path:    "payload." + field.Name,
 					Code:    "invalid_length",
-					Message: field.Label + " must be between 1 and 4000 characters",
+					Message: msgs.lengthRange(field.Label, 1, 4000),
 				})
 				continue
 			}
@@ -409,7 +411,7 @@ func normalizeSubmissionPayload(definition siteconfig.FormDefinition, payload ma
 				issues = append(issues, siteconfig.Issue{
 					Path:    "payload." + field.Name,
 					Code:    "invalid_option",
-					Message: field.Label + " must use one of the configured options",
+					Message: msgs.invalidOption(field.Label),
 				})
 				continue
 			}
@@ -417,7 +419,7 @@ func normalizeSubmissionPayload(definition siteconfig.FormDefinition, payload ma
 			issues = append(issues, siteconfig.Issue{
 				Path:    "payload." + field.Name,
 				Code:    "unsupported_field",
-				Message: field.Label + " is not supported",
+				Message: msgs.unsupported(field.Label),
 			})
 			continue
 		}
@@ -426,7 +428,7 @@ func normalizeSubmissionPayload(definition siteconfig.FormDefinition, payload ma
 			issues = append(issues, siteconfig.Issue{
 				Path:    "payload." + field.Name,
 				Code:    "required",
-				Message: field.Label + " is required",
+				Message: msgs.required(field.Label),
 			})
 			continue
 		}
@@ -442,7 +444,7 @@ func normalizeSubmissionPayload(definition siteconfig.FormDefinition, payload ma
 		issues = append(issues, siteconfig.Issue{
 			Path:    "payload." + key,
 			Code:    "unknown_field",
-			Message: "field is not supported by this form",
+			Message: msgs.unknownField,
 		})
 	}
 

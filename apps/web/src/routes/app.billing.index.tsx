@@ -29,7 +29,7 @@ function BillingPage() {
   const [errorMessage, setErrorMessage] = useState('')
   const [statusMessage, setStatusMessage] = useState('')
   const [isLoading, setIsLoading] = useState(true)
-  const [isStartingCheckout, setIsStartingCheckout] = useState<'basic' | 'pro' | ''>('')
+  const [isStartingCheckout, setIsStartingCheckout] = useState<'site' | 'pro' | ''>('')
   const [isStartingOnceOverCheckout, setIsStartingOnceOverCheckout] = useState(false)
   const [isOpeningPortal, setIsOpeningPortal] = useState(false)
   const [onceOverBusiness, setOnceOverBusiness] = useState('')
@@ -75,7 +75,7 @@ function BillingPage() {
     }
   }, [])
 
-  async function handleCheckout(plan: 'basic' | 'pro') {
+  async function handleCheckout(plan: 'site' | 'pro') {
     setIsStartingCheckout(plan)
     setErrorMessage('')
     setStatusMessage('')
@@ -307,7 +307,7 @@ function BillingPage() {
                     type="button"
                     size="sm"
                     variant="outline"
-                    onClick={() => handleCheckout('basic')}
+                    onClick={() => handleCheckout('site')}
                     disabled={isStartingCheckout !== '' || checkoutBlockedByEmail}
                   >
                     Upgrade
@@ -348,7 +348,7 @@ function BillingPage() {
             <div className="grid gap-3 md:grid-cols-3">
               <StatusTile
                 label="Price"
-                value={`$${catalog.onceOverPriceUsd}`}
+                value={formatPrice(catalog.onceOverPrices)}
                 hint="One-time charge. Buy as many passes as you like."
               />
               <StatusTile
@@ -395,8 +395,8 @@ function BillingPage() {
                       : checkoutBlockedByEmail
                         ? 'Add an email above'
                         : onceOver.status === 'delivered'
-                          ? `Buy another once-over · $${catalog.onceOverPriceUsd}`
-                          : `Buy once-over · $${catalog.onceOverPriceUsd}`}
+                          ? `Buy another once-over · ${formatPrice(catalog.onceOverPrices)}`
+                          : `Buy once-over · ${formatPrice(catalog.onceOverPrices)}`}
                     <ArrowUpRight className="size-4" />
                   </Button>
                 </div>
@@ -548,7 +548,7 @@ function PlanCard({
   disabled: boolean
   onSelect: () => void
 }) {
-  const isRecommended = plan.id === 'basic'
+  const isRecommended = plan.id === 'site'
   return (
     <article
       className={cn(
@@ -574,7 +574,7 @@ function PlanCard({
       <div className="grid gap-1">
         <p className="flex items-baseline gap-2">
           <span className="text-[2.4rem] font-black leading-none tabular-nums text-[var(--paper)]">
-            ${plan.monthlyPriceUsd}
+            {formatPrice(plan.prices)}
           </span>
           <span className="text-sm text-[var(--paper-muted)]">/ month</span>
         </p>
@@ -668,11 +668,44 @@ function humanPlan(plan: string) {
   switch (plan) {
     case 'pro':
       return 'Pro'
-    case 'basic':
-      return 'Basic'
+    case 'site':
+      return 'Site'
     default:
       return 'Trial'
   }
+}
+
+// resolvePlanPrice picks the price to display from a per-currency map, preferring
+// ISK (the Phase 0 currency) and falling back to whatever single currency the
+// catalog carries.
+function resolvePlanPrice(
+  prices: Record<string, number>,
+): { currency: string; amount: number } | null {
+  if (prices.ISK !== undefined) {
+    return { currency: 'ISK', amount: prices.ISK }
+  }
+  const [currency] = Object.keys(prices)
+  if (!currency) {
+    return null
+  }
+  return { currency, amount: prices[currency] }
+}
+
+function formatCurrency(currency: string, amount: number) {
+  try {
+    return new Intl.NumberFormat('is-IS', {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: currency === 'ISK' ? 0 : 2,
+    }).format(amount)
+  } catch {
+    return `${amount} ${currency}`
+  }
+}
+
+function formatPrice(prices: Record<string, number>) {
+  const resolved = resolvePlanPrice(prices)
+  return resolved ? formatCurrency(resolved.currency, resolved.amount) : '—'
 }
 
 function planFeatures(plan: BillingPlan) {

@@ -191,7 +191,7 @@ func TestPromptActionManagerCreateJobRejectsPaidQuotaOverflow(t *testing.T) {
 	store := &promptGovernanceStore{
 		entitlement: &billing.Entitlement{
 			WorkspaceID:        "workspace-1",
-			Plan:               "basic",
+			Plan:               "site",
 			Status:             "active",
 			SubscriptionLive:   true,
 			MonthlyPromptLimit: &limit,

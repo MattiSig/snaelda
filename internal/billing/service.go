@@ -16,9 +16,10 @@ import (
 )
 
 const (
-	planTrial = "trial"
-	planBasic = "basic"
-	planPro   = "pro"
+	planTrial  = "trial"
+	planSite   = "site"
+	planPro    = "pro"
+	planLegacy = "basic" // pre-ISK-rename value; coerced to planSite on read
 )
 
 type DB interface {
@@ -43,7 +44,7 @@ type ServiceConfig struct {
 	CancelURL       string
 	PortalReturnURL string
 	AppBaseURL      string
-	BasicPriceID    string
+	SitePriceID     string
 	ProPriceID      string
 	OnceOverPriceID string
 	ProductName     string
@@ -59,7 +60,6 @@ type Service struct {
 	portalReturnURL string
 	appBaseURL      string
 	catalog         Catalog
-	onceOverPriceID string
 	productName     string
 	emailSender     email.Sender
 	auditRecorder   *audit.Recorder
@@ -111,11 +111,14 @@ func NewService(store DB, cfg ServiceConfig) *Service {
 		cancelURL:       strings.TrimSpace(cfg.CancelURL),
 		portalReturnURL: strings.TrimSpace(cfg.PortalReturnURL),
 		appBaseURL:      strings.TrimSpace(cfg.AppBaseURL),
-		catalog:         NewCatalog(cfg.BasicPriceID, cfg.ProPriceID),
-		onceOverPriceID: strings.TrimSpace(cfg.OnceOverPriceID),
-		productName:     cfg.ProductName,
-		emailSender:     cfg.EmailSender,
-		auditRecorder:   cfg.AuditRecorder,
+		catalog: NewCatalog(
+			map[string]string{defaultCurrency: cfg.SitePriceID},
+			map[string]string{defaultCurrency: cfg.ProPriceID},
+			map[string]string{defaultCurrency: cfg.OnceOverPriceID},
+		),
+		productName:   cfg.ProductName,
+		emailSender:   cfg.EmailSender,
+		auditRecorder: cfg.AuditRecorder,
 	}
 }
 
@@ -126,14 +129,16 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, input CheckoutInput
 
 	purchaseType := normalizePurchaseType(input.PurchaseType)
 	plan := normalizePlan(input.Plan)
+	currency := s.workspaceCurrency(ctx, input.Session.WorkspaceID)
 	priceID := ""
 	mode := checkoutModeSubscription
 
 	switch purchaseType {
 	case onceOverPurchaseType:
 		mode = checkoutModePayment
-		priceID = strings.TrimSpace(s.onceOverPriceID)
-		if priceID == "" {
+		var ok bool
+		priceID, ok = s.catalog.OnceOverPriceID(currency)
+		if !ok {
 			return "", fmt.Errorf("once-over checkout is not configured")
 		}
 		state, err := s.GetOnceOverState(ctx, input.Session.WorkspaceID)
@@ -145,7 +150,7 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, input CheckoutInput
 		}
 	default:
 		var ok bool
-		priceID, ok = s.catalog.PriceIDForPlan(plan)
+		priceID, ok = s.catalog.PriceIDForPlan(plan, currency)
 		if !ok {
 			return "", fmt.Errorf("unknown billing plan %q", plan)
 		}
@@ -633,10 +638,8 @@ func (s *Service) upsertCustomerTx(ctx context.Context, store interface {
 
 func normalizePlan(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", planTrial:
-		return planBasic
-	case planBasic:
-		return planBasic
+	case "", planTrial, planSite, planLegacy:
+		return planSite
 	case planPro:
 		return planPro
 	default:
@@ -651,8 +654,16 @@ func humanPlanName(plan string) string {
 	case planPro:
 		return "Pro"
 	default:
-		return "Basic"
+		return "Site"
 	}
+}
+
+// workspaceCurrency resolves the currency a workspace checks out in. Phase 0 is
+// Iceland-only, so this is ISK for every workspace; it is the single seam where
+// per-workspace currency selection plugs in once the workspaces.locale/currency
+// column lands.
+func (s *Service) workspaceCurrency(_ context.Context, _ string) string {
+	return defaultCurrency
 }
 
 func (s *Service) resolveSubscriptionPlan(ctx context.Context, tx pgx.Tx, subscription SubscriptionEventData) (string, PlanDefinition, error) {
@@ -682,12 +693,50 @@ func (s *Service) resolveSubscriptionPlan(ctx context.Context, tx pgx.Tx, subscr
 	return "", PlanDefinition{}, fmt.Errorf("stripe subscription price %q is not configured to a billing plan", strings.TrimSpace(subscription.PriceID))
 }
 
+// zeroDecimalCurrencies are the ISO-4217 currencies Stripe reports in whole
+// units (no minor unit), so their invoice amount must not be divided by 100.
+// Kept in sync with Stripe's zero-decimal list; ISK is the one that matters for
+// Phase 0.
+var zeroDecimalCurrencies = map[string]bool{
+	"BIF": true, "CLP": true, "DJF": true, "GNF": true, "ISK": true,
+	"JPY": true, "KMF": true, "KRW": true, "PYG": true, "RWF": true,
+	"UGX": true, "VND": true, "VUV": true, "XAF": true, "XOF": true, "XPF": true,
+}
+
+// formatAmount renders a Stripe invoice amount for a receipt. Stripe reports
+// zero-decimal currencies (ISK, JPY, …) in whole units, so those are shown as
+// integers with an Icelandic thousands separator ("2.900"); everything else is
+// two-decimal minor units divided by 100 ("29.00").
 func formatAmount(amountMinor int64, currency string) (string, string) {
 	ccy := strings.ToUpper(strings.TrimSpace(currency))
 	if ccy == "" {
 		ccy = "USD"
 	}
+	if zeroDecimalCurrencies[ccy] {
+		return groupThousands(amountMinor), ccy
+	}
 	return fmt.Sprintf("%.2f", float64(amountMinor)/100), ccy
+}
+
+// groupThousands formats a whole amount with "." as the thousands separator, the
+// Icelandic grouping convention (2900 -> "2.900").
+func groupThousands(amount int64) string {
+	negative := amount < 0
+	if negative {
+		amount = -amount
+	}
+	digits := fmt.Sprintf("%d", amount)
+	var b strings.Builder
+	for i, r := range digits {
+		if i > 0 && (len(digits)-i)%3 == 0 {
+			b.WriteByte('.')
+		}
+		b.WriteRune(r)
+	}
+	if negative {
+		return "-" + b.String()
+	}
+	return b.String()
 }
 
 func claimWorkspaceByEmail(ctx context.Context, tx pgx.Tx, workspaceID string, emailAddress string) error {

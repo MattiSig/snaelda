@@ -59,11 +59,12 @@ type RollbackResult struct {
 }
 
 type PublishedSiteResult struct {
-	SiteSlug string                `json:"siteSlug"`
-	Hostname string                `json:"hostname,omitempty"`
-	Version  VersionSummary        `json:"version"`
-	PagePath string                `json:"pagePath"`
-	Page     PublishedPageArtifact `json:"page"`
+	SiteSlug      string                `json:"siteSlug"`
+	Hostname      string                `json:"hostname,omitempty"`
+	DefaultLocale string                `json:"defaultLocale,omitempty"`
+	Version       VersionSummary        `json:"version"`
+	PagePath      string                `json:"pagePath"`
+	Page          PublishedPageArtifact `json:"page"`
 }
 
 type PublishedPageArtifact struct {
@@ -75,6 +76,10 @@ type PublishedPageArtifact struct {
 	OGImageURL          string         `json:"ogImageUrl,omitempty"`
 	LocalBusinessJSONLD map[string]any `json:"localBusinessJsonLd,omitempty"`
 	HTML                string         `json:"html"`
+	// DefaultLocale carries the published site's content locale through the
+	// page cache so the API response can drive `<html lang>`/`og:locale`; it is
+	// promoted to PublishedSiteResult.DefaultLocale and not serialized here.
+	DefaultLocale string `json:"-"`
 }
 
 type PublishedArtifactResult struct {
@@ -587,6 +592,7 @@ func (s *Service) resolvePublishedSiteResult(ctx context.Context, lookup publish
 	normalizedPath := normalizePublishedPagePath(pagePath)
 	if page, ok := s.loadCachedPage(lookup.Version.SiteID, lookup.Version.ID, normalizedPath); ok {
 		result.PagePath = normalizedPath
+		result.DefaultLocale = page.DefaultLocale
 		result.Page = page
 		return result, nil
 	}
@@ -596,6 +602,7 @@ func (s *Service) resolvePublishedSiteResult(ctx context.Context, lookup publish
 		return PublishedSiteResult{}, err
 	}
 	result.PagePath = normalizedPath
+	result.DefaultLocale = page.DefaultLocale
 	result.Page = page
 	s.storeCachedPage(lookup.Version.SiteID, lookup.Version.ID, normalizedPath, page)
 	return result, nil
@@ -984,6 +991,7 @@ func (s *Service) loadPublishedArtifactPage(ctx context.Context, lookup publishe
 		OGImageURL:          manifestPage.OGImageURL,
 		LocalBusinessJSONLD: manifestPage.LocalBusinessJSONLD,
 		HTML:                pageFile.Body,
+		DefaultLocale:       firstNonEmpty(manifest.DefaultLocale, "en"),
 	}, nil
 }
 

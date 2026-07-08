@@ -780,6 +780,50 @@ func TestLoadPublishedSiteBySlugResolvesRequestedPage(t *testing.T) {
 	if result.Page.Title != "Contact | Nordic Studio" {
 		t.Fatalf("expected contact page, got %#v", result.Page)
 	}
+	if result.DefaultLocale != "en" {
+		t.Fatalf("expected manifest without locale to default to en, got %q", result.DefaultLocale)
+	}
+}
+
+func TestLoadPublishedSiteBySlugCarriesIcelandicLocale(t *testing.T) {
+	store := newFakePublishingStore()
+	store.artifactFiles = buildFakePublishedArtifacts(
+		store.publishedSiteSlug,
+		store.publishedHostname,
+		store.publishedVersion,
+	)
+	manifest := ArtifactManifest{
+		SchemaVersion: "published_artifacts.v1",
+		SiteSlug:      store.publishedSiteSlug,
+		Hostname:      store.publishedHostname,
+		DefaultLocale: "is",
+		Version:       store.publishedVersion,
+		Pages: []ArtifactManifestPage{{
+			PagePath:     "/",
+			FilePath:     "pages/index.html",
+			Title:        "Norðurljós Stúdíó",
+			Description:  "Hlýlegar vefsíður fyrir lítil fyrirtæki.",
+			CanonicalURL: "http://nordic-studio.localhost:3000/",
+		}},
+	}
+	manifestJSON, _ := json.Marshal(manifest)
+	store.artifactFiles["manifest.json"] = ArtifactFile{
+		Path:        "manifest.json",
+		ContentType: "application/json; charset=utf-8",
+		Body:        string(manifestJSON),
+	}
+	service := Service{db: store, store: store}
+
+	result, err := service.LoadPublishedSiteBySlug(context.Background(), "nordic-studio", "/")
+	if err != nil {
+		t.Fatalf("load published site: %v", err)
+	}
+	if result.DefaultLocale != "is" {
+		t.Fatalf("expected result locale is, got %q", result.DefaultLocale)
+	}
+	if result.Page.DefaultLocale != "is" {
+		t.Fatalf("expected page locale is, got %q", result.Page.DefaultLocale)
+	}
 }
 
 func TestLoadPublishedSiteBySlugRejectsUnknownPagePath(t *testing.T) {

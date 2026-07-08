@@ -175,6 +175,75 @@ func TestSubmitRejectsInvalidPayload(t *testing.T) {
 	}
 }
 
+func TestSubmitReturnsIcelandicSuccessMessageForIcelandicSite(t *testing.T) {
+	store := newFakeFormStore()
+	snapshot := publishedContactSnapshot()
+	snapshot.Site.DefaultLocale = "is"
+	store.siteSnapshots["site-1"] = snapshot
+	service := NewService(store)
+
+	result, err := service.Submit(context.Background(), SubmitInput{
+		SiteID:  "site-1",
+		BlockID: "block-contact",
+		Payload: map[string]any{
+			"name":    "Ada Lovelace",
+			"email":   "ada@example.com",
+			"message": "Langar í rólegri vefsíðu fyrir stúdíóið.",
+		},
+	})
+	if err != nil {
+		t.Fatalf("submit form: %v", err)
+	}
+	if got := result.SuccessMessage; got != "Takk fyrir. Skilaboðin þín eru á leiðinni." {
+		t.Fatalf("expected Icelandic success message, got %q", got)
+	}
+}
+
+func TestSubmitReturnsIcelandicValidationMessages(t *testing.T) {
+	store := newFakeFormStore()
+	snapshot := publishedContactSnapshot()
+	snapshot.Site.DefaultLocale = "is-IS"
+	store.siteSnapshots["site-1"] = snapshot
+	service := NewService(store)
+
+	_, err := service.Submit(context.Background(), SubmitInput{
+		SiteID:  "site-1",
+		BlockID: "block-contact",
+		Payload: map[string]any{
+			"name":  "Ada Lovelace",
+			"email": "not-an-email",
+		},
+	})
+
+	var validationErr siteconfig.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected validation error, got %v", err)
+	}
+	if !validationErr.Has("invalid_email") || !validationErr.Has("required") {
+		t.Fatalf("expected invalid email and missing required issues, got %#v", validationErr.Issues)
+	}
+	for _, issue := range validationErr.Issues {
+		if strings.Contains(issue.Message, "must be") || strings.Contains(issue.Message, "is required") {
+			t.Fatalf("expected Icelandic validation message, got English %q", issue.Message)
+		}
+	}
+	if !hasIssueMessage(validationErr.Issues, "„Email“ verður að vera gilt netfang.") {
+		t.Fatalf("expected Icelandic invalid-email message, got %#v", validationErr.Issues)
+	}
+	if !hasIssueMessage(validationErr.Issues, "Vinsamlegast fylltu út „Message“.") {
+		t.Fatalf("expected Icelandic required message, got %#v", validationErr.Issues)
+	}
+}
+
+func hasIssueMessage(issues []siteconfig.Issue, message string) bool {
+	for _, issue := range issues {
+		if issue.Message == message {
+			return true
+		}
+	}
+	return false
+}
+
 func TestSubmitForwardsCleanSubmissionToNotificationEmail(t *testing.T) {
 	store := newFakeFormStore()
 	store.siteSnapshots["site-1"] = publishedContactSnapshotWithNotification("owner@example.com")

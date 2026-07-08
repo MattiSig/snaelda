@@ -219,7 +219,7 @@ func TestGenerateReturnsPlanLimitExceeded(t *testing.T) {
 		billingDB: billingAccessStoreStub{
 			entitlement: billing.Entitlement{
 				WorkspaceID:        "workspace-1",
-				Plan:               "basic",
+				Plan:               "site",
 				Status:             "active",
 				SubscriptionLive:   true,
 				MonthlyPromptLimit: intPtr(1),

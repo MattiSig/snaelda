@@ -212,8 +212,8 @@ function AppLayout() {
 
   const displayName =
     session.user?.name || session.user?.email || (session.kind === 'trial' ? 'Trial workspace' : 'Snaelda')
-  const currentPlan = billingState?.entitlement.plan || (session.subscriptionLive ? 'basic' : 'trial')
-  const planBadgeLabel = currentPlan === 'pro' ? 'Pro' : currentPlan === 'basic' ? 'Basic' : 'Trial'
+  const currentPlan = billingState?.entitlement.plan || (session.subscriptionLive ? 'site' : 'trial')
+  const planBadgeLabel = currentPlan === 'pro' ? 'Pro' : currentPlan === 'site' ? 'Site' : 'Trial'
   const visibleSiteName = siteId ? currentSiteName : ''
   const initials = displayName
     .split(/\s+/)

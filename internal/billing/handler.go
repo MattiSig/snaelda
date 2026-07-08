@@ -16,7 +16,7 @@ type HandlerConfig struct {
 	AppBaseURL             string
 	StripeSecretKey        string
 	StripeWebhookSecret    string
-	BasicPriceID           string
+	SitePriceID            string
 	ProPriceID             string
 	OnceOverPriceID        string
 	BillingSuccessURL      string
@@ -39,7 +39,7 @@ func NewHandler(store DB, cfg HandlerConfig) *Handler {
 			CancelURL:       cfg.BillingCancelURL,
 			PortalReturnURL: cfg.BillingPortalReturnURL,
 			AppBaseURL:      cfg.AppBaseURL,
-			BasicPriceID:    cfg.BasicPriceID,
+			SitePriceID:     cfg.SitePriceID,
 			ProPriceID:      cfg.ProPriceID,
 			OnceOverPriceID: cfg.OnceOverPriceID,
 			ProductName:     cfg.ProductName,

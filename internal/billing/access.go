@@ -82,7 +82,7 @@ func LoadWorkspaceState(ctx context.Context, store AccessStore, workspaceID stri
 		Entitlement: entitlement,
 		Usage:       usage,
 		OnceOver:    onceOver,
-		Catalog:     NewCatalog("", "").Response(),
+		Catalog:     NewCatalog(nil, nil, nil).Response(),
 	}, nil
 }
 
