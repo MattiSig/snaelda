@@ -449,6 +449,6 @@ func humanPromptPlanName(plan string) string {
 	case "pro":
 		return "Pro"
 	default:
-		return "Basic"
+		return "Site"
 	}
 }

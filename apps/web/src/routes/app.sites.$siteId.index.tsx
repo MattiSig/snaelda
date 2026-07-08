@@ -611,7 +611,7 @@ function SiteDetail() {
   async function handleStartUpgrade() {
     setIsStartingUpgrade(true);
     try {
-      const response = await createBillingCheckout({ plan: "basic" });
+      const response = await createBillingCheckout({ plan: "site" });
       window.location.href = response.url;
     } catch (error) {
       setBlockedActionMessage(
@@ -2098,8 +2098,8 @@ function SiteDetail() {
   const billingPlanLabel =
     billingState?.entitlement.plan === "pro"
       ? "Pro"
-      : billingState?.entitlement.plan === "basic"
-        ? "Basic"
+      : billingState?.entitlement.plan === "site"
+        ? "Site"
         : "Trial";
   const uploadedSiteAssets = siteAssets.filter(
     (asset) => asset.metadata.uploadStatus === "uploaded",

@@ -14,7 +14,7 @@ func TestEnforceCollectionLimitBlocksAtPlanCap(t *testing.T) {
 	store := accessStoreStub{
 		entitlement: Entitlement{
 			WorkspaceID:          "workspace-1",
-			Plan:                 planBasic,
+			Plan:                 planSite,
 			Status:               "active",
 			SubscriptionLive:     true,
 			CollectionLimit:      intPtr(5),

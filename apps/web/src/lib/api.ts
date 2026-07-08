@@ -545,9 +545,11 @@ export type BillingEntitlement = {
 };
 
 export type BillingPlan = {
-  id: 'basic' | 'pro';
+  id: 'site' | 'pro';
   name: string;
-  monthlyPriceUsd: number;
+  // Monthly price keyed by ISO-4217 currency code, in that currency's display
+  // unit (ISK is zero-decimal). Phase 0 carries ISK only.
+  prices: Record<string, number>;
   activeSiteLimit: number;
   monthlyPromptLimit: number;
   assetStorageLimitBytes: number;
@@ -559,7 +561,7 @@ export type BillingPlan = {
 
 export type BillingCatalog = {
   plans: BillingPlan[];
-  onceOverPriceUsd: number;
+  onceOverPrices: Record<string, number>;
 };
 
 export type BillingUsage = {
@@ -1018,7 +1020,7 @@ export async function getBillingState() {
 }
 
 export async function createBillingCheckout(input: {
-  plan?: "basic" | "pro";
+  plan?: "site" | "pro";
   purchaseType?: "subscription" | "once_over";
   email?: string;
 }) {

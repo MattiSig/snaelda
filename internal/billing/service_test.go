@@ -33,12 +33,12 @@ func TestCreateCheckoutSessionPersistsCustomerMapping(t *testing.T) {
 		SuccessURL:      "https://app.test/success",
 		CancelURL:       "https://app.test/cancel",
 		PortalReturnURL: "https://app.test/billing",
-		BasicPriceID:    "price_basic",
+		SitePriceID:     "price_site",
 	})
 
 	url, err := service.CreateCheckoutSession(context.Background(), CheckoutInput{
 		Session: authSession("workspace-1"),
-		Plan:    "basic",
+		Plan:    "site",
 	})
 	if err != nil {
 		t.Fatalf("create checkout session: %v", err)
@@ -49,8 +49,8 @@ func TestCreateCheckoutSessionPersistsCustomerMapping(t *testing.T) {
 	if store.customersByWorkspace["workspace-1"].customerID != "cus_123" {
 		t.Fatalf("expected persisted customer mapping, got %+v", store.customersByWorkspace["workspace-1"])
 	}
-	if stripe.lastCheckout.PriceID != "price_basic" {
-		t.Fatalf("expected basic price id, got %q", stripe.lastCheckout.PriceID)
+	if stripe.lastCheckout.PriceID != "price_site" {
+		t.Fatalf("expected site price id, got %q", stripe.lastCheckout.PriceID)
 	}
 }
 
@@ -104,11 +104,11 @@ func TestHandleWebhookUpdatesEntitlements(t *testing.T) {
 	store.workspaceByCustomer["cus_123"] = "workspace-1"
 
 	service := NewService(store, ServiceConfig{
-		Stripe:          &fakeStripeClient{event: WebhookEvent{ID: "evt_1", Type: "customer.subscription.updated", Subscription: SubscriptionEventData{WorkspaceID: "workspace-1", SubscriptionID: "sub_123", CustomerID: "cus_123", Status: "active", Plan: "basic", PriceID: "price_pro"}}},
+		Stripe:          &fakeStripeClient{event: WebhookEvent{ID: "evt_1", Type: "customer.subscription.updated", Subscription: SubscriptionEventData{WorkspaceID: "workspace-1", SubscriptionID: "sub_123", CustomerID: "cus_123", Status: "active", Plan: "site", PriceID: "price_pro"}}},
 		SuccessURL:      "https://app.test/success",
 		CancelURL:       "https://app.test/cancel",
 		PortalReturnURL: "https://app.test/billing",
-		BasicPriceID:    "price_basic",
+		SitePriceID:     "price_site",
 		ProPriceID:      "price_pro",
 	})
 
@@ -165,13 +165,13 @@ func TestHandleWebhookSendsBillingReceipt(t *testing.T) {
 				AmountPaid:       2000,
 				Currency:         "usd",
 				HostedInvoiceURL: "https://stripe.test/invoices/inv_123",
-				Plan:             "basic",
+				Plan:             "site",
 			},
 		}},
 		SuccessURL:      "https://app.test/success",
 		CancelURL:       "https://app.test/cancel",
 		PortalReturnURL: "https://app.test/billing",
-		BasicPriceID:    "price_basic",
+		SitePriceID:     "price_site",
 		EmailSender: email.Sender{
 			Mailer:      mailer,
 			DefaultFrom: email.Address{Email: "hi@snaelda.app", Name: "Snaelda"},

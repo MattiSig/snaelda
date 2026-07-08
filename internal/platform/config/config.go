@@ -22,9 +22,9 @@ type Config struct {
 	OperatorEmails             []string
 	StripeSecretKey            string
 	StripeWebhookSecret        string
-	StripePriceBasic           string
-	StripePricePro             string
-	StripePriceOnceOver        string
+	StripePriceSiteISK         string
+	StripePriceProISK          string
+	StripePriceOnceOverISK     string
 	BillingSuccessURL          string
 	BillingCancelURL           string
 	BillingPortalReturnURL     string
@@ -94,9 +94,9 @@ func Load() (Config, error) {
 		OperatorEmails:             parseCSV(env.lookup("OPERATOR_EMAILS")),
 		StripeSecretKey:            strings.TrimSpace(env.lookup("STRIPE_SECRET_KEY")),
 		StripeWebhookSecret:        strings.TrimSpace(env.lookup("STRIPE_WEBHOOK_SECRET")),
-		StripePriceBasic:           strings.TrimSpace(env.lookup("STRIPE_PRICE_BASIC")),
-		StripePricePro:             strings.TrimSpace(env.lookup("STRIPE_PRICE_PRO")),
-		StripePriceOnceOver:        strings.TrimSpace(env.lookup("STRIPE_PRICE_ONCE_OVER")),
+		StripePriceSiteISK:         strings.TrimSpace(env.lookup("STRIPE_PRICE_SITE_ISK")),
+		StripePriceProISK:          strings.TrimSpace(env.lookup("STRIPE_PRICE_PRO_ISK")),
+		StripePriceOnceOverISK:     strings.TrimSpace(env.lookup("STRIPE_PRICE_ONCE_OVER_ISK")),
 		BillingSuccessURL:          strings.TrimSpace(env.get("BILLING_SUCCESS_URL", "http://localhost:3000/app/billing/success")),
 		BillingCancelURL:           strings.TrimSpace(env.get("BILLING_CANCEL_URL", "http://localhost:3000/app/billing/cancel")),
 		BillingPortalReturnURL:     strings.TrimSpace(env.get("BILLING_PORTAL_RETURN_URL", "http://localhost:3000/app/billing")),
@@ -188,14 +188,14 @@ func Load() (Config, error) {
 	if cfg.PublishedArtifactsBackend == "s3" && cfg.PublishedArtifactsS3Bucket == "" {
 		return Config{}, fmt.Errorf("PUBLISHED_ARTIFACTS_S3_BUCKET (or S3_BUCKET) is required when PUBLISHED_ARTIFACTS_BACKEND=s3")
 	}
-	if (cfg.StripeSecretKey != "" || cfg.StripeWebhookSecret != "" || cfg.StripePriceBasic != "" || cfg.StripePricePro != "" || cfg.StripePriceOnceOver != "") &&
+	if (cfg.StripeSecretKey != "" || cfg.StripeWebhookSecret != "" || cfg.StripePriceSiteISK != "" || cfg.StripePriceProISK != "" || cfg.StripePriceOnceOverISK != "") &&
 		(cfg.BillingSuccessURL == "" || cfg.BillingCancelURL == "" || cfg.BillingPortalReturnURL == "") {
 		return Config{}, fmt.Errorf("billing urls are required when Stripe billing is configured")
 	}
 	if cfg.StripeWebhookSecret != "" && cfg.StripeSecretKey == "" {
 		return Config{}, fmt.Errorf("STRIPE_SECRET_KEY is required when STRIPE_WEBHOOK_SECRET is set")
 	}
-	if cfg.StripeSecretKey != "" && cfg.StripePriceBasic == "" && cfg.StripePricePro == "" && cfg.StripePriceOnceOver == "" {
+	if cfg.StripeSecretKey != "" && cfg.StripePriceSiteISK == "" && cfg.StripePriceProISK == "" && cfg.StripePriceOnceOverISK == "" {
 		return Config{}, fmt.Errorf("at least one Stripe price id is required when STRIPE_SECRET_KEY is set")
 	}
 	switch cfg.EmailTransport {
@@ -239,11 +239,11 @@ func Load() (Config, error) {
 		if cfg.StripeWebhookSecret == "" {
 			return Config{}, fmt.Errorf("STRIPE_WEBHOOK_SECRET is required in production")
 		}
-		if cfg.StripePriceBasic == "" {
-			return Config{}, fmt.Errorf("STRIPE_PRICE_BASIC is required in production")
+		if cfg.StripePriceSiteISK == "" {
+			return Config{}, fmt.Errorf("STRIPE_PRICE_SITE_ISK is required in production")
 		}
-		if cfg.StripePricePro == "" {
-			return Config{}, fmt.Errorf("STRIPE_PRICE_PRO is required in production")
+		if cfg.StripePriceProISK == "" {
+			return Config{}, fmt.Errorf("STRIPE_PRICE_PRO_ISK is required in production")
 		}
 		if cfg.EmailTransport != "resend" {
 			return Config{}, fmt.Errorf("EMAIL_TRANSPORT must be resend in production")
