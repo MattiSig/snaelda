@@ -258,12 +258,12 @@ function AppLayout() {
               </Link>
               {session.isOperator ? (
                 <Link
-                  to="/app/admin/once-over"
+                  to="/app/admin"
                   className="inline-flex min-h-10 items-center gap-2 rounded-full px-3 py-2 text-sm font-bold text-[var(--paper-muted)] transition-[background,color] hover:bg-[var(--surface-2)] hover:text-[var(--paper)]"
                   activeProps={{ className: 'bg-[var(--surface-2)] text-[var(--paper)]' }}
                 >
                   <ShieldCheck className="size-4" />
-                  Once-over queue
+                  Control room
                 </Link>
               ) : null}
             </nav>
