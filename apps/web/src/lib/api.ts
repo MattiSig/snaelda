@@ -1078,6 +1078,72 @@ export async function deliverOnceOver(
   );
 }
 
+export type AdminOverview = {
+  generationJobs: {
+    last24Hours: number;
+    previous24Hours: number;
+    last7Days: number;
+    total: number;
+    byStatusLast24Hours: Record<string, number>;
+  };
+  sites: {
+    total: number;
+    published: number;
+    last24Hours: number;
+    last7Days: number;
+  };
+  users: {
+    total: number;
+    last7Days: number;
+  };
+  publishes: {
+    last24Hours: number;
+    last7Days: number;
+  };
+  forms: {
+    last24Hours: number;
+  };
+  generatedAt: string;
+};
+
+export type AdminGenerationJob = {
+  id: string;
+  status: string;
+  prompt: string;
+  siteId?: string;
+  siteName?: string;
+  workspaceName?: string;
+  createdByEmail?: string;
+  hasError: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AdminSite = {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  published: boolean;
+  workspaceName?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function getAdminOverview() {
+  return apiFetch<{ overview: AdminOverview }>("/api/admin/overview");
+}
+
+export async function listAdminGenerationJobs(limit = 20) {
+  return apiFetch<{ jobs: AdminGenerationJob[] }>(
+    `/api/admin/generation-jobs?limit=${limit}`,
+  );
+}
+
+export async function listAdminSites(limit = 20) {
+  return apiFetch<{ sites: AdminSite[] }>(`/api/admin/sites?limit=${limit}`);
+}
+
 export async function refreshAuthSession() {
   return apiFetch<AuthSession>(
     "/api/auth/refresh",

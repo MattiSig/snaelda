@@ -24,6 +24,7 @@ import { Route as PreviewTokenRouteImport } from './routes/preview.$token'
 import { Route as AppBillingRouteImport } from './routes/app.billing'
 import { Route as PublicSiteSlugIndexRouteImport } from './routes/public.$siteSlug.index'
 import { Route as AppBillingIndexRouteImport } from './routes/app.billing.index'
+import { Route as AppAdminIndexRouteImport } from './routes/app.admin.index'
 import { Route as PublicSiteSlugSitemapDotxmlRouteImport } from './routes/public.$siteSlug.sitemap[.]xml'
 import { Route as PublicSiteSlugRobotsDottxtRouteImport } from './routes/public.$siteSlug.robots[.]txt'
 import { Route as PublicSiteSlugSplatRouteImport } from './routes/public.$siteSlug.$'
@@ -111,6 +112,11 @@ const AppBillingIndexRoute = AppBillingIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppBillingRoute,
 } as any)
+const AppAdminIndexRoute = AppAdminIndexRouteImport.update({
+  id: '/admin/',
+  path: '/admin/',
+  getParentRoute: () => AppRoute,
+} as any)
 const PublicSiteSlugSitemapDotxmlRoute =
   PublicSiteSlugSitemapDotxmlRouteImport.update({
     id: '/sitemap.xml',
@@ -191,6 +197,7 @@ export interface FileRoutesByFullPath {
   '/public/$siteSlug/$': typeof PublicSiteSlugSplatRoute
   '/public/$siteSlug/robots.txt': typeof PublicSiteSlugRobotsDottxtRoute
   '/public/$siteSlug/sitemap.xml': typeof PublicSiteSlugSitemapDotxmlRoute
+  '/app/admin/': typeof AppAdminIndexRoute
   '/app/billing/': typeof AppBillingIndexRoute
   '/public/$siteSlug/': typeof PublicSiteSlugIndexRoute
   '/app/sites/$siteId/analytics': typeof AppSitesSiteIdAnalyticsRoute
@@ -215,6 +222,7 @@ export interface FileRoutesByTo {
   '/public/$siteSlug/$': typeof PublicSiteSlugSplatRoute
   '/public/$siteSlug/robots.txt': typeof PublicSiteSlugRobotsDottxtRoute
   '/public/$siteSlug/sitemap.xml': typeof PublicSiteSlugSitemapDotxmlRoute
+  '/app/admin': typeof AppAdminIndexRoute
   '/app/billing': typeof AppBillingIndexRoute
   '/public/$siteSlug': typeof PublicSiteSlugIndexRoute
   '/app/sites/$siteId/analytics': typeof AppSitesSiteIdAnalyticsRoute
@@ -244,6 +252,7 @@ export interface FileRoutesById {
   '/public/$siteSlug/$': typeof PublicSiteSlugSplatRoute
   '/public/$siteSlug/robots.txt': typeof PublicSiteSlugRobotsDottxtRoute
   '/public/$siteSlug/sitemap.xml': typeof PublicSiteSlugSitemapDotxmlRoute
+  '/app/admin/': typeof AppAdminIndexRoute
   '/app/billing/': typeof AppBillingIndexRoute
   '/public/$siteSlug/': typeof PublicSiteSlugIndexRoute
   '/app/sites/$siteId/analytics': typeof AppSitesSiteIdAnalyticsRoute
@@ -274,6 +283,7 @@ export interface FileRouteTypes {
     | '/public/$siteSlug/$'
     | '/public/$siteSlug/robots.txt'
     | '/public/$siteSlug/sitemap.xml'
+    | '/app/admin/'
     | '/app/billing/'
     | '/public/$siteSlug/'
     | '/app/sites/$siteId/analytics'
@@ -298,6 +308,7 @@ export interface FileRouteTypes {
     | '/public/$siteSlug/$'
     | '/public/$siteSlug/robots.txt'
     | '/public/$siteSlug/sitemap.xml'
+    | '/app/admin'
     | '/app/billing'
     | '/public/$siteSlug'
     | '/app/sites/$siteId/analytics'
@@ -326,6 +337,7 @@ export interface FileRouteTypes {
     | '/public/$siteSlug/$'
     | '/public/$siteSlug/robots.txt'
     | '/public/$siteSlug/sitemap.xml'
+    | '/app/admin/'
     | '/app/billing/'
     | '/public/$siteSlug/'
     | '/app/sites/$siteId/analytics'
@@ -455,6 +467,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppBillingIndexRouteImport
       parentRoute: typeof AppBillingRoute
     }
+    '/app/admin/': {
+      id: '/app/admin/'
+      path: '/admin'
+      fullPath: '/app/admin/'
+      preLoaderRoute: typeof AppAdminIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/public/$siteSlug/sitemap.xml': {
       id: '/public/$siteSlug/sitemap.xml'
       path: '/sitemap.xml'
@@ -574,6 +593,7 @@ interface AppRouteChildren {
   AppIndexRoute: typeof AppIndexRoute
   AppAdminOnceOverRoute: typeof AppAdminOnceOverRoute
   AppSitesSiteIdRoute: typeof AppSitesSiteIdRouteWithChildren
+  AppAdminIndexRoute: typeof AppAdminIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -581,6 +601,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppIndexRoute: AppIndexRoute,
   AppAdminOnceOverRoute: AppAdminOnceOverRoute,
   AppSitesSiteIdRoute: AppSitesSiteIdRouteWithChildren,
+  AppAdminIndexRoute: AppAdminIndexRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MattiSig/snaelda/internal/admin"
 	"github.com/MattiSig/snaelda/internal/analytics"
 	"github.com/MattiSig/snaelda/internal/assets"
 	"github.com/MattiSig/snaelda/internal/auth"
@@ -336,6 +337,9 @@ func (s *Server) BuildHandler() (http.Handler, error) {
 		}).Mount(mux, s.auth.RequireSession)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, billing.Module{})
+	}
+	if store, ok := s.database.(admin.DB); ok {
+		admin.NewHandler(store).Mount(mux, s.auth.RequireSession)
 	}
 
 	return s.cors(s.recover(s.logRequests(s.securityHeaders(s.noCache(s.csrf(mux)))))), nil
