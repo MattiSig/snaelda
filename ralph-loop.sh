@@ -19,7 +19,14 @@ else
   CODEX_CMD_ARR=("${CODEX_CMD_DEFAULT[@]}")
 fi
 
-CLAUDE_MODEL="${CLAUDE_MODEL:-claude-opus-4-7}"
+# Claude model is picked interactively unless CLAUDE_MODEL is set.
+# Override the picker list with RALPH_CLAUDE_MODELS (space-separated model ids).
+CLAUDE_MODELS_DEFAULT=("claude-fable-5" "claude-opus-4-8" "claude-sonnet-4-6" "claude-haiku-4-5-20251001")
+if [[ -n "${RALPH_CLAUDE_MODELS:-}" ]]; then
+  read -r -a CLAUDE_MODELS <<< "$RALPH_CLAUDE_MODELS"
+else
+  CLAUDE_MODELS=("${CLAUDE_MODELS_DEFAULT[@]}")
+fi
 CLAUDE_EXEC_MODE_ARGS_DEFAULT=("--dangerously-skip-permissions" "--verbose" "--output-format" "stream-json")
 if [[ -n "${RALPH_CLAUDE_EXEC_MODE_ARGS:-}" ]]; then
   read -r -a CLAUDE_EXEC_MODE_ARGS <<< "$RALPH_CLAUDE_EXEC_MODE_ARGS"
@@ -60,6 +67,17 @@ case "$agent" in
     exit 1
     ;;
 esac
+
+if [[ "$agent" == "claude" && -z "${CLAUDE_MODEL:-}" ]]; then
+  CLAUDE_MODEL="$(
+    printf "%s\n" "${CLAUDE_MODELS[@]}" \
+      | fzf --prompt="Claude model> " --height=40% --reverse --border --select-1 --exit-0
+  )"
+  if [[ -z "$CLAUDE_MODEL" ]]; then
+    echo "No Claude model selected." >&2
+    exit 1
+  fi
+fi
 
 shopt -s nullglob
 md_files=("$ROOT_DIR"/*.md)
