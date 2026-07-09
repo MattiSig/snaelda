@@ -15,7 +15,9 @@ Users start with a prompt, for example:
 
 > Create a modern landing page for my local photography studio with a gallery, pricing, contact form, and booking CTA.
 
-The system converts that prompt into a structured website configuration composed of reusable building blocks. Users can then preview the generated draft, edit block content and theme settings, manage pages and navigation, and publish the website.
+Users can also start from an existing website URL: the re-spin flow ([Spec 21](./21-respin-url-import.md)) extracts the business's content and brand from the old site and feeds the same generation contract as the prompt flow.
+
+The system converts that input into a structured website configuration composed of reusable building blocks. Users can then preview the generated draft, edit block content and theme settings, manage pages and navigation, and publish the website.
 
 ## Architecture Constraint
 
@@ -26,6 +28,8 @@ The MVP does not generate arbitrary custom code per website. Instead, it generat
 - Guest authoring from the homepage prompt without signup, with a small free-prompt budget and a claim-on-signup flow, per [Spec 17](./17-guest-authoring-and-claim.md)
 - User account and workspace/team model
 - Website creation from prompt
+- Website creation from an existing site URL (re-spin), including the public no-signup before/after demo, per [Spec 21](./21-respin-url-import.md)
+- Per-site locale (`is`/`en`, with `sv` reserved) with natively localized generated content, per [Spec 22](./22-localization.md)
 - Up to 10 editor-visible pages per website (static pages plus collection templates; URLs produced by collection templates are gated separately by plan entitlements — see [Spec 19](./19-collections-and-content-types.md))
 - Block-based page composition
 - Approximately 14 core block types
@@ -49,7 +53,7 @@ Basic custom domain mapping is planned, but it does not need to be fully built i
 - Full drag-and-drop layout freedom
 - Marketplace of third-party blocks
 - E-commerce checkout inside generated customer websites
-- Multi-language sites
+- Multi-locale sites (one site serving several languages at once). Single-locale sites in Icelandic, Swedish, or English are in scope per [Spec 22](./22-localization.md)
 - Advanced permissions
 - Full visual design editor comparable to Webflow
 - Per-customer generated frontend apps

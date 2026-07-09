@@ -26,6 +26,25 @@ Possible early entitlements:
 - asset storage allowance
 - team seat count when team support is added
 
+## Plans and Pricing
+
+Two subscription tiers plus one one-time add-on, per the go-to-market strategy ([docs/nordic-gtm-strategy.md](../docs/nordic-gtm-strategy.md)):
+
+| Tier | ISK | SEK (reserved) | USD (internal reference only) | Contents |
+|---|---|---|---|---|
+| **Site** | 2.900/mo | 199/mo | $19/mo | Builder, re-spin, AI content/images, forms, custom domain, hosting; 1 active site |
+| **Pro** | 6.900/mo | 499/mo | $49/mo | + multiple active sites, larger generation allowance; CRM-lite and prospect export reserved for the ops layer |
+| **Once-over from the maker** | 13.900 once | 999 once | $99 once | One-time add-on, see below |
+
+Pricing rules:
+
+- Customer-facing prices are always in local currency, never USD. USD amounts exist only as internal reference points.
+- Iceland launches first: ISK prices ship with the beachhead; SEK prices are configured when the Sweden phase starts.
+- ISK is a zero-decimal currency in Stripe: 2.900 ISK is the amount `2900` with no minor units.
+- Each tier has one Stripe Price per currency (see Configuration). Currency selection follows the workspace's market/locale ([Spec 22](./22-localization.md)); a workspace's currency does not change after the first purchase.
+- Pro is an upsell, not a launch headline: the Site tier is the default checkout path.
+- Multi-site support is Pro-gated via the existing active-site-count entitlement (Site = 1).
+
 ## Trial Vs Paid
 
 Every workspace begins in a trial state defined by [Spec 17](./17-guest-authoring-and-claim.md):
@@ -49,7 +68,7 @@ Cancellation drops the workspace back into a trial-equivalent state with the pre
 
 Some offerings are sold as one-time charges rather than recurring entitlements. They use the same Stripe customer and the same Checkout surface, but are billed in `mode=payment` and produce no subscription record.
 
-The first such add-on is the **Once-over from the maker**: a `$99` async review of the customer's first site, offered at Checkout. Operational details live in [docs/once-over-workflow.md](../docs/once-over-workflow.md); this spec only owns the billing contract.
+The first such add-on is the **Once-over from the maker** (customer-facing: "Creator once-over"): a one-time async review of the customer's first site, offered at Checkout for 13.900 ISK (999 SEK reserved; `$99` internal reference). Operational details live in [docs/once-over-workflow.md](../docs/once-over-workflow.md); this spec only owns the billing contract.
 
 Backend requirements for one-time add-ons:
 
@@ -103,7 +122,7 @@ Required environment variables should be added when Stripe is implemented:
 
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
-- `STRIPE_PRICE_*` or a structured plan configuration, including one-time add-on price IDs such as `STRIPE_PRICE_ONCE_OVER`
+- `STRIPE_PRICE_*` or a structured plan configuration, keyed per tier and currency (for example `STRIPE_PRICE_SITE_ISK`, `STRIPE_PRICE_PRO_ISK`, `STRIPE_PRICE_ONCE_OVER_ISK`, with `_SEK` variants reserved for the Sweden phase)
 - `BILLING_SUCCESS_URL`
 - `BILLING_CANCEL_URL`
 - `BILLING_PORTAL_RETURN_URL`

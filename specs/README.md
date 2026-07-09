@@ -26,6 +26,7 @@ What Snaelda is, who it's for, how the system is shaped, and the order capabilit
 | 01 | [Product Summary and MVP Scope](./01-product-summary-and-scope.md) | The product brief: target users, the in-scope MVP capabilities, and the explicit non-goals. |
 | 02 | [System Architecture](./02-system-architecture.md) | Component boundaries (Go API, TanStack web, Postgres, SeaweedFS) and how they fit together at runtime. |
 | 14 | [Versioning, User Flow, and Delivery Plan](./14-versioning-user-flow-and-delivery-plan.md) | The release milestones and the order in which user-facing capabilities reach customers. |
+| 22 | [Localization](./22-localization.md) | The Iceland-first locale model: generated-content language contract, rendered-site and product-UI localization, email locales, and local-currency display rules. |
 
 ### 2. Data Model
 
@@ -38,6 +39,7 @@ The website-as-data layer: entities, the block registry that generation and rend
 | 05 | [Site Configuration Model](./05-site-configuration-model.md) | The on-disk and in-memory shape of a site as structured data, never as generated code. |
 | 06 | [Database Design](./06-database-design.md) | The Postgres schema for every table the platform owns and how it lines up with the domain model. |
 | 19 | [Collections and Content Types](./19-collections-and-content-types.md) | Site-scoped typed collections, the field-type registry, collection-bound page templates, block bindings, and the AI maintenance actions that produce entries. |
+| 23 | [Vertical Block Sets and Parametric Range](./23-vertical-block-sets.md) | Per-vertical curation over the closed registry (block subsets, variant and theme ranges, starter collections) and the anti-sameness contract. |
 
 ### 3. Authoring Loop
 
@@ -50,6 +52,7 @@ Prompt → draft → edit → preview → publish. Everything the user touches i
 | 09 | [Preview, Publish, and Rendering](./09-preview-publish-and-rendering.md) | Draft → preview-token → immutable published version, plus the renderer pipeline. |
 | 11 | [Theme, Navigation, and Assets](./11-theme-navigation-and-assets.md) | Theme tokens, navigation as first-class data, and the asset library that feeds the renderer. |
 | 20 | [AI Authoring UX](./20-ai-authoring-ux.md) | Generation progress, reprompt history with diff, and AI-assist inside the editor. |
+| 21 | [Re-spin: URL Import and Public Before/After Demo](./21-respin-url-import.md) | The URL → extract → classify → rewrap pipeline, its security contract, the public no-signup before/after demo, and the claim-gated publish handoff. |
 
 ### 4. Platform & Runtime
 
@@ -91,9 +94,12 @@ The remaining specs cover editing, APIs, theming, security, deployment, runtime,
 
 Specs describe the product; the docs below describe how to operate it.
 
-- [Once-over from the Maker](../docs/once-over-workflow.md) — the operator playbook for the `$99` async site review add-on.
+- [Nordic Go-To-Market Strategy](../docs/nordic-gtm-strategy.md) — the adopted GTM playbook (Iceland beachhead → Sweden); the strategic source the newest specs (21–23) implement.
+- [Once-over from the Maker](../docs/once-over-workflow.md) — the operator playbook for the one-time site review add-on (13.900 ISK).
 - [Decisions](../docs/decisions/) — architecture decision records (ADRs).
 
 ## Spec Boundaries
 
 These documents describe the MVP. They intentionally avoid broad website-builder features such as arbitrary code injection, freeform layout systems, custom CSS/JS, marketplace blocks, and per-site generated frontend apps. New scope earns a new spec; we do not retrofit existing specs to cover capabilities they weren't written for.
+
+Known future specs the strategy defers until demand pulls them (do not pre-build): the ops layer (leads pipeline beyond CSV export, booking, Fortnox handoff), a WCAG 2.1 AA standard for rendered sites (required at component-design time, formalized before the Sweden phase), and a privacy/data-protection spec (GDPR posture, retention, the cookieless-rendered-sites design goal).

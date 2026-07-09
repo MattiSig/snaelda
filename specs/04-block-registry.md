@@ -4,6 +4,8 @@
 
 Start with a block set that covers most simple websites without introducing layout complexity.
 
+The registry is one flat, closed set. Curation of blocks, variants, and theme ranges into per-vertical sets (a salon set, a trades set, a café set) is a selection layer on top of this registry, owned by [Spec 23](./23-vertical-block-sets.md); it never adds block types or reopens the registry.
+
 ## Recommended MVP Block Types
 
 ### 1. Hero
@@ -160,7 +162,9 @@ Props:
   - `phone` — optional E.164-style string
   - `email` — optional
   - `hours` — optional structured `{ day, opens, closes, closed? }[]` covering each day of the week
+  - `businessId` — optional structured `{ type, value }` where `type` is `kennitala` (Iceland) or `orgnr` (Sweden, reserved); rendered as the local trust line small businesses are expected to show, and emitted into the LocalBusiness JSON-LD when present
 - showBrand — whether the footer renders `brand.businessName` and `brand.logo` (default true)
+- showMadeWith — whether the footer renders a small "Made with Snælda" link (default true, toggleable by the site owner)
 
 `businessName` and `logo` are not props on this block. They are resolved from site-level brand at render time (see [Spec 11](./11-theme-navigation-and-assets.md)), which keeps brand consistent across every page.
 

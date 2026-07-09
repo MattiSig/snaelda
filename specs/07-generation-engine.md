@@ -4,9 +4,12 @@
 
 The generation engine converts prompt input into a validated site draft plan. It must generate structured data, not arbitrary HTML.
 
+The prompt flow is one of two input adapters: re-spin ([Spec 21](./21-respin-url-import.md)) produces the same minimum-input shape from an existing website URL (extracted content becomes the prompt-equivalent source material, pulled brand assets pre-populate `brand`). Everything downstream of the input contract is shared.
+
 Recommended MVP model choice:
 
 - use `gpt-5-mini` for the main generation flow
+- the copy-producing stages may use a stronger model when the site locale is not English — natural Icelandic is a market wedge and the decomposed pipeline makes a per-stage model split cheap (see [Spec 22](./22-localization.md))
 - use structured outputs against the canonical draft schema
 - add retries or repair only after backend validation
 
@@ -32,6 +35,17 @@ Recommended MVP model choice:
 ```
 
 `brand` is a first-class input, not a hint. When any of `businessName`, `logo`, or `primaryColor` is provided up front, generation must use it verbatim and must not invent alternatives. When fields are absent, generation derives them from the prompt (`businessName` from extracted intent, `primaryColor` from style cues, `logo` left null pending user upload).
+
+## Output Language
+
+`preferredLanguage` is a contract, not a passthrough. Supported values are `en` and `is` (`sv` reserved for the Sweden phase); the value is persisted as `sites.default_locale` and governs every copy-producing stage:
+
+- page copy, headlines, body, FAQs, CTAs, and placeholder testimonials (Step 4)
+- collection entry seeding and AI maintenance actions
+- navigation labels, SEO titles and descriptions, and image alt text
+- change summaries and any other user-visible generated text
+
+Site, page, and entry slugs use ASCII transliteration of the site language (Icelandic: `þ→th`, `ð→d`, `æ→ae`, `ö→o`, and accented vowels to their base letters). Validation (Step 7) includes a language-conformance check so English never leaks into an Icelandic draft. The full localization contract — tone rules, locale resolution, rendered-output requirements — is owned by [Spec 22](./22-localization.md).
 
 ## Target Output
 

@@ -113,6 +113,10 @@ MVP templates required:
 
 Each template must produce both a text body and an HTML body. Text is not optional — it's both an accessibility floor and a deliverability signal.
 
+### Localization
+
+Templates are locale-keyed per [Spec 22](./22-localization.md): each template ships an `is` and an `en` variant (`sv` reserved for the Sweden phase), covering subject, text body, and HTML body. The helper layer takes a locale parameter (`SendMagicLink(ctx, user, locale)`); the source of truth is the workspace/user locale, falling back to `en`. Billing templates must format amounts in the workspace's billing currency — ISK renders with no decimal places ([Spec 15](./15-billing-and-stripe.md)). Tests assert per-locale rendering parity (every template renders in every supported locale with text/HTML pairs).
+
 ## Rate Limiting
 
 Per-address and per-IP rate limits use the same durable pattern as `form_submission_attempts` (Spec 12). One additional table:
@@ -182,4 +186,3 @@ No direct surface. The builder triggers sends via existing endpoints (login, cla
 - per-workspace custom from-addresses
 - email scheduling or queued send retries beyond a single in-process retry on `ErrProviderUnavailable`
 - transactional batching
-- localization of templates

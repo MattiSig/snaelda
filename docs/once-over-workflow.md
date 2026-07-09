@@ -1,6 +1,6 @@
 # Once-Over from the Maker
 
-A `$99` one-time, async review of a customer's first site, delivered as a Loom-style walkthrough plus a few in-builder edits. Offered as an optional add-on at Checkout. Bounded to ~30 minutes of work per job so the math holds at the 50-user cap.
+A one-time, async review of a customer's first site (customer-facing: "Creator once-over" — 13.900 ISK, 999 SEK reserved, `$99` internal reference; see [Spec 15](../specs/15-billing-and-stripe.md)), delivered as a Loom-style walkthrough plus a few in-builder edits. Offered as an optional add-on at Checkout. Bounded to ~30 minutes of work per job so the math holds at early-cohort volume.
 
 See also: [Spec 15 — Billing and Stripe](../specs/15-billing-and-stripe.md).
 
@@ -27,7 +27,7 @@ State this on the Checkout add-on copy so expectations are correct up front:
 
 ## Lifecycle
 
-1. **Purchase.** Customer ticks the add-on at Checkout. Stripe charges `$99` one-time alongside the subscription.
+1. **Purchase.** Customer ticks the add-on at Checkout. Stripe charges the local-currency price (13.900 ISK) one-time alongside the subscription.
 2. **Webhook.** `checkout.session.completed` (mode=payment) flips `workspaces.once_over_status = 'awaiting_intake'` and inserts a row in `once_over_requests`.
 3. **Intake email.** Customer receives a transactional email linking to the intake form in their builder.
 4. **Intake.** Customer fills five fields and flips a "ready for review" toggle. Toggle writes `once_over_status = 'pending'` and timestamps `intake_submitted_at`.

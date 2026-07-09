@@ -10,7 +10,7 @@ The legacy phrase "guest user" in this codebase refers to a user on a trial sess
 
 ## Product Constraints
 
-- The homepage prompt is the primary entry point. No signup is required to enter a prompt, generate a draft, edit, preview, or publish to the hosted subdomain.
+- There are two no-signup entry points: the homepage prompt, and the public re-spin demo ([Spec 21](./21-respin-url-import.md)) — the GTM centerpiece — which turns an existing website URL into a draft. Both create the same L0 trial session; no signup is required to enter a prompt or URL, generate a draft, edit, or preview. Publish is trial-allowed for prompt-originated drafts and claim-gated for re-spin-originated drafts (see Capabilities).
 - A trial session has 4 calendar days from first activity and a lifetime budget of 25 prompts before subscription is required to continue editing or prompting.
 - Inside the builder, a trial user can do everything a paid user can except: attach a custom domain, prompt beyond 25, edit after the 4-day window expires, and invite teammates.
 - Identity binding is optional and free. A trial user may attach a copy-able workspace link, an email, both, or neither. Attaching an email creates a real `users` row immediately so cross-browser login works the moment the address is verified.
@@ -58,7 +58,7 @@ Two hard caps apply to any workspace without an active subscription.
 
 ### 25-Prompt Lifetime Budget
 
-- `guest_sessions.prompts_used` increments on each successful generation job initiated against the workspace, including the initial generation and every site- or page-level re-prompt.
+- `guest_sessions.prompts_used` increments on each successful generation job initiated against the workspace, including the initial generation and every site- or page-level re-prompt. A successful re-spin import ([Spec 21](./21-respin-url-import.md)) counts as one prompt, the same as an initial generation.
 - When `prompts_used >= 25`, generation routes return the same `subscription_required` error. Non-generation edits remain allowed until the 4-day window expires.
 - Quota is not refunded for failed generations beyond what Spec 07's failure handling already specifies.
 
@@ -79,7 +79,7 @@ Trial sessions (any of L0/L1/L2 without a subscription) may, during the active t
 - manage pages and navigation
 - upload assets and use the asset library
 - preview the draft
-- **publish the site to its hosted subdomain**
+- **publish the site to its hosted subdomain** — for prompt-originated drafts. Re-spin-originated drafts require an L2 email claim before first publish, because the draft contains content extracted from a third-party site and publish must be tied to someone claiming ownership of it ([Spec 21](./21-respin-url-import.md)). This is a deliberate divergence from the trial-publish rule.
 - roll back to a prior published version
 - view their own light analytics for the published subdomain
 

@@ -8,11 +8,13 @@ product
 
 Snaelda is for solo operators and very small owner-led businesses who need a credible small website without turning it into a large web project. Typical users include local shops, craft studios, service providers, teachers, therapists, photographers, cafes, and other small teams who want to prompt, edit, preview, publish, and connect a domain with minimal friction.
 
+The go-to-market focus is Nordic ([docs/nordic-gtm-strategy.md](docs/nordic-gtm-strategy.md)): Iceland is the beachhead — native Icelandic content is the primary wedge — with Sweden to follow. Early verticals are local service businesses such as salons, trades, cafés, and tour operators, served one vertical at a time.
+
 Users are usually trying to get a real business presence live quickly. They may not know site structure, SEO, or builder conventions deeply, so the product should make good defaults visible and keep editing approachable.
 
 ## Product Purpose
 
-Snaelda helps users spin up a landing page or small website from a prompt, refine it in a lightweight builder/CMS, preview the result, publish it, and attach a custom domain. Success means a user can move from rough intent to a polished, fast, SEO-friendly public site without learning a complex website platform.
+Snaelda helps users spin up a landing page or small website from a prompt — or by "re-spinning" their existing website from its URL, which rewraps their own content, brand, and imagery into a designed Snaelda site with a before/after reveal. They refine the result in a lightweight builder/CMS, preview, publish, and attach a custom domain. Content is generated natively in the user's language (Icelandic first). Success means a user can move from rough intent, or from a tired old site, to a polished, fast, SEO-friendly public site without learning a complex website platform.
 
 The emotional promise is serious result, un-serious process: a dependable publishing tool that feels warm, crafted, and low-friction.
 
