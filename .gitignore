@@ -49,7 +49,7 @@ tmp/
 uploads/
 artifacts/
 var/
-.playwright-mcp/*.yml
+.playwright-mcp/
 /*.png
 !/logo.png
 
