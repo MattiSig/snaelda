@@ -48,9 +48,9 @@ func main() {
 	var (
 		key            = flag.String("key", os.Getenv("STRIPE_SECRET_KEY"), "Stripe secret key (defaults to STRIPE_SECRET_KEY env var)")
 		webhookURL     = flag.String("webhook-url", "http://localhost:8080/api/billing/webhook", "Public webhook URL the API can be reached at")
-		siteAmount     = flag.Int64("site-amount", 2900, "Site plan monthly price in the currency's smallest unit (ISK is zero-decimal, so this is whole krónur)")
-		proAmount      = flag.Int64("pro-amount", 6900, "Pro plan monthly price in the currency's smallest unit")
-		onceOverAmount = flag.Int64("once-over-amount", 13900, "Once-over add-on price in the currency's smallest unit")
+		siteAmount     = flag.Int64("site-amount", 2900, "Site plan monthly price in whole currency units (krónur, kronor, dollars)")
+		proAmount      = flag.Int64("pro-amount", 6900, "Pro plan monthly price in whole currency units")
+		onceOverAmount = flag.Int64("once-over-amount", 13900, "Once-over add-on price in whole currency units")
 		currency       = flag.String("currency", "isk", "Three-letter currency code")
 		allowLive      = flag.Bool("allow-live", false, "Required to run against a sk_live_… key")
 		skipWebhook    = flag.Bool("skip-webhook", false, "Skip webhook endpoint creation (use when developing locally with `stripe listen`)")
@@ -127,6 +127,26 @@ func main() {
 	}
 }
 
+// stripeZeroDecimalCurrencies is Stripe's zero-decimal list: these currencies
+// take unit_amount in whole units. ISK is deliberately NOT here — Stripe
+// treats it as a backward-compatibility special case represented as a
+// two-decimal amount whose decimals are always 00, so like ordinary
+// two-decimal currencies it is multiplied by 100 (2.900 kr -> 290000).
+var stripeZeroDecimalCurrencies = map[string]bool{
+	"BIF": true, "CLP": true, "DJF": true, "GNF": true,
+	"JPY": true, "KMF": true, "KRW": true, "MGA": true, "PYG": true, "RWF": true,
+	"VND": true, "VUV": true, "XAF": true, "XOF": true, "XPF": true,
+}
+
+// stripeUnitAmount converts a price in whole currency units to the unit_amount
+// Stripe expects for that currency.
+func stripeUnitAmount(wholeUnits int64, currency string) int64 {
+	if stripeZeroDecimalCurrencies[strings.ToUpper(strings.TrimSpace(currency))] {
+		return wholeUnits
+	}
+	return wholeUnits * 100
+}
+
 func ensurePrice(plan planSpec) (string, error) {
 	listIter := price.List(&stripe.PriceListParams{
 		LookupKeys: stripe.StringSlice([]string{plan.lookupKey}),
@@ -147,7 +167,7 @@ func ensurePrice(plan planSpec) (string, error) {
 
 	params := &stripe.PriceParams{
 		Product:    stripe.String(prod),
-		UnitAmount: stripe.Int64(plan.amount),
+		UnitAmount: stripe.Int64(stripeUnitAmount(plan.amount, plan.currency)),
 		Currency:   stripe.String(plan.currency),
 		LookupKey:  stripe.String(plan.lookupKey),
 	}

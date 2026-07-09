@@ -679,8 +679,13 @@ function humanPlan(plan: string) {
 // ISK (the Phase 0 currency) and falling back to whatever single currency the
 // catalog carries.
 function resolvePlanPrice(
-  prices: Record<string, number>,
+  prices: Record<string, number> | null | undefined,
 ): { currency: string; amount: number } | null {
+  // Tolerate a missing map so an older API payload degrades to "—" instead of
+  // crashing the billing page during a deploy skew.
+  if (!prices) {
+    return null
+  }
   if (prices.ISK !== undefined) {
     return { currency: 'ISK', amount: prices.ISK }
   }
@@ -703,7 +708,7 @@ function formatCurrency(currency: string, amount: number) {
   }
 }
 
-function formatPrice(prices: Record<string, number>) {
+function formatPrice(prices: Record<string, number> | null | undefined) {
   const resolved = resolvePlanPrice(prices)
   return resolved ? formatCurrency(resolved.currency, resolved.amount) : '—'
 }

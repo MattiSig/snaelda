@@ -702,18 +702,24 @@ func (s *Service) resolveSubscriptionPlan(ctx context.Context, tx pgx.Tx, subscr
 
 // zeroDecimalCurrencies are the ISO-4217 currencies Stripe reports in whole
 // units (no minor unit), so their invoice amount must not be divided by 100.
-// Kept in sync with Stripe's zero-decimal list; ISK is the one that matters for
-// Phase 0.
+// Kept in sync with Stripe's zero-decimal list. ISK is deliberately absent:
+// see twoDecimalWholeCurrencies.
 var zeroDecimalCurrencies = map[string]bool{
-	"BIF": true, "CLP": true, "DJF": true, "GNF": true, "ISK": true,
-	"JPY": true, "KMF": true, "KRW": true, "PYG": true, "RWF": true,
-	"UGX": true, "VND": true, "VUV": true, "XAF": true, "XOF": true, "XPF": true,
+	"BIF": true, "CLP": true, "DJF": true, "GNF": true,
+	"JPY": true, "KMF": true, "KRW": true, "MGA": true, "PYG": true, "RWF": true,
+	"VND": true, "VUV": true, "XAF": true, "XOF": true, "XPF": true,
 }
 
+// twoDecimalWholeCurrencies are Stripe's backward-compatibility special cases:
+// currencies that transitioned to zero-decimal but which the API still
+// represents as two-decimal amounts whose decimals are always 00. 2.900 kr
+// arrives as amount 290000.
+var twoDecimalWholeCurrencies = map[string]bool{"ISK": true, "UGX": true}
+
 // formatAmount renders a Stripe invoice amount for a receipt. Stripe reports
-// zero-decimal currencies (ISK, JPY, …) in whole units, so those are shown as
-// integers with an Icelandic thousands separator ("2.900"); everything else is
-// two-decimal minor units divided by 100 ("29.00").
+// zero-decimal currencies (JPY, …) in whole units; ISK-style special cases in
+// minor units with 00 decimals (shown as whole krónur with Icelandic thousands
+// grouping, "2.900"); everything else as two-decimal minor units ("29.00").
 func formatAmount(amountMinor int64, currency string) (string, string) {
 	ccy := strings.ToUpper(strings.TrimSpace(currency))
 	if ccy == "" {
@@ -721,6 +727,9 @@ func formatAmount(amountMinor int64, currency string) (string, string) {
 	}
 	if zeroDecimalCurrencies[ccy] {
 		return groupThousands(amountMinor), ccy
+	}
+	if twoDecimalWholeCurrencies[ccy] {
+		return groupThousands(amountMinor / 100), ccy
 	}
 	return fmt.Sprintf("%.2f", float64(amountMinor)/100), ccy
 }

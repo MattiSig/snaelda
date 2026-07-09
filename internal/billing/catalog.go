@@ -2,10 +2,11 @@ package billing
 
 import "strings"
 
-// Iceland-first pricing (Spec 15). Amounts are in each currency's display unit;
-// ISK is zero-decimal, so 2900 renders as "2.900 kr." not "29,00". Adding a
-// currency is a data-only change: register its amount here and wire a price id
-// through NewCatalog.
+// Iceland-first pricing (Spec 15). Amounts are in each currency's display unit
+// (whole krónur: 2900 renders as "2.900 kr."), NOT Stripe API amounts — Stripe
+// represents ISK as two-decimal with 00 decimals, so 2.900 kr is 290000 there.
+// Adding a currency is a data-only change: register its amount here and wire a
+// price id through NewCatalog.
 const (
 	sitePlanPriceISK = 2900
 	proPlanPriceISK  = 6900

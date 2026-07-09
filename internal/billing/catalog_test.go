@@ -67,8 +67,10 @@ func TestCatalogUnconfiguredPriceIDsAreUnavailable(t *testing.T) {
 	}
 }
 
-func TestFormatAmountHandlesZeroDecimalISK(t *testing.T) {
-	amount, currency := formatAmount(2900, "isk")
+func TestFormatAmountHandlesISKSpecialCase(t *testing.T) {
+	// Stripe represents ISK as a two-decimal amount whose decimals are always
+	// 00: a 2.900 kr charge arrives as amount_paid=290000.
+	amount, currency := formatAmount(290000, "isk")
 	if currency != "ISK" {
 		t.Fatalf("expected ISK currency, got %q", currency)
 	}
@@ -76,11 +78,17 @@ func TestFormatAmountHandlesZeroDecimalISK(t *testing.T) {
 		t.Fatalf("expected Icelandic-grouped 2.900, got %q", amount)
 	}
 
-	if got, _ := formatAmount(13900, "ISK"); got != "13.900" {
+	if got, _ := formatAmount(1390000, "ISK"); got != "13.900" {
 		t.Fatalf("expected 13.900, got %q", got)
 	}
-	if got, _ := formatAmount(950, "ISK"); got != "950" {
+	if got, _ := formatAmount(95000, "ISK"); got != "950" {
 		t.Fatalf("expected 950 (no separator under 1000), got %q", got)
+	}
+}
+
+func TestFormatAmountHandlesZeroDecimalJPY(t *testing.T) {
+	if got, _ := formatAmount(2900, "jpy"); got != "2.900" {
+		t.Fatalf("expected whole-unit 2.900 for JPY, got %q", got)
 	}
 }
 

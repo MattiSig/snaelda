@@ -40,7 +40,7 @@ Pricing rules:
 
 - Customer-facing prices are always in local currency, never USD. USD amounts exist only as internal reference points.
 - Iceland launches first: ISK prices ship with the beachhead; SEK prices are configured when the Sweden phase starts.
-- ISK is a zero-decimal currency in Stripe: 2.900 ISK is the amount `2900` with no minor units.
+- ISK is a Stripe backward-compatibility special case, not zero-decimal in the API: amounts are two-decimal values whose decimals are always 00, so 2.900 ISK is the amount `290000`. Display prices (`2900`) and Stripe amounts must never be conflated.
 - Each tier has one Stripe Price per currency (see Configuration). Currency selection follows the workspace's market/locale ([Spec 22](./22-localization.md)); a workspace's currency does not change after the first purchase.
 - Pro is an upsell, not a launch headline: the Site tier is the default checkout path.
 - Multi-site support is Pro-gated via the existing active-site-count entitlement (Site = 1).
