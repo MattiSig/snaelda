@@ -88,10 +88,14 @@ func main() {
 		}
 	}
 
+	// Lookup keys are currency-scoped: reuse-by-lookup-key must never hand back
+	// a price in a different currency (the unscoped keys once matched the
+	// legacy USD prices when provisioning ISK).
+	ccyKey := strings.ToLower(ccy)
 	plans := []planSpec{
-		{slug: "site", product: "Snaelda Site", lookupKey: "snaelda_site_monthly", amount: *siteAmount, currency: *currency, interval: string(stripe.PriceRecurringIntervalMonth)},
-		{slug: "pro", product: "Snaelda Pro", lookupKey: "snaelda_pro_monthly", amount: *proAmount, currency: *currency, interval: string(stripe.PriceRecurringIntervalMonth)},
-		{slug: "once_over", product: "Snaelda Once-over review", lookupKey: "snaelda_once_over", amount: *onceOverAmount, currency: *currency, interval: ""},
+		{slug: "site", product: "Snaelda Site", lookupKey: "snaelda_site_monthly_" + ccyKey, amount: *siteAmount, currency: *currency, interval: string(stripe.PriceRecurringIntervalMonth)},
+		{slug: "pro", product: "Snaelda Pro", lookupKey: "snaelda_pro_monthly_" + ccyKey, amount: *proAmount, currency: *currency, interval: string(stripe.PriceRecurringIntervalMonth)},
+		{slug: "once_over", product: "Snaelda Once-over review", lookupKey: "snaelda_once_over_" + ccyKey, amount: *onceOverAmount, currency: *currency, interval: ""},
 	}
 
 	results := make(map[string]string, len(plans))
@@ -105,9 +109,9 @@ func main() {
 
 	fmt.Println()
 	fmt.Println("Env vars to add to your .env (or Railway/Render/Fly secrets):")
-	fmt.Printf("STRIPE_PRICE_SITE_ISK=%s\n", results["site"])
-	fmt.Printf("STRIPE_PRICE_PRO_ISK=%s\n", results["pro"])
-	fmt.Printf("STRIPE_PRICE_ONCE_OVER_ISK=%s\n", results["once_over"])
+	fmt.Printf("STRIPE_PRICE_SITE_%s=%s\n", ccy, results["site"])
+	fmt.Printf("STRIPE_PRICE_PRO_%s=%s\n", ccy, results["pro"])
+	fmt.Printf("STRIPE_PRICE_ONCE_OVER_%s=%s\n", ccy, results["once_over"])
 
 	if !*skipWebhook {
 		secret, reused, err := ensureWebhook(*webhookURL)
@@ -153,6 +157,9 @@ func ensurePrice(plan planSpec) (string, error) {
 	})
 	for listIter.Next() {
 		existing := listIter.Price()
+		if !strings.EqualFold(string(existing.Currency), plan.currency) {
+			return "", fmt.Errorf("lookup_key %s matched price %s in %s, want %s — refusing to reuse across currencies", plan.lookupKey, existing.ID, existing.Currency, plan.currency)
+		}
 		fmt.Printf("✓ %-10s  reuse  %s (lookup_key=%s)\n", plan.slug, existing.ID, plan.lookupKey)
 		return existing.ID, nil
 	}
