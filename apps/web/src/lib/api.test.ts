@@ -79,6 +79,21 @@ describe('anonymous session', () => {
     )
   })
 
+  it('carries the landing locale into the anonymous session start', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ session: { kind: 'trial' } }), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    await startAnonymousSession({ freshIfBlocked: true, locale: 'is' })
+
+    const url = String(fetchMock.mock.calls[0][0])
+    expect(url).toContain('freshIfBlocked=true')
+    expect(url).toContain('locale=is')
+  })
+
   it('can check for a session without attempting an auth refresh', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({

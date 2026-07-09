@@ -84,6 +84,23 @@ func TestFormatAmountHandlesZeroDecimalISK(t *testing.T) {
 	}
 }
 
+func TestCurrencyForLocale(t *testing.T) {
+	if got := currencyForLocale("is"); got != "ISK" {
+		t.Fatalf("expected Icelandic locale to check out in ISK, got %q", got)
+	}
+	if got := currencyForLocale("IS"); got != "ISK" {
+		t.Fatalf("expected case-insensitive Icelandic locale, got %q", got)
+	}
+	// Until a second market's prices are provisioned every other locale falls
+	// back to the default (ISK) currency.
+	if got := currencyForLocale("en"); got != defaultCurrency {
+		t.Fatalf("expected default-currency fallback for en, got %q", got)
+	}
+	if got := currencyForLocale(""); got != defaultCurrency {
+		t.Fatalf("expected default-currency fallback for empty locale, got %q", got)
+	}
+}
+
 func TestFormatAmountKeepsTwoDecimalsForUSD(t *testing.T) {
 	amount, currency := formatAmount(2000, "usd")
 	if currency != "USD" {

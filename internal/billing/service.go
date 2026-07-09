@@ -97,6 +97,7 @@ type BillingContact struct {
 	UserEmail        string
 	UserName         string
 	StripeCustomerID string
+	Locale           string
 }
 
 func NewService(store DB, cfg ServiceConfig) *Service {
@@ -129,7 +130,12 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, input CheckoutInput
 
 	purchaseType := normalizePurchaseType(input.PurchaseType)
 	plan := normalizePlan(input.Plan)
-	currency := s.workspaceCurrency(ctx, input.Session.WorkspaceID)
+
+	contact, err := s.lookupBillingContact(ctx, input.Session.WorkspaceID)
+	if err != nil {
+		return "", err
+	}
+	currency := currencyForLocale(contact.Locale)
 	priceID := ""
 	mode := checkoutModeSubscription
 
@@ -154,11 +160,6 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, input CheckoutInput
 		if !ok {
 			return "", fmt.Errorf("unknown billing plan %q", plan)
 		}
-	}
-
-	contact, err := s.lookupBillingContact(ctx, input.Session.WorkspaceID)
-	if err != nil {
-		return "", err
 	}
 
 	customerID := strings.TrimSpace(contact.StripeCustomerID)
@@ -570,12 +571,13 @@ func lookupBillingContactTx(ctx context.Context, store interface {
 		       coalesce(u.id::text, ''),
 		       coalesce(u.email, bc.email, ''),
 		       coalesce(u.name, ''),
-		       coalesce(w.stripe_customer_id, '')
+		       coalesce(w.stripe_customer_id, ''),
+		       coalesce(w.locale, 'is')
 		from workspaces w
 		left join users u on u.id = w.created_by
 		left join billing_customers bc on bc.workspace_id = w.id
 		where w.id = $1
-	`, workspaceID).Scan(&contact.WorkspaceID, &contact.WorkspaceName, &contact.UserID, &contact.UserEmail, &contact.UserName, &contact.StripeCustomerID)
+	`, workspaceID).Scan(&contact.WorkspaceID, &contact.WorkspaceName, &contact.UserID, &contact.UserEmail, &contact.UserName, &contact.StripeCustomerID, &contact.Locale)
 	return contact, err
 }
 
@@ -658,12 +660,17 @@ func humanPlanName(plan string) string {
 	}
 }
 
-// workspaceCurrency resolves the currency a workspace checks out in. Phase 0 is
-// Iceland-only, so this is ISK for every workspace; it is the single seam where
-// per-workspace currency selection plugs in once the workspaces.locale/currency
-// column lands.
-func (s *Service) workspaceCurrency(_ context.Context, _ string) string {
-	return defaultCurrency
+// currencyForLocale maps a workspace's content locale to its checkout currency.
+// Phase 0 is Iceland-only, so Icelandic → ISK and everything else falls back to
+// the default (ISK today); when a second market's prices are provisioned, its
+// locale gets a currency entry here and the catalog gains matching price ids.
+func currencyForLocale(locale string) string {
+	switch strings.ToLower(strings.TrimSpace(locale)) {
+	case "is":
+		return "ISK"
+	default:
+		return defaultCurrency
+	}
 }
 
 func (s *Service) resolveSubscriptionPlan(ctx context.Context, tx pgx.Tx, subscription SubscriptionEventData) (string, PlanDefinition, error) {

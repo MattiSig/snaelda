@@ -237,7 +237,7 @@ func (h *Handler) startAnonymousSession(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	session, token, csrfToken, err := h.createTrialSession(r.Context())
+	session, token, csrfToken, err := h.createTrialSession(r.Context(), r.URL.Query().Get("locale"))
 	if err != nil {
 		writeAuthError(w, http.StatusInternalServerError, "session_create_failed", "could not start a session")
 		return
@@ -664,6 +664,7 @@ func (h *Handler) resolveAuthenticatedSession(r *http.Request) (Session, error) 
 		User:          &user,
 	}
 	h.attachWorkspaceTrialState(r.Context(), &session)
+	session.WorkspaceLocale = h.lookupWorkspaceLocale(r.Context(), user.WorkspaceID)
 	session.SubscriptionLive = h.lookupSubscriptionLive(r.Context(), user.WorkspaceID)
 	return session, nil
 }
@@ -679,7 +680,8 @@ func (h *Handler) resolveTrialSession(r *http.Request) (Session, error) {
 	return h.loadTrialSessionByCookie(r.Context(), cookie.Value)
 }
 
-func (h *Handler) createTrialSession(ctx context.Context) (Session, string, string, error) {
+func (h *Handler) createTrialSession(ctx context.Context, locale string) (Session, string, string, error) {
+	locale = normalizeWorkspaceLocale(locale)
 	cookieToken, err := newRefreshToken()
 	if err != nil {
 		return Session{}, "", "", err
@@ -697,10 +699,10 @@ func (h *Handler) createTrialSession(ctx context.Context) (Session, string, stri
 
 	var workspaceID string
 	if err := tx.QueryRow(ctx, `
-		insert into workspaces (name)
-		values ('Trial Workspace')
+		insert into workspaces (name, locale)
+		values ('Trial Workspace', $1)
 		returning id::text
-	`).Scan(&workspaceID); err != nil {
+	`, locale).Scan(&workspaceID); err != nil {
 		return Session{}, "", "", fmt.Errorf("create trial workspace: %w", err)
 	}
 
@@ -720,15 +722,45 @@ func (h *Handler) createTrialSession(ctx context.Context) (Session, string, stri
 	}
 
 	return Session{
-		Kind:           SessionKindTrial,
-		WorkspaceID:    workspaceID,
-		WorkspaceRole:  "owner",
-		GuestSessionID: sessionID,
-		PromptsUsed:    0,
-		PromptLimit:    trialPromptLimit,
-		TrialStartedAt: &trialStartedAt,
-		TrialExpiresAt: &trialExpiresAt,
+		Kind:            SessionKindTrial,
+		WorkspaceID:     workspaceID,
+		WorkspaceRole:   "owner",
+		WorkspaceLocale: locale,
+		GuestSessionID:  sessionID,
+		PromptsUsed:     0,
+		PromptLimit:     trialPromptLimit,
+		TrialStartedAt:  &trialStartedAt,
+		TrialExpiresAt:  &trialExpiresAt,
 	}, cookieToken, csrfToken, nil
+}
+
+const defaultWorkspaceLocale = "is"
+
+// normalizeWorkspaceLocale coerces an arbitrary locale hint (a query param, a
+// stored value) to the workspace allow-list, reducing to the primary subtag
+// ("is-IS" -> "is") and defaulting to Icelandic (Spec 15/22).
+func normalizeWorkspaceLocale(value string) string {
+	v := strings.ToLower(strings.TrimSpace(value))
+	if idx := strings.IndexAny(v, "-_"); idx > 0 {
+		v = v[:idx]
+	}
+	if v == "en" {
+		return "en"
+	}
+	return defaultWorkspaceLocale
+}
+
+// lookupWorkspaceLocale reads a workspace's stored locale, falling back to the
+// Icelandic default when the workspace is missing or unreadable.
+func (h *Handler) lookupWorkspaceLocale(ctx context.Context, workspaceID string) string {
+	if h.store == nil || strings.TrimSpace(workspaceID) == "" {
+		return defaultWorkspaceLocale
+	}
+	var locale string
+	if err := h.store.QueryRow(ctx, `select locale from workspaces where id = $1`, workspaceID).Scan(&locale); err != nil {
+		return defaultWorkspaceLocale
+	}
+	return normalizeWorkspaceLocale(locale)
 }
 
 func (h *Handler) loadTrialSessionByCookie(ctx context.Context, token string) (Session, error) {
@@ -808,6 +840,7 @@ func (h *Handler) loadTrialSession(ctx context.Context, column string, hash stri
 
 	session.Kind = SessionKindTrial
 	session.WorkspaceRole = "owner"
+	session.WorkspaceLocale = h.lookupWorkspaceLocale(ctx, session.WorkspaceID)
 	session.PromptLimit = trialPromptLimit
 	session.TrialStartedAt = &trialStartedAt
 	session.TrialExpiresAt = &trialExpiresAt

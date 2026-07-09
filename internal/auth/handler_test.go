@@ -950,3 +950,22 @@ func (tx *fakeMagicLinkTx) QueryRow(_ context.Context, sql string, args ...any) 
 func (tx *fakeMagicLinkTx) Conn() *pgx.Conn {
 	return nil
 }
+
+func TestNormalizeWorkspaceLocale(t *testing.T) {
+	cases := map[string]string{
+		"is":    "is",
+		"IS":    "is",
+		"is-IS": "is",
+		"en":    "en",
+		"en-US": "en",
+		"":      "is",
+		"  ":    "is",
+		"de":    "is",
+		"sv":    "is",
+	}
+	for input, want := range cases {
+		if got := normalizeWorkspaceLocale(input); got != want {
+			t.Fatalf("normalizeWorkspaceLocale(%q) = %q, want %q", input, got, want)
+		}
+	}
+}

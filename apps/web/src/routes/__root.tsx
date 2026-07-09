@@ -15,6 +15,7 @@ import { NotFound } from "~/components/NotFound";
 import type { HostedPublicSiteContext } from "~/lib/public-site";
 import { publishedSiteHtmlLang } from "~/lib/published-site";
 import { useLocale } from "~/lib/locale";
+import { useWorkspaceLocale } from "~/lib/workspace-locale";
 import { topbar } from "~/lib/styles";
 import "~/styles/app.css";
 
@@ -86,6 +87,7 @@ function resolvePublishedLocaleFromMatches(
 function RootDocument({ children }: { children: ReactNode }) {
   const matches = useMatches();
   const visitorLocale = useLocale();
+  const workspaceLocale = useWorkspaceLocale();
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
@@ -128,14 +130,17 @@ function RootDocument({ children }: { children: ReactNode }) {
   // A published site renders its own content locale, independent of the
   // visitor's UI locale (Spec 22). The public routes surface it via loader data
   // (`/public/*` as `site`, custom-domain hosting as `published.site`); when
-  // present it wins for both the app-hosted and custom-domain paths. The app +
-  // marketing surface falls back to the visitor's resolved locale.
+  // present it wins for both the app-hosted and custom-domain paths. The
+  // authenticated builder (`/app`) follows the workspace's locale once the
+  // session resolves; the marketing surface falls back to the visitor locale.
   const publishedLocale = resolvePublishedLocaleFromMatches(matches);
   const htmlLang = publishedLocale
     ? publishedSiteHtmlLang(publishedLocale)
     : hostedPublic?.isHostedPublic
       ? "en"
-      : visitorLocale;
+      : pathname.startsWith("/app") && workspaceLocale
+        ? workspaceLocale
+        : visitorLocale;
   const showChrome =
     !hostedPublic?.isHostedPublic &&
     pathname !== "/" &&
