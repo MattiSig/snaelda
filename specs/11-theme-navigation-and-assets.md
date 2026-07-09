@@ -187,7 +187,7 @@ For MVP, AI-generated imagery is optional. Prefer user-uploaded assets, gradient
 
 ## Starter Image Integration
 
-To improve first-draft conversion, the generation flow may attach starter imagery from Unsplash.
+To improve first-draft conversion, the generation flow may attach starter imagery from Pexels (the backend integration in [Spec 07](./07-generation-engine.md)).
 
 Recommended rules:
 
