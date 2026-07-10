@@ -54,6 +54,75 @@ describe("published artifact bundle", () => {
     );
     expect(manifest?.body).toContain('"pageId": "page-contact"');
   });
+
+  it("emits structured LocalBusiness JSON-LD from the footer contact contract", () => {
+    const snapshot = buildSnapshot();
+    snapshot.pages[0].blocks.push({
+      id: "block-footer",
+      type: "footer",
+      version: "block.v1",
+      props: {
+        showBrand: true,
+        showMadeWith: true,
+        copyright: "Copyright 2026 Loom & Light",
+        contact: {
+          address: {
+            street: "Laugavegur 12",
+            city: "Reykjavík",
+            postalCode: "101",
+            country: "Iceland",
+          },
+          phone: "+354 555 1234",
+          email: "hello@loomlight.is",
+          hours: [
+            { day: "monday", opens: "09:00", closes: "17:00", closed: false },
+            { day: "sunday", closed: true },
+          ],
+        },
+      },
+    });
+
+    const bundle = buildPublishedArtifactBundle({
+      publicBaseURL: "https://sites.snaelda.test",
+      siteSlug: "loom-light",
+      hostname: "loom-light.snaelda.test",
+      version: {
+        id: "version-4",
+        siteId: "site-1",
+        versionNumber: 4,
+        createdAt: "2026-05-11T08:00:00Z",
+        isCurrent: true,
+      },
+      snapshot,
+    });
+
+    const manifest = bundle.files.find((file) => file.path === "manifest.json");
+    const parsed = JSON.parse(manifest?.body ?? "{}") as {
+      pages: Array<{ pageId: string; localBusinessJsonLd?: Record<string, unknown> }>;
+    };
+    const home = parsed.pages.find((page) => page.pageId === "page-home");
+    const jsonLd = home?.localBusinessJsonLd;
+
+    expect(jsonLd?.["@type"]).toBe("LocalBusiness");
+    expect(jsonLd?.telephone).toBe("+354 555 1234");
+    expect(jsonLd?.email).toBe("hello@loomlight.is");
+    expect(jsonLd?.address).toEqual({
+      "@type": "PostalAddress",
+      streetAddress: "Laugavegur 12",
+      addressLocality: "Reykjavík",
+      postalCode: "101",
+      addressCountry: "Iceland",
+    });
+    // Only the open Monday range produces a spec; the closed Sunday is omitted.
+    expect(jsonLd?.openingHoursSpecification).toEqual([
+      {
+        "@type": "OpeningHoursSpecification",
+        dayOfWeek: "https://schema.org/Monday",
+        opens: "09:00",
+        closes: "17:00",
+      },
+    ]);
+  });
 });
 
 function buildSnapshot(): PublishedSnapshot {

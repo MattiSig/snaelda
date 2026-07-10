@@ -620,19 +620,37 @@ func footerBlockDefinition() BlockDefinition {
 	editorSchema := []EditorField{
 		{Name: "showBrand", Label: "Show business name and logo", Control: "checkbox"},
 		{Name: "tagline", Label: "Tagline", Control: "textarea"},
+		{Name: "showMadeWith", Label: "Show \"Made with Snælda\" link", Control: "checkbox"},
 		{
 			Name:    "contact",
 			Label:   "Contact details",
 			Control: "object",
 			Fields: []EditorField{
-				{Name: "address", Label: "Address", Control: "textarea"},
-				{Name: "phone", Label: "Phone", Control: "text"},
+				{
+					Name:    "address",
+					Label:   "Address",
+					Control: "object",
+					Fields: []EditorField{
+						{Name: "street", Label: "Street", Control: "text"},
+						{Name: "city", Label: "City", Control: "text"},
+						{Name: "postalCode", Label: "Postal code", Control: "text"},
+						{Name: "region", Label: "Region", Control: "text"},
+						{Name: "country", Label: "Country", Control: "text"},
+					},
+				},
+				{Name: "phone", Label: "Phone", Control: "text", Placeholder: "+354 555 1234"},
 				{Name: "email", Label: "Email", Control: "text"},
 				{
 					Name:        "hours",
 					Label:       "Opening hours",
-					Control:     "string_list",
-					Description: "One line per schedule entry, for example Mon-Fri 09:00-17:00.",
+					Control:     "repeater",
+					Description: "One entry per open (or closed) day of the week.",
+					ItemFields: []EditorField{
+						{Name: "day", Label: "Day", Control: "select", Options: footerWeekdays},
+						{Name: "opens", Label: "Opens", Control: "text", Placeholder: "09:00"},
+						{Name: "closes", Label: "Closes", Control: "text", Placeholder: "17:00"},
+						{Name: "closed", Label: "Closed", Control: "checkbox"},
+					},
 				},
 			},
 		},
@@ -654,8 +672,9 @@ func footerBlockDefinition() BlockDefinition {
 		Category:    BlockCategoryContent,
 		Tagline:     "Site-wide footer with link columns.",
 		DefaultProps: map[string]any{
-			"showBrand": true,
-			"tagline":   "A short closing line that reinforces the tone of the site.",
+			"showBrand":    true,
+			"showMadeWith": true,
+			"tagline":      "A short closing line that reinforces the tone of the site.",
 			"contact": map[string]any{
 				"email": "hello@example.com",
 			},
@@ -1081,8 +1100,9 @@ func validateTeamProfileCardsProps(path string, props map[string]any, c *collect
 }
 
 func validateFooterProps(path string, props map[string]any, c *collector) {
-	requireKnownProps(path, props, c, "showBrand", "tagline", "contact", "copyright", "socialLinks", "siteName", "contactLine", "navigationLinks")
+	requireKnownProps(path, props, c, "showBrand", "showMadeWith", "tagline", "contact", "copyright", "socialLinks", "siteName", "contactLine", "navigationLinks")
 	optionalBool(path, props, "showBrand", c)
+	optionalBool(path, props, "showMadeWith", c)
 	optionalString(path, props, "tagline", 240, c)
 	validateFooterContact(path, props, "contact", c)
 	optionalString(path, props, "siteName", 120, c)
@@ -1235,26 +1255,41 @@ func validateFooterContact(path string, props map[string]any, key string, c *col
 		return
 	}
 	requireKnownProps(fieldPath, object, c, "address", "phone", "email", "hours")
-	optionalString(fieldPath, object, "address", 240, c)
+	validateFooterAddress(fieldPath, object, "address", c)
 	optionalString(fieldPath, object, "phone", 40, c)
 	optionalString(fieldPath, object, "email", 160, c)
 	if email, _ := object["email"].(string); strings.TrimSpace(email) != "" && !validFooterEmail(email) {
 		c.add(child(fieldPath, "email"), "invalid_email", "email must be a valid address")
 	}
-	optionalStringList(fieldPath, object, "hours", 0, 14, 80, c)
+	validateFooterHours(fieldPath, object, "hours", c)
 }
 
-func optionalBool(path string, props map[string]any, key string, c *collector) {
+// footerWeekdays is the closed set of canonical day keys accepted by the
+// structured opening-hours shape. English lowercase keys keep the stored props
+// locale-agnostic; the renderer localizes the label and maps to schema.org
+// dayOfWeek names for the LocalBusiness JSON-LD emission (Spec 04/09).
+var footerWeekdays = []string{"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
+
+func validateFooterAddress(path string, props map[string]any, key string, c *collector) {
 	value, ok := props[key]
 	if !ok || value == nil {
 		return
 	}
-	if _, ok := value.(bool); !ok {
-		c.add(child(path, key), "invalid_type", key+" must be a boolean")
+	object, ok := asObject(value)
+	fieldPath := child(path, key)
+	if !ok {
+		c.add(fieldPath, "invalid_type", key+" must be an object")
+		return
 	}
+	requireKnownProps(fieldPath, object, c, "street", "city", "postalCode", "region", "country")
+	optionalString(fieldPath, object, "street", 160, c)
+	optionalString(fieldPath, object, "city", 120, c)
+	optionalString(fieldPath, object, "postalCode", 40, c)
+	optionalString(fieldPath, object, "region", 120, c)
+	optionalString(fieldPath, object, "country", 120, c)
 }
 
-func optionalStringList(path string, props map[string]any, key string, minItems int, maxItems int, maxLength int, c *collector) {
+func validateFooterHours(path string, props map[string]any, key string, c *collector) {
 	value, ok := props[key]
 	if !ok || value == nil {
 		return
@@ -1265,19 +1300,86 @@ func optionalStringList(path string, props map[string]any, key string, minItems 
 		c.add(fieldPath, "invalid_type", key+" must be an array")
 		return
 	}
-	if len(values) < minItems || len(values) > maxItems {
-		c.add(fieldPath, "invalid_length", fmt.Sprintf("%s must include between %d and %d entries", key, minItems, maxItems))
+	if len(values) > 7 {
+		c.add(fieldPath, "invalid_length", "hours must include at most 7 entries")
 	}
 	for index, raw := range values {
-		text, ok := raw.(string)
 		itemPath := fmt.Sprintf("%s[%d]", fieldPath, index)
+		entry, ok := asObject(raw)
 		if !ok {
-			c.add(itemPath, "invalid_type", key+" entry must be a string")
+			c.add(itemPath, "invalid_type", "hours entry must be an object")
 			continue
 		}
-		trimmed := strings.TrimSpace(text)
-		validateStringLength(itemPath, trimmed, 0, maxLength, c)
-		validatePlainText(itemPath, trimmed, c)
+		requireKnownProps(itemPath, entry, c, "day", "opens", "closes", "closed")
+		day, _ := entry["day"].(string)
+		if !isFooterWeekday(day) {
+			c.add(child(itemPath, "day"), "invalid_value", "day must be a weekday")
+		}
+		optionalBool(itemPath, entry, "closed", c)
+		validateFooterClockTime(itemPath, entry, "opens", c)
+		validateFooterClockTime(itemPath, entry, "closes", c)
+	}
+}
+
+func isFooterWeekday(value string) bool {
+	for _, day := range footerWeekdays {
+		if value == day {
+			return true
+		}
+	}
+	return false
+}
+
+func validateFooterClockTime(path string, props map[string]any, key string, c *collector) {
+	value, ok := props[key]
+	if !ok || value == nil {
+		return
+	}
+	text, ok := value.(string)
+	fieldPath := child(path, key)
+	if !ok {
+		c.add(fieldPath, "invalid_type", key+" must be a string")
+		return
+	}
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return
+	}
+	if !validClockTime(trimmed) {
+		c.add(fieldPath, "invalid_value", key+" must be a HH:MM time")
+	}
+}
+
+func validClockTime(value string) bool {
+	if len(value) != 5 || value[2] != ':' {
+		return false
+	}
+	hh := value[0:2]
+	mm := value[3:5]
+	if !isDigits(hh) || !isDigits(mm) {
+		return false
+	}
+	hours := int(hh[0]-'0')*10 + int(hh[1]-'0')
+	minutes := int(mm[0]-'0')*10 + int(mm[1]-'0')
+	return hours <= 23 && minutes <= 59
+}
+
+func isDigits(value string) bool {
+	for i := 0; i < len(value); i++ {
+		if value[i] < '0' || value[i] > '9' {
+			return false
+		}
+	}
+	return len(value) > 0
+}
+
+func optionalBool(path string, props map[string]any, key string, c *collector) {
+	value, ok := props[key]
+	if !ok || value == nil {
+		return
+	}
+	if _, ok := value.(bool); !ok {
+		c.add(child(path, key), "invalid_type", key+" must be a boolean")
 	}
 }
 

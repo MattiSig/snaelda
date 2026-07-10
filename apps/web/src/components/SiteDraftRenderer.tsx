@@ -7,6 +7,7 @@ import {
   type Collection,
   type CollectionEntry,
   type FooterContact,
+  type FooterHours,
   type ImageCredit,
   type PublishedSnapshot,
   type SiteDraft,
@@ -266,6 +267,10 @@ export function SiteDraftRenderer({
                       siteID: site.site.id,
                       brand: site.brand,
                       navigation: site.navigation,
+                      locale:
+                        'defaultLocale' in site.site
+                          ? site.site.defaultLocale
+                          : undefined,
                       pageAnchors,
                       pageById,
                       slugToPage,
@@ -364,6 +369,7 @@ function renderSiteBlock({
   siteID,
   brand,
   navigation,
+  locale,
   pageAnchors,
   pageById,
   slugToPage,
@@ -378,6 +384,7 @@ function renderSiteBlock({
   siteID?: string;
   brand: BrandConfig;
   navigation: SiteDraft['navigation'];
+  locale?: string;
   pageAnchors: Map<string, string>;
   pageById: Map<string, RoutablePage>;
   slugToPage: Map<string, RoutablePage>;
@@ -585,6 +592,7 @@ function renderSiteBlock({
           props={block.props}
           brand={brand}
           navigation={navigation}
+          locale={locale}
           linkMode={linkMode}
           siteSlug={siteSlug}
           resolveNavigationItemHref={(item) =>
@@ -1886,6 +1894,7 @@ function FooterBlock({
   props,
   brand,
   navigation,
+  locale,
   linkMode,
   siteSlug,
   resolveNavigationItemHref,
@@ -1894,6 +1903,7 @@ function FooterBlock({
   props: Record<string, unknown>;
   brand: BrandConfig;
   navigation: SiteDraft['navigation'];
+  locale?: string;
   linkMode: 'anchors' | 'published';
   siteSlug?: string;
   resolveNavigationItemHref: (item: {
@@ -1909,6 +1919,7 @@ function FooterBlock({
       ? (navigation.footer ?? [])
       : asArray(props.navigationLinks);
   const showBrand = props.showBrand !== false;
+  const showMadeWith = props.showMadeWith !== false;
 
   return (
     <footer className={preview.footerShell}>
@@ -1940,6 +1951,7 @@ function FooterBlock({
           <FooterContactDetails
             contact={contact}
             fallbackLine={asText(props.contactLine)}
+            locale={locale}
           />
         </div>
         <div className="grid gap-4 md:justify-self-end md:text-right">
@@ -1980,15 +1992,37 @@ function FooterBlock({
           ) : null}
         </div>
       </div>
-      {asText(props.copyright) ? (
-        <div className="mx-auto mt-10 w-full max-w-[1180px] border-t border-[color-mix(in_oklch,var(--color-border)_45%,transparent)] pt-6">
-          <small className="text-xs text-[color-mix(in_oklch,var(--color-text)_62%,var(--color-background))]">
-            {asText(props.copyright)}
-          </small>
+      {asText(props.copyright) || showMadeWith ? (
+        <div className="mx-auto mt-10 flex w-full max-w-[1180px] flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-[color-mix(in_oklch,var(--color-border)_45%,transparent)] pt-6">
+          {asText(props.copyright) ? (
+            <small className="text-xs text-[color-mix(in_oklch,var(--color-text)_62%,var(--color-background))]">
+              {asText(props.copyright)}
+            </small>
+          ) : (
+            <span />
+          )}
+          {showMadeWith ? (
+            <a
+              href={MADE_WITH_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-[color-mix(in_oklch,var(--color-text)_58%,var(--color-background))] hover:text-[var(--color-text)] hover:underline"
+            >
+              {madeWithLabel(locale)}
+            </a>
+          ) : null}
         </div>
       ) : null}
     </footer>
   );
+}
+
+const MADE_WITH_URL = 'https://snaelda.io';
+
+function madeWithLabel(locale?: string) {
+  return normalizeFooterLocale(locale) === 'is'
+    ? 'Gert með Snældu'
+    : 'Made with Snælda';
 }
 
 function HeaderBrand({
@@ -2025,29 +2059,37 @@ function HeaderBrand({
 function FooterContactDetails({
   contact,
   fallbackLine,
+  locale,
 }: {
   contact: FooterContact;
   fallbackLine: string;
+  locale?: string;
 }) {
-  const lines = [
-    contact.address,
-    contact.phone,
-    contact.email,
-    ...(contact.hours ?? []),
-  ].filter(Boolean);
+  const addressLines = formatFooterAddress(contact.address);
+  const hours = contact.hours ?? [];
+  const hasContent =
+    addressLines.length > 0 ||
+    Boolean(contact.phone) ||
+    Boolean(contact.email) ||
+    hours.length > 0;
 
-  if (lines.length === 0 && !fallbackLine) {
+  if (!hasContent && !fallbackLine) {
     return null;
   }
 
   return (
     <div className="grid gap-1 text-sm text-[color-mix(in_oklch,var(--color-text)_72%,var(--color-background))]">
-      {contact.address ? (
-        <p className="m-0 whitespace-pre-line">{contact.address}</p>
+      {addressLines.length > 0 ? (
+        <address className="m-0 not-italic whitespace-pre-line">
+          {addressLines.join('\n')}
+        </address>
       ) : null}
       {contact.phone ? (
         <p className="m-0">
-          <a className={preview.footerLink} href={`tel:${contact.phone}`}>
+          <a
+            className={preview.footerLink}
+            href={`tel:${contact.phone.replace(/\s+/g, '')}`}
+          >
             {contact.phone}
           </a>
         </p>
@@ -2059,16 +2101,73 @@ function FooterContactDetails({
           </a>
         </p>
       ) : null}
-      {(contact.hours ?? []).map((entry, index) => (
-        <p key={index} className="m-0">
-          {entry}
-        </p>
-      ))}
-      {lines.length === 0 && fallbackLine ? (
+      {hours.length > 0 ? (
+        <dl className="m-0 mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+          {hours.map((entry, index) => (
+            <div key={index} className="contents">
+              <dt className="m-0 font-medium">{weekdayLabel(entry.day, locale)}</dt>
+              <dd className="m-0">{formatFooterHours(entry, locale)}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      {!hasContent && fallbackLine ? (
         <p className="m-0">{fallbackLine}</p>
       ) : null}
     </div>
   );
+}
+
+function normalizeFooterLocale(locale?: string): 'is' | 'en' {
+  return (locale ?? '').toLowerCase().startsWith('is') ? 'is' : 'en';
+}
+
+const FOOTER_WEEKDAY_LABELS: Record<'is' | 'en', Record<string, string>> = {
+  en: {
+    monday: 'Monday',
+    tuesday: 'Tuesday',
+    wednesday: 'Wednesday',
+    thursday: 'Thursday',
+    friday: 'Friday',
+    saturday: 'Saturday',
+    sunday: 'Sunday',
+  },
+  is: {
+    monday: 'Mánudagur',
+    tuesday: 'Þriðjudagur',
+    wednesday: 'Miðvikudagur',
+    thursday: 'Fimmtudagur',
+    friday: 'Föstudagur',
+    saturday: 'Laugardagur',
+    sunday: 'Sunnudagur',
+  },
+};
+
+function weekdayLabel(day: string, locale?: string) {
+  return FOOTER_WEEKDAY_LABELS[normalizeFooterLocale(locale)][day] ?? day;
+}
+
+function formatFooterHours(entry: FooterHours, locale?: string) {
+  if (entry.closed) {
+    return normalizeFooterLocale(locale) === 'is' ? 'Lokað' : 'Closed';
+  }
+  if (entry.opens && entry.closes) {
+    return `${entry.opens}–${entry.closes}`;
+  }
+  return entry.opens || entry.closes || '';
+}
+
+function formatFooterAddress(address: FooterContact['address']): string[] {
+  if (!address) {
+    return [];
+  }
+  const cityLine = [address.postalCode, address.city]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+  return [address.street, cityLine, address.region, address.country]
+    .map((line) => (line ?? '').trim())
+    .filter(Boolean);
 }
 
 function CollectionListBlock({
@@ -2467,6 +2566,16 @@ function asImageRef(value: unknown) {
   };
 }
 
+const FOOTER_WEEKDAYS = [
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
+];
+
 function asFooterContact(value: unknown): FooterContact {
   const object = asObject(value);
   if (!object) {
@@ -2474,11 +2583,55 @@ function asFooterContact(value: unknown): FooterContact {
   }
 
   return {
-    address: asText(object.address) || undefined,
+    address: asFooterAddress(object.address),
     phone: asText(object.phone) || undefined,
     email: asText(object.email) || undefined,
-    hours: asStringArray(object.hours),
+    hours: asFooterHours(object.hours),
   };
+}
+
+function asFooterAddress(value: unknown): FooterContact['address'] {
+  // Tolerate legacy free-text addresses by folding them into `street`.
+  if (typeof value === 'string') {
+    const street = value.trim();
+    return street ? { street } : undefined;
+  }
+  const object = asObject(value);
+  if (!object) {
+    return undefined;
+  }
+  const address = {
+    street: asText(object.street) || undefined,
+    city: asText(object.city) || undefined,
+    postalCode: asText(object.postalCode) || undefined,
+    region: asText(object.region) || undefined,
+    country: asText(object.country) || undefined,
+  };
+  return Object.values(address).some(Boolean) ? address : undefined;
+}
+
+function asFooterHours(value: unknown): FooterContact['hours'] {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const entries: FooterHours[] = [];
+  for (const raw of value) {
+    const object = asObject(raw);
+    if (!object) {
+      continue;
+    }
+    const day = asText(object.day).toLowerCase();
+    if (!FOOTER_WEEKDAYS.includes(day)) {
+      continue;
+    }
+    entries.push({
+      day,
+      opens: asText(object.opens) || undefined,
+      closes: asText(object.closes) || undefined,
+      closed: object.closed === true,
+    });
+  }
+  return entries.length > 0 ? entries : undefined;
 }
 
 function resolveBrandName(brand: BrandConfig | undefined, fallback: string) {

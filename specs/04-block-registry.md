@@ -162,7 +162,6 @@ Props:
   - `phone` — optional E.164-style string
   - `email` — optional
   - `hours` — optional structured `{ day, opens, closes, closed? }[]` covering each day of the week
-  - `businessId` — optional structured `{ type, value }` where `type` is `kennitala` (Iceland) or `orgnr` (Sweden, reserved); rendered as the local trust line small businesses are expected to show, and emitted into the LocalBusiness JSON-LD when present
 - showBrand — whether the footer renders `brand.businessName` and `brand.logo` (default true)
 - showMadeWith — whether the footer renders a small "Made with Snælda" link (default true, toggleable by the site owner)
 

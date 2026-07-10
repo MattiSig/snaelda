@@ -1,7 +1,7 @@
 # Snælda — Nordic Go-To-Market Strategy & Playbook
 
 > **Status:** Adopted 2026-07-02. This supersedes the earlier `GTM.md` positioning where they conflict.
-> **Current focus:** Phase 0 / Iceland beachhead prep — Icelandic localization first. Sweden-specific items (Swish, Fortnox, WCAG enforcement pressure, SEK) are recorded here but deferred until the Iceland beachhead is live.
+> **Current focus:** Phase 0 / Iceland beachhead prep — Icelandic localization first. Sweden-specific items (Swish, Fortnox, WCAG enforcement pressure, SEK) are recorded here but deferred until the Iceland beachhead is live. Payments stay on plain Stripe checkout (cards) for now — no wallet/Swish/Aur work — and `.is`-specific (ISNIC) domain guidance is deferred (2026-07-10).
 
 > **Product:** Snælda (snaelda.io) — "Spin up a website. A real one."
 > Drop your URL (or describe your business) → your content reborn into a designed site → tweak in a light editor → publish → point your domain.
@@ -89,7 +89,6 @@ Mark Pincus's framework (from *Life at the Speed of Play*, 2026): **copy what's 
 | **Primary wedge** | Native Icelandic (almost nobody localizes here) | Accessibility-compliant by default (legal pressure live) |
 | **Supporting wedges** | Founder-market-fit, network, ISK + .is | Swish + Fortnox, EU-hosted + one real human, native Swedish tone |
 | **Distribution** | Facebook groups + personal network (NO paid ads) | Vertical SEO, bookkeeper/accountant referrals, LinkedIn + FB groups |
-| **Trust footer** | kennitala | org.nr (+ F-skatt) |
 
 ---
 
@@ -112,13 +111,12 @@ Always price in **local currency. Never USD** — a dollar tag kills the local-n
 - [ ] **Native Swedish content** — du-form, understated, lagom, no hype
 - [ ] **WCAG 2.1 AA by default** — legally live, surveillance active, fines up to 10M SEK
 - [ ] **GDPR + cookie consent** (IMY), EU hosting
-- [ ] **org.nr in footer + .se domain**
+- [ ] **.se domain**
 
 ### Iceland
-- [ ] **Cards + Apple/Google Pay** (via Stripe) — card-first market (~72% credit usage)
+- [ ] **Cards via Stripe** — card-first market (~72% credit usage); wallet enablement deferred
 - [ ] **Native Icelandic content** — your superpower; quality you can personally judge
-- [ ] **ISK pricing + .is domain** (ISNIC)
-- [ ] **kennitala in footer**
+- [ ] **ISK pricing** (`.is`/ISNIC domain guidance deferred)
 - [ ] Accessibility — same direction via EEA; WCAG-by-default covers it free
 
 > **Stripe covers payments for BOTH markets in one integration.** Don't integrate rails individually.
@@ -134,7 +132,7 @@ Live page is English-only, no pricing, no trust layer — reads like every globa
 - [ ] Swedish + Icelandic landing pages (write IS natively; nail SE tone)
 - [ ] Trust layer: EU-hosted, "built & personally checked by one developer you can reach," GDPR clarity, accessibility statement
 - [ ] WCAG 2.1 AA baked into every component (at component-design time)
-- [ ] Stripe live: Swish + cards + Apple/Google Pay
+- [ ] Stripe live (cards; Swish and wallets deferred)
 - [ ] Pricing in SEK + ISK
 - [ ] **Re-spin v1 + the public before/after demo** (this is the centerpiece, not a nicety)
 - [ ] Forms → lead capture → CSV export
@@ -143,7 +141,7 @@ Live page is English-only, no pricing, no trust layer — reads like every globa
 - [ ] Re-spin 5–10 real micro-businesses from your network (café, salon, contractor, tour op) — free/near-free for testimonials + before/after
 - [ ] Post the before/afters in Icelandic small-business Facebook groups (THE channel)
 - [ ] Work personal network for intros
-- [ ] kennitala footer, .is domains, ISK; cards + Apple Pay (skip Aur)
+- [ ] ISK via Stripe cards (wallets, Aur, and `.is` guidance all deferred)
 - [ ] 60-sec demo: URL → reborn Icelandic site in minutes
 - **Exit target:** ~10 reference sites, 5+ testimonials, first paying conversions
 
@@ -198,7 +196,7 @@ The MLP is concrete: **re-spin producing a genuinely stunning before/after for O
 - [ ] **Re-spin pipeline + public before/after demo**
 - [ ] AI content/images in IS / SE / EN
 - [ ] Forms → lead capture → CSV export
-- [ ] Stripe (Swish + cards + Apple/Google Pay)
+- [ ] Stripe (cards)
 - [ ] Custom domain (.se / .is), GDPR consent, EU hosting
 - [ ] WCAG 2.1 AA components
 - [ ] $99 / 999 SEK creator once-over (just your time)

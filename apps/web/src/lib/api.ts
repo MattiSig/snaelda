@@ -88,11 +88,26 @@ export type BrandConfig = {
   primaryColor: string;
 };
 
+export type FooterAddress = {
+  street?: string;
+  city?: string;
+  postalCode?: string;
+  region?: string;
+  country?: string;
+};
+
+export type FooterHours = {
+  day: string;
+  opens?: string;
+  closes?: string;
+  closed?: boolean;
+};
+
 export type FooterContact = {
-  address?: string;
+  address?: FooterAddress;
   phone?: string;
   email?: string;
-  hours?: string[];
+  hours?: FooterHours[];
 };
 
 export type SiteDraft = {

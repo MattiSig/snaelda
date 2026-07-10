@@ -411,11 +411,15 @@ function buildLocalBusinessJsonLd(
   }
 
   const contact = asFooterContact(footer.props.contact);
-  if (!contact.address && (!contact.hours || contact.hours.length === 0)) {
+  const address = buildPostalAddress(contact.address);
+  const openingHours = buildOpeningHoursSpecification(contact.hours);
+  // The structured shape is the LocalBusiness gate: without an address or real
+  // opening hours there is no markup worth emitting (Spec 04/09).
+  if (!address && openingHours.length === 0) {
     return undefined;
   }
 
-  const brandName = brand.businessName.trim() || siteName;
+  const brandName = (brand?.businessName ?? "").trim() || siteName;
   const result: Record<string, unknown> = {
     "@context": "https://schema.org",
     "@type": "LocalBusiness",
@@ -423,11 +427,8 @@ function buildLocalBusinessJsonLd(
     url: canonicalUrl,
   };
 
-  if (contact.address) {
-    result.address = {
-      "@type": "PostalAddress",
-      streetAddress: contact.address,
-    };
+  if (address) {
+    result.address = address;
   }
   if (contact.phone) {
     result.telephone = contact.phone;
@@ -435,17 +436,66 @@ function buildLocalBusinessJsonLd(
   if (contact.email) {
     result.email = contact.email;
   }
-  if (contact.hours?.length) {
-    result.openingHours = contact.hours;
+  if (openingHours.length > 0) {
+    result.openingHoursSpecification = openingHours;
   }
   if (ogImageUrl) {
     result.image = ogImageUrl;
   }
-  if (brand.logo?.assetId) {
+  if (brand?.logo?.assetId) {
     result.logo = buildPublishedAssetURL(siteSlug, brand.logo.assetId);
   }
 
   return result;
+}
+
+function buildPostalAddress(
+  address: FooterContact["address"],
+): Record<string, unknown> | undefined {
+  if (!address) {
+    return undefined;
+  }
+  const postal: Record<string, unknown> = { "@type": "PostalAddress" };
+  if (address.street) postal.streetAddress = address.street;
+  if (address.city) postal.addressLocality = address.city;
+  if (address.postalCode) postal.postalCode = address.postalCode;
+  if (address.region) postal.addressRegion = address.region;
+  if (address.country) postal.addressCountry = address.country;
+  return Object.keys(postal).length > 1 ? postal : undefined;
+}
+
+const SCHEMA_DAY_OF_WEEK: Record<string, string> = {
+  monday: "https://schema.org/Monday",
+  tuesday: "https://schema.org/Tuesday",
+  wednesday: "https://schema.org/Wednesday",
+  thursday: "https://schema.org/Thursday",
+  friday: "https://schema.org/Friday",
+  saturday: "https://schema.org/Saturday",
+  sunday: "https://schema.org/Sunday",
+};
+
+function buildOpeningHoursSpecification(
+  hours: FooterContact["hours"],
+): Array<Record<string, unknown>> {
+  if (!hours) {
+    return [];
+  }
+  const specs: Array<Record<string, unknown>> = [];
+  for (const entry of hours) {
+    const dayOfWeek = SCHEMA_DAY_OF_WEEK[entry.day];
+    // Closed days and entries missing a full open/close range don't yield valid
+    // OpeningHoursSpecification markup, so they're omitted rather than emitted empty.
+    if (!dayOfWeek || entry.closed || !entry.opens || !entry.closes) {
+      continue;
+    }
+    specs.push({
+      "@type": "OpeningHoursSpecification",
+      dayOfWeek,
+      opens: entry.opens,
+      closes: entry.closes,
+    });
+  }
+  return specs;
 }
 
 function buildRobotsTXT(manifest: PublishedArtifactManifest) {
@@ -625,17 +675,70 @@ function asImageRef(value: unknown) {
   };
 }
 
+const FOOTER_WEEKDAYS = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+];
+
 function asFooterContact(value: unknown): FooterContact {
   const object = asObject(value);
   if (!object) {
     return {};
   }
   return {
-    address: asText(object.address) || undefined,
+    address: asFooterAddress(object.address),
     phone: asText(object.phone) || undefined,
     email: asText(object.email) || undefined,
-    hours: asStringArray(object.hours),
+    hours: asFooterHours(object.hours),
   };
+}
+
+function asFooterAddress(value: unknown): FooterContact["address"] {
+  if (typeof value === "string") {
+    const street = value.trim();
+    return street ? { street } : undefined;
+  }
+  const object = asObject(value);
+  if (!object) {
+    return undefined;
+  }
+  const address = {
+    street: asText(object.street) || undefined,
+    city: asText(object.city) || undefined,
+    postalCode: asText(object.postalCode) || undefined,
+    region: asText(object.region) || undefined,
+    country: asText(object.country) || undefined,
+  };
+  return Object.values(address).some(Boolean) ? address : undefined;
+}
+
+function asFooterHours(value: unknown): FooterContact["hours"] {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const entries: NonNullable<FooterContact["hours"]> = [];
+  for (const raw of value) {
+    const object = asObject(raw);
+    if (!object) {
+      continue;
+    }
+    const day = asText(object.day).toLowerCase();
+    if (!FOOTER_WEEKDAYS.includes(day)) {
+      continue;
+    }
+    entries.push({
+      day,
+      opens: asText(object.opens) || undefined,
+      closes: asText(object.closes) || undefined,
+      closed: object.closed === true,
+    });
+  }
+  return entries.length > 0 ? entries : undefined;
 }
 
 function asObject(value: unknown) {
@@ -647,10 +750,4 @@ function asObject(value: unknown) {
 
 function asText(value: unknown) {
   return typeof value === "string" ? value : "";
-}
-
-function asStringArray(value: unknown) {
-  return Array.isArray(value)
-    ? value.filter((entry): entry is string => typeof entry === "string")
-    : [];
 }

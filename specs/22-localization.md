@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Native Icelandic is the primary wedge for the Iceland beachhead ([docs/nordic-gtm-strategy.md](../docs/nordic-gtm-strategy.md)): almost nobody localizes for this market, and the founder can personally QA Icelandic output. That wedge only works if the language story holds end to end — generated copy, the published site, the builder UI, emails, pricing, and the trust footer. This spec owns the locale model and the language contract every other surface honors. Iceland ships first (`is` + `en`); Swedish (`sv`) is reserved and reuses the same machinery in the Sweden phase.
+Native Icelandic is the primary wedge for the Iceland beachhead ([docs/nordic-gtm-strategy.md](../docs/nordic-gtm-strategy.md)): almost nobody localizes for this market, and the founder can personally QA Icelandic output. That wedge only works if the language story holds end to end — generated copy, the published site, the builder UI, emails, and pricing. This spec owns the locale model and the language contract every other surface honors. Iceland ships first (`is` + `en`); Swedish (`sv`) is reserved and reuses the same machinery in the Sweden phase.
 
 ## Current State
 
@@ -153,8 +153,7 @@ Per the GTM guardrail: **always local currency, never USD customer-facing.** ISK
 
 Locale-market trust signals, cross-referenced rather than owned here:
 
-- **kennitala in the footer** for Icelandic businesses — the Footer block ([Spec 04](./04-block-registry.md)) gains an optional business-registration field, rendered with the correct local label ("Kt." for Iceland; "Org.nr" reserved for Sweden). Spec 04 is amended separately; generation seeds the field when the prompt or re-spin source provides it.
-- **.is domain guidance** — the custom-domain flow ([Spec 13](./13-deployment-domains-and-hosting.md)) surfaces ISNIC-aware guidance for `.is` domains for Icelandic-locale sites; no registrar integration, guidance only.
+- **.is domain guidance** — the custom-domain flow ([Spec 13](./13-deployment-domains-and-hosting.md)) surfaces ISNIC-aware guidance for `.is` domains for Icelandic-locale sites; no registrar integration, guidance only. **Deferred (2026-07-10):** skipped for now; `.is` customers get the generic custom-domain flow.
 
 ## Rollout
 
@@ -174,7 +173,6 @@ The Iceland beachhead is language-ready when all of the following hold:
 - [ ] marketing/landing surface live in natively written Icelandic
 - [ ] all transactional emails available in Icelandic, keyed off workspace locale
 - [ ] all customer-facing prices in ISK, zero-decimal, no `$` anywhere
-- [ ] kennitala renderable in the footer of Icelandic sites
 
 ## Out of Scope
 
@@ -182,4 +180,5 @@ The Iceland beachhead is language-ready when all of the following hold:
 - machine-translation workflows or translation-memory tooling
 - per-user locale overrides within a workspace (workspace-level is enough for MVP)
 - right-to-left script support
-- locale-specific legal-content generation (privacy policies, terms) beyond the trust-footer fields above
+- locale-specific legal-content generation (privacy policies, terms)
+- business-registration footer fields (kennitala/org.nr as a structured `businessId` prop with localized labels) — won't do, decided 2026-07-10; owners who want a registration number in the footer use ordinary footer copy

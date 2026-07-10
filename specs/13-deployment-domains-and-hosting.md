@@ -52,7 +52,7 @@ Expected workflow:
 
 The custom-domain lifecycle above is registrar-agnostic, but the go-to-market markets bring TLD-specific realities:
 
-- **`.is` (Iceland, ISNIC).** Customers register `.is` domains directly at ISNIC; registration or resale by Snaelda is out of scope. ISNIC verifies nameserver delegation before activating a domain, which differs from the generic add-TXT-record flow — the verify step must accept delegation-based setups, and help copy should walk an ISNIC customer through it in Icelandic ([Spec 22](./22-localization.md)).
+- **`.is` (Iceland, ISNIC).** Customers register `.is` domains directly at ISNIC; registration or resale by Snaelda is out of scope. ISNIC verifies nameserver delegation before activating a domain, which differs from the generic add-TXT-record flow — the verify step must accept delegation-based setups, and help copy should walk an ISNIC customer through it in Icelandic ([Spec 22](./22-localization.md)). **Deferred (2026-07-10):** the delegation-aware verify step and ISNIC help copy are not scheduled; `.is` customers use the generic flow for now.
 - **`.se` (Sweden)** follows in the Sweden phase; no work now.
 
 The `platform.com` placeholders in this spec correspond to `snaelda.io` in production.

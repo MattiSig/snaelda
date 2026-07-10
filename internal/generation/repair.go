@@ -732,11 +732,12 @@ func repairTeamProfileCardsProps(props map[string]any, pageTitle string) map[str
 
 func repairFooterProps(props map[string]any, pageTitle string) map[string]any {
 	return map[string]any{
-		"showBrand":   footerShowBrand(props),
-		"tagline":     readGeneratedText(props, "tagline", 240),
-		"contact":     repairFooterContact(props),
-		"copyright":   firstNonEmpty(readGeneratedText(props, "copyright", 120), "Copyright 2026 "+pageTitle),
-		"socialLinks": repairLinkList(props["socialLinks"], 6),
+		"showBrand":    footerFlag(props, "showBrand"),
+		"showMadeWith": footerFlag(props, "showMadeWith"),
+		"tagline":      readGeneratedText(props, "tagline", 240),
+		"contact":      repairFooterContact(props),
+		"copyright":    firstNonEmpty(readGeneratedText(props, "copyright", 120), "Copyright 2026 "+pageTitle),
+		"socialLinks":  repairLinkList(props["socialLinks"], 6),
 	}
 }
 
@@ -744,7 +745,7 @@ func repairFooterContact(props map[string]any) map[string]any {
 	contact, _ := props["contact"].(map[string]any)
 	result := map[string]any{}
 
-	if address := readGeneratedText(contact, "address", 240); address != "" {
+	if address := repairFooterAddress(contact["address"]); len(address) > 0 {
 		result["address"] = address
 	}
 	if phone := readGeneratedText(contact, "phone", 40); phone != "" {
@@ -755,18 +756,104 @@ func repairFooterContact(props map[string]any) map[string]any {
 	} else if contactLine := readGeneratedText(props, "contactLine", 180); contactLine != "" {
 		result["email"] = contactLine
 	}
-	if hours := repairStringList(contact["hours"], 14); len(hours) > 0 {
+	if hours := repairFooterHours(contact["hours"]); len(hours) > 0 {
 		result["hours"] = hours
 	}
 
 	return result
 }
 
-func footerShowBrand(props map[string]any) bool {
-	if _, ok := props["showBrand"]; !ok {
+// repairFooterAddress coerces the model's address into the structured
+// { street, city, postalCode, region, country } shape (Spec 04). A legacy or
+// stray single-line string is folded into `street` so no signal is lost.
+func repairFooterAddress(value any) map[string]any {
+	if text, ok := value.(string); ok {
+		if street := cleanGeneratedText(text, 160); street != "" {
+			return map[string]any{"street": street}
+		}
+		return nil
+	}
+	object, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	result := map[string]any{}
+	for field, limit := range map[string]int{"street": 160, "city": 120, "postalCode": 40, "region": 120, "country": 120} {
+		if text := readGeneratedText(object, field, limit); text != "" {
+			result[field] = text
+		}
+	}
+	return result
+}
+
+var footerWeekdaySet = map[string]bool{
+	"monday": true, "tuesday": true, "wednesday": true, "thursday": true,
+	"friday": true, "saturday": true, "sunday": true,
+}
+
+// repairFooterHours coerces the model's opening-hours array into the structured
+// { day, opens, closes, closed } shape (Spec 04), keeping at most one entry per
+// weekday and dropping anything without a recognizable day.
+func repairFooterHours(value any) []any {
+	values, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	seen := map[string]bool{}
+	items := make([]any, 0, len(values))
+	for _, raw := range values {
+		entry, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		day := strings.ToLower(strings.TrimSpace(readGeneratedText(entry, "day", 20)))
+		if !footerWeekdaySet[day] || seen[day] {
+			continue
+		}
+		seen[day] = true
+		item := map[string]any{"day": day, "closed": readBool(entry, "closed")}
+		if opens := repairClockTime(readGeneratedText(entry, "opens", 5)); opens != "" {
+			item["opens"] = opens
+		}
+		if closes := repairClockTime(readGeneratedText(entry, "closes", 5)); closes != "" {
+			item["closes"] = closes
+		}
+		items = append(items, item)
+		if len(items) == 7 {
+			break
+		}
+	}
+	return items
+}
+
+// repairClockTime keeps a value only when it is a valid HH:MM clock time, so the
+// structured hours never carry free-form text the validator would reject.
+func repairClockTime(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) != 5 || trimmed[2] != ':' {
+		return ""
+	}
+	for i, r := range trimmed {
+		if i == 2 {
+			continue
+		}
+		if r < '0' || r > '9' {
+			return ""
+		}
+	}
+	hours := int(trimmed[0]-'0')*10 + int(trimmed[1]-'0')
+	minutes := int(trimmed[3]-'0')*10 + int(trimmed[4]-'0')
+	if hours > 23 || minutes > 59 {
+		return ""
+	}
+	return trimmed
+}
+
+func footerFlag(props map[string]any, key string) bool {
+	if _, ok := props[key]; !ok {
 		return true
 	}
-	return readBool(props, "showBrand")
+	return readBool(props, key)
 }
 
 func repairContactFormProps(props map[string]any, pageTitle string) map[string]any {

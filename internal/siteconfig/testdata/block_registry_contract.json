@@ -5,6 +5,7 @@
       "version": "1.0.0",
       "displayName": "Collection detail",
       "category": "content",
+      "tagline": "Renders a single entry's content.",
       "defaultProps": {
         "layout": "default"
       },
@@ -32,6 +33,7 @@
       "version": "1.0.0",
       "displayName": "Collection index",
       "category": "content",
+      "tagline": "Index page listing all entries.",
       "defaultProps": {
         "heading": "All entries",
         "showSort": false,
@@ -85,6 +87,7 @@
       "version": "1.0.0",
       "displayName": "Collection list",
       "category": "content",
+      "tagline": "Live list of entries from a collection.",
       "defaultProps": {
         "collection": "",
         "heading": "Featured",
@@ -151,6 +154,7 @@
       "version": "1.0.0",
       "displayName": "Contact form",
       "category": "conversion",
+      "tagline": "Lead-capture form with custom fields.",
       "defaultProps": {
         "fields": [
           {
@@ -251,6 +255,7 @@
       "version": "1.0.0",
       "displayName": "CTA band",
       "category": "conversion",
+      "tagline": "A wide call-to-action band between sections.",
       "defaultProps": {
         "body": "Invite visitors into the next step.",
         "heading": "Ready to begin?",
@@ -302,6 +307,7 @@
       "version": "1.0.0",
       "displayName": "FAQ",
       "category": "content",
+      "tagline": "Question and answer accordion.",
       "defaultProps": {
         "heading": "Questions people ask first",
         "items": [
@@ -346,6 +352,7 @@
       "version": "1.0.0",
       "displayName": "Features grid",
       "category": "content",
+      "tagline": "A 2-4 column grid of short benefit cards.",
       "defaultProps": {
         "columns": 3,
         "heading": "What you get",
@@ -407,12 +414,14 @@
       "version": "1.0.0",
       "displayName": "Footer",
       "category": "content",
+      "tagline": "Site-wide footer with link columns.",
       "defaultProps": {
         "contact": {
           "email": "hello@example.com"
         },
         "copyright": "Copyright 2026 Site name",
         "showBrand": true,
+        "showMadeWith": true,
         "tagline": "A short closing line that reinforces the tone of the site."
       },
       "editorSchema": [
@@ -427,6 +436,11 @@
           "control": "textarea"
         },
         {
+          "name": "showMadeWith",
+          "label": "Show \"Made with Snælda\" link",
+          "control": "checkbox"
+        },
+        {
           "name": "contact",
           "label": "Contact details",
           "control": "object",
@@ -434,12 +448,40 @@
             {
               "name": "address",
               "label": "Address",
-              "control": "textarea"
+              "control": "object",
+              "fields": [
+                {
+                  "name": "street",
+                  "label": "Street",
+                  "control": "text"
+                },
+                {
+                  "name": "city",
+                  "label": "City",
+                  "control": "text"
+                },
+                {
+                  "name": "postalCode",
+                  "label": "Postal code",
+                  "control": "text"
+                },
+                {
+                  "name": "region",
+                  "label": "Region",
+                  "control": "text"
+                },
+                {
+                  "name": "country",
+                  "label": "Country",
+                  "control": "text"
+                }
+              ]
             },
             {
               "name": "phone",
               "label": "Phone",
-              "control": "text"
+              "control": "text",
+              "placeholder": "+354 555 1234"
             },
             {
               "name": "email",
@@ -449,8 +491,41 @@
             {
               "name": "hours",
               "label": "Opening hours",
-              "control": "string_list",
-              "description": "One line per schedule entry, for example Mon-Fri 09:00-17:00."
+              "control": "repeater",
+              "description": "One entry per open (or closed) day of the week.",
+              "itemFields": [
+                {
+                  "name": "day",
+                  "label": "Day",
+                  "control": "select",
+                  "options": [
+                    "monday",
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday",
+                    "saturday",
+                    "sunday"
+                  ]
+                },
+                {
+                  "name": "opens",
+                  "label": "Opens",
+                  "control": "text",
+                  "placeholder": "09:00"
+                },
+                {
+                  "name": "closes",
+                  "label": "Closes",
+                  "control": "text",
+                  "placeholder": "17:00"
+                },
+                {
+                  "name": "closed",
+                  "label": "Closed",
+                  "control": "checkbox"
+                }
+              ]
             }
           ]
         },
@@ -484,6 +559,7 @@
       "version": "1.0.0",
       "displayName": "Gallery",
       "category": "media",
+      "tagline": "A visual grid of curated images.",
       "defaultProps": {
         "heading": "Selected work",
         "images": [
@@ -545,6 +621,7 @@
       "version": "1.0.0",
       "displayName": "Hero",
       "category": "hero",
+      "tagline": "Page-leading attention grabber with headline, optional supporting image, and primary call-to-action.",
       "defaultProps": {
         "headline": "A focused website starts here",
         "layout": "centered",
@@ -636,6 +713,7 @@
       "version": "1.0.0",
       "displayName": "Image and text",
       "category": "media",
+      "tagline": "A side-by-side image and copy pairing.",
       "defaultProps": {
         "body": "Pair a short message with a supporting image.",
         "heading": "Built with structure",
@@ -692,6 +770,7 @@
       "version": "1.0.0",
       "displayName": "Pricing packages",
       "category": "conversion",
+      "tagline": "Stacked pricing tiers with feature lists.",
       "defaultProps": {
         "heading": "Packages",
         "plans": [
@@ -780,6 +859,7 @@
       "version": "1.0.0",
       "displayName": "Stats",
       "category": "content",
+      "tagline": "Punchy metrics with short labels.",
       "defaultProps": {
         "heading": "By the numbers",
         "items": [
@@ -837,6 +917,7 @@
       "version": "1.0.0",
       "displayName": "Team profile cards",
       "category": "content",
+      "tagline": "Team intro cards with photos.",
       "defaultProps": {
         "heading": "The people behind the work",
         "people": [
@@ -916,6 +997,7 @@
       "version": "1.0.0",
       "displayName": "Testimonials",
       "category": "content",
+      "tagline": "Customer quotes with attribution.",
       "defaultProps": {
         "heading": "What clients say",
         "items": [
@@ -971,6 +1053,7 @@
       "version": "1.0.0",
       "displayName": "Text section",
       "category": "content",
+      "tagline": "Plain prose section for narrative copy.",
       "defaultProps": {
         "alignment": "left",
         "body": "Add focused supporting copy here.",
@@ -1012,6 +1095,7 @@
     }
   ],
   "draft": {
+    "revision": 0,
     "site": {
       "id": "site_registry_contract",
       "name": "Registry Contract Studio",
@@ -1190,6 +1274,7 @@
               },
               "copyright": "Copyright 2026 Site name",
               "showBrand": true,
+              "showMadeWith": true,
               "tagline": "A short closing line that reinforces the tone of the site."
             },
             "settings": {}

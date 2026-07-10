@@ -123,6 +123,57 @@ func TestRepairGenerationPlanDoesNotMakeContactPageFormMandatory(t *testing.T) {
 	}
 }
 
+func TestRepairFooterPropsProducesStructuredContact(t *testing.T) {
+	props := repairFooterProps(map[string]any{
+		"showMadeWith": false,
+		"tagline":      "Handmade in Reykjavík.",
+		"copyright":    "",
+		"contact": map[string]any{
+			"address": map[string]any{
+				"street":     "Laugavegur 12",
+				"city":       "Reykjavík",
+				"postalCode": "101",
+			},
+			"phone": "+354 555 1234",
+			"email": "hallo@example.is",
+			"hours": []any{
+				map[string]any{"day": "Monday", "opens": "09:00", "closes": "17:00"},
+				map[string]any{"day": "sunday", "closed": true, "opens": "bad"},
+				map[string]any{"day": "monday", "opens": "10:00"}, // duplicate weekday dropped
+				map[string]any{"day": "someday"},                  // unknown weekday dropped
+			},
+		},
+	}, "Fléttan")
+
+	if props["showMadeWith"] != false {
+		t.Fatalf("expected showMadeWith preserved as false, got %v", props["showMadeWith"])
+	}
+	if props["showBrand"] != true {
+		t.Fatalf("expected showBrand to default true, got %v", props["showBrand"])
+	}
+
+	contact := props["contact"].(map[string]any)
+	address := contact["address"].(map[string]any)
+	if address["street"] != "Laugavegur 12" || address["city"] != "Reykjavík" {
+		t.Fatalf("unexpected structured address: %#v", address)
+	}
+	hours := contact["hours"].([]any)
+	if len(hours) != 2 {
+		t.Fatalf("expected 2 valid hours entries (dedup + drop unknown), got %#v", hours)
+	}
+	sunday := hours[1].(map[string]any)
+	if sunday["closed"] != true {
+		t.Fatalf("expected sunday closed, got %#v", sunday)
+	}
+	if _, ok := sunday["opens"]; ok {
+		t.Fatalf("expected invalid opens time dropped, got %#v", sunday)
+	}
+
+	if err := siteconfig.DefaultBlockRegistry().ValidateProps("footer", siteconfig.BlockVersionV1, "props", props); err != nil {
+		t.Fatalf("repaired footer props failed validation: %v", err)
+	}
+}
+
 func blockIndex(blocks []generationBlockPlan, blockType string) int {
 	for index, block := range blocks {
 		if block.Type == blockType {

@@ -1988,11 +1988,12 @@ func footerBlockPlan(siteName string, profile promptProfile) generationBlockPlan
 		Type:    "footer",
 		Purpose: "Close the page with practical navigation and a final tone-setting line.",
 		Props: map[string]any{
-			"showBrand":   true,
-			"tagline":     footerTagline(profile),
-			"contact":     map[string]any{"email": "hello@example.com"},
-			"copyright":   genText(profile.Locale, "footer.copyrightPrefix") + siteName,
-			"socialLinks": []any{},
+			"showBrand":    true,
+			"showMadeWith": true,
+			"tagline":      footerTagline(profile),
+			"contact":      map[string]any{"email": "hello@example.com"},
+			"copyright":    genText(profile.Locale, "footer.copyrightPrefix") + siteName,
+			"socialLinks":  []any{},
 		},
 	}
 }

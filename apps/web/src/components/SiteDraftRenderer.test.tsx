@@ -103,6 +103,93 @@ describe('SiteDraftRenderer', () => {
     ).toBe(true);
   });
 
+  it('renders the structured footer contact and a Made with Snælda link', () => {
+    const draft: SiteDraft = {
+      ...buildDraft(),
+      site: { ...buildDraft().site, defaultLocale: 'is' },
+      pages: [
+        {
+          id: 'page-home',
+          title: 'Home',
+          slug: '/',
+          blocks: [
+            {
+              id: 'block-footer',
+              type: 'footer',
+              version: '1.0.0',
+              props: {
+                showBrand: true,
+                showMadeWith: true,
+                copyright: 'Copyright 2026 Fléttan',
+                contact: {
+                  address: {
+                    street: 'Laugavegur 12',
+                    city: 'Reykjavík',
+                    postalCode: '101',
+                    country: 'Ísland',
+                  },
+                  phone: '+354 555 1234',
+                  email: 'hallo@flettan.is',
+                  hours: [
+                    { day: 'monday', opens: '09:00', closes: '17:00' },
+                    { day: 'sunday', closed: true },
+                  ],
+                },
+              },
+              settings: {},
+            },
+          ],
+        },
+      ],
+    };
+
+    render(<SiteDraftRenderer site={draft} />);
+
+    expect(screen.getByText('Laugavegur 12', { exact: false })).toBeTruthy();
+    expect(screen.getByText('101 Reykjavík', { exact: false })).toBeTruthy();
+    expect(
+      screen.getByRole('link', { name: '+354 555 1234' }).getAttribute('href'),
+    ).toBe('tel:+3545551234');
+    // Icelandic weekday labels and closed marker.
+    expect(screen.getByText('Mánudagur')).toBeTruthy();
+    expect(screen.getByText('09:00–17:00')).toBeTruthy();
+    expect(screen.getByText('Sunnudagur')).toBeTruthy();
+    expect(screen.getByText('Lokað')).toBeTruthy();
+
+    const madeWith = screen.getByRole('link', { name: 'Gert með Snældu' });
+    expect(madeWith.getAttribute('href')).toBe('https://snaelda.io');
+  });
+
+  it('hides the Made with Snælda link when the owner opts out', () => {
+    const draft: SiteDraft = {
+      ...buildDraft(),
+      pages: [
+        {
+          id: 'page-home',
+          title: 'Home',
+          slug: '/',
+          blocks: [
+            {
+              id: 'block-footer',
+              type: 'footer',
+              version: '1.0.0',
+              props: {
+                showMadeWith: false,
+                copyright: 'Copyright 2026 Loom & Light',
+              },
+              settings: {},
+            },
+          ],
+        },
+      ],
+    };
+
+    render(<SiteDraftRenderer site={draft} />);
+
+    expect(screen.queryByText('Made with Snælda')).toBeNull();
+    expect(screen.queryByText('Gert með Snældu')).toBeNull();
+  });
+
   it('submits contact form blocks through the public forms API', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
