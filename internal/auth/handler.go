@@ -763,6 +763,29 @@ func (h *Handler) lookupWorkspaceLocale(ctx context.Context, workspaceID string)
 	return normalizeWorkspaceLocale(locale)
 }
 
+// magicLinkActionLabel returns the localized call-to-action label for the
+// magic-link email button.
+func magicLinkActionLabel(locale string, verify bool) string {
+	if normalizeWorkspaceLocale(locale) == "is" {
+		if verify {
+			return "Staðfesta netfang"
+		}
+		return "Skrá inn"
+	}
+	if verify {
+		return "Verify email"
+	}
+	return "Log in"
+}
+
+// magicLinkExpiresIn returns the localized magic-link lifetime phrase.
+func magicLinkExpiresIn(locale string) string {
+	if normalizeWorkspaceLocale(locale) == "is" {
+		return "15 mínútum"
+	}
+	return "15 minutes"
+}
+
 func (h *Handler) loadTrialSessionByCookie(ctx context.Context, token string) (Session, error) {
 	return h.loadTrialSession(ctx, "cookie_token_hash", tokenHash(token))
 }
@@ -1075,21 +1098,22 @@ func (h *Handler) sendMagicLink(ctx context.Context, user User, purpose string, 
 		return fmt.Errorf("create magic link: %w", err)
 	}
 
+	locale := h.lookupWorkspaceLocale(ctx, user.WorkspaceID)
 	linkURL := h.magicLinkURL(token)
 	templateData := email.MagicLinkTemplateData{
 		ProductName: "Snaelda",
-		ActionLabel: map[bool]string{true: "Verify email", false: "Log in"}[purpose == magicLinkVerify],
+		ActionLabel: magicLinkActionLabel(locale, purpose == magicLinkVerify),
 		Email:       user.Email,
 		MagicURL:    linkURL,
-		ExpiresIn:   "15 minutes",
+		ExpiresIn:   magicLinkExpiresIn(locale),
 	}
 
 	var sendErr error
 	switch purpose {
 	case magicLinkVerify:
-		_, sendErr = h.emailSender.SendMagicLinkVerify(ctx, email.Address{Email: user.Email, Name: user.Name}, templateData)
+		_, sendErr = h.emailSender.SendMagicLinkVerify(ctx, email.Address{Email: user.Email, Name: user.Name}, locale, templateData)
 	default:
-		_, sendErr = h.emailSender.SendMagicLinkLogin(ctx, email.Address{Email: user.Email, Name: user.Name}, templateData)
+		_, sendErr = h.emailSender.SendMagicLinkLogin(ctx, email.Address{Email: user.Email, Name: user.Name}, locale, templateData)
 	}
 	return sendErr
 }

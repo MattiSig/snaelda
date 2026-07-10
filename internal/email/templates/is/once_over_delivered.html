@@ -1,0 +1,13 @@
+<html>
+  <body>
+    <p>Yfirferðin þín hjá <strong>{{.ProductName}}</strong> er tilbúin.</p>
+    <p>Vinnusvæði: {{.WorkspaceName}}</p>
+    <p><a href="{{.DeliveryURL}}">Skoða yfirferð</a></p>
+    {{if .NextSteps}}
+    <p>Næstu skref:</p>
+    <ol>
+      {{range .NextSteps}}<li>{{.}}</li>{{end}}
+    </ol>
+    {{end}}
+  </body>
+</html>

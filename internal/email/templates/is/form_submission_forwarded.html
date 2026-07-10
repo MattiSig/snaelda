@@ -1,0 +1,9 @@
+<html>
+  <body>
+    <p>Ný fyrirspurn barst í gegnum <strong>{{.SiteName}}</strong>.</p>
+    <p>Síða: {{.PageTitle}}<br/>Móttekið: {{.SubmittedAt}}</p>
+    <ul>
+      {{range .Fields}}<li><strong>{{.Label}}:</strong> {{.Value}}</li>{{end}}
+    </ul>
+  </body>
+</html>

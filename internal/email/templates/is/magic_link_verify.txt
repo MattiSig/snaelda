@@ -1,0 +1,5 @@
+Staðfestu netfangið þitt hjá {{.ProductName}}:
+
+{{.MagicURL}}
+
+Hlekkurinn rennur út eftir {{.ExpiresIn}}.

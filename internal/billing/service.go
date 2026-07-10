@@ -377,6 +377,7 @@ func (s *Service) handleCheckoutCompleted(ctx context.Context, tx pgx.Tx, event 
 	}
 	if _, err := s.emailSender.SendWorkspaceClaimed(ctx,
 		email.Address{Email: claimedEmail, Name: contact.UserName},
+		contact.Locale,
 		email.WorkspaceClaimedTemplateData{
 			ProductName:   s.productName,
 			WorkspaceName: contact.WorkspaceName,
@@ -502,7 +503,7 @@ func (s *Service) handleInvoicePaid(ctx context.Context, tx pgx.Tx, invoice Invo
 	if plan, ok := s.catalog.PlanByPriceID(invoice.PriceID); ok {
 		planName = plan.Name
 	}
-	_, err = s.emailSender.SendBillingReceipt(ctx, email.Address{Email: contact.UserEmail, Name: contact.UserName}, email.BillingReceiptTemplateData{
+	_, err = s.emailSender.SendBillingReceipt(ctx, email.Address{Email: contact.UserEmail, Name: contact.UserName}, contact.Locale, email.BillingReceiptTemplateData{
 		ProductName:   s.productName,
 		WorkspaceName: contact.WorkspaceName,
 		Amount:        amount,
@@ -544,7 +545,7 @@ func (s *Service) handleInvoicePaymentFailed(ctx context.Context, tx pgx.Tx, inv
 		planName = plan.Name
 	}
 
-	_, err = s.emailSender.SendBillingPaymentFailed(ctx, email.Address{Email: contact.UserEmail, Name: contact.UserName}, email.BillingPaymentFailedTemplateData{
+	_, err = s.emailSender.SendBillingPaymentFailed(ctx, email.Address{Email: contact.UserEmail, Name: contact.UserName}, contact.Locale, email.BillingPaymentFailedTemplateData{
 		ProductName:   s.productName,
 		WorkspaceName: contact.WorkspaceName,
 		PlanName:      planName,

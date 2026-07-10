@@ -1,0 +1,6 @@
+Ný fyrirspurn barst í gegnum {{.SiteName}}
+
+Síða: {{.PageTitle}}
+Móttekið: {{.SubmittedAt}}
+{{range .Fields}}
+- {{.Label}}: {{.Value}}{{end}}

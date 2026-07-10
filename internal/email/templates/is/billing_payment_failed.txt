@@ -1,0 +1,4 @@
+Ekki tókst að vinna greiðsluna þína til {{.ProductName}} fyrir {{.WorkspaceName}}.
+
+Áskrift: {{.PlanName}}
+Uppfærðu greiðsluupplýsingar: {{.PortalURL}}

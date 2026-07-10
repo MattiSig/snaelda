@@ -228,7 +228,7 @@ func (s *Service) handleOnceOverCheckoutCompleted(ctx context.Context, tx pgx.Tx
 	_, err = s.emailSender.SendOnceOverIntakeReady(ctx, email.Address{
 		Email: contact.UserEmail,
 		Name:  contact.UserName,
-	}, email.OnceOverIntakeReadyTemplateData{
+	}, contact.Locale, email.OnceOverIntakeReadyTemplateData{
 		ProductName:   s.productName,
 		WorkspaceName: contact.WorkspaceName,
 		IntakeURL:     buildOnceOverIntakeURL(s.appBaseURL),

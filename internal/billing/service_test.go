@@ -149,6 +149,7 @@ func TestHandleWebhookSendsBillingReceipt(t *testing.T) {
 		id:              "workspace-1",
 		name:            "Wool Shop",
 		createdByUserID: "user-1",
+		locale:          "en",
 	}
 	store.users["user-1"] = fakeUser{id: "user-1", email: "owner@example.com", name: "Owner"}
 	store.workspaceByCustomer["cus_123"] = "workspace-1"
@@ -247,8 +248,10 @@ func TestHandleWebhookCreatesOnceOverRequestAndSendsIntakeEmail(t *testing.T) {
 	if msg.To[0].Email != "owner@example.com" {
 		t.Fatalf("expected owner email, got %q", msg.To[0].Email)
 	}
-	if !strings.Contains(msg.Subject, "once-over intake is ready") {
-		t.Fatalf("expected once-over intake subject, got %q", msg.Subject)
+	// The workspace has no explicit locale, so the Iceland-first default drives
+	// the send: the once-over intake subject renders in Icelandic.
+	if !strings.Contains(msg.Subject, "Yfirferðin þín") {
+		t.Fatalf("expected Icelandic once-over intake subject, got %q", msg.Subject)
 	}
 	if msg.IdempotencyKey != "once_over_intake_ready:evt_3" {
 		t.Fatalf("expected once-over idempotency key, got %q", msg.IdempotencyKey)

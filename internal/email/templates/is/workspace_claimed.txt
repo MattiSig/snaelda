@@ -1,0 +1,8 @@
+Vinnusvæðið þitt hjá {{.ProductName}} er vistað.
+
+Við tengdum {{.WorkspaceName}} við þetta netfang. Notaðu innskráningarhlekk
+til að skrá þig inn næst þegar þú kemur við.
+
+Skrá inn: {{.LoginURL}}
+
+Kvittanir og tilkynningar um reikninginn þinn berast hingað.

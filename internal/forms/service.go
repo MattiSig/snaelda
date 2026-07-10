@@ -546,7 +546,7 @@ func (s *Service) forwardSubmission(ctx context.Context, form resolvedForm, subm
 		})
 	}
 
-	_, err := s.emailSender.SendFormSubmissionForwarded(ctx, email.Address{Email: destination}, email.FormSubmissionForwardedTemplateData{
+	_, err := s.emailSender.SendFormSubmissionForwarded(ctx, email.Address{Email: destination}, form.Locale, email.FormSubmissionForwardedTemplateData{
 		ProductName: s.productName,
 		SiteName:    form.SiteName,
 		PageTitle:   form.PageTitle,

@@ -7,8 +7,8 @@ type Sender struct {
 	DefaultFrom Address
 }
 
-func (s Sender) SendMagicLinkLogin(ctx context.Context, to Address, data MagicLinkTemplateData) (SendResult, error) {
-	subject, textBody, htmlBody, err := RenderMagicLinkLogin(data)
+func (s Sender) SendMagicLinkLogin(ctx context.Context, to Address, locale string, data MagicLinkTemplateData) (SendResult, error) {
+	subject, textBody, htmlBody, err := RenderMagicLinkLogin(locale, data)
 	if err != nil {
 		return SendResult{}, err
 	}
@@ -22,8 +22,8 @@ func (s Sender) SendMagicLinkLogin(ctx context.Context, to Address, data MagicLi
 	})
 }
 
-func (s Sender) SendMagicLinkVerify(ctx context.Context, to Address, data MagicLinkTemplateData) (SendResult, error) {
-	subject, textBody, htmlBody, err := RenderMagicLinkVerify(data)
+func (s Sender) SendMagicLinkVerify(ctx context.Context, to Address, locale string, data MagicLinkTemplateData) (SendResult, error) {
+	subject, textBody, htmlBody, err := RenderMagicLinkVerify(locale, data)
 	if err != nil {
 		return SendResult{}, err
 	}
@@ -37,8 +37,8 @@ func (s Sender) SendMagicLinkVerify(ctx context.Context, to Address, data MagicL
 	})
 }
 
-func (s Sender) SendBillingReceipt(ctx context.Context, to Address, data BillingReceiptTemplateData, idempotencyKey string) (SendResult, error) {
-	subject, textBody, htmlBody, err := RenderBillingReceipt(data)
+func (s Sender) SendBillingReceipt(ctx context.Context, to Address, locale string, data BillingReceiptTemplateData, idempotencyKey string) (SendResult, error) {
+	subject, textBody, htmlBody, err := RenderBillingReceipt(locale, data)
 	if err != nil {
 		return SendResult{}, err
 	}
@@ -53,8 +53,8 @@ func (s Sender) SendBillingReceipt(ctx context.Context, to Address, data Billing
 	})
 }
 
-func (s Sender) SendBillingPaymentFailed(ctx context.Context, to Address, data BillingPaymentFailedTemplateData, idempotencyKey string) (SendResult, error) {
-	subject, textBody, htmlBody, err := RenderBillingPaymentFailed(data)
+func (s Sender) SendBillingPaymentFailed(ctx context.Context, to Address, locale string, data BillingPaymentFailedTemplateData, idempotencyKey string) (SendResult, error) {
+	subject, textBody, htmlBody, err := RenderBillingPaymentFailed(locale, data)
 	if err != nil {
 		return SendResult{}, err
 	}
@@ -69,8 +69,8 @@ func (s Sender) SendBillingPaymentFailed(ctx context.Context, to Address, data B
 	})
 }
 
-func (s Sender) SendOnceOverIntakeReady(ctx context.Context, to Address, data OnceOverIntakeReadyTemplateData, idempotencyKey string) (SendResult, error) {
-	subject, textBody, htmlBody, err := RenderOnceOverIntakeReady(data)
+func (s Sender) SendOnceOverIntakeReady(ctx context.Context, to Address, locale string, data OnceOverIntakeReadyTemplateData, idempotencyKey string) (SendResult, error) {
+	subject, textBody, htmlBody, err := RenderOnceOverIntakeReady(locale, data)
 	if err != nil {
 		return SendResult{}, err
 	}
@@ -85,8 +85,8 @@ func (s Sender) SendOnceOverIntakeReady(ctx context.Context, to Address, data On
 	})
 }
 
-func (s Sender) SendOnceOverDelivered(ctx context.Context, to Address, data OnceOverDeliveredTemplateData, idempotencyKey string) (SendResult, error) {
-	subject, textBody, htmlBody, err := RenderOnceOverDelivered(data)
+func (s Sender) SendOnceOverDelivered(ctx context.Context, to Address, locale string, data OnceOverDeliveredTemplateData, idempotencyKey string) (SendResult, error) {
+	subject, textBody, htmlBody, err := RenderOnceOverDelivered(locale, data)
 	if err != nil {
 		return SendResult{}, err
 	}
@@ -101,8 +101,8 @@ func (s Sender) SendOnceOverDelivered(ctx context.Context, to Address, data Once
 	})
 }
 
-func (s Sender) SendWorkspaceClaimed(ctx context.Context, to Address, data WorkspaceClaimedTemplateData, idempotencyKey string) (SendResult, error) {
-	subject, textBody, htmlBody, err := RenderWorkspaceClaimed(data)
+func (s Sender) SendWorkspaceClaimed(ctx context.Context, to Address, locale string, data WorkspaceClaimedTemplateData, idempotencyKey string) (SendResult, error) {
+	subject, textBody, htmlBody, err := RenderWorkspaceClaimed(locale, data)
 	if err != nil {
 		return SendResult{}, err
 	}
@@ -117,8 +117,8 @@ func (s Sender) SendWorkspaceClaimed(ctx context.Context, to Address, data Works
 	})
 }
 
-func (s Sender) SendFormSubmissionForwarded(ctx context.Context, to Address, data FormSubmissionForwardedTemplateData, idempotencyKey string) (SendResult, error) {
-	subject, textBody, htmlBody, err := RenderFormSubmissionForwarded(data)
+func (s Sender) SendFormSubmissionForwarded(ctx context.Context, to Address, locale string, data FormSubmissionForwardedTemplateData, idempotencyKey string) (SendResult, error) {
+	subject, textBody, htmlBody, err := RenderFormSubmissionForwarded(locale, data)
 	if err != nil {
 		return SendResult{}, err
 	}

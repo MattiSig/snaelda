@@ -1,0 +1,7 @@
+Takk fyrir greiðsluna til {{.ProductName}}.
+
+Vinnusvæði: {{.WorkspaceName}}
+Áskrift: {{.PlanName}}
+Upphæð: {{.Amount}} {{.Currency}}
+
+Kvittun: {{.ReceiptURL}}

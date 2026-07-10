@@ -229,7 +229,7 @@ func (s *Service) DeliverOnceOver(ctx context.Context, input DeliverOnceOverInpu
 		if _, err := s.emailSender.SendOnceOverDelivered(ctx, email.Address{
 			Email: contact.UserEmail,
 			Name:  contact.UserName,
-		}, email.OnceOverDeliveredTemplateData{
+		}, contact.Locale, email.OnceOverDeliveredTemplateData{
 			ProductName:   s.productName,
 			WorkspaceName: contact.WorkspaceName,
 			DeliveryURL:   videoURL,

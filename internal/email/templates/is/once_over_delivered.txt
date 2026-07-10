@@ -1,0 +1,8 @@
+Yfirferðin þín hjá {{.ProductName}} er tilbúin.
+
+Vinnusvæði: {{.WorkspaceName}}
+Skoða yfirferð: {{.DeliveryURL}}
+
+Næstu skref:
+{{range .NextSteps}}- {{.}}
+{{end}}

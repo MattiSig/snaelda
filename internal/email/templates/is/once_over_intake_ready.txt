@@ -1,0 +1,4 @@
+Yfirferðin þín hjá {{.ProductName}} er tilbúin til að hefjast.
+
+Vinnusvæði: {{.WorkspaceName}}
+Opna yfirferð: {{.IntakeURL}}

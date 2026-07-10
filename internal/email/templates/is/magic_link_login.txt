@@ -1,0 +1,7 @@
+Notaðu þennan hlekk til að skrá þig inn á {{.ProductName}}:
+
+{{.MagicURL}}
+
+Hann rennur út eftir {{.ExpiresIn}}.
+
+Ef þú baðst ekki um þetta máttu hunsa þennan póst.
