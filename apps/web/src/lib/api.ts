@@ -1267,6 +1267,112 @@ export async function getPreviewDraft(token: string) {
   return publicAPIRequest<PreviewDraftResponse>(`/api/public/preview/${token}`);
 }
 
+// ---------------------------------------------------------------------------
+// Re-spin: public URL-import demo (Spec 21). These endpoints carry no session
+// until claim; claim adopts the demo trial session (cookies), so it must run
+// with credentials included via apiFetch.
+// ---------------------------------------------------------------------------
+
+export type RespinStatus =
+  | "queued"
+  | "fetching"
+  | "extracting"
+  | "composing"
+  | "succeeded"
+  | "degraded"
+  | "failed";
+
+export function isTerminalRespinStatus(status: RespinStatus): boolean {
+  return (
+    status === "succeeded" || status === "degraded" || status === "failed"
+  );
+}
+
+export type RespinStartResponse = {
+  importId: string;
+  status: RespinStatus;
+  shareSlug?: string;
+  cached?: boolean;
+};
+
+export type RespinStatusResponse = {
+  importId: string;
+  status: RespinStatus;
+  fetchMode?: string;
+  degraded: boolean;
+  degradationReason?: string;
+  shareSlug?: string;
+};
+
+export type RespinPreviewAfter = {
+  siteId: string;
+  previewToken: string;
+  expiresAt: string;
+};
+
+export type RespinPreviewResponse = {
+  importId: string;
+  status: RespinStatus;
+  degraded: boolean;
+  promptPrefill?: string;
+  source: { url: string };
+  after?: RespinPreviewAfter;
+};
+
+export type RespinClaimResponse = {
+  session: BuilderSession;
+  siteId?: string;
+};
+
+export async function startRespin(input: { url: string; locale?: string }) {
+  return apiFetch<RespinStartResponse>(
+    "/api/respin",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: input.url.trim(), locale: input.locale }),
+    },
+    false,
+  );
+}
+
+export async function getRespinStatus(importId: string) {
+  return apiFetch<RespinStatusResponse>(
+    `/api/respin/imports/${importId}`,
+    {},
+    false,
+  );
+}
+
+export async function getRespinPreview(importId: string) {
+  return apiFetch<RespinPreviewResponse>(
+    `/api/respin/imports/${importId}/preview`,
+    {},
+    false,
+  );
+}
+
+export async function claimRespin(importId: string) {
+  return apiFetch<RespinClaimResponse>(
+    `/api/respin/imports/${importId}/claim`,
+    { method: "POST" },
+    false,
+  );
+}
+
+export function respinErrorCode(error: unknown): string {
+  if (error instanceof APIError) {
+    const nested = error.payload?.error;
+    if (typeof nested === "object" && nested?.code) {
+      return nested.code;
+    }
+    if (typeof error.payload?.code === "string") {
+      return error.payload.code;
+    }
+  }
+  return "";
+}
+
 export async function createSite(input: {
   name: string;
   prompt?: string;

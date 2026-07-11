@@ -13,6 +13,7 @@ import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as RestoreRouteImport } from './routes/restore'
+import { Route as RespinRouteImport } from './routes/respin'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppRouteImport } from './routes/app'
@@ -55,6 +56,11 @@ const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
 const RestoreRoute = RestoreRouteImport.update({
   id: '/restore',
   path: '/restore',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RespinRoute = RespinRouteImport.update({
+  id: '/respin',
+  path: '/respin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrivacyRoute = PrivacyRouteImport.update({
@@ -182,6 +188,7 @@ export interface FileRoutesByFullPath {
   '/app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
+  '/respin': typeof RespinRoute
   '/restore': typeof RestoreRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -210,6 +217,7 @@ export interface FileRoutesByTo {
   '/$': typeof SplatRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
+  '/respin': typeof RespinRoute
   '/restore': typeof RestoreRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -237,6 +245,7 @@ export interface FileRoutesById {
   '/app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
+  '/respin': typeof RespinRoute
   '/restore': typeof RestoreRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -268,6 +277,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/login'
     | '/privacy'
+    | '/respin'
     | '/restore'
     | '/robots.txt'
     | '/sitemap.xml'
@@ -296,6 +306,7 @@ export interface FileRouteTypes {
     | '/$'
     | '/login'
     | '/privacy'
+    | '/respin'
     | '/restore'
     | '/robots.txt'
     | '/sitemap.xml'
@@ -322,6 +333,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/login'
     | '/privacy'
+    | '/respin'
     | '/restore'
     | '/robots.txt'
     | '/sitemap.xml'
@@ -352,6 +364,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
   PrivacyRoute: typeof PrivacyRoute
+  RespinRoute: typeof RespinRoute
   RestoreRoute: typeof RestoreRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
@@ -388,6 +401,13 @@ declare module '@tanstack/react-router' {
       path: '/restore'
       fullPath: '/restore'
       preLoaderRoute: typeof RestoreRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/respin': {
+      id: '/respin'
+      path: '/respin'
+      fullPath: '/respin'
+      preLoaderRoute: typeof RespinRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/privacy': {
@@ -630,6 +650,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
   PrivacyRoute: PrivacyRoute,
+  RespinRoute: RespinRoute,
   RestoreRoute: RestoreRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,

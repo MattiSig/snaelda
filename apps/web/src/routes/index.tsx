@@ -1,5 +1,5 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
-import type { CSSProperties, FormEvent } from 'react'
+import type { FormEvent } from 'react'
 import { useEffect, useState } from 'react'
 import { ArrowRight, Globe, Sparkles } from 'lucide-react'
 import { HeroDemo } from '@/components/HeroDemo'
@@ -18,6 +18,7 @@ import {
   loadPublishedSitePageData,
 } from '@/lib/published-site'
 import { getHostedPublicSiteContext } from '@/lib/public-site'
+import { landingTheme } from '@/lib/landing-theme'
 import { translator, type Locale } from '@/lib/i18n'
 import {
   DEFAULT_LOCALE,
@@ -96,25 +97,6 @@ const heroDemoSources = [
   { src: '/media/hero-demo/hero-1280.webm', type: 'video/webm' as const },
   { src: '/media/hero-demo/hero-1280.mp4', type: 'video/mp4' as const },
 ]
-
-const landingTheme = {
-  backgroundColor: '#131411',
-  color: '#e4e2dd',
-  '--background': '#131411',
-  '--surface-0': '#131411',
-  '--surface-1': '#1f201d',
-  '--surface-2': '#2a2a27',
-  '--surface-3': '#343532',
-  '--paper': '#e4e2dd',
-  '--paper-muted': '#cfc3ca',
-  '--ink': '#131411',
-  '--border': '#4c454a',
-  '--thread-mauve': '#dabed6',
-  '--thread-gold': '#f4a261',
-  '--thread-teal': '#6fd8c8',
-  '--thread-coral': '#f07a98',
-  '--thread-violet': '#b58ad0',
-} as CSSProperties
 
 function Home() {
   const navigate = useNavigate()
@@ -358,6 +340,14 @@ function Home() {
           <p className="mt-4 max-w-xl text-sm text-[color-mix(in_oklch,var(--paper-muted)_76%,transparent)]">
             {tr('landing.form.helper')}
           </p>
+
+          <Link
+            to="/respin"
+            className="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--thread-teal)] underline-offset-4 transition-colors hover:text-[color-mix(in_oklch,var(--thread-teal)_82%,white)] hover:underline"
+          >
+            {tr('landing.respin.link')}
+            <ArrowRight aria-hidden className="size-4" />
+          </Link>
 
           <p className="mt-5 text-xs text-[color-mix(in_oklch,var(--paper-muted)_70%,transparent)]">
             {tr('landing.consent.prefix')}{' '}
