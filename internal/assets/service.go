@@ -495,6 +495,26 @@ func (s *Service) DownloadURL(ctx context.Context, assetID string) (string, erro
 	return s.downloadURLForAsset(ctx, asset)
 }
 
+// DownloadURLForSite returns a download URL only when the asset belongs to
+// the given site. It backs preview-token-scoped public access, so it must not
+// serve assets from any other site.
+func (s *Service) DownloadURLForSite(ctx context.Context, siteID string, assetID string) (string, error) {
+	siteID = strings.TrimSpace(siteID)
+	assetID = strings.TrimSpace(assetID)
+	if siteID == "" || assetID == "" {
+		return "", ErrAssetNotFound
+	}
+
+	asset, err := s.loadAsset(ctx, assetID)
+	if err != nil {
+		return "", err
+	}
+	if asset.SiteID != siteID {
+		return "", ErrAssetNotFound
+	}
+	return s.downloadURLForAsset(ctx, asset)
+}
+
 func (s *Service) PublicDownloadURLBySiteSlug(ctx context.Context, siteSlug string, assetID string) (string, error) {
 	return s.publicDownloadURL(ctx, publicAssetLookup{
 		bySlug:   strings.TrimSpace(siteSlug),

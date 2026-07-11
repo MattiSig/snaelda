@@ -17,6 +17,7 @@ type AssetService interface {
 	CreateUpload(ctx context.Context, input CreateUploadInput) (CreateUploadResult, error)
 	CompleteUpload(ctx context.Context, assetID string, input CompleteUploadInput) (Asset, error)
 	DownloadURL(ctx context.Context, assetID string) (string, error)
+	DownloadURLForSite(ctx context.Context, siteID string, assetID string) (string, error)
 	PublicDownloadURLBySiteSlug(ctx context.Context, siteSlug string, assetID string) (string, error)
 	PublicDownloadURLByHostname(ctx context.Context, hostname string, assetID string) (string, error)
 	ListBySite(ctx context.Context, siteID string) ([]Asset, error)
@@ -29,10 +30,17 @@ type Authorizer interface {
 	RequireAsset(ctx context.Context, assetID string, allowedRoles ...string) (authorization.Scope, error)
 }
 
+// PreviewTokenResolver validates a share/preview token and returns the site
+// it grants read access to. Implemented by sites.PostgresPreviewTokenService.
+type PreviewTokenResolver interface {
+	ResolveSiteID(ctx context.Context, token string) (string, error)
+}
+
 type Handler struct {
 	billingDB  billing.AccessStore
 	service    AssetService
 	authorizer Authorizer
+	previews   PreviewTokenResolver
 }
 
 type createUploadRequest struct {
@@ -73,6 +81,12 @@ func NewHandlerWithService(db DB, service AssetService) *Handler {
 	}
 }
 
+// WithPreviewTokens enables the preview-token-scoped public asset route.
+func (h *Handler) WithPreviewTokens(previews PreviewTokenResolver) *Handler {
+	h.previews = previews
+	return h
+}
+
 func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.Handler) {
 	mux.Handle("POST /api/assets/upload-url", requireUser(http.HandlerFunc(h.createUploadURL)))
 	mux.Handle("POST /api/assets/complete", requireUser(http.HandlerFunc(h.completeUpload)))
@@ -81,6 +95,7 @@ func (h *Handler) Mount(mux *http.ServeMux, requireUser func(http.Handler) http.
 	mux.Handle("PATCH /api/assets/{assetId}", requireUser(http.HandlerFunc(h.updateAsset)))
 	mux.Handle("DELETE /api/assets/{assetId}", requireUser(http.HandlerFunc(h.deleteAsset)))
 	mux.HandleFunc("GET /api/public/sites/{siteSlug}/assets/{assetId}", h.redirectPublicAssetContent)
+	mux.HandleFunc("GET /api/public/preview/{token}/assets/{assetId}", h.redirectPreviewAssetContent)
 	mux.HandleFunc("GET /api/public/assets/{assetId}", h.redirectPublicAssetContentByHostname)
 }
 
@@ -165,6 +180,36 @@ func (h *Handler) redirectAssetContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	downloadURL, err := h.service.DownloadURL(r.Context(), assetID)
+	if err != nil {
+		writeAssetError(w, err)
+		return
+	}
+
+	http.Redirect(w, r, downloadURL, http.StatusTemporaryRedirect)
+}
+
+// redirectPreviewAssetContent serves draft assets to anonymous visitors who
+// hold a valid preview token (shared previews and the public re-spin demo).
+// The token scopes access to a single site; assets outside it stay hidden.
+func (h *Handler) redirectPreviewAssetContent(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(r.PathValue("token"))
+	assetID := strings.TrimSpace(r.PathValue("assetId"))
+	if token == "" || assetID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_preview_asset", "preview token and asset id are required")
+		return
+	}
+	if h.previews == nil {
+		writeError(w, http.StatusNotFound, "asset_not_found", "asset was not found")
+		return
+	}
+
+	siteID, err := h.previews.ResolveSiteID(r.Context(), token)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "preview_token_not_found", "preview link is invalid or expired")
+		return
+	}
+
+	downloadURL, err := h.service.DownloadURLForSite(r.Context(), siteID, assetID)
 	if err != nil {
 		writeAssetError(w, err)
 		return

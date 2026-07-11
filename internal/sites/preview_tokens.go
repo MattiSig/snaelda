@@ -117,10 +117,13 @@ func (s *PostgresPreviewTokenService) Revoke(ctx context.Context, siteID string)
 	return nil
 }
 
-func (s *PostgresPreviewTokenService) LoadDraft(ctx context.Context, token string) (siteconfig.SiteDraft, error) {
+// ResolveSiteID validates an unexpired, unrevoked preview token and returns
+// the site it grants access to. It backs token-scoped public reads such as
+// draft asset downloads.
+func (s *PostgresPreviewTokenService) ResolveSiteID(ctx context.Context, token string) (string, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
-		return siteconfig.SiteDraft{}, ErrPreviewTokenNotFound
+		return "", ErrPreviewTokenNotFound
 	}
 
 	var siteID string
@@ -132,10 +135,19 @@ func (s *PostgresPreviewTokenService) LoadDraft(ctx context.Context, token strin
 		  and expires_at > now()
 	`, s.hashToken(token)).Scan(&siteID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return siteconfig.SiteDraft{}, ErrPreviewTokenNotFound
+		return "", ErrPreviewTokenNotFound
 	}
 	if err != nil {
-		return siteconfig.SiteDraft{}, fmt.Errorf("load preview token: %w", err)
+		return "", fmt.Errorf("load preview token: %w", err)
+	}
+	return siteID, nil
+}
+
+func (s *PostgresPreviewTokenService) LoadDraft(ctx context.Context, token string) (siteconfig.SiteDraft, error) {
+	token = strings.TrimSpace(token)
+	siteID, err := s.ResolveSiteID(ctx, token)
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
 	}
 
 	if _, err := s.db.Exec(ctx, `

@@ -4,6 +4,13 @@ export function buildDraftAssetURL(assetId: string) {
   return new URL(`/api/assets/${assetId}/content`, getAPIBaseURL()).toString()
 }
 
+export function buildPreviewAssetURL(previewToken: string, assetId: string) {
+  return new URL(
+    `/api/public/preview/${previewToken}/assets/${assetId}`,
+    getAPIBaseURL(),
+  ).toString()
+}
+
 export function buildPublishedAssetURL(siteSlug: string, assetId: string) {
   return new URL(
     `/api/public/sites/${siteSlug}/assets/${assetId}`,

@@ -299,7 +299,11 @@ func (s *Server) BuildHandler() (http.Handler, error) {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, domains.Module{})
 	}
 	if store, ok := s.database.(assets.DB); ok && assetService != nil {
-		assets.NewHandlerWithService(store, assetService).Mount(mux, s.auth.RequireSession)
+		assetHandler := assets.NewHandlerWithService(store, assetService)
+		if previewStore, ok := s.database.(sites.DB); ok {
+			assetHandler.WithPreviewTokens(sites.NewPostgresPreviewTokenService(previewStore, s.config.PreviewTokenTTL))
+		}
+		assetHandler.Mount(mux, s.auth.RequireSession)
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, assets.Module{})
 	}

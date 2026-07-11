@@ -1,5 +1,5 @@
 import type { FormEvent, MouseEvent, ReactNode } from 'react';
-import { useState } from 'react';
+import { createContext, useContext, useState } from 'react';
 import {
   APIError,
   submitPublicForm,
@@ -16,7 +16,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { buildDraftAssetURL, buildPublishedAssetURL } from '@/lib/assets';
+import {
+  buildDraftAssetURL,
+  buildPreviewAssetURL,
+  buildPublishedAssetURL,
+} from '@/lib/assets';
 import { buildSiteThemeStyle } from '@/lib/site-theme';
 import { preview, text } from '@/lib/styles';
 import { cn } from '@/lib/utils';
@@ -62,6 +66,11 @@ type CollectionContext = {
   exposesDetailUrlsById: Map<string, boolean>;
 };
 
+// Lets anonymous viewers (shared previews, the public re-spin demo) load
+// draft assets through the token-scoped public endpoint instead of the
+// session-gated /api/assets/{id}/content route.
+const PreviewTokenContext = createContext<string | undefined>(undefined);
+
 export function SiteDraftRenderer({
   site,
   eyebrow = 'Site render',
@@ -70,6 +79,7 @@ export function SiteDraftRenderer({
   linkMode = 'anchors',
   siteSlug,
   publishedBasePath,
+  previewToken,
   mode = 'default',
   renderBlock,
   activeEntry,
@@ -83,6 +93,7 @@ export function SiteDraftRenderer({
   linkMode?: 'anchors' | 'published';
   siteSlug?: string;
   publishedBasePath?: string;
+  previewToken?: string;
   mode?: 'default' | 'builder';
   renderBlock?: (slot: SiteDraftRendererBlockSlot) => React.ReactNode;
   activeEntry?: CollectionEntry;
@@ -159,6 +170,7 @@ export function SiteDraftRenderer({
   }
 
   return (
+    <PreviewTokenContext.Provider value={previewToken}>
     <div
       className={preview.shell}
       style={buildSiteThemeStyle(site.theme)}
@@ -300,6 +312,7 @@ export function SiteDraftRenderer({
         credits={'imageCredits' in site ? site.imageCredits : undefined}
       />
     </div>
+    </PreviewTokenContext.Provider>
   );
 }
 
@@ -2715,10 +2728,13 @@ function AssetImage({
   siteSlug?: string;
   className: string;
 }) {
+  const previewToken = useContext(PreviewTokenContext);
   const src =
     linkMode === 'published' && siteSlug
       ? buildPublishedAssetURL(siteSlug, image.assetId)
-      : buildDraftAssetURL(image.assetId);
+      : previewToken
+        ? buildPreviewAssetURL(previewToken, image.assetId)
+        : buildDraftAssetURL(image.assetId);
 
   return <img src={src} alt={image.alt} className={className} loading="lazy" />;
 }

@@ -124,11 +124,99 @@ func TestRedirectPublicAssetContentHandler(t *testing.T) {
 	}
 }
 
+func TestRedirectPreviewAssetContentHandler(t *testing.T) {
+	service := &fakeAssetService{siteDownloadURL: "http://download.test/preview-asset"}
+	handler := &Handler{
+		service:  service,
+		previews: fakePreviewTokenResolver{siteID: "site-1"},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/public/preview/token-1/assets/asset-1", nil)
+	req.SetPathValue("token", "token-1")
+	req.SetPathValue("assetId", "asset-1")
+	res := httptest.NewRecorder()
+
+	handler.redirectPreviewAssetContent(res, req)
+
+	if res.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected status %d, got %d", http.StatusTemporaryRedirect, res.Code)
+	}
+	if location := res.Header().Get("Location"); location != "http://download.test/preview-asset" {
+		t.Fatalf("expected redirect location, got %q", location)
+	}
+	if len(service.siteDownloadCalls) != 1 || service.siteDownloadCalls[0] != [2]string{"site-1", "asset-1"} {
+		t.Fatalf("expected site-scoped download call, got %v", service.siteDownloadCalls)
+	}
+}
+
+func TestRedirectPreviewAssetContentHandlerInvalidToken(t *testing.T) {
+	handler := &Handler{
+		service:  &fakeAssetService{},
+		previews: fakePreviewTokenResolver{err: errors.New("preview token was not found")},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/public/preview/bad-token/assets/asset-1", nil)
+	req.SetPathValue("token", "bad-token")
+	req.SetPathValue("assetId", "asset-1")
+	res := httptest.NewRecorder()
+
+	handler.redirectPreviewAssetContent(res, req)
+
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, res.Code)
+	}
+}
+
+func TestRedirectPreviewAssetContentHandlerAssetOutsideSite(t *testing.T) {
+	handler := &Handler{
+		service:  &fakeAssetService{siteDownloadErr: ErrAssetNotFound},
+		previews: fakePreviewTokenResolver{siteID: "site-1"},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/public/preview/token-1/assets/other-asset", nil)
+	req.SetPathValue("token", "token-1")
+	req.SetPathValue("assetId", "other-asset")
+	res := httptest.NewRecorder()
+
+	handler.redirectPreviewAssetContent(res, req)
+
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, res.Code)
+	}
+}
+
+func TestRedirectPreviewAssetContentHandlerWithoutResolver(t *testing.T) {
+	handler := &Handler{service: &fakeAssetService{}}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/public/preview/token-1/assets/asset-1", nil)
+	req.SetPathValue("token", "token-1")
+	req.SetPathValue("assetId", "asset-1")
+	res := httptest.NewRecorder()
+
+	handler.redirectPreviewAssetContent(res, req)
+
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, res.Code)
+	}
+}
+
+type fakePreviewTokenResolver struct {
+	siteID string
+	err    error
+}
+
+func (r fakePreviewTokenResolver) ResolveSiteID(context.Context, string) (string, error) {
+	return r.siteID, r.err
+}
+
 type fakeAssetService struct {
 	createUploadResult CreateUploadResult
 	createUploadErr    error
 	downloadURL        string
 	publicDownloadURL  string
+	siteDownloadURL    string
+	siteDownloadErr    error
+	siteDownloadCalls  [][2]string
 }
 
 func (s *fakeAssetService) CreateUpload(context.Context, CreateUploadInput) (CreateUploadResult, error) {
@@ -141,6 +229,11 @@ func (s *fakeAssetService) CompleteUpload(context.Context, string, CompleteUploa
 
 func (s *fakeAssetService) DownloadURL(context.Context, string) (string, error) {
 	return s.downloadURL, nil
+}
+
+func (s *fakeAssetService) DownloadURLForSite(_ context.Context, siteID string, assetID string) (string, error) {
+	s.siteDownloadCalls = append(s.siteDownloadCalls, [2]string{siteID, assetID})
+	return s.siteDownloadURL, s.siteDownloadErr
 }
 
 func (s *fakeAssetService) PublicDownloadURLBySiteSlug(context.Context, string, string) (string, error) {

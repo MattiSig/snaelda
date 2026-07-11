@@ -299,6 +299,7 @@ function RespinDemo() {
           degraded={degraded}
           draft={draft}
           draftError={draftError}
+          previewToken={previewToken}
           selectedPageId={selectedPageId}
           onNavigatePage={setSelectedPageId}
           onRespinAnother={resetToInput}
@@ -578,6 +579,7 @@ function AfterView({
   degraded,
   draft,
   draftError,
+  previewToken,
   selectedPageId,
   onNavigatePage,
   onRespinAnother,
@@ -588,6 +590,7 @@ function AfterView({
   degraded: boolean
   draft: SiteDraft | null
   draftError: string
+  previewToken: string
   selectedPageId: string | null
   onNavigatePage: (pageId: string) => void
   onRespinAnother: () => void
@@ -658,6 +661,7 @@ function AfterView({
               eyebrow={tr('respin.after.badge')}
               showPageMeta={false}
               selectedPageId={selectedPageId ?? undefined}
+              previewToken={previewToken}
               onNavigatePage={onNavigatePage}
             />
             <div

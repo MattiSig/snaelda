@@ -77,6 +77,7 @@ function TokenPreview() {
         eyebrow="Draft preview"
         showPageMeta={false}
         selectedPageId={selectedPageId ?? undefined}
+        previewToken={token}
         onNavigatePage={setSelectedPageId}
       />
       <div

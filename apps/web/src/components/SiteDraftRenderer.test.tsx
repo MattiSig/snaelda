@@ -85,6 +85,16 @@ describe('SiteDraftRenderer', () => {
     );
   });
 
+  it('routes asset images through the token-scoped public endpoint for anonymous previews', () => {
+    render(<SiteDraftRenderer site={buildDraft()} previewToken="token-abc" />);
+
+    expect(
+      screen
+        .getByAltText('Studio shelves in warm afternoon light')
+        .getAttribute('src'),
+    ).toBe('http://localhost:8080/api/public/preview/token-abc/assets/asset-hero');
+  });
+
   it('renders the added MVP content blocks without fallback UI', () => {
     render(<SiteDraftRenderer site={buildExtendedDraft()} />);
 
