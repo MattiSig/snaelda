@@ -22,10 +22,22 @@ const defaultMinWords = 25
 // logo/colour hints, so the single parse captures them here rather than forcing
 // a re-parse later.
 type PageMeta struct {
-	OGImage    string   `json:"ogImage,omitempty"`
-	ThemeColor string   `json:"themeColor,omitempty"`
-	IconHrefs  []string `json:"iconHrefs,omitempty"`
-	Lang       string   `json:"lang,omitempty"`
+	OGImage    string      `json:"ogImage,omitempty"`
+	ThemeColor string      `json:"themeColor,omitempty"`
+	IconHrefs  []string    `json:"iconHrefs,omitempty"`
+	Icons      []IconRef   `json:"icons,omitempty"`
+	Images     []ImageRef  `json:"images,omitempty"`
+	CSSColors  []ColorHint `json:"cssColors,omitempty"`
+	Lang       string      `json:"lang,omitempty"`
+}
+
+// IconRef is a <link rel="…icon…"> declaration with the rel and sizes hints the
+// brand stage scores logo candidates by (apple-touch-icons and larger sizes
+// make better logos than a 16px favicon).
+type IconRef struct {
+	Href  string `json:"href"`
+	Rel   string `json:"rel,omitempty"`
+	Sizes string `json:"sizes,omitempty"`
 }
 
 // Page is a fetched-and-cleaned source page: its readable main text with
@@ -142,6 +154,11 @@ func extractPage(body []byte, base *url.URL) Page {
 	extractText(contentRoot, &text)
 	page.Text = normalizeWhitespace(text.String())
 	page.WordCount = len(strings.Fields(page.Text))
+
+	// The brand-asset stage needs images and declared colours that the copy walk
+	// above deliberately discards (logos live in the <header> chrome the text
+	// pass skips). Gather them from the whole document in one extra pass.
+	collectBrandHints(doc, base, &page)
 	return page
 }
 
@@ -235,9 +252,16 @@ func readLink(n *html.Node, base *url.URL, page *Page) {
 	if !strings.Contains(rel, "icon") {
 		return
 	}
-	if href := resolveLink(base, attr(n, "href")); href != "" {
-		page.Meta.IconHrefs = append(page.Meta.IconHrefs, href)
+	href := resolveLink(base, attr(n, "href"))
+	if href == "" {
+		return
 	}
+	page.Meta.IconHrefs = append(page.Meta.IconHrefs, href)
+	page.Meta.Icons = append(page.Meta.Icons, IconRef{
+		Href:  href,
+		Rel:   rel,
+		Sizes: strings.ToLower(strings.TrimSpace(attr(n, "sizes"))),
+	})
 }
 
 // resolveLink resolves href against base and returns an absolute http(s) URL
