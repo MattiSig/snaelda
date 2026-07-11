@@ -36,6 +36,7 @@ type Config struct {
 	MailpitSMTPAddr            string
 	OpenAIAPIKey               string
 	OpenAIModel                string
+	RespinDailyLLMTokenBudget  int64
 	PexelsAPIKey               string
 	DatabaseURL                string
 	AuthJWTSecret              string
@@ -84,6 +85,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	respinDailyLLMTokenBudget, err := env.getInt64("RESPIN_DAILY_LLM_TOKEN_BUDGET", 3_000_000)
+	if err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
 		AppEnv:                     appEnv,
@@ -108,6 +113,7 @@ func Load() (Config, error) {
 		MailpitSMTPAddr:            strings.TrimSpace(env.get("MAILPIT_SMTP_ADDR", "localhost:1025")),
 		OpenAIAPIKey:               strings.TrimSpace(env.lookup("OPENAI_API_KEY")),
 		OpenAIModel:                env.get("OPENAI_MODEL", "gpt-5-mini"),
+		RespinDailyLLMTokenBudget:  respinDailyLLMTokenBudget,
 		PexelsAPIKey:               strings.TrimSpace(env.lookup("PEXELS_API_KEY")),
 		DatabaseURL:                env.lookup("DATABASE_URL"),
 		AuthJWTSecret:              env.get("AUTH_JWT_SECRET", "development-auth-secret-change-me"),
@@ -390,6 +396,20 @@ func (e environment) getBool(key string, fallback bool) (bool, error) {
 	parsed, err := strconv.ParseBool(value)
 	if err != nil {
 		return false, fmt.Errorf("%s must be a boolean: %w", key, err)
+	}
+
+	return parsed, nil
+}
+
+func (e environment) getInt64(key string, fallback int64) (int64, error) {
+	value := strings.TrimSpace(e.lookup(key))
+	if value == "" {
+		return fallback, nil
+	}
+
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be an integer: %w", key, err)
 	}
 
 	return parsed, nil
