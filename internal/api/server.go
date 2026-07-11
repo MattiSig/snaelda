@@ -26,6 +26,7 @@ import (
 	"github.com/MattiSig/snaelda/internal/platform/audit"
 	"github.com/MattiSig/snaelda/internal/platform/config"
 	"github.com/MattiSig/snaelda/internal/publishing"
+	"github.com/MattiSig/snaelda/internal/respin"
 	"github.com/MattiSig/snaelda/internal/sites"
 	"github.com/MattiSig/snaelda/internal/themes"
 	"github.com/MattiSig/snaelda/internal/workspaces"
@@ -248,6 +249,7 @@ func (s *Server) BuildHandler() (http.Handler, error) {
 	} else {
 		mountAuthenticatedPlaceholderModule(mux, s.auth, generation.Module{})
 	}
+	s.mountRespin(mux, generationHandlerConfig, assetService)
 	publishedSiteCache := publishing.NewPublishedSiteCache()
 	if store, ok := s.database.(publishing.DB); ok {
 		publishConfig := publishing.ServiceConfig{
@@ -343,6 +345,95 @@ func (s *Server) BuildHandler() (http.Handler, error) {
 	}
 
 	return s.cors(s.recover(s.logRequests(s.securityHeaders(s.noCache(s.csrf(mux)))))), nil
+}
+
+// mountRespin wires the re-spin URL-import module (Spec 21): the SSRF-guarded
+// fetcher, the LLM analyzer (budgeted for the public demo, unbudgeted for the
+// session-bound path), the brand puller, and a pipeline over the shared
+// generation service. It is a no-op when the database does not satisfy the
+// module's stores.
+func (s *Server) mountRespin(mux *http.ServeMux, genCfg generation.HandlerConfig, assetService *assets.Service) {
+	store, ok := s.database.(respin.DB)
+	if !ok {
+		mountAuthenticatedPlaceholderModule(mux, s.auth, respin.Module{})
+		return
+	}
+	generationStore, ok := s.database.(generation.DB)
+	if !ok {
+		mountAuthenticatedPlaceholderModule(mux, s.auth, respin.Module{})
+		return
+	}
+	previewStore, ok := s.database.(sites.DB)
+	if !ok {
+		mountAuthenticatedPlaceholderModule(mux, s.auth, respin.Module{})
+		return
+	}
+
+	respinStore := respin.NewService(store)
+	fetcher := respin.NewFetcher(respin.FetcherConfig{})
+	genService := generation.NewServiceFromConfig(generationStore, genCfg)
+
+	// LLM completer: absent when no OpenAI key is configured, in which case the
+	// analyzer degrades every import to the prompt-flow handoff.
+	var completer respin.Completer
+	if c, err := respin.NewOpenAICompleter(respin.OpenAICompleterConfig{
+		APIKey: s.config.OpenAIAPIKey,
+		Model:  s.config.OpenAIModel,
+	}); err != nil {
+		s.logger.Error("configure respin completer", "error", err)
+	} else if c != nil {
+		completer = c
+	}
+
+	// Daily public LLM budget (0 disables gating).
+	var budget *respin.Budget
+	if s.config.RespinDailyLLMTokenBudget > 0 {
+		budget = respin.NewBudget(respin.NewPostgresBudgetStore(store), s.config.RespinDailyLLMTokenBudget)
+	}
+
+	var brandPuller *respin.BrandPuller
+	if assetService != nil {
+		brandPuller = respin.NewBrandPuller(fetcher, assetService, respin.WithBrandLogger(s.logger))
+	}
+
+	publicAnalyzer := respin.NewAnalyzer(completer, respin.WithBudget(budget), respin.WithLogger(s.logger))
+	sessionAnalyzer := respin.NewAnalyzer(completer, respin.WithLogger(s.logger))
+
+	newPipeline := func(analyzer *respin.Analyzer) *respin.Pipeline {
+		return respin.NewPipeline(respin.PipelineConfig{
+			Store:     respinStore,
+			Fetcher:   fetcher,
+			Analyzer:  analyzer,
+			Brand:     brandPuller,
+			Generator: genService,
+			Logger:    s.logger,
+		})
+	}
+
+	var billingStore billing.AccessStore
+	if bs, ok := s.database.(billing.AccessStore); ok {
+		billingStore = bs
+	}
+
+	var authStore auth.UserStore
+	if as, ok := s.database.(auth.UserStore); ok {
+		authStore = as
+	}
+
+	respin.NewHandler(respin.HandlerConfig{
+		Store:           respinStore,
+		Runner:          respin.NewRunner(int(s.config.RespinMaxConcurrentImports), s.logger),
+		Fetcher:         fetcher,
+		Previews:        sites.NewPostgresPreviewTokenService(previewStore, s.config.PreviewTokenTTL),
+		Sessions:        s.auth,
+		IPLimiter:       auth.NewIPRateLimiter(authStore, s.logger),
+		Budget:          budget,
+		BillingStore:    billingStore,
+		PublicPipeline:  newPipeline(publicAnalyzer),
+		SessionPipeline: newPipeline(sessionAnalyzer),
+		CacheTTL:        s.config.RespinCacheTTL,
+		Logger:          s.logger,
+	}).Mount(mux, s.auth.RequireSession)
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
@@ -554,9 +645,14 @@ func requiresCSRFMitigation(r *http.Request) bool {
 	switch r.URL.Path {
 	case "/api/auth/login", "/api/auth/magic-link", "/api/sessions/anonymous", "/api/sessions/restore", "/api/billing/webhook":
 		return false
-	default:
-		return true
 	}
+	// Public re-spin demo endpoints (start + claim) establish their own
+	// cookies and carry no prior CSRF cookie; the import id is an unguessable
+	// capability. The session-bound /api/sites/respin keeps CSRF protection.
+	if r.URL.Path == "/api/respin" || strings.HasPrefix(r.URL.Path, "/api/respin/") {
+		return false
+	}
+	return true
 }
 
 func contentSecurityPolicy(r *http.Request) string {

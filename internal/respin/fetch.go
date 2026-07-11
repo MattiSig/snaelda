@@ -61,7 +61,8 @@ type Fetcher struct {
 	userAgent    string
 	timeout      time.Duration
 	client       *http.Client
-	allowPrivate bool // test-only; mirrors FetcherConfig.allowPrivateHosts
+	resolver     *net.Resolver // nil means the default system resolver
+	allowPrivate bool          // test-only; mirrors FetcherConfig.allowPrivateHosts
 }
 
 // NewFetcher builds a Fetcher whose transport rejects any connection to a
@@ -116,7 +117,43 @@ func NewFetcher(cfg FetcherConfig) *Fetcher {
 		},
 	}
 
-	return &Fetcher{userAgent: ua, timeout: timeout, client: client, allowPrivate: cfg.allowPrivateHosts}
+	return &Fetcher{userAgent: ua, timeout: timeout, client: client, resolver: cfg.Resolver, allowPrivate: cfg.allowPrivateHosts}
+}
+
+// ValidatePublicURL is the intake-time SSRF pre-check (Spec 21 security
+// contract): it enforces the URL-shape invariants (http/https, ports 80/443, no
+// credentials) and resolves DNS to reject any hostname that points at a private,
+// loopback, link-local, or cloud-metadata range — before an expensive import
+// slot is spent. It is advisory hardening on top of the rebinding-proof
+// dial-time guard, which remains the authoritative check on every connection.
+func (f *Fetcher) ValidatePublicURL(ctx context.Context, rawURL string) error {
+	u, err := normalizeFetchURL(rawURL)
+	if err != nil {
+		return err
+	}
+	if err := validateURL(u, f.allowPrivate); err != nil {
+		return err
+	}
+	if f.allowPrivate {
+		return nil
+	}
+	resolver := f.resolver
+	if resolver == nil {
+		resolver = net.DefaultResolver
+	}
+	ips, err := resolver.LookupIP(ctx, "ip", u.Hostname())
+	if err != nil {
+		return fmt.Errorf("%w: resolve %q: %v", ErrBlockedAddress, u.Hostname(), err)
+	}
+	if len(ips) == 0 {
+		return fmt.Errorf("%w: no addresses for %q", ErrBlockedAddress, u.Hostname())
+	}
+	for _, ip := range ips {
+		if isBlockedIP(ip) {
+			return ErrBlockedAddress
+		}
+	}
+	return nil
 }
 
 // guardDialAddress rejects a resolved dial address that falls in a blocked

@@ -37,6 +37,8 @@ type Config struct {
 	OpenAIAPIKey               string
 	OpenAIModel                string
 	RespinDailyLLMTokenBudget  int64
+	RespinMaxConcurrentImports int64
+	RespinCacheTTL             time.Duration
 	PexelsAPIKey               string
 	DatabaseURL                string
 	AuthJWTSecret              string
@@ -89,6 +91,14 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	respinMaxConcurrentImports, err := env.getInt64("RESPIN_MAX_CONCURRENT_IMPORTS", 3)
+	if err != nil {
+		return Config{}, err
+	}
+	respinCacheTTL, err := env.getDuration("RESPIN_CACHE_TTL", 24*time.Hour)
+	if err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
 		AppEnv:                     appEnv,
@@ -114,6 +124,8 @@ func Load() (Config, error) {
 		OpenAIAPIKey:               strings.TrimSpace(env.lookup("OPENAI_API_KEY")),
 		OpenAIModel:                env.get("OPENAI_MODEL", "gpt-5-mini"),
 		RespinDailyLLMTokenBudget:  respinDailyLLMTokenBudget,
+		RespinMaxConcurrentImports: respinMaxConcurrentImports,
+		RespinCacheTTL:             respinCacheTTL,
 		PexelsAPIKey:               strings.TrimSpace(env.lookup("PEXELS_API_KEY")),
 		DatabaseURL:                env.lookup("DATABASE_URL"),
 		AuthJWTSecret:              env.get("AUTH_JWT_SECRET", "development-auth-secret-change-me"),

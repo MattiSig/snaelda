@@ -115,7 +115,11 @@ type imageApplyRequest struct {
 
 const maxGenerationPromptCharacters = 4000
 
-func NewHandler(db DB, cfg HandlerConfig) *Handler {
+// NewServiceFromConfig builds a generation Service from a HandlerConfig,
+// translating its optional collaborators into service options. It is shared by
+// the generation handler and by re-spin (Spec 21), which composes the canonical
+// generation input and calls GenerateWithProgress directly.
+func NewServiceFromConfig(db DB, cfg HandlerConfig) *Service {
 	options := []ServiceOption{}
 	if cfg.StarterImagery != nil {
 		options = append(options, WithStarterImagery(cfg.StarterImagery))
@@ -144,11 +148,15 @@ func NewHandler(db DB, cfg HandlerConfig) *Handler {
 	if cfg.DecomposedPlanner != nil {
 		options = append(options, WithDecomposedPlanner(cfg.DecomposedPlanner))
 	}
+	return NewService(db, cfg.Planner, options...)
+}
+
+func NewHandler(db DB, cfg HandlerConfig) *Handler {
 	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.Default()
 	}
-	service := NewService(db, cfg.Planner, options...)
+	service := NewServiceFromConfig(db, cfg)
 	return &Handler{
 		billingDB:  db,
 		service:    service,

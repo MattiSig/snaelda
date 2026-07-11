@@ -150,3 +150,32 @@ func TestFetchEmptyURL(t *testing.T) {
 		t.Fatalf("got %v, want ErrEmptyURL", err)
 	}
 }
+
+func TestValidatePublicURLRejectsBadShapes(t *testing.T) {
+	f := NewFetcher(FetcherConfig{})
+	cases := []struct {
+		name string
+		url  string
+	}{
+		{"scheme", "ftp://example.com"},
+		{"credentials", "https://user:pass@example.com"},
+		{"loopback-literal", "http://127.0.0.1/"},
+		{"metadata", "http://169.254.169.254/latest/meta-data/"},
+		{"private-literal", "http://10.0.0.5/"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := f.ValidatePublicURL(context.Background(), tc.url); err == nil {
+				t.Fatalf("expected %s to be rejected", tc.url)
+			}
+		})
+	}
+}
+
+func TestValidatePublicURLAllowsPublicShape(t *testing.T) {
+	// The test fetcher skips DNS/IP checks, so a well-formed https URL passes the
+	// shape validation without a network dependency.
+	if err := testFetcher().ValidatePublicURL(context.Background(), "https://example.com/path"); err != nil {
+		t.Fatalf("expected well-formed url to pass, got %v", err)
+	}
+}
