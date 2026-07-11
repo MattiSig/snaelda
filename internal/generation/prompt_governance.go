@@ -77,12 +77,13 @@ type PromptActionManager struct {
 }
 
 type PromptActionInput struct {
-	WorkspaceID string
-	UserID      string
-	SiteID      string
-	Kind        JobKind
-	Prompt      string
-	Payload     any
+	WorkspaceID    string
+	UserID         string
+	SiteID         string
+	Kind           JobKind
+	Prompt         string
+	Payload        any
+	RespinImportID string
 }
 
 func NewPromptActionManager(store promptActionStore, logger *slog.Logger) *PromptActionManager {
@@ -129,10 +130,10 @@ func (m *PromptActionManager) CreateJob(ctx context.Context, input PromptActionI
 
 	var jobID string
 	if err := tx.QueryRow(ctx, `
-		insert into generation_jobs (site_id, workspace_id, kind, state, status, prompt, input_context, payload, created_by)
-		values (nullif($1, '')::uuid, $2::uuid, $3, 'pending', 'queued', $4, $5, $5, nullif($6, '')::uuid)
+		insert into generation_jobs (site_id, workspace_id, kind, state, status, prompt, input_context, payload, created_by, respin_import_id)
+		values (nullif($1, '')::uuid, $2::uuid, $3, 'pending', 'queued', $4, $5, $5, nullif($6, '')::uuid, nullif($7, '')::uuid)
 		returning id::text
-	`, strings.TrimSpace(input.SiteID), workspaceID, input.Kind, strings.TrimSpace(input.Prompt), payloadJSON, strings.TrimSpace(input.UserID)).Scan(&jobID); err != nil {
+	`, strings.TrimSpace(input.SiteID), workspaceID, input.Kind, strings.TrimSpace(input.Prompt), payloadJSON, strings.TrimSpace(input.UserID), strings.TrimSpace(input.RespinImportID)).Scan(&jobID); err != nil {
 		return "", fmt.Errorf("create generation job: %w", err)
 	}
 
