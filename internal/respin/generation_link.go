@@ -39,6 +39,30 @@ func (s *Service) LinkGenerationJob(ctx context.Context, jobID, importID string)
 	return nil
 }
 
+// IsRespinOriginatedSite reports whether the site was produced by a re-spin
+// import, detected via any generation job for the site carrying a non-null
+// respin_import_id (Spec 21). It backs the publish gate: re-spin-originated
+// drafts require a claimed L2 identity before their first publish. A blank
+// siteID (a not-yet-generated draft) is never re-spin-originated.
+func (s *Service) IsRespinOriginatedSite(ctx context.Context, siteID string) (bool, error) {
+	siteID = strings.TrimSpace(siteID)
+	if siteID == "" {
+		return false, nil
+	}
+	var originated bool
+	if err := s.db.QueryRow(ctx, `
+		select exists (
+			select 1
+			from generation_jobs
+			where site_id = $1::uuid
+			  and respin_import_id is not null
+		)
+	`, siteID).Scan(&originated); err != nil {
+		return false, fmt.Errorf("detect respin-originated site: %w", err)
+	}
+	return originated, nil
+}
+
 // LinkedGeneration returns the most recent generation job linked to the import,
 // including the generated site and the workspace that owns it. It returns
 // ErrNotFound when no generation has completed for the import yet.

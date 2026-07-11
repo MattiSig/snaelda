@@ -576,7 +576,9 @@ function SiteDetail() {
       typeof error.payload?.error === "object"
         ? error.payload.error.code
         : error.payload?.code;
-    if (code === "claim_required") {
+    if (code === "claim_required" || code === "identity_required") {
+      // identity_required is the re-spin publish gate (Spec 21): a draft spun
+      // from another website can only be published once an email is added.
       setBlockedActionMode("claim");
       setBlockedActionMessage(error.message);
       return;

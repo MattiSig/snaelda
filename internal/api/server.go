@@ -273,6 +273,9 @@ func (s *Server) BuildHandler() (http.Handler, error) {
 			publishConfig.AssetProvenance = assetService
 		}
 		publishHandler := publishing.NewHandlerWithConfig(store, publishConfig, s.config.AppBaseURL, s.config.PublicBaseURL).WithLogger(s.logger)
+		if respinStore, ok := s.database.(respin.DB); ok {
+			publishHandler = publishHandler.WithRespinGate(respin.NewService(respinStore))
+		}
 		if analyticsStore, ok := s.database.(analytics.Store); ok {
 			publishHandler = publishHandler.WithViewRecorder(analytics.NewRecorder(analyticsStore, s.logger))
 		}

@@ -114,13 +114,14 @@ Ingested assets carry source metadata: `source: 'respin'`, the origin URL, and t
 
 ## Public Before/After Demo
 
-The demo is the top-of-funnel (GTM §4): paste a URL on the public site, watch progress, and see a **before/after view** — their live site on one side, the re-spun draft on the other — with **no signup of any kind**.
+The demo is the top-of-funnel (GTM §4): paste a URL on the public site, watch progress, and see the re-spun draft — with **no signup of any kind**.
 
-- **Before** is a screenshot of the source site captured during fetch (the headless engine captures it when used; plain-fetch imports capture via a one-off sandboxed render of the source URL).
-- **After** is the generated draft rendered through the standard preview pipeline (Spec 09) under a demo-scoped preview token.
+**v1 ships an after-only view.** There is no captured screenshot of the source site: visitors know exactly what their own site looks like and will compare in their own browser tabs. Skipping the "before" capture removes the entire headless-render requirement from v1 (see Headless Sandboxing, deferred to v1.1).
+
+- **After** is the generated draft rendered through the standard preview pipeline (Spec 09) under a demo-scoped preview token. The view shows the source URL it was spun from as a plain link (opens in a new tab) so side-by-side comparison is one click away.
 - The view offers exactly two actions: **"Re-spin another"** and **"Sign up to keep it."**
 
-This before/after view is a distinct surface from Spec 20's revision diff. Spec 20 diffs two draft revisions inside the builder; this is a marketing artifact comparing an external site to a generated draft. They share no code contract.
+**v1.1** upgrades this to the true **before/after view** — a captured screenshot of the source site beside the draft — once the sandboxed headless renderer exists. That view is a distinct surface from Spec 20's revision diff. Spec 20 diffs two draft revisions inside the builder; this is a marketing artifact comparing an external site to a generated draft. They share no code contract.
 
 ### Claim Handoff
 
@@ -132,8 +133,9 @@ Unclaimed demo drafts are ephemeral: retained for the cache TTL, then deleted al
 
 Before/after screenshots are exactly what travels in Icelandic small-business Facebook groups, so the demo result must be shareable without the recipient re-running the pipeline:
 
-- Each completed demo gets a public URL at `/{locale}/respin/{share_slug}` showing the frozen before/after.
-- The share page serves an Open Graph image that is the composed before/after side-by-side, so pasting the link into Facebook renders the money shot.
+- Each completed demo gets a public URL at `/{locale}/respin/{share_slug}`. In v1 it shows the frozen after-view (plus the source URL as a link); in v1.1 it becomes the frozen before/after.
+- **v1:** the share page serves a static branded Open Graph image. The GTM launch motion (re-spinning reference businesses and posting before/afters in Facebook groups, GTM §12) uses manually captured screenshots — no infrastructure required.
+- **v1.1:** the share page serves an Open Graph image that is the composed before/after side-by-side, so pasting the link into Facebook renders the money shot. This depends on the headless screenshot capture.
 - Share pages are static snapshots of the demo moment; they do not expose the editable draft and carry their own "Re-spin your site" CTA.
 
 ## Security Contract
@@ -152,11 +154,13 @@ The fetch client (used for page fetch, asset ingest, and headless egress alike) 
 
 ### Resource Caps
 
-- plain fetch timeout ~10s; headless render budget ~25s wall-clock
+- plain fetch timeout ~10s; headless render budget ~25s wall-clock (v1.1 — no headless component ships in v1)
 - response size caps: ~5 MB per HTML document, ~10 MB per ingested image, ~40 MB total per import
 - same-origin page budget of 5; no off-site fetches ever
 
-### Headless Sandboxing
+### Headless Sandboxing (v1.1 — deferred)
+
+No headless browser ships in v1: fetching is plain-HTTP only and the demo is after-only, so nothing executes source-site JavaScript. This section is the contract for when v1.1 adds the screenshot capture. The `ModeHeadless` constant and the `'headless'` value in the `respin_imports.fetch_mode` check constraint are inert forward-compatibility markers for that release.
 
 The headless browser is the highest-risk component: it executes attacker-supplied JavaScript. It must run in an isolated sandbox (dedicated container/jail, no host filesystem access, non-root), with all network egress forced through the SSRF-guarded proxy so in-page JS cannot reach internal ranges, downloads disabled, and hard kill on the render budget.
 

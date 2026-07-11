@@ -175,6 +175,79 @@ func TestRespinImportLifecycle(t *testing.T) {
 	}
 }
 
+func TestIsRespinOriginatedSite(t *testing.T) {
+	url := os.Getenv("DATABASE_URL")
+	if url == "" {
+		t.Skip("DATABASE_URL is required for the integration test")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	pool, err := database.Open(ctx, url)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	defer pool.Close()
+
+	store := NewService(pool)
+
+	workspaceID := mustID(t)
+	respinSiteID := mustID(t)
+	promptSiteID := mustID(t)
+	if _, err := pool.Exec(ctx, `insert into workspaces (id, name) values ($1::uuid, 'Respin origin integration')`, workspaceID); err != nil {
+		t.Fatalf("insert workspace: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		insert into sites (id, workspace_id, name, slug)
+		values ($1::uuid, $3::uuid, 'Respin site', 'respin-site'),
+		       ($2::uuid, $3::uuid, 'Prompt site', 'prompt-site')
+	`, respinSiteID, promptSiteID, workspaceID); err != nil {
+		t.Fatalf("insert sites: %v", err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cleanupCancel()
+		_, _ = pool.Exec(cleanupCtx, `delete from workspaces where id = $1::uuid`, workspaceID)
+	})
+
+	imp, err := store.Create(ctx, CreateInput{SourceURL: "https://origin.example", NormalizedURL: "https://origin.example", WorkspaceID: workspaceID})
+	if err != nil {
+		t.Fatalf("create import: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		insert into generation_jobs (workspace_id, site_id, kind, prompt, respin_import_id)
+		values ($1::uuid, $2::uuid, 'site', 'composed brief', $3::uuid),
+		       ($1::uuid, $4::uuid, 'site', 'plain prompt', null)
+	`, workspaceID, respinSiteID, imp.ID, promptSiteID); err != nil {
+		t.Fatalf("insert generation jobs: %v", err)
+	}
+
+	originated, err := store.IsRespinOriginatedSite(ctx, respinSiteID)
+	if err != nil {
+		t.Fatalf("check respin-originated site: %v", err)
+	}
+	if !originated {
+		t.Fatalf("expected respin-linked site to be originated")
+	}
+
+	prompt, err := store.IsRespinOriginatedSite(ctx, promptSiteID)
+	if err != nil {
+		t.Fatalf("check prompt site: %v", err)
+	}
+	if prompt {
+		t.Fatalf("expected prompt-originated site to not be gated")
+	}
+
+	blank, err := store.IsRespinOriginatedSite(ctx, "")
+	if err != nil {
+		t.Fatalf("check blank site id: %v", err)
+	}
+	if blank {
+		t.Fatalf("expected blank site id to not be originated")
+	}
+}
+
 func TestRespinDegradeFailAndGC(t *testing.T) {
 	url := os.Getenv("DATABASE_URL")
 	if url == "" {

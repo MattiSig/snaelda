@@ -542,6 +542,154 @@ func validSnapshotWithContact() siteconfig.PublishedSnapshot {
 	return snapshot
 }
 
+type fakeRespinGate struct {
+	originated bool
+	err        error
+	gotSiteID  string
+}
+
+func (f *fakeRespinGate) IsRespinOriginatedSite(_ context.Context, siteID string) (bool, error) {
+	f.gotSiteID = siteID
+	return f.originated, f.err
+}
+
+func respinGatePublisher() *fakePublisher {
+	return &fakePublisher{
+		publishResult: PublishResult{
+			Version:  VersionSummary{ID: "version-1", SiteID: "site_demo", VersionNumber: 1, IsCurrent: true},
+			SiteSlug: "nordic-studio",
+			Hostname: "nordic-studio.localhost",
+			Snapshot: validSnapshot(),
+		},
+	}
+}
+
+func respinPublishRequest(ctx context.Context) (*http.Request, *httptest.ResponseRecorder) {
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/site_demo/publish", strings.NewReader(`{}`)).WithContext(ctx)
+	req.SetPathValue("siteId", "site_demo")
+	return req, httptest.NewRecorder()
+}
+
+func TestPublishRespinDraftWithoutClaimedIdentityIsGated(t *testing.T) {
+	gate := &fakeRespinGate{originated: true}
+	publisher := respinGatePublisher()
+	handler := Handler{service: publisher, authorizer: fakePublishAuthorizer{}, respinGate: gate}
+
+	// An unclaimed trial session (L0/L1): no user, no claim.
+	ctx := auth.WithSession(context.Background(), auth.Session{
+		Kind:        auth.SessionKindTrial,
+		WorkspaceID: "workspace-1",
+	})
+	req, res := respinPublishRequest(ctx)
+
+	handler.publish(res, req)
+
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, res.Code)
+	}
+	if gate.gotSiteID != "site_demo" {
+		t.Fatalf("expected gate to receive site id, got %q", gate.gotSiteID)
+	}
+	if publisher.publishSiteID != "" {
+		t.Fatalf("expected publish to be blocked before reaching the service")
+	}
+	var payload struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Error.Code != "identity_required" {
+		t.Fatalf("expected identity_required error, got %q", payload.Error.Code)
+	}
+}
+
+func TestPublishRespinDraftWithAuthenticatedIdentityProceeds(t *testing.T) {
+	gate := &fakeRespinGate{originated: true}
+	publisher := respinGatePublisher()
+	handler := Handler{service: publisher, authorizer: fakePublishAuthorizer{}, appBaseURL: "http://localhost:3000", publicBaseURL: "http://localhost:3000", respinGate: gate}
+
+	ctx := auth.WithSession(context.Background(), auth.Session{
+		Kind:        auth.SessionKindAuthenticated,
+		WorkspaceID: "workspace-1",
+		User:        &auth.User{ID: "user-1", Email: "owner@snaelda.local", WorkspaceID: "workspace-1", WorkspaceRole: "owner"},
+	})
+	req, res := respinPublishRequest(ctx)
+
+	handler.publish(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	if publisher.publishSiteID != "site_demo" {
+		t.Fatalf("expected publish to reach the service, got %q", publisher.publishSiteID)
+	}
+}
+
+func TestPublishRespinDraftWithClaimedTrialProceeds(t *testing.T) {
+	gate := &fakeRespinGate{originated: true}
+	publisher := respinGatePublisher()
+	handler := Handler{service: publisher, authorizer: fakePublishAuthorizer{}, appBaseURL: "http://localhost:3000", publicBaseURL: "http://localhost:3000", respinGate: gate}
+
+	// A claimed trial session: an email was added (L2), so ClaimedByUserID is set.
+	ctx := auth.WithSession(context.Background(), auth.Session{
+		Kind:            auth.SessionKindTrial,
+		WorkspaceID:     "workspace-1",
+		ClaimedByUserID: "user-1",
+		User:            &auth.User{ID: "user-1", Email: "owner@snaelda.local", WorkspaceID: "workspace-1", WorkspaceRole: "owner"},
+	})
+	req, res := respinPublishRequest(ctx)
+
+	handler.publish(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+}
+
+func TestPublishNonRespinDraftIsNotGated(t *testing.T) {
+	gate := &fakeRespinGate{originated: false}
+	publisher := respinGatePublisher()
+	handler := Handler{service: publisher, authorizer: fakePublishAuthorizer{}, appBaseURL: "http://localhost:3000", publicBaseURL: "http://localhost:3000", respinGate: gate}
+
+	// Unclaimed trial, but a prompt-originated draft: the gate must not block it.
+	ctx := auth.WithSession(context.Background(), auth.Session{
+		Kind:        auth.SessionKindTrial,
+		WorkspaceID: "workspace-1",
+	})
+	req, res := respinPublishRequest(ctx)
+
+	handler.publish(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+}
+
+func TestPublishRespinGateErrorReturnsInternalServerError(t *testing.T) {
+	gate := &fakeRespinGate{err: errors.New("db down")}
+	publisher := respinGatePublisher()
+	handler := Handler{service: publisher, authorizer: fakePublishAuthorizer{}, respinGate: gate}
+
+	ctx := auth.WithSession(context.Background(), auth.Session{
+		Kind:        auth.SessionKindAuthenticated,
+		WorkspaceID: "workspace-1",
+		User:        &auth.User{ID: "user-1", Email: "owner@snaelda.local", WorkspaceID: "workspace-1", WorkspaceRole: "owner"},
+	})
+	req, res := respinPublishRequest(ctx)
+
+	handler.publish(res, req)
+
+	if res.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, res.Code)
+	}
+	if publisher.publishSiteID != "" {
+		t.Fatalf("expected publish to be blocked when the gate errors")
+	}
+}
+
 func TestWritePublishErrorFallsBackToInternalServerError(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	handler := &Handler{}

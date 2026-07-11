@@ -45,6 +45,15 @@ func (s Session) IsClaimed() bool {
 	return s.ClaimedByUserID != ""
 }
 
+// HasClaimedIdentity reports whether an email-backed identity is attached to the
+// session: either an authenticated (logged-in) user or a claimed trial whose
+// owner added an email. This is the Spec 17 L2 gate the re-spin publish guard
+// enforces before a draft scraped from a third-party site can be published
+// (Spec 21).
+func (s Session) HasClaimedIdentity() bool {
+	return s.IsAuthenticated() || s.IsClaimed()
+}
+
 type sessionContextKey string
 
 const sessionContextKeyValue sessionContextKey = "auth.session"

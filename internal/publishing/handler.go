@@ -27,7 +27,18 @@ type Handler struct {
 	publicBaseURL string
 	viewRecorder  PageViewRecorder
 	billingDB     billing.AccessStore
+	respinGate    RespinOriginChecker
 	logger        *slog.Logger
+}
+
+// RespinOriginChecker reports whether a site's draft originated from a re-spin
+// URL import (Spec 21). Re-spin drafts carry content scraped from a third-party
+// site, so they may only be published once a claimed L2 identity is attached —
+// the publish route enforces this before handing off to the service. Implemented
+// by *respin.Service; kept as a consumer-side interface so publishing does not
+// depend on the respin package.
+type RespinOriginChecker interface {
+	IsRespinOriginatedSite(ctx context.Context, siteID string) (bool, error)
 }
 
 // PageViewRecorder is implemented by analytics.Recorder. The interface lets the
@@ -75,6 +86,17 @@ func NewHandlerWithConfig(db DB, cfg ServiceConfig, appBaseURL string, publicBas
 		billingDB:     db,
 		logger:        slog.Default(),
 	}
+}
+
+// WithRespinGate attaches the re-spin origin checker that gates publishing of
+// re-spin-originated drafts behind a claimed L2 identity (Spec 21). Returns the
+// handler for chaining; a nil checker leaves the gate disabled.
+func (h *Handler) WithRespinGate(checker RespinOriginChecker) *Handler {
+	if h == nil || checker == nil {
+		return h
+	}
+	h.respinGate = checker
+	return h
 }
 
 // WithLogger sets the structured logger used for unmapped publish errors.
@@ -132,6 +154,21 @@ func (h *Handler) publish(w http.ResponseWriter, r *http.Request) {
 	userID := ""
 	if session.User != nil {
 		userID = session.User.ID
+	}
+
+	// Re-spin publish gate (Spec 21): a draft scraped from a third-party site may
+	// only be published once an email-backed L2 identity claims ownership.
+	// Generation, editing, and preview stay open; only first publish is gated.
+	if h.respinGate != nil {
+		originated, err := h.respinGate.IsRespinOriginatedSite(r.Context(), siteID)
+		if err != nil {
+			h.writePublishError(w, r, err)
+			return
+		}
+		if originated && !session.HasClaimedIdentity() {
+			writeError(w, http.StatusForbidden, "identity_required", "add a verified email to publish a site re-spun from another website")
+			return
+		}
 	}
 
 	var payload publishRequest
