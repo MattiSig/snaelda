@@ -135,12 +135,34 @@ var highValuePaths = []string{
 	"about", "um-okkur", "um",
 	"service", "services", "thjonusta", "þjónusta", "vorur", "vörur",
 	"contact", "hafa-samband", "hafdu-samband",
+	"faq", "faqs", "spurningar", "algengar-spurningar",
 	"price", "pricing", "verd", "verð",
 	"menu", "matsedill",
 }
 
+// lowValuePaths are chrome/transactional slugs that carry no re-spin-worthy
+// business content. They are explicitly down-scored so they never steal a fetch
+// slot from a real content page within the small page budget (2026-07-12 QA:
+// /faqs lost its slot to /cart and /privacy-policy).
+var lowValuePaths = []string{
+	"cart", "checkout", "basket", "karfa",
+	"privacy", "personuvernd", "persónuvernd", "cookie", "cookies", "vafrakokur",
+	"terms", "skilmalar", "skilmálar",
+	"login", "signin", "sign-in", "innskraning", "innskráning", "account", "reikningur",
+}
+
 func pageScore(path string) int {
 	p := strings.ToLower(path)
+	// Down-scored chrome/transactional paths are checked first: a slug like
+	// "/terms-of-service" contains the high-value "service" substring but is a
+	// terms page, so the negative match must win.
+	for _, key := range lowValuePaths {
+		if strings.Contains(p, key) {
+			// Negative so a chrome/transactional page always loses to a
+			// zero-scored generic content page within the page budget.
+			return -1
+		}
+	}
 	for i, key := range highValuePaths {
 		if strings.Contains(p, key) {
 			// Earlier entries in the list are more valuable.

@@ -213,6 +213,37 @@ func TestResolvePages(t *testing.T) {
 	}
 }
 
+func TestResolvePagesIncludesFAQ(t *testing.T) {
+	pages := resolvePages(ExtractedFields{
+		About: "About us.",
+		FAQs:  []ExtractFAQ{{Question: "Do you offer warranties?", Answer: "Yes."}},
+	})
+	if strings.Join(pages, ",") != "home,about,faq" {
+		t.Fatalf("pages = %v, want home,about,faq", pages)
+	}
+}
+
+func TestComposeBriefRendersWidenedFields(t *testing.T) {
+	analysis := sampleAnalysis()
+	analysis.Fields.FAQs = []ExtractFAQ{{Question: "Are you available 24/7?", Answer: "Yes, always."}}
+	analysis.Fields.Offers = []ExtractOffer{{Title: "Spring Maintenance Special", Description: "10% off in March"}}
+	analysis.Fields.ServiceAreas = []string{"Kenosha", "Racine"}
+	analysis.Fields.ClientTypes = []string{"homeowners", "restaurants"}
+
+	brief := composeBrief(analysis, ComposeContext{SourceURL: "https://klippt.is"})
+	for _, want := range []string{
+		"Are you available 24/7?",
+		"Yes, always.",
+		"Spring Maintenance Special — 10% off in March",
+		"Service areas (keep place names verbatim): Kenosha, Racine",
+		"Who they serve: homeowners, restaurants",
+	} {
+		if !strings.Contains(brief, want) {
+			t.Errorf("brief missing %q\n---\n%s", want, brief)
+		}
+	}
+}
+
 func TestRenderHoursCalendarOrder(t *testing.T) {
 	out := renderHours([]ExtractHours{
 		{Day: "sunday", Closed: true},

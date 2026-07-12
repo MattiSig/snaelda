@@ -18,6 +18,19 @@ type ExtractedFields struct {
 	Hours        []ExtractHours   `json:"hours,omitempty"`
 	Contact      ContactDetails   `json:"contact,omitempty"`
 	Testimonials []Testimonial    `json:"testimonials,omitempty"`
+	// FAQs are the real question/answer pairs a source often keeps on a dedicated
+	// page (2026-07-12 QA: ~10 real Q&As had no field to land in and were
+	// discarded; the model invented one instead).
+	FAQs []ExtractFAQ `json:"faqs,omitempty"`
+	// ServiceAreas are the towns/regions the business serves, kept verbatim (place
+	// names, not translated).
+	ServiceAreas []string `json:"serviceAreas,omitempty"`
+	// ClientTypes are the customer segments the business names (e.g. "homeowners",
+	// "restaurants").
+	ClientTypes []string `json:"clientTypes,omitempty"`
+	// Offers are current promotions/announcements ("Spring Maintenance Special"),
+	// kept as written.
+	Offers []ExtractOffer `json:"offers,omitempty"`
 	// MissingFields flags the top-level fields the model could not populate from
 	// the source (e.g. "hours", "testimonials"), so the demo can be honest about
 	// what it read and the composer can pre-fill gaps.
@@ -55,6 +68,18 @@ type Testimonial struct {
 	Author string `json:"author,omitempty"`
 }
 
+// ExtractFAQ is one real question/answer pair read from the source.
+type ExtractFAQ struct {
+	Question string `json:"question"`
+	Answer   string `json:"answer,omitempty"`
+}
+
+// ExtractOffer is one current promotion or announcement, kept as written.
+type ExtractOffer struct {
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
+}
+
 // IsEmpty reports whether no contact field was found.
 func (c ContactDetails) IsEmpty() bool {
 	return strings.TrimSpace(c.Phone) == "" &&
@@ -72,9 +97,13 @@ Fields:
 - about: the business's own description of itself, cleaned into 1-3 coherent sentences in the SOURCE language. Do not translate here. Do not add marketing you did not read.
 - services: concrete offerings, each with a name and (if stated) a short description and price. Keep prices verbatim as written (currency, format, and all).
 - hours: opening hours if present. day is the lowercase English weekday ("monday".."sunday"). opens/closes are 24h "HH:MM". Set closed=true (and leave opens/closes "") for days marked closed. Emit one row per stated day; omit days not mentioned.
-- contact: phone, email, and postal address exactly as written, each "" if absent.
+- contact: phone, email, and postal address exactly as written, each "" if absent. If the text ends with a "CANDIDATE CONTACT SIGNALS" block, those values were harvested verbatim from the site's own contact links/markup — prefer them for the matching contact field.
 - testimonials: customer quotes VERBATIM with the attributed author if given. Never write or embellish a testimonial.
-- missingFields: list the field names you could not populate from the source (from: businessName, tagline, about, services, hours, contact, testimonials).
+- faqs: real question/answer pairs present on the source (often on a dedicated FAQ page). Keep the question and answer as written; never invent a Q&A.
+- serviceAreas: the towns, regions, or neighbourhoods the business says it serves. Keep place names verbatim.
+- clientTypes: the customer segments the business names it serves (e.g. "homeowners", "restaurants", "property managers").
+- offers: current promotions or announcements as written (e.g. "Spring Maintenance Special"), with the descriptive line if one is given. Never invent an offer.
+- missingFields: list the field names you could not populate from the source (from: businessName, tagline, about, services, hours, contact, testimonials, faqs, serviceAreas, clientTypes, offers).
 
 Base everything strictly on the provided text.`
 
@@ -83,7 +112,7 @@ func extractionSchema() map[string]any {
 	return map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
-		"required":             []string{"businessName", "tagline", "about", "services", "hours", "contact", "testimonials", "missingFields"},
+		"required":             []string{"businessName", "tagline", "about", "services", "hours", "contact", "testimonials", "faqs", "serviceAreas", "clientTypes", "offers", "missingFields"},
 		"properties": map[string]any{
 			"businessName": stringField,
 			"tagline":      stringField,
@@ -140,6 +169,42 @@ func extractionSchema() map[string]any {
 					},
 				},
 			},
+			"faqs": map[string]any{
+				"type":     "array",
+				"maxItems": 20,
+				"items": map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+					"required":             []string{"question", "answer"},
+					"properties": map[string]any{
+						"question": stringField,
+						"answer":   stringField,
+					},
+				},
+			},
+			"serviceAreas": map[string]any{
+				"type":     "array",
+				"maxItems": 40,
+				"items":    stringField,
+			},
+			"clientTypes": map[string]any{
+				"type":     "array",
+				"maxItems": 20,
+				"items":    stringField,
+			},
+			"offers": map[string]any{
+				"type":     "array",
+				"maxItems": 10,
+				"items": map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+					"required":             []string{"title", "description"},
+					"properties": map[string]any{
+						"title":       stringField,
+						"description": stringField,
+					},
+				},
+			},
 			"missingFields": map[string]any{
 				"type":  "array",
 				"items": stringField,
@@ -177,7 +242,31 @@ func (a *Analyzer) ExtractFields(ctx context.Context, content SourceContent, cla
 		return ExtractedFields{}, err
 	}
 
-	return normalizeExtraction(result), nil
+	fields := normalizeExtraction(result)
+	return backfillContact(fields, content.Contact), nil
+}
+
+// backfillContact fills any contact field the model left empty from the
+// high-precision harvested NAP signals (tel:/mailto:/JSON-LD/microdata). The
+// model's own value always wins when present; this only rescues the case the
+// 2026-07-12 QA hit — a real phone/email/address that lived only in chrome the
+// readability pass stripped, so the model never saw it as prose. MissingFields
+// is recomputed so the honesty flag reflects the backfilled result.
+func backfillContact(fields ExtractedFields, harvested ContactSignals) ExtractedFields {
+	if harvested.IsEmpty() {
+		return fields
+	}
+	if fields.Contact.Phone == "" && len(harvested.Phones) > 0 {
+		fields.Contact.Phone = harvested.Phones[0]
+	}
+	if fields.Contact.Email == "" && len(harvested.Emails) > 0 {
+		fields.Contact.Email = harvested.Emails[0]
+	}
+	if fields.Contact.Address == "" && len(harvested.Addresses) > 0 {
+		fields.Contact.Address = harvested.Addresses[0]
+	}
+	fields.MissingFields = missingFieldsFor(fields)
+	return fields
 }
 
 // normalizeExtraction trims strings, drops empty rows, canonicalizes weekday
@@ -240,6 +329,29 @@ func normalizeExtraction(fields ExtractedFields) ExtractedFields {
 	}
 	fields.Testimonials = testimonials
 
+	faqs := make([]ExtractFAQ, 0, len(fields.FAQs))
+	for _, f := range fields.FAQs {
+		q := strings.TrimSpace(f.Question)
+		if q == "" {
+			continue
+		}
+		faqs = append(faqs, ExtractFAQ{Question: q, Answer: strings.TrimSpace(f.Answer)})
+	}
+	fields.FAQs = faqs
+
+	offers := make([]ExtractOffer, 0, len(fields.Offers))
+	for _, o := range fields.Offers {
+		title := strings.TrimSpace(o.Title)
+		if title == "" {
+			continue
+		}
+		offers = append(offers, ExtractOffer{Title: title, Description: strings.TrimSpace(o.Description)})
+	}
+	fields.Offers = offers
+
+	fields.ServiceAreas = dedupeAppend(nil, fields.ServiceAreas)
+	fields.ClientTypes = dedupeAppend(nil, fields.ClientTypes)
+
 	fields.MissingFields = missingFieldsFor(fields)
 	return fields
 }
@@ -247,7 +359,7 @@ func normalizeExtraction(fields ExtractedFields) ExtractedFields {
 // missingFieldsFor derives the missing-field flags from the cleaned result, so
 // the honesty signal matches reality rather than the model's self-report.
 func missingFieldsFor(fields ExtractedFields) []string {
-	missing := make([]string, 0, 7)
+	missing := make([]string, 0, 11)
 	if fields.BusinessName == "" {
 		missing = append(missing, "businessName")
 	}
@@ -268,6 +380,18 @@ func missingFieldsFor(fields ExtractedFields) []string {
 	}
 	if len(fields.Testimonials) == 0 {
 		missing = append(missing, "testimonials")
+	}
+	if len(fields.FAQs) == 0 {
+		missing = append(missing, "faqs")
+	}
+	if len(fields.ServiceAreas) == 0 {
+		missing = append(missing, "serviceAreas")
+	}
+	if len(fields.ClientTypes) == 0 {
+		missing = append(missing, "clientTypes")
+	}
+	if len(fields.Offers) == 0 {
+		missing = append(missing, "offers")
 	}
 	return missing
 }

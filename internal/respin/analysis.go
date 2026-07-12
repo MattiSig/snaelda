@@ -32,6 +32,11 @@ type SourceContent struct {
 	Description  string       `json:"description,omitempty"`
 	DetectedLang string       `json:"detectedLang,omitempty"`
 	Pages        []SourcePage `json:"pages"`
+	// Contact aggregates the NAP signals harvested across every fetched page —
+	// the highest-precision contact facts, gathered from chrome the readability
+	// text pass strips. The extraction stage sees them as candidate facts and the
+	// pipeline backfills the extracted contact from them.
+	Contact ContactSignals `json:"contact,omitempty"`
 }
 
 // BuildSourceContent assembles the stage input from fetched pages. The first
@@ -47,6 +52,7 @@ func BuildSourceContent(pages ...Page) SourceContent {
 			content.Description = strings.TrimSpace(page.Description)
 			content.DetectedLang = normalizeStageLocale(page.Meta.Lang)
 		}
+		content.Contact = content.Contact.merge(page.Contact)
 		if text == "" {
 			continue
 		}
@@ -92,6 +98,14 @@ func (c SourceContent) promptDocument() string {
 			fmt.Fprintf(&b, "# %s\n", page.Title)
 		}
 		b.WriteString(strings.TrimSpace(page.Text))
+		b.WriteString("\n")
+	}
+	// Structured NAP signals harvested from the page chrome (tel:/mailto: links,
+	// JSON-LD, microdata) that the readable text above omits. These are verbatim
+	// candidate contact facts, not prose to summarize.
+	if signals := c.Contact.sortedForPrompt(); signals != "" {
+		b.WriteString("\n---\nCANDIDATE CONTACT SIGNALS (verbatim, harvested from the source's contact links and markup):")
+		b.WriteString(signals)
 		b.WriteString("\n")
 	}
 	doc := strings.TrimSpace(b.String())

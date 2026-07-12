@@ -15,10 +15,22 @@ type rewritePayload struct {
 	Tagline  string                  `json:"tagline"`
 	About    string                  `json:"about"`
 	Services []rewriteServicePayload `json:"services"`
+	FAQs     []rewriteFAQPayload     `json:"faqs"`
+	Offers   []rewriteOfferPayload   `json:"offers"`
 }
 
 type rewriteServicePayload struct {
 	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+type rewriteFAQPayload struct {
+	Question string `json:"question"`
+	Answer   string `json:"answer"`
+}
+
+type rewriteOfferPayload struct {
+	Title       string `json:"title"`
 	Description string `json:"description"`
 }
 
@@ -27,9 +39,9 @@ const rewriteSystemPrompt = `You rewrite a small business's own website copy int
 You are given the business's extracted copy in its source language and a target language. Rewrite ONLY the prose into copy that reads as if a native speaker wrote it fresh for this business — never a word-for-word translation.
 
 Rules:
-- Rewrite tagline, about, and each service's name and description into the TARGET language.
-- Keep the SAME number of services in the SAME order. For each, return the rewritten name and description.
-- Preserve the meaning and facts. Do not invent services, benefits, or claims that were not in the source.
+- Rewrite tagline, about, each service's name and description, each FAQ's question and answer, and each offer's title and description into the TARGET language.
+- Keep the SAME number of services, faqs, and offers in the SAME order. For each, return the rewritten fields.
+- Preserve the meaning and facts. Do not invent services, FAQs, offers, benefits, or claims that were not in the source.
 - Keep proper nouns, brand names, and place names as-is.
 - No hype, no superlatives, no anglicisms where a natural target-language word exists. Match the direct, warm, unpretentious register a small local business actually uses.
 - If a field was empty in the source, return it empty. Never fill an empty field with invented copy.
@@ -43,29 +55,48 @@ const icelandicRewriteGuidance = `
 
 TARGET LANGUAGE IS ICELANDIC (íslenska): write every rewritten string in natural, native Icelandic in the direct, warm, unpretentious small-business register a Reykjavík salon, café, or contractor would use. Never translated-English phrasing, no hype, no anglicism where a natural Icelandic word exists.`
 
-func rewriteSchema(serviceCount int) map[string]any {
+// rewriteCounts pins the array lengths the model must return so each rewritten
+// item matches its source item by index.
+type rewriteCounts struct {
+	services int
+	faqs     int
+	offers   int
+}
+
+func rewriteSchema(counts rewriteCounts) map[string]any {
 	stringField := map[string]any{"type": "string"}
+	fixedArray := func(n int, required []string, props map[string]any) map[string]any {
+		return map[string]any{
+			"type":     "array",
+			"minItems": n,
+			"maxItems": n,
+			"items": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"required":             required,
+				"properties":           props,
+			},
+		}
+	}
 	return map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
-		"required":             []string{"tagline", "about", "services"},
+		"required":             []string{"tagline", "about", "services", "faqs", "offers"},
 		"properties": map[string]any{
 			"tagline": stringField,
 			"about":   stringField,
-			"services": map[string]any{
-				"type":     "array",
-				"minItems": serviceCount,
-				"maxItems": serviceCount,
-				"items": map[string]any{
-					"type":                 "object",
-					"additionalProperties": false,
-					"required":             []string{"name", "description"},
-					"properties": map[string]any{
-						"name":        stringField,
-						"description": stringField,
-					},
-				},
-			},
+			"services": fixedArray(counts.services, []string{"name", "description"}, map[string]any{
+				"name":        stringField,
+				"description": stringField,
+			}),
+			"faqs": fixedArray(counts.faqs, []string{"question", "answer"}, map[string]any{
+				"question": stringField,
+				"answer":   stringField,
+			}),
+			"offers": fixedArray(counts.offers, []string{"title", "description"}, map[string]any{
+				"title":       stringField,
+				"description": stringField,
+			}),
 		},
 	}
 }
@@ -86,9 +117,17 @@ func (a *Analyzer) RewriteCopy(ctx context.Context, fields ExtractedFields, targ
 		Tagline:  fields.Tagline,
 		About:    fields.About,
 		Services: make([]rewriteServicePayload, len(fields.Services)),
+		FAQs:     make([]rewriteFAQPayload, len(fields.FAQs)),
+		Offers:   make([]rewriteOfferPayload, len(fields.Offers)),
 	}
 	for i, s := range fields.Services {
 		payloadIn.Services[i] = rewriteServicePayload{Name: s.Name, Description: s.Description}
+	}
+	for i, f := range fields.FAQs {
+		payloadIn.FAQs[i] = rewriteFAQPayload{Question: f.Question, Answer: f.Answer}
+	}
+	for i, o := range fields.Offers {
+		payloadIn.Offers[i] = rewriteOfferPayload{Title: o.Title, Description: o.Description}
 	}
 	payloadJSON, err := json.Marshal(map[string]any{
 		"targetLanguage": firstNonEmptyString(targetLocale, "is"),
@@ -106,7 +145,7 @@ func (a *Analyzer) RewriteCopy(ctx context.Context, fields ExtractedFields, targ
 	var result rewritePayload
 	if err := a.runStage(ctx, CompletionRequest{
 		Name:   "respin_rewrite",
-		Schema: rewriteSchema(len(fields.Services)),
+		Schema: rewriteSchema(rewriteCounts{services: len(fields.Services), faqs: len(fields.FAQs), offers: len(fields.Offers)}),
 		System: system,
 		User:   fmt.Sprintf("Rewrite this business copy.\n\n%s", string(payloadJSON)),
 	}, &result); err != nil {
@@ -125,6 +164,16 @@ func hasRewritableProse(fields ExtractedFields) bool {
 	}
 	for _, s := range fields.Services {
 		if strings.TrimSpace(s.Name) != "" || strings.TrimSpace(s.Description) != "" {
+			return true
+		}
+	}
+	for _, f := range fields.FAQs {
+		if strings.TrimSpace(f.Question) != "" || strings.TrimSpace(f.Answer) != "" {
+			return true
+		}
+	}
+	for _, o := range fields.Offers {
+		if strings.TrimSpace(o.Title) != "" || strings.TrimSpace(o.Description) != "" {
 			return true
 		}
 	}
@@ -152,6 +201,28 @@ func mergeRewrite(fields ExtractedFields, rewrite rewritePayload) ExtractedField
 		}
 		if desc := strings.TrimSpace(rewrite.Services[i].Description); desc != "" {
 			fields.Services[i].Description = desc
+		}
+	}
+	for i := range fields.FAQs {
+		if i >= len(rewrite.FAQs) {
+			break
+		}
+		if q := strings.TrimSpace(rewrite.FAQs[i].Question); q != "" {
+			fields.FAQs[i].Question = q
+		}
+		if ans := strings.TrimSpace(rewrite.FAQs[i].Answer); ans != "" {
+			fields.FAQs[i].Answer = ans
+		}
+	}
+	for i := range fields.Offers {
+		if i >= len(rewrite.Offers) {
+			break
+		}
+		if title := strings.TrimSpace(rewrite.Offers[i].Title); title != "" {
+			fields.Offers[i].Title = title
+		}
+		if desc := strings.TrimSpace(rewrite.Offers[i].Description); desc != "" {
+			fields.Offers[i].Description = desc
 		}
 	}
 	fields.MissingFields = missingFieldsFor(fields)

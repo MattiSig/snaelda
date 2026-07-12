@@ -159,6 +159,9 @@ func resolvePages(fields ExtractedFields) []string {
 	if strings.TrimSpace(fields.About) != "" {
 		pages = append(pages, "about")
 	}
+	if len(fields.FAQs) > 0 {
+		pages = append(pages, "faq")
+	}
 	if !fields.Contact.IsEmpty() {
 		pages = append(pages, "contact")
 	}
@@ -274,6 +277,35 @@ func composeBrief(analysis AnalysisResult, cctx ComposeContext) string {
 				line += " — " + author
 			}
 			b.WriteString(line)
+		}
+	}
+
+	if len(fields.Offers) > 0 {
+		b.WriteString("\n\nCurrent offers/announcements (keep the offer, do not invent new ones):")
+		for _, o := range fields.Offers {
+			line := "\n- " + strings.TrimSpace(o.Title)
+			if desc := strings.TrimSpace(o.Description); desc != "" {
+				line += " — " + desc
+			}
+			b.WriteString(line)
+		}
+	}
+
+	if len(fields.ServiceAreas) > 0 {
+		fmt.Fprintf(&b, "\n\nService areas (keep place names verbatim): %s", strings.Join(fields.ServiceAreas, ", "))
+	}
+
+	if len(fields.ClientTypes) > 0 {
+		fmt.Fprintf(&b, "\n\nWho they serve: %s", strings.Join(fields.ClientTypes, ", "))
+	}
+
+	if len(fields.FAQs) > 0 {
+		b.WriteString("\n\nFAQ (use these real questions and answers; never invent a Q&A):")
+		for _, f := range fields.FAQs {
+			fmt.Fprintf(&b, "\n- Q: %s", strings.TrimSpace(f.Question))
+			if ans := strings.TrimSpace(f.Answer); ans != "" {
+				fmt.Fprintf(&b, "\n  A: %s", ans)
+			}
 		}
 	}
 

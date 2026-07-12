@@ -110,6 +110,70 @@ func TestFetchSiteRespectsPageBudget(t *testing.T) {
 	}
 }
 
+func TestPageScoreRanking(t *testing.T) {
+	// A real FAQ page must outrank chrome/transactional pages, which are
+	// down-scored below a zero-scored generic content page (2026-07-12 QA:
+	// /faqs lost its slot to /cart and /privacy-policy).
+	faq := pageScore("/faqs")
+	if faq <= 0 {
+		t.Fatalf("faq page score = %d, want positive", faq)
+	}
+	for _, junk := range []string{"/cart", "/privacy-policy", "/terms-of-service", "/login", "/cookie-policy"} {
+		if s := pageScore(junk); s >= 0 {
+			t.Errorf("junk path %q score = %d, want negative", junk, s)
+		}
+		if pageScore(junk) >= pageScore("/generic-page") {
+			t.Errorf("junk path %q should score below a generic content page", junk)
+		}
+		if pageScore(junk) >= faq {
+			t.Errorf("junk path %q should score below the faq page", junk)
+		}
+	}
+}
+
+func TestFetchSiteFAQBeatsChrome(t *testing.T) {
+	// With a budget of 1, /faqs must win over /cart and /privacy-policy.
+	mux := http.NewServeMux()
+	page := func(title string) string {
+		return fmt.Sprintf(`<html><head><title>%s</title></head><body><main>
+			<p>Við bjóðum fjölbreytta þjónustu fyrir alla fjölskylduna í notalegu og fallegu umhverfi allan ársins hring án nokkurra vandræða.</p>
+			<p>Komdu við hjá okkur og upplifðu fagmennsku, hlýju og persónulega þjónustu sem heldur þér ánægðum aftur og aftur um ókomna tíð.</p>
+			</main></body></html>`, title)
+	}
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<html><head><title>Home</title></head><body><main>
+			<p>Við bjóðum fjölbreytta þjónustu fyrir alla fjölskylduna í notalegu og fallegu umhverfi allan ársins hring án nokkurra vandræða.</p>
+			<p>Komdu við hjá okkur og upplifðu fagmennsku, hlýju og persónulega þjónustu sem heldur þér ánægðum aftur og aftur um ókomna tíð.</p>
+			<nav>
+			  <a href="/cart">Cart</a>
+			  <a href="/privacy-policy">Privacy</a>
+			  <a href="/faqs">FAQ</a>
+			</nav></main></body></html>`)
+	})
+	for _, p := range []string{"/cart", "/privacy-policy", "/faqs"} {
+		title := p
+		mux.HandleFunc(p, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprint(w, page(title))
+		})
+	}
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	site, err := testFetcher().FetchSite(context.Background(), srv.URL, 1)
+	if err != nil {
+		t.Fatalf("FetchSite: %v", err)
+	}
+	if len(site.Pages) != 1 || site.Pages[0].Title != "/faqs" {
+		t.Fatalf("expected /faqs to win the single slot, got %+v", site.Pages)
+	}
+}
+
 func TestFetchSiteInsufficientRoot(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")

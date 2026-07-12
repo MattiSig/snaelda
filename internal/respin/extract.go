@@ -52,6 +52,10 @@ type Page struct {
 	WordCount   int      `json:"wordCount"`
 	Links       []string `json:"links,omitempty"`
 	Meta        PageMeta `json:"meta"`
+	// Contact holds the NAP signals harvested from the whole document (chrome
+	// included), which the readability text pass strips. It is the highest
+	// precision contact source a page carries.
+	Contact ContactSignals `json:"contact,omitempty"`
 }
 
 // Sufficient reports whether the page carries enough readable text to extract
@@ -159,6 +163,11 @@ func extractPage(body []byte, base *url.URL) Page {
 	// above deliberately discards (logos live in the <header> chrome the text
 	// pass skips). Gather them from the whole document in one extra pass.
 	collectBrandHints(doc, base, &page)
+
+	// Harvest NAP contact signals from the whole document — including the
+	// header/footer/nav chrome the copy pass strips, where the phone, email, and
+	// address usually live on a small-business site.
+	page.Contact = harvestContactSignals(doc, base)
 	return page
 }
 
