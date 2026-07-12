@@ -68,7 +68,7 @@ func (s *Service) generateDraftDecomposed(
 	for i, page := range outline.Pages {
 		i, page := i, page
 		pageGroup.Go(func() error {
-			pagePlan, err := s.buildPagePlanFromLayout(pageCtx, outline.SiteName, outline.SiteGoal, input.PreferredLanguage, input.Brand, page, outline.Pages, input.InterviewAnswers)
+			pagePlan, err := s.buildPagePlanFromLayout(pageCtx, outline.SiteName, outline.SiteGoal, input.Prompt, input.PreferredLanguage, input.Brand, page, outline.Pages, input.InterviewAnswers)
 			if err != nil {
 				return fmt.Errorf("compose page %s: %w", page.Slug, err)
 			}
@@ -199,7 +199,7 @@ func (s *Service) repromptSiteDecomposed(
 				return nil
 			}
 
-			pagePlan, err := s.buildPagePlanFromLayout(pageCtx, outline.SiteName, outline.SiteGoal, currentDraft.Site.DefaultLocale, currentDraft.Brand, page, outline.Pages, nil)
+			pagePlan, err := s.buildPagePlanFromLayout(pageCtx, outline.SiteName, outline.SiteGoal, prompt, currentDraft.Site.DefaultLocale, currentDraft.Brand, page, outline.Pages, nil)
 			if err != nil {
 				return fmt.Errorf("reprompt compose page %s: %w", page.Slug, err)
 			}
@@ -261,6 +261,7 @@ func (s *Service) buildPagePlanFromLayout(
 	ctx context.Context,
 	siteName string,
 	siteGoal string,
+	prompt string,
 	preferredLanguage string,
 	brand siteconfig.BrandConfig,
 	page OutlinePage,
@@ -270,6 +271,7 @@ func (s *Service) buildPagePlanFromLayout(
 	layout, err := s.decomposedPlanner.BuildPageLayout(ctx, PageLayoutRequest{
 		SiteName:          siteName,
 		SiteGoal:          siteGoal,
+		Prompt:            prompt,
 		PreferredLanguage: preferredLanguage,
 		Brand:             brand,
 		Page:              page,
@@ -286,6 +288,7 @@ func (s *Service) buildPagePlanFromLayout(
 	content, err := s.decomposedPlanner.BuildPageContent(ctx, PageContentRequest{
 		SiteName:          siteName,
 		SiteGoal:          siteGoal,
+		Prompt:            prompt,
 		PreferredLanguage: preferredLanguage,
 		Brand:             brand,
 		Page:              page,

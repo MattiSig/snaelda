@@ -1418,7 +1418,7 @@ func (s *Service) buildWholePageRepromptPlan(
 			Goal:  firstNonEmpty(strings.TrimSpace(prompt), page.SEO.Description, draft.Site.SEO.Description),
 			SEO:   page.SEO,
 		}
-		pagePlan, err := s.buildPagePlanFromLayout(ctx, draft.Site.Name, draft.Site.SEO.Description, draft.Site.DefaultLocale, draft.Brand, outlinePage, outline.Pages, nil)
+		pagePlan, err := s.buildPagePlanFromLayout(ctx, draft.Site.Name, draft.Site.SEO.Description, prompt, draft.Site.DefaultLocale, draft.Brand, outlinePage, outline.Pages, nil)
 		if err == nil && len(pagePlan.Blocks) > 0 {
 			pagePlan.Title = firstNonEmpty(pagePlan.Title, page.Title)
 			pagePlan.Slug = page.Slug

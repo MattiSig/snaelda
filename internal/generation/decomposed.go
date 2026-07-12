@@ -63,6 +63,7 @@ type OutlinePage struct {
 type PageLayoutRequest struct {
 	SiteName          string                 `json:"siteName"`
 	SiteGoal          string                 `json:"siteGoal,omitempty"`
+	Prompt            string                 `json:"prompt,omitempty"`
 	PreferredLanguage string                 `json:"preferredLanguage,omitempty"`
 	Brand             siteconfig.BrandConfig `json:"brand,omitempty"`
 	Page              OutlinePage            `json:"page"`
@@ -89,6 +90,7 @@ type PageLayoutBlock struct {
 type PageContentRequest struct {
 	SiteName          string                 `json:"siteName"`
 	SiteGoal          string                 `json:"siteGoal,omitempty"`
+	Prompt            string                 `json:"prompt,omitempty"`
 	PreferredLanguage string                 `json:"preferredLanguage,omitempty"`
 	Brand             siteconfig.BrandConfig `json:"brand,omitempty"`
 	Page              OutlinePage            `json:"page"`

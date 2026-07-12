@@ -403,3 +403,78 @@ func TestLanguageDirectiveAbsentForEnglishPrompt(t *testing.T) {
 		t.Fatalf("expected no language directive for English site, got: %s", system)
 	}
 }
+
+// captureUserMessage records the user-role message of the next structured
+// completion so tests can assert the brief the model actually saw.
+func captureUserMessage(t *testing.T, respond func() string) (*string, http.Handler) {
+	t.Helper()
+	var captured string
+	out := &captured
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var requestBody map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		messages := requestBody["messages"].([]any)
+		for _, raw := range messages {
+			msg := raw.(map[string]any)
+			if msg["role"] == "user" {
+				*out = msg["content"].(string)
+			}
+		}
+		_, _ = w.Write([]byte(respond()))
+	})
+	return out, handler
+}
+
+// TestRespinBriefReachesPerPageCalls guards the re-spin fidelity contract: the
+// composed brief (verbatim services, prices, contact) must reach both per-page
+// calls so the composer reproduces facts instead of inventing placeholders.
+func TestRespinBriefReachesPerPageCalls(t *testing.T) {
+	const brief = "Emergency plumber. Call 555-0142. Services: drain cleaning $99, water heater repair."
+
+	t.Run("layout", func(t *testing.T) {
+		user, handler := captureUserMessage(t, func() string {
+			return `{"choices":[{"message":{"content":"{\"blocks\":[{\"type\":\"hero\",\"purpose\":\"Open.\",\"contentBrief\":\"Opener.\",\"variantHint\":\"standard\"},{\"type\":\"footer\",\"purpose\":\"Close.\",\"contentBrief\":\"Contact.\",\"variantHint\":\"\"}]}"}}]}`
+		})
+		server := httptest.NewServer(handler)
+		defer server.Close()
+		planner, err := NewOpenAIPlanner(OpenAIPlannerConfig{APIKey: "test-key", Model: "gpt-5-mini", BaseURL: server.URL})
+		if err != nil {
+			t.Fatalf("new planner: %v", err)
+		}
+		if _, err := planner.BuildPageLayout(context.Background(), PageLayoutRequest{
+			SiteName: "My Sewer Guys",
+			Prompt:   brief,
+			Page:     OutlinePage{Title: "Home", Slug: "/", Goal: "Introduce."},
+		}); err != nil {
+			t.Fatalf("build page layout: %v", err)
+		}
+		if !strings.Contains(*user, "555-0142") || !strings.Contains(*user, "drain cleaning $99") {
+			t.Fatalf("expected brief facts in layout user payload, got: %s", *user)
+		}
+	})
+
+	t.Run("content", func(t *testing.T) {
+		user, handler := captureUserMessage(t, func() string {
+			return `{"choices":[{"message":{"content":"{\"blocks\":[{\"type\":\"hero\",\"props\":{\"variant\":\"standard\",\"headline\":\"Fast plumbing\",\"layout\":\"centered\"}}]}"}}]}`
+		})
+		server := httptest.NewServer(handler)
+		defer server.Close()
+		planner, err := NewOpenAIPlanner(OpenAIPlannerConfig{APIKey: "test-key", Model: "gpt-5-mini", BaseURL: server.URL})
+		if err != nil {
+			t.Fatalf("new planner: %v", err)
+		}
+		if _, err := planner.BuildPageContent(context.Background(), PageContentRequest{
+			SiteName: "My Sewer Guys",
+			Prompt:   brief,
+			Page:     OutlinePage{Title: "Home", Slug: "/", Goal: "Introduce."},
+			Layout:   []PageLayoutBlock{{Type: "hero", Purpose: "Open.", ContentBrief: "Opener.", VariantHint: "standard"}},
+		}); err != nil {
+			t.Fatalf("build page content: %v", err)
+		}
+		if !strings.Contains(*user, "555-0142") || !strings.Contains(*user, "drain cleaning $99") {
+			t.Fatalf("expected brief facts in content user payload, got: %s", *user)
+		}
+	})
+}
