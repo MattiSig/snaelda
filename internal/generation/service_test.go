@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -296,11 +297,16 @@ func (f *fakeChangeSetPlanner) PlanPageChanges(_ context.Context, request PageCh
 }
 
 type dynamicChangeSetPlanner struct {
+	mu       sync.Mutex
 	requests []PageChangeSetRequest
 }
 
 func (p *dynamicChangeSetPlanner) PlanPageChanges(_ context.Context, request PageChangeSetRequest) (PageChangeSetResponse, error) {
+	// The reprompt pipeline composes pages concurrently (errgroup), so guard the
+	// recorded-requests slice against the racing appends.
+	p.mu.Lock()
 	p.requests = append(p.requests, request)
+	p.mu.Unlock()
 	operations := make([]PageChangeSetOperation, 0, len(request.Page.Blocks))
 	for index, block := range request.Page.Blocks {
 		action := PageChangeSetActionKeep
@@ -333,6 +339,7 @@ func (f *fakeClarifyingPlanner) BuildClarifyingQuestions(_ context.Context, requ
 }
 
 type fakeDecomposedPlanner struct {
+	mu             sync.Mutex
 	outlineRequest OutlineRequest
 	outline        OutlineResult
 	outlineErr     error
@@ -352,12 +359,17 @@ func (f *fakeDecomposedPlanner) BuildOutline(_ context.Context, request OutlineR
 }
 
 func (f *fakeDecomposedPlanner) BuildPageLayout(_ context.Context, request PageLayoutRequest) (PageLayoutResult, error) {
+	// Pages are composed concurrently; guard the recorded-requests slices.
+	f.mu.Lock()
 	f.layoutRequests = append(f.layoutRequests, request)
+	f.mu.Unlock()
 	return f.layout, f.layoutErr
 }
 
 func (f *fakeDecomposedPlanner) BuildPageContent(_ context.Context, request PageContentRequest) (PageContentResult, error) {
+	f.mu.Lock()
 	f.contentRequests = append(f.contentRequests, request)
+	f.mu.Unlock()
 	return f.content, f.contentErr
 }
 
@@ -409,11 +421,14 @@ func (r *recordingBlockSuggester) SuggestBlockProps(_ context.Context, request B
 }
 
 type transformBlockSuggester struct {
+	mu       sync.Mutex
 	requests []BlockSuggestRequest
 }
 
 func (s *transformBlockSuggester) SuggestBlockProps(_ context.Context, request BlockSuggestRequest) (BlockSuggestResponse, error) {
+	s.mu.Lock()
 	s.requests = append(s.requests, request)
+	s.mu.Unlock()
 
 	props := deepCloneProps(request.Block.Props)
 	for _, key := range []string{"headline", "heading", "subheadline", "body", "eyebrow"} {
@@ -1141,7 +1156,7 @@ func TestRepairGenerationPlanRepairsSafeIssues(t *testing.T) {
 		}
 	}
 
-	draft, err := buildDraftFromPlan(repaired, "north-light-studio", "en", siteconfig.BrandConfig{})
+	draft, err := buildDraftFromPlan(repaired, "north-light-studio", "en", siteconfig.BrandConfig{}, "")
 	if err != nil {
 		t.Fatalf("expected repaired plan to build, got %v", err)
 	}

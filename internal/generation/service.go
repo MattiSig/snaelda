@@ -53,6 +53,16 @@ type GenerateInput struct {
 	OptionalHints     map[string]string
 	Brand             siteconfig.BrandConfig
 	InterviewAnswers  []ClarifyingAnswer
+	// SiteID pre-allocates the draft's site id. When set (re-spin, which must
+	// ingest brand/hero assets against the site before generation runs), the
+	// draft is built under this id instead of a freshly minted one, so
+	// pre-ingested assets validate against draft.Site.ID. The site row must
+	// already exist (see Service.ReserveSite). Empty on the ordinary path.
+	SiteID string
+	// SeedAssetIDs are already-ingested asset ids (e.g. the source site's own
+	// hero/work photos pulled during re-spin) that the imagery pass prefers over
+	// stock photos when filling hero/gallery/image_text slots.
+	SeedAssetIDs []string
 }
 
 type RepromptInput struct {
@@ -240,13 +250,15 @@ func (s *Service) GenerateWithProgress(ctx context.Context, workspaceID string, 
 	s.pruneGenerationJobs(ctx)
 
 	inputContext := generationInputContext{
-		NameHint:          strings.TrimSpace(input.Name),
-		SlugHint:          strings.TrimSpace(input.Slug),
-		Prompt:            prompt,
-		PreferredLanguage: strings.TrimSpace(input.PreferredLanguage),
-		OptionalHints:     cloneStringMap(input.OptionalHints),
-		Brand:             input.Brand,
-		InterviewAnswers:  input.InterviewAnswers,
+		NameHint:           strings.TrimSpace(input.Name),
+		SlugHint:           strings.TrimSpace(input.Slug),
+		Prompt:             prompt,
+		PreferredLanguage:  strings.TrimSpace(input.PreferredLanguage),
+		OptionalHints:      cloneStringMap(input.OptionalHints),
+		Brand:              input.Brand,
+		InterviewAnswers:   input.InterviewAnswers,
+		PreallocatedSiteID: strings.TrimSpace(input.SiteID),
+		SeedAssetIDs:       input.SeedAssetIDs,
 	}
 	jobID, err := s.createGenerationJob(ctx, workspaceID, userID, JobKindSite, inputContext)
 	if err != nil {
@@ -285,7 +297,7 @@ func (s *Service) GenerateWithProgress(ctx context.Context, workspaceID string, 
 		_ = s.failGenerationJob(ctx, jobID, err)
 		return GenerateResult{}, err
 	}
-	if enriched, ok := s.enrichDraftWithStarterImagery(ctx, workspaceID, userID, draft, prompt); ok {
+	if enriched, ok := s.enrichDraftWithStarterImagery(ctx, workspaceID, userID, draft, prompt, inputContext.SeedAssetIDs); ok {
 		draft = enriched
 	}
 
@@ -399,7 +411,7 @@ func (s *Service) RepromptSiteWithProgress(ctx context.Context, workspaceID stri
 		return GenerateResult{}, err
 	}
 
-	if enriched, ok := s.enrichDraftWithStarterImagery(ctx, workspaceID, userID, nextDraft, prompt); ok {
+	if enriched, ok := s.enrichDraftWithStarterImagery(ctx, workspaceID, userID, nextDraft, prompt, nil); ok {
 		nextDraft = enriched
 	}
 
@@ -662,12 +674,13 @@ func defaultGenerationPlanBuilder(_ context.Context, input generationInputContex
 // and returns the enriched draft. When imagery is not configured or the
 // provider returns no usable images the draft is returned unchanged and the
 // second return value is false.
-func (s *Service) enrichDraftWithStarterImagery(ctx context.Context, workspaceID string, userID string, draft siteconfig.SiteDraft, prompt string) (siteconfig.SiteDraft, bool) {
-	if !s.imagery.available() || s.assetImporter == nil {
+func (s *Service) enrichDraftWithStarterImagery(ctx context.Context, workspaceID string, userID string, draft siteconfig.SiteDraft, prompt string, seedAssetIDs []string) (siteconfig.SiteDraft, bool) {
+	stockAvailable := s.imagery.available() && s.assetImporter != nil
+	if !stockAvailable && len(seedAssetIDs) == 0 {
 		return draft, false
 	}
 
-	enriched := s.applyStarterImagery(ctx, workspaceID, userID, cloneDraftShallow(draft), prompt)
+	enriched := s.applyStarterImagery(ctx, workspaceID, userID, cloneDraftShallow(draft), prompt, seedAssetIDs)
 	if !draftImageSlotsChanged(draft, enriched) {
 		return draft, false
 	}
@@ -813,7 +826,7 @@ func (s *Service) generateDraftWithRetry(ctx context.Context, workspaceID string
 			return generationPlan{}, siteconfig.SiteDraft{}, attempt - 1, err
 		}
 
-		draft, err := buildDraftFromPlan(plan, slugValue, input.PreferredLanguage, input.Brand)
+		draft, err := buildDraftFromPlan(plan, slugValue, input.PreferredLanguage, input.Brand, input.PreallocatedSiteID)
 		if err == nil {
 			err = s.writer.SaveDraft(ctx, workspaceID, draft)
 		}
@@ -851,6 +864,13 @@ type generationInputContext struct {
 	OptionalHints     map[string]string      `json:"optionalHints,omitempty"`
 	Brand             siteconfig.BrandConfig `json:"brand,omitempty"`
 	InterviewAnswers  []ClarifyingAnswer     `json:"interviewAnswers,omitempty"`
+	// PreallocatedSiteID pins the draft's site id on the initial-generation path
+	// (re-spin). It is deliberately separate from SiteID, which the reprompt and
+	// block-suggest scopes use to name an already-existing site; keeping them
+	// distinct means reprompt behaviour is untouched and this field is only ever
+	// consumed by buildDraftFromPlan when a fresh draft is created.
+	PreallocatedSiteID string   `json:"preallocatedSiteId,omitempty"`
+	SeedAssetIDs       []string `json:"seedAssetIds,omitempty"`
 }
 
 type generationPlan struct {
@@ -1063,6 +1083,70 @@ func (s *Service) createSlug(ctx context.Context, workspaceID string, requested 
 	return value, nil
 }
 
+// ReserveSite pre-allocates a bare draft site row and returns its id. It exists
+// for the re-spin pipeline: brand and hero assets are ingested through
+// assets.ImportExternal (which requires the site to exist and scopes the asset
+// to it) *before* generation composes the draft, so the site id must be minted
+// and persisted up front. Generation later reuses the same id via
+// GenerateInput.SiteID, and SaveDraft's upsert fills the reserved row in.
+//
+// The reserved row carries a UUID placeholder slug (its own id) and
+// draft_revision 0. The placeholder never collides with the real slug generation
+// derives from the business name, and the revision-0 row is exactly what
+// SaveDraft's conflict-update expects, so the reservation is invisible in the
+// finished draft. On generation failure the caller deletes it via
+// DeleteReservedSite.
+func (s *Service) ReserveSite(ctx context.Context, workspaceID string, nameHint string, locale string) (string, error) {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return "", fmt.Errorf("reserve site: workspace id is required")
+	}
+	siteID, err := ids.New()
+	if err != nil {
+		return "", fmt.Errorf("reserve site id: %w", err)
+	}
+	name := strings.TrimSpace(nameHint)
+	if name == "" {
+		name = "Untitled site"
+	}
+	defaultLocale := "en"
+	if strings.EqualFold(strings.TrimSpace(locale), "is") {
+		defaultLocale = "is"
+	}
+	// slug = the site id: a guaranteed-unique, format-valid placeholder that the
+	// business-name slug generation will never reproduce (passed as its own text
+	// parameter so it is not type-unified with the uuid id column).
+	if _, err := s.db.Exec(ctx, `
+		insert into sites (id, workspace_id, name, slug, status, draft_revision, default_locale, settings, brand)
+		values ($1, $2, $3, $4, 'draft', 0, $5, '{}'::jsonb, '{}'::jsonb)
+	`, siteID, workspaceID, name, siteID, defaultLocale); err != nil {
+		return "", fmt.Errorf("reserve site row: %w", err)
+	}
+	return siteID, nil
+}
+
+// DeleteReservedSite removes a site reserved by ReserveSite when generation
+// never populated it (draft_revision still 0). The revision guard makes the
+// delete a no-op once SaveDraft has filled the draft in, so a partially
+// generated site is never destroyed. Ingested assets keep their (now dangling)
+// site_id set null by the FK; the import's pulled_asset_ids drive their GC.
+func (s *Service) DeleteReservedSite(ctx context.Context, workspaceID string, siteID string) error {
+	workspaceID = strings.TrimSpace(workspaceID)
+	siteID = strings.TrimSpace(siteID)
+	if workspaceID == "" || siteID == "" {
+		return nil
+	}
+	if _, err := s.db.Exec(ctx, `
+		delete from sites
+		where id = $1::uuid
+		  and workspace_id = $2::uuid
+		  and draft_revision = 0
+	`, siteID, workspaceID); err != nil {
+		return fmt.Errorf("delete reserved site: %w", err)
+	}
+	return nil
+}
+
 func (m siteMetadata) themePreset() string {
 	if preset, ok := m.Summary["themePreset"].(string); ok && preset != "" {
 		return preset
@@ -1154,10 +1238,18 @@ func buildGenerationPlan(nameHint string, prompt string, locale string) generati
 	}
 }
 
-func buildDraftFromPlan(plan generationPlan, slugValue string, preferredLanguage string, brandHint siteconfig.BrandConfig) (siteconfig.SiteDraft, error) {
-	siteID, err := ids.New()
-	if err != nil {
-		return siteconfig.SiteDraft{}, fmt.Errorf("generate site id: %w", err)
+// buildDraftFromPlan assembles a draft from a plan. When preallocatedSiteID is
+// non-empty the draft is built under that id (re-spin, where brand/hero assets
+// were ingested against the site before generation ran); otherwise a fresh id
+// is minted.
+func buildDraftFromPlan(plan generationPlan, slugValue string, preferredLanguage string, brandHint siteconfig.BrandConfig, preallocatedSiteID string) (siteconfig.SiteDraft, error) {
+	siteID := strings.TrimSpace(preallocatedSiteID)
+	if siteID == "" {
+		var err error
+		siteID, err = ids.New()
+		if err != nil {
+			return siteconfig.SiteDraft{}, fmt.Errorf("generate site id: %w", err)
+		}
 	}
 
 	pages := make([]siteconfig.PageDraft, 0, len(plan.Pages))

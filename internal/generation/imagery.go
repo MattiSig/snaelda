@@ -50,12 +50,45 @@ func (s *StarterImagery) Inner() imagery.Provider {
 	return s.provider.Inner()
 }
 
-// applyStarterImagery walks the supplied draft and fills image slots that
-// the generator left empty with assets sourced from the configured imagery
-// provider. Failures are logged and the slots are simply left empty so
-// generation never blocks on third-party availability.
-func (s *Service) applyStarterImagery(ctx context.Context, workspaceID string, userID string, draft siteconfig.SiteDraft, prompt string) siteconfig.SiteDraft {
-	if !s.imagery.available() || s.assetImporter == nil {
+// seedPool hands out pre-ingested seed asset ids (e.g. a re-spin source's own
+// hero/work photos) once each, in order, so image slots prefer the real
+// business photography over stock imagery.
+type seedPool struct {
+	ids []string
+}
+
+func newSeedPool(ids []string) *seedPool {
+	trimmed := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if v := strings.TrimSpace(id); v != "" {
+			trimmed = append(trimmed, v)
+		}
+	}
+	return &seedPool{ids: trimmed}
+}
+
+func (p *seedPool) empty() bool { return p == nil || len(p.ids) == 0 }
+
+// next returns the next unused seed asset id, or ("", false) when the pool is
+// exhausted.
+func (p *seedPool) next() (string, bool) {
+	if p.empty() {
+		return "", false
+	}
+	id := p.ids[0]
+	p.ids = p.ids[1:]
+	return id, true
+}
+
+// applyStarterImagery walks the supplied draft and fills image slots that the
+// generator left empty. Empty slots prefer a seed asset (the source site's own
+// photos, for a re-spin) and otherwise fall back to a fresh stock image from the
+// configured imagery provider. Failures are logged and the slots are simply left
+// empty so generation never blocks on third-party availability.
+func (s *Service) applyStarterImagery(ctx context.Context, workspaceID string, userID string, draft siteconfig.SiteDraft, prompt string, seedAssetIDs []string) siteconfig.SiteDraft {
+	seeds := newSeedPool(seedAssetIDs)
+	stockAvailable := s.imagery.available() && s.assetImporter != nil
+	if !stockAvailable && seeds.empty() {
 		return draft
 	}
 	if strings.TrimSpace(draft.Site.ID) == "" {
@@ -67,7 +100,7 @@ func (s *Service) applyStarterImagery(ctx context.Context, workspaceID string, u
 		page := &draft.Pages[pageIndex]
 		for blockIndex := range page.Blocks {
 			block := &page.Blocks[blockIndex]
-			s.fillBlockStarterImagery(ctx, workspaceID, userID, draft.Site, page, block, profile, prompt)
+			s.fillBlockStarterImagery(ctx, workspaceID, userID, draft.Site, page, block, profile, prompt, seeds, stockAvailable)
 		}
 	}
 
@@ -83,6 +116,8 @@ func (s *Service) fillBlockStarterImagery(
 	block *siteconfig.BlockInstance,
 	profile promptProfile,
 	prompt string,
+	seeds *seedPool,
+	stockAvailable bool,
 ) {
 	if block == nil || block.Props == nil {
 		return
@@ -91,18 +126,26 @@ func (s *Service) fillBlockStarterImagery(
 	switch block.Type {
 	case "hero":
 		if image, ok := imageNeedsAsset(block.Props, "image"); ok {
-			queries := heroImageQueries(site, page, block, profile, prompt)
 			alt := firstNonEmpty(readGeneratedText(block.Props, "headline", 180), readGeneratedText(block.Props, "subheadline", 180), site.Name)
-			if filled := s.fetchAndStoreImage(ctx, workspaceID, userID, site.ID, queries, alt, imagery.OrientationLandscape, image); filled != nil {
+			if filled := seedImage(seeds, image, alt); filled != nil {
 				block.Props["image"] = filled
+			} else if stockAvailable {
+				queries := heroImageQueries(site, page, block, profile, prompt)
+				if filled := s.fetchAndStoreImage(ctx, workspaceID, userID, site.ID, queries, alt, imagery.OrientationLandscape, image); filled != nil {
+					block.Props["image"] = filled
+				}
 			}
 		}
 	case "image_text":
 		if image, ok := imageNeedsAsset(block.Props, "image"); ok {
-			queries := imageTextQueries(site, page, block, profile)
 			alt := firstNonEmpty(readGeneratedText(block.Props, "heading", 180), readGeneratedText(block.Props, "body", 180), page.Title)
-			if filled := s.fetchAndStoreImage(ctx, workspaceID, userID, site.ID, queries, alt, imagery.OrientationLandscape, image); filled != nil {
+			if filled := seedImage(seeds, image, alt); filled != nil {
 				block.Props["image"] = filled
+			} else if stockAvailable {
+				queries := imageTextQueries(site, page, block, profile)
+				if filled := s.fetchAndStoreImage(ctx, workspaceID, userID, site.ID, queries, alt, imagery.OrientationLandscape, image); filled != nil {
+					block.Props["image"] = filled
+				}
 			}
 		}
 	case "gallery":
@@ -119,15 +162,42 @@ func (s *Service) fillBlockStarterImagery(
 			if !needs {
 				continue
 			}
-			queries := galleryImageQueries(site, page, item, profile)
 			alt := firstNonEmpty(readGeneratedText(item, "caption", 180), readGeneratedText(item, "title", 180), page.Title)
-			if filled := s.fetchAndStoreImage(ctx, workspaceID, userID, site.ID, queries, alt, imagery.OrientationLandscape, image); filled != nil {
+			if filled := seedImage(seeds, image, alt); filled != nil {
 				item["image"] = filled
 				raw[index] = item
+			} else if stockAvailable {
+				queries := galleryImageQueries(site, page, item, profile)
+				if filled := s.fetchAndStoreImage(ctx, workspaceID, userID, site.ID, queries, alt, imagery.OrientationLandscape, image); filled != nil {
+					item["image"] = filled
+					raw[index] = item
+				}
 			}
 		}
 		block.Props["images"] = raw
 	}
+}
+
+// seedImage assigns the next available seed asset to an empty image slot,
+// preserving any alt text already on the slot and otherwise using the block's
+// generated alt. It returns nil when no seed is available so the caller can fall
+// back to stock imagery.
+func seedImage(seeds *seedPool, existing map[string]any, alt string) map[string]any {
+	id, ok := seeds.next()
+	if !ok {
+		return nil
+	}
+	next := map[string]any{"assetId": id}
+	altText := clampSentence(alt, 180)
+	if existing != nil {
+		if existingAlt, ok := existing["alt"].(string); ok && strings.TrimSpace(existingAlt) != "" {
+			altText = clampSentence(existingAlt, 180)
+		}
+	}
+	if altText != "" {
+		next["alt"] = altText
+	}
+	return next
 }
 
 // imageNeedsAsset returns the current image map and whether the slot still

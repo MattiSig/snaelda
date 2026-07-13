@@ -99,7 +99,7 @@ func TestEnrichDraftWithStarterImageryFillsHeroSlot(t *testing.T) {
 		}},
 	}
 
-	enriched, ok := service.enrichDraftWithStarterImagery(context.Background(), "workspace-1", "user-1", draft, "A premium photography studio in Stockholm")
+	enriched, ok := service.enrichDraftWithStarterImagery(context.Background(), "workspace-1", "user-1", draft, "A premium photography studio in Stockholm", nil)
 	if !ok {
 		t.Fatal("expected enrichment to succeed")
 	}
@@ -173,7 +173,7 @@ func TestEnrichDraftWithStarterImageryDeduplicatesPhotos(t *testing.T) {
 		}},
 	}
 
-	enriched, _ := service.enrichDraftWithStarterImagery(context.Background(), "workspace-1", "user-1", draft, "premium photography")
+	enriched, _ := service.enrichDraftWithStarterImagery(context.Background(), "workspace-1", "user-1", draft, "premium photography", nil)
 	hero := enriched.Pages[0].Blocks[0].Props["image"].(map[string]any)
 	support := enriched.Pages[0].Blocks[1].Props["image"].(map[string]any)
 	if hero["assetId"] == support["assetId"] {
@@ -216,7 +216,7 @@ func TestEnrichDraftWithStarterImageryFallsBackOnPickFailure(t *testing.T) {
 		}},
 	}
 
-	enriched, ok := service.enrichDraftWithStarterImagery(context.Background(), "workspace-1", "user-1", draft, "photography prompt")
+	enriched, ok := service.enrichDraftWithStarterImagery(context.Background(), "workspace-1", "user-1", draft, "photography prompt", nil)
 	if ok {
 		t.Fatal("expected enrichment to report no changes on fallback")
 	}
@@ -235,4 +235,130 @@ type savedDraftWriter struct {
 func (w *savedDraftWriter) SaveDraft(_ context.Context, _ string, draft siteconfig.SiteDraft) error {
 	w.saved = append(w.saved, draft)
 	return nil
+}
+
+// seedDraft builds a two-slot draft (a hero and a gallery with two items) for
+// exercising the seed-vs-stock imagery preference.
+func seedDraft() siteconfig.SiteDraft {
+	return siteconfig.SiteDraft{
+		Site:  siteconfig.DraftSite{ID: "site-seed", Name: "Sewer Guys", Slug: "sewer-guys", Status: "draft"},
+		Theme: siteconfig.ThemePreset(siteconfig.ThemePaletteCalmNordic),
+		Navigation: siteconfig.NavigationConfig{
+			Primary: []siteconfig.NavigationItem{{Label: "Home", PageID: "page-1"}},
+		},
+		Pages: []siteconfig.PageDraft{{
+			ID:    "page-1",
+			Title: "Home",
+			Slug:  "/",
+			Blocks: []siteconfig.BlockInstance{
+				{
+					ID:      "block-hero",
+					Type:    "hero",
+					Version: siteconfig.BlockVersionV1,
+					Props:   map[string]any{"headline": "Clogged drain? We fix them 24/7", "layout": "centered"},
+				},
+				{
+					ID:      "block-gallery",
+					Type:    "gallery",
+					Version: siteconfig.BlockVersionV1,
+					Props: map[string]any{"images": []any{
+						map[string]any{"caption": "Our work"},
+						map[string]any{"caption": "On the job"},
+					}},
+				},
+			},
+		}},
+	}
+}
+
+// TestEnrichDraftPrefersSeedAssetsOverStock verifies that pulled source photos
+// (seed asset ids) fill image slots ahead of any stock imagery, in order, and
+// stock only fills what the seeds could not.
+func TestEnrichDraftPrefersSeedAssetsOverStock(t *testing.T) {
+	provider := &fakeImageryProvider{photos: []imagery.Photo{{
+		Provider: imagery.ProviderPexels, ProviderID: "99", DownloadURL: "https://e/99.jpg", ContentType: "image/jpeg",
+	}}}
+	importer := &fakeAssetImporter{}
+	service := &Service{writer: &savedDraftWriter{}, imagery: NewStarterImagery(provider), assetImporter: importer}
+
+	// Two seeds for three slots (hero + two gallery items): the third falls back
+	// to stock.
+	enriched, ok := service.enrichDraftWithStarterImagery(context.Background(), "workspace-1", "user-1", seedDraft(), "24/7 plumber", []string{"seed-a", "seed-b"})
+	if !ok {
+		t.Fatal("expected enrichment to succeed")
+	}
+
+	hero := enriched.Pages[0].Blocks[0].Props["image"].(map[string]any)
+	if got := hero["assetId"]; got != "seed-a" {
+		t.Fatalf("expected hero to use first seed, got %v", got)
+	}
+	gallery := enriched.Pages[0].Blocks[1].Props["images"].([]any)
+	if got := gallery[0].(map[string]any)["image"].(map[string]any)["assetId"]; got != "seed-b" {
+		t.Fatalf("expected first gallery item to use second seed, got %v", got)
+	}
+	// The third slot has no seed left and must fall back to a stock import.
+	third := gallery[1].(map[string]any)["image"].(map[string]any)
+	if got := third["assetId"]; got != "asset-99" {
+		t.Fatalf("expected third slot to fall back to stock, got %v", got)
+	}
+	if len(importer.imports) != 1 {
+		t.Fatalf("expected exactly one stock import (only the unseeded slot), got %d", len(importer.imports))
+	}
+}
+
+// TestEnrichDraftSeedsWithoutStockProvider verifies that seeds fill slots even
+// when no stock imagery provider is configured — the source's own photos should
+// still land in the draft.
+func TestEnrichDraftSeedsWithoutStockProvider(t *testing.T) {
+	service := &Service{writer: &savedDraftWriter{}} // no imagery, no importer
+
+	enriched, ok := service.enrichDraftWithStarterImagery(context.Background(), "workspace-1", "user-1", seedDraft(), "24/7 plumber", []string{"seed-a"})
+	if !ok {
+		t.Fatal("expected seed enrichment to succeed without a stock provider")
+	}
+	hero := enriched.Pages[0].Blocks[0].Props["image"].(map[string]any)
+	if got := hero["assetId"]; got != "seed-a" {
+		t.Fatalf("expected hero to use the seed, got %v", got)
+	}
+	// The remaining slots have no seed and no stock provider, so they stay empty.
+	gallery := enriched.Pages[0].Blocks[1].Props["images"].([]any)
+	if _, filled := gallery[0].(map[string]any)["image"]; filled {
+		t.Fatal("expected gallery slot to stay empty with no seed and no stock provider")
+	}
+}
+
+// TestBuildDraftFromPlanUsesPreallocatedSiteID verifies the re-spin path pins the
+// draft's site id so pre-ingested brand/hero assets validate against it.
+func TestBuildDraftFromPlanUsesPreallocatedSiteID(t *testing.T) {
+	plan := generationPlan{
+		SiteName: "Sewer Guys",
+		SiteGoal: "Fast 24/7 drain service.",
+		Theme:    siteconfig.ThemePreset(siteconfig.ThemePaletteCalmNordic),
+		Pages: []generationPagePlan{{
+			Title: "Home",
+			Slug:  "/",
+			SEO:   siteconfig.SEOConfig{Title: "Home", Description: "Welcome"},
+			Blocks: []generationBlockPlan{{
+				Type:  "hero",
+				Props: map[string]any{"headline": "Clogged drain?"},
+			}},
+		}},
+	}
+
+	draft, err := buildDraftFromPlan(plan, "sewer-guys", "en", siteconfig.BrandConfig{}, "pre-allocated-site-id")
+	if err != nil {
+		t.Fatalf("buildDraftFromPlan: %v", err)
+	}
+	if draft.Site.ID != "pre-allocated-site-id" {
+		t.Fatalf("expected pre-allocated site id, got %q", draft.Site.ID)
+	}
+
+	// Without a pre-allocated id, a fresh one is minted (and differs).
+	minted, err := buildDraftFromPlan(plan, "sewer-guys", "en", siteconfig.BrandConfig{}, "")
+	if err != nil {
+		t.Fatalf("buildDraftFromPlan mint: %v", err)
+	}
+	if minted.Site.ID == "" || minted.Site.ID == "pre-allocated-site-id" {
+		t.Fatalf("expected a freshly minted id, got %q", minted.Site.ID)
+	}
 }

@@ -19,6 +19,15 @@ type Generator interface {
 	GenerateWithProgress(ctx context.Context, workspaceID string, userID string, input generation.GenerateInput, sink generation.ProgressSink) (generation.GenerateResult, error)
 }
 
+// SiteReserver pre-allocates the draft's site id and cleans it up on failure.
+// Brand and hero assets are ingested (assets.ImportExternal, which requires and
+// scopes to a site) before generation composes the draft, so the site must exist
+// up front and generation must reuse its id. *generation.Service satisfies it.
+type SiteReserver interface {
+	ReserveSite(ctx context.Context, workspaceID string, nameHint string, locale string) (string, error)
+	DeleteReservedSite(ctx context.Context, workspaceID string, siteID string) error
+}
+
 // ProgressSink receives pipeline progress so the demo UI can watch a re-spin run.
 // Status carries the import state-machine transitions; Step forwards the
 // underlying generation steps once composition hands off (Spec 21).
@@ -40,6 +49,7 @@ type Pipeline struct {
 	fetcher   *Fetcher
 	analyzer  *Analyzer
 	brand     *BrandPuller
+	reserver  SiteReserver
 	generator Generator
 	maxPages  int
 	logger    *slog.Logger
@@ -51,6 +61,10 @@ type PipelineConfig struct {
 	Fetcher   *Fetcher
 	Analyzer  *Analyzer
 	Brand     *BrandPuller
+	// Reserver pre-allocates the site the brand assets ingest into. When nil (or
+	// when Brand is nil) the pipeline skips the brand pull and generation mints
+	// its own site id, exactly as the non-re-spin path does.
+	Reserver  SiteReserver
 	Generator Generator
 	MaxPages  int
 	Logger    *slog.Logger
@@ -73,6 +87,7 @@ func NewPipeline(cfg PipelineConfig) *Pipeline {
 		fetcher:   cfg.Fetcher,
 		analyzer:  cfg.Analyzer,
 		brand:     cfg.Brand,
+		reserver:  cfg.Reserver,
 		generator: cfg.Generator,
 		maxPages:  maxPages,
 		logger:    logger,
@@ -150,15 +165,39 @@ func (p *Pipeline) Run(ctx context.Context, params RunParams, sink ProgressSink)
 		return p.degradeToPrompt(ctx, params, salvageFromContent(content, params.LanguageOverride), reason, sink)
 	}
 
-	// Brand + asset pull (best-effort; a thin brand is fine).
-	var brandResult BrandResult
-	if p.brand != nil {
+	// Reserve the draft's site up front so the brand pull can ingest the source's
+	// logo and hero photos against it (assets are site-scoped) and generation can
+	// reuse the same id. This runs only when both a brand puller and a reserver
+	// are wired; otherwise generation mints its own id and the brand pull is
+	// skipped, matching the non-re-spin path.
+	var (
+		brandResult     BrandResult
+		reservedSiteID  string
+		reservedCleanup bool
+	)
+	if p.brand != nil && p.reserver != nil {
+		reservedSiteID, err = p.reserver.ReserveSite(ctx, params.WorkspaceID, analysis.Fields.BusinessName, analysis.TargetLocale)
+		if err != nil {
+			// A reservation failure must not sink the run: fall back to a brand-less
+			// draft with a generation-minted site id.
+			p.logger.Warn("respin reserve site failed", "importId", params.ImportID, "error", err.Error())
+			reservedSiteID = ""
+		} else {
+			reservedCleanup = true
+		}
+	}
+
+	// Brand + asset pull (best-effort; a thin brand is fine). Requires the
+	// reserved site so ingested assets validate against the final draft.
+	if p.brand != nil && reservedSiteID != "" {
 		brandResult, err = p.brand.PullBrand(ctx, site.AllPages(), PullOptions{
 			WorkspaceID:  params.WorkspaceID,
+			SiteID:       reservedSiteID,
 			UserID:       params.UserID,
 			ImportID:     params.ImportID,
 			BusinessName: analysis.Fields.BusinessName,
 			SourceURL:    params.SourceURL,
+			LanguageAlt:  analysis.TargetLocale,
 		})
 		if err != nil {
 			p.logger.Warn("respin brand pull failed", "importId", params.ImportID, "error", err.Error())
@@ -187,7 +226,7 @@ func (p *Pipeline) Run(ctx context.Context, params RunParams, sink ProgressSink)
 		return RunResult{}, err
 	}
 	emit(StatusComposing)
-	comp := Compose(analysis, brandResult, ComposeContext{SourceURL: params.SourceURL})
+	comp := Compose(analysis, brandResult, ComposeContext{SourceURL: params.SourceURL, SiteID: reservedSiteID})
 
 	genSink := generationSinkAdapter{onStep: func(step generation.ProgressStep) {
 		if sink != nil {
@@ -197,6 +236,13 @@ func (p *Pipeline) Run(ctx context.Context, params RunParams, sink ProgressSink)
 	result, err := p.generator.GenerateWithProgress(ctx, params.WorkspaceID, params.UserID, comp.Input, genSink)
 	if err != nil {
 		p.logger.Error("respin generation failed", "importId", params.ImportID, "error", err.Error())
+		// Generation never populated the reserved site; remove the bare row so a
+		// failed demo does not leave an empty site behind.
+		if reservedCleanup {
+			if derr := p.reserver.DeleteReservedSite(ctx, params.WorkspaceID, reservedSiteID); derr != nil {
+				p.logger.Warn("respin delete reserved site", "importId", params.ImportID, "siteId", reservedSiteID, "error", derr.Error())
+			}
+		}
 		_, _ = p.store.Fail(ctx, params.ImportID, marshalRaw(map[string]string{
 			"stage":   "generate",
 			"message": err.Error(),

@@ -8,9 +8,12 @@ import (
 )
 
 // ComposeContext carries the non-analysis inputs the composer needs: the source
-// URL (recorded in the brief for provenance and to anchor the re-spin framing).
+// URL (recorded in the brief for provenance and to anchor the re-spin framing)
+// and the pre-allocated site id that brand/hero assets were ingested against, so
+// generation builds the draft under the same id those assets are scoped to.
 type ComposeContext struct {
 	SourceURL string
+	SiteID    string
 }
 
 // Composition is the composer's output. Its Input is exactly Spec 07's Minimum
@@ -78,6 +81,11 @@ func Compose(analysis AnalysisResult, brand BrandResult, cctx ComposeContext) Co
 		PreferredLanguage: locale,
 		OptionalHints:     composeHints(analysis),
 		Brand:             brandConfig,
+		// The site was reserved before the brand pull so its logo/hero assets are
+		// already scoped to this id; generation reuses it verbatim. The pulled hero
+		// photos seed the draft's image slots ahead of any stock imagery.
+		SiteID:       strings.TrimSpace(cctx.SiteID),
+		SeedAssetIDs: brand.HeroAssetIDs,
 	}
 
 	comp := Composition{

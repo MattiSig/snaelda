@@ -412,6 +412,7 @@ func (s *Server) mountRespin(mux *http.ServeMux, genCfg generation.HandlerConfig
 			Fetcher:   fetcher,
 			Analyzer:  analyzer,
 			Brand:     brandPuller,
+			Reserver:  genService,
 			Generator: genService,
 			Logger:    s.logger,
 		})

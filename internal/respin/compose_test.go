@@ -92,6 +92,21 @@ func TestComposeProducesCanonicalInput(t *testing.T) {
 	}
 }
 
+func TestComposeThreadsSiteIDAndSeedAssets(t *testing.T) {
+	brand := BrandResult{
+		Brand:        siteconfig.BrandConfig{BusinessName: "Klippt", PrimaryColor: "#7A3E48"},
+		HeroAssetIDs: []string{"hero_a", "hero_b"},
+	}
+	comp := Compose(sampleAnalysis(), brand, ComposeContext{SourceURL: "https://klippt.is", SiteID: "reserved-site"})
+
+	if comp.Input.SiteID != "reserved-site" {
+		t.Fatalf("SiteID = %q, want reserved-site", comp.Input.SiteID)
+	}
+	if len(comp.Input.SeedAssetIDs) != 2 || comp.Input.SeedAssetIDs[0] != "hero_a" || comp.Input.SeedAssetIDs[1] != "hero_b" {
+		t.Fatalf("SeedAssetIDs = %#v, want the pulled hero photos", comp.Input.SeedAssetIDs)
+	}
+}
+
 func TestComposeOmitsSectionsWithoutContent(t *testing.T) {
 	analysis := AnalysisResult{
 		Classification: Classification{Vertical: "cafe", Locale: "is", Confidence: 0.8},

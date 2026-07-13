@@ -124,7 +124,7 @@ func (s *Service) generateDraftDecomposed(
 	if err != nil {
 		return generationPlan{}, siteconfig.SiteDraft{}, err
 	}
-	draft, err := buildDraftFromPlan(plan, slugValue, input.PreferredLanguage, input.Brand)
+	draft, err := buildDraftFromPlan(plan, slugValue, input.PreferredLanguage, input.Brand, input.PreallocatedSiteID)
 	if err != nil {
 		return generationPlan{}, siteconfig.SiteDraft{}, err
 	}
@@ -243,7 +243,9 @@ func (s *Service) repromptSiteDecomposed(
 	}
 	plan = repairGenerationPlan(plan, currentDraft.Site.DefaultLocale)
 
-	draft, err := buildDraftFromPlan(plan, currentDraft.Site.Slug, "", currentDraft.Brand)
+	// Reprompt keeps the existing site; buildDraftFromPlan mints a throwaway id
+	// that applySiteIdentity (in the caller) replaces with currentDraft's id.
+	draft, err := buildDraftFromPlan(plan, currentDraft.Site.Slug, "", currentDraft.Brand, "")
 	if err != nil {
 		return generationPlan{}, siteconfig.SiteDraft{}, err
 	}
