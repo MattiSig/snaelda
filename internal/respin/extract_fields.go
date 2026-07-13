@@ -31,6 +31,10 @@ type ExtractedFields struct {
 	// Offers are current promotions/announcements ("Spring Maintenance Special"),
 	// kept as written.
 	Offers []ExtractOffer `json:"offers,omitempty"`
+	// People are the named team members, staff, or authors a source lists — lab
+	// group members, theatre casts/ensembles, founders/team. Names are verbatim;
+	// role and bio are prose (rewritten into the target language).
+	People []ExtractPerson `json:"people,omitempty"`
 	// MissingFields flags the top-level fields the model could not populate from
 	// the source (e.g. "hours", "testimonials"), so the demo can be honest about
 	// what it read and the composer can pre-fill gaps.
@@ -80,6 +84,15 @@ type ExtractOffer struct {
 	Description string `json:"description,omitempty"`
 }
 
+// ExtractPerson is one named team member/staff/author. Name is a verbatim proper
+// noun; role and bio are prose the rewrite stage translates into the target
+// language.
+type ExtractPerson struct {
+	Name string `json:"name"`
+	Role string `json:"role,omitempty"`
+	Bio  string `json:"bio,omitempty"`
+}
+
 // IsEmpty reports whether no contact field was found.
 func (c ContactDetails) IsEmpty() bool {
 	return strings.TrimSpace(c.Phone) == "" &&
@@ -103,7 +116,8 @@ Fields:
 - serviceAreas: the towns, regions, or neighbourhoods the business says it serves. Keep place names verbatim.
 - clientTypes: the customer segments the business names it serves (e.g. "homeowners", "restaurants", "property managers").
 - offers: current promotions or announcements as written (e.g. "Spring Maintenance Special"), with the descriptive line if one is given. Never invent an offer.
-- missingFields: list the field names you could not populate from the source (from: businessName, tagline, about, services, hours, contact, testimonials, faqs, serviceAreas, clientTypes, offers).
+- people: named team members, staff, or authors the source lists, each with a name (verbatim) and, if stated, their role/title and a short bio. Never invent a person.
+- missingFields: list the field names you could not populate from the source (from: businessName, tagline, about, services, hours, contact, testimonials, faqs, serviceAreas, clientTypes, offers, people).
 
 Base everything strictly on the provided text.`
 
@@ -112,7 +126,7 @@ func extractionSchema() map[string]any {
 	return map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
-		"required":             []string{"businessName", "tagline", "about", "services", "hours", "contact", "testimonials", "faqs", "serviceAreas", "clientTypes", "offers", "missingFields"},
+		"required":             []string{"businessName", "tagline", "about", "services", "hours", "contact", "testimonials", "faqs", "serviceAreas", "clientTypes", "offers", "people", "missingFields"},
 		"properties": map[string]any{
 			"businessName": stringField,
 			"tagline":      stringField,
@@ -202,6 +216,20 @@ func extractionSchema() map[string]any {
 					"properties": map[string]any{
 						"title":       stringField,
 						"description": stringField,
+					},
+				},
+			},
+			"people": map[string]any{
+				"type":     "array",
+				"maxItems": 40,
+				"items": map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+					"required":             []string{"name", "role", "bio"},
+					"properties": map[string]any{
+						"name": stringField,
+						"role": stringField,
+						"bio":  stringField,
 					},
 				},
 			},
@@ -349,6 +377,20 @@ func normalizeExtraction(fields ExtractedFields) ExtractedFields {
 	}
 	fields.Offers = offers
 
+	people := make([]ExtractPerson, 0, len(fields.People))
+	for _, p := range fields.People {
+		name := strings.TrimSpace(p.Name)
+		if name == "" {
+			continue
+		}
+		people = append(people, ExtractPerson{
+			Name: name,
+			Role: strings.TrimSpace(p.Role),
+			Bio:  strings.TrimSpace(p.Bio),
+		})
+	}
+	fields.People = people
+
 	fields.ServiceAreas = dedupeAppend(nil, fields.ServiceAreas)
 	fields.ClientTypes = dedupeAppend(nil, fields.ClientTypes)
 
@@ -359,7 +401,7 @@ func normalizeExtraction(fields ExtractedFields) ExtractedFields {
 // missingFieldsFor derives the missing-field flags from the cleaned result, so
 // the honesty signal matches reality rather than the model's self-report.
 func missingFieldsFor(fields ExtractedFields) []string {
-	missing := make([]string, 0, 11)
+	missing := make([]string, 0, 12)
 	if fields.BusinessName == "" {
 		missing = append(missing, "businessName")
 	}
@@ -392,6 +434,9 @@ func missingFieldsFor(fields ExtractedFields) []string {
 	}
 	if len(fields.Offers) == 0 {
 		missing = append(missing, "offers")
+	}
+	if len(fields.People) == 0 {
+		missing = append(missing, "people")
 	}
 	return missing
 }

@@ -345,7 +345,7 @@ func TestBuildDraftFromPlanUsesPreallocatedSiteID(t *testing.T) {
 		}},
 	}
 
-	draft, err := buildDraftFromPlan(plan, "sewer-guys", "en", siteconfig.BrandConfig{}, "pre-allocated-site-id")
+	draft, err := buildDraftFromPlan(plan, "sewer-guys", "en", siteconfig.BrandConfig{}, "pre-allocated-site-id", nil)
 	if err != nil {
 		t.Fatalf("buildDraftFromPlan: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestBuildDraftFromPlanUsesPreallocatedSiteID(t *testing.T) {
 	}
 
 	// Without a pre-allocated id, a fresh one is minted (and differs).
-	minted, err := buildDraftFromPlan(plan, "sewer-guys", "en", siteconfig.BrandConfig{}, "")
+	minted, err := buildDraftFromPlan(plan, "sewer-guys", "en", siteconfig.BrandConfig{}, "", nil)
 	if err != nil {
 		t.Fatalf("buildDraftFromPlan mint: %v", err)
 	}

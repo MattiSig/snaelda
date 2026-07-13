@@ -109,7 +109,7 @@ func TestReserveSiteThenGenerationUpsertsAndValidatesBrandAsset(t *testing.T) {
 	draft, err := buildDraftFromPlan(plan, slug, "is", siteconfig.BrandConfig{
 		BusinessName: "My Sewer Guys",
 		Logo:         &siteconfig.BrandLogo{AssetID: assetID, Alt: "My Sewer Guys"},
-	}, siteID)
+	}, siteID, nil)
 	if err != nil {
 		t.Fatalf("build draft: %v", err)
 	}

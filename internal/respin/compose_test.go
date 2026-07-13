@@ -268,7 +268,7 @@ func TestResolvePages(t *testing.T) {
 	pages := resolvePages(ExtractedFields{
 		Services: []ExtractService{{Name: "x"}},
 		Contact:  ContactDetails{Email: "a@b.c"},
-	})
+	}, seedCollectionsResult{})
 	if strings.Join(pages, ",") != "home,services,contact" {
 		t.Fatalf("pages = %v", pages)
 	}
@@ -278,7 +278,7 @@ func TestResolvePagesIncludesFAQ(t *testing.T) {
 	pages := resolvePages(ExtractedFields{
 		About: "About us.",
 		FAQs:  []ExtractFAQ{{Question: "Do you offer warranties?", Answer: "Yes."}},
-	})
+	}, seedCollectionsResult{})
 	if strings.Join(pages, ",") != "home,about,faq" {
 		t.Fatalf("pages = %v, want home,about,faq", pages)
 	}
@@ -291,7 +291,7 @@ func TestComposeBriefRendersWidenedFields(t *testing.T) {
 	analysis.Fields.ServiceAreas = []string{"Kenosha", "Racine"}
 	analysis.Fields.ClientTypes = []string{"homeowners", "restaurants"}
 
-	brief := composeBrief(analysis, ComposeContext{SourceURL: "https://klippt.is"})
+	brief := composeBrief(analysis, ComposeContext{SourceURL: "https://klippt.is"}, seedCollectionsResult{})
 	for _, want := range []string{
 		"Are you available 24/7?",
 		"Yes, always.",
@@ -302,6 +302,55 @@ func TestComposeBriefRendersWidenedFields(t *testing.T) {
 		if !strings.Contains(brief, want) {
 			t.Errorf("brief missing %q\n---\n%s", want, brief)
 		}
+	}
+}
+
+func TestComposePromotesServicesToCollection(t *testing.T) {
+	analysis := sampleAnalysis()
+	analysis.Fields.Services = []ExtractService{
+		{Name: "Klipping", Description: "Dömu- og herraklipping", Price: "6.900 kr."},
+		{Name: "Litun", Description: "Heil eða hálf", Price: "12.900 kr."},
+		{Name: "Permanent", Description: "Krullur", Price: "18.900 kr."},
+		{Name: "Blástur", Description: "Uppsetning", Price: "4.900 kr."},
+	}
+
+	comp := Compose(analysis, BrandResult{}, ComposeContext{SourceURL: "https://klippt.is"})
+
+	if len(comp.Input.SeedCollections) != 1 {
+		t.Fatalf("expected 1 seed collection, got %d", len(comp.Input.SeedCollections))
+	}
+	// The slimmed brief points at the collection instead of listing services as
+	// static cards.
+	if !strings.Contains(comp.Input.Prompt, "already has a Services collection") {
+		t.Fatalf("brief did not point at the services collection:\n%s", comp.Input.Prompt)
+	}
+	if strings.Contains(comp.Input.Prompt, "\n- Klipping") {
+		t.Fatalf("brief re-listed the promoted services as static cards:\n%s", comp.Input.Prompt)
+	}
+	// The static services page hint is dropped so it cannot collide with the
+	// collection index page at /thjonusta.
+	if pages := comp.Input.OptionalHints["pages"]; strings.Contains(pages, "services") {
+		t.Fatalf("pages hint still lists services after promotion: %q", pages)
+	}
+}
+
+func TestComposeKeepsSmallTeamStatic(t *testing.T) {
+	analysis := sampleAnalysis()
+	analysis.Fields.People = []ExtractPerson{
+		{Name: "Anna Jóns", Role: "Hárgreiðslumeistari", Bio: "20 ára reynsla."},
+		{Name: "Björn Ari", Role: "Litameistari"},
+	}
+
+	comp := Compose(analysis, BrandResult{}, ComposeContext{})
+
+	if len(comp.Input.SeedCollections) != 0 {
+		t.Fatalf("small team should not become a collection, got %d", len(comp.Input.SeedCollections))
+	}
+	if !strings.Contains(comp.Input.Prompt, "Anna Jóns") {
+		t.Fatalf("brief missing real team member for the static team block:\n%s", comp.Input.Prompt)
+	}
+	if pages := comp.Input.OptionalHints["pages"]; !strings.Contains(pages, "team") {
+		t.Fatalf("pages hint missing team for the static people block: %q", pages)
 	}
 }
 

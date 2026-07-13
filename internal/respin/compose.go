@@ -79,18 +79,25 @@ func Compose(analysis AnalysisResult, brand BrandResult, cctx ComposeContext) Co
 		brandConfig.BusinessName = name
 	}
 
+	// Turn the source's list-shaped content (services, people) into real
+	// collections when it is worth per-item detail pages (Spec 21). The result
+	// drives both the seeded collections and the brief slimming below, so the same
+	// facts are not double-rendered into static blocks.
+	seeds := synthesizeSeedCollections(fields, locale)
+
 	input := generation.GenerateInput{
 		Name:              name,
-		Prompt:            composeBrief(analysis, cctx),
+		Prompt:            composeBrief(analysis, cctx, seeds),
 		PreferredLanguage: locale,
-		OptionalHints:     composeHints(analysis),
+		OptionalHints:     composeHints(analysis, seeds),
 		Brand:             brandConfig,
 		SourceHero:        composeSourceHero(cctx.SourceHero, brand),
 		// The site was reserved before the brand pull so its logo/hero assets are
 		// already scoped to this id; generation reuses it verbatim. The pulled hero
 		// photos seed the draft's image slots ahead of any stock imagery.
-		SiteID:       strings.TrimSpace(cctx.SiteID),
-		SeedAssetIDs: brand.HeroAssetIDs,
+		SiteID:          strings.TrimSpace(cctx.SiteID),
+		SeedAssetIDs:    brand.HeroAssetIDs,
+		SeedCollections: seeds.Collections,
 	}
 
 	comp := Composition{
@@ -170,12 +177,12 @@ func composeSourceHero(hero SourceHero, brand BrandResult) *generation.SourceHer
 // page set the extracted content supports. Style is intentionally omitted — the
 // theme is derived by generation, and re-spin never clones the source design
 // (Spec 21 scope boundary).
-func composeHints(analysis AnalysisResult) map[string]string {
+func composeHints(analysis AnalysisResult, seeds seedCollectionsResult) map[string]string {
 	hints := map[string]string{}
 	if v := strings.TrimSpace(analysis.Classification.Vertical); v != "" {
 		hints["industry"] = strings.ToLower(v)
 	}
-	if pages := resolvePages(analysis.Fields); len(pages) > 0 {
+	if pages := resolvePages(analysis.Fields, seeds); len(pages) > 0 {
 		hints["pages"] = strings.Join(pages, ", ")
 	}
 	if len(hints) == 0 {
@@ -185,14 +192,22 @@ func composeHints(analysis AnalysisResult) map[string]string {
 }
 
 // resolvePages derives the page set from what the extraction actually found, so
-// generation only plans pages there is content for. Home is always present.
-func resolvePages(fields ExtractedFields) []string {
+// generation only plans pages there is content for. Home is always present. When
+// a kind was promoted to a collection, its page is dropped from the static set:
+// the collection's own index page (built deterministically in generation) owns
+// that URL, so a static page would collide with it.
+func resolvePages(fields ExtractedFields, seeds seedCollectionsResult) []string {
 	pages := []string{"home"}
-	if len(fields.Services) > 0 {
+	if len(fields.Services) > 0 && !seeds.PromotedServices {
 		pages = append(pages, "services")
 	}
 	if strings.TrimSpace(fields.About) != "" {
 		pages = append(pages, "about")
+	}
+	// People stay in the static team_profile_cards block (hosted on a team/about
+	// page) unless the roster was large enough to become a collection.
+	if len(fields.People) > 0 && !seeds.PromotedPeople {
+		pages = append(pages, "team")
 	}
 	if len(fields.FAQs) > 0 {
 		pages = append(pages, "faq")
@@ -255,7 +270,7 @@ var weekdayTitles = map[string]string{
 // the extraction populated and instructs the model to treat the facts as
 // verbatim, so generation reproduces real services/prices/hours rather than
 // inventing plausible ones.
-func composeBrief(analysis AnalysisResult, cctx ComposeContext) string {
+func composeBrief(analysis AnalysisResult, cctx ComposeContext, seeds seedCollectionsResult) string {
 	fields := analysis.Fields
 	name := firstNonEmptyString(fields.BusinessName, analysis.Classification.Vertical)
 
@@ -281,16 +296,24 @@ func composeBrief(analysis AnalysisResult, cctx ComposeContext) string {
 	}
 
 	if len(fields.Services) > 0 {
-		b.WriteString("\n\nServices:")
-		for _, svc := range fields.Services {
-			line := "\n- " + strings.TrimSpace(svc.Name)
-			if desc := strings.TrimSpace(svc.Description); desc != "" {
-				line += " — " + desc
+		if seeds.PromotedServices {
+			// The services already live in a seeded Services collection (index +
+			// detail pages built deterministically). Point the planner at it
+			// instead of re-listing them as static cards, so the same facts are not
+			// rendered twice.
+			fmt.Fprintf(&b, "\n\nServices: the site already has a Services collection with %d entries (each on its own detail page). Do not re-list the services as static cards; you may feature the collection on the home page.", len(fields.Services))
+		} else {
+			b.WriteString("\n\nServices:")
+			for _, svc := range fields.Services {
+				line := "\n- " + strings.TrimSpace(svc.Name)
+				if desc := strings.TrimSpace(svc.Description); desc != "" {
+					line += " — " + desc
+				}
+				if price := strings.TrimSpace(svc.Price); price != "" {
+					line += " (" + price + ")"
+				}
+				b.WriteString(line)
 			}
-			if price := strings.TrimSpace(svc.Price); price != "" {
-				line += " (" + price + ")"
-			}
-			b.WriteString(line)
 		}
 	}
 
@@ -332,6 +355,27 @@ func composeBrief(analysis AnalysisResult, cctx ComposeContext) string {
 
 	if len(fields.ClientTypes) > 0 {
 		fmt.Fprintf(&b, "\n\nWho they serve: %s", strings.Join(fields.ClientTypes, ", "))
+	}
+
+	if len(fields.People) > 0 {
+		if seeds.PromotedPeople {
+			fmt.Fprintf(&b, "\n\nTeam: the site already has a Team collection with %d people (each on its own detail page). Do not re-list the people as static cards; you may feature the collection on an about/team page.", len(fields.People))
+		} else {
+			// Render the real people so the brief-authority rule fills the
+			// team_profile_cards repeater with actual names/roles/bios instead of
+			// the default "Team member / Role / Add a short bio…" placeholder.
+			b.WriteString("\n\nTeam (use these real people; put them in a team section, never invent members):")
+			for _, p := range fields.People {
+				line := "\n- " + strings.TrimSpace(p.Name)
+				if role := strings.TrimSpace(p.Role); role != "" {
+					line += " — " + role
+				}
+				if bio := strings.TrimSpace(p.Bio); bio != "" {
+					line += ": " + bio
+				}
+				b.WriteString(line)
+			}
+		}
 	}
 
 	if len(fields.FAQs) > 0 {

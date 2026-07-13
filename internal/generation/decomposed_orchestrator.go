@@ -129,7 +129,7 @@ func (s *Service) generateDraftDecomposed(
 	if err != nil {
 		return generationPlan{}, siteconfig.SiteDraft{}, err
 	}
-	draft, err := buildDraftFromPlan(plan, slugValue, input.PreferredLanguage, input.Brand, input.PreallocatedSiteID)
+	draft, err := buildDraftFromPlan(plan, slugValue, input.PreferredLanguage, input.Brand, input.PreallocatedSiteID, input.SeedCollections)
 	if err != nil {
 		return generationPlan{}, siteconfig.SiteDraft{}, err
 	}
@@ -250,7 +250,7 @@ func (s *Service) repromptSiteDecomposed(
 
 	// Reprompt keeps the existing site; buildDraftFromPlan mints a throwaway id
 	// that applySiteIdentity (in the caller) replaces with currentDraft's id.
-	draft, err := buildDraftFromPlan(plan, currentDraft.Site.Slug, "", currentDraft.Brand, "")
+	draft, err := buildDraftFromPlan(plan, currentDraft.Site.Slug, "", currentDraft.Brand, "", nil)
 	if err != nil {
 		return generationPlan{}, siteconfig.SiteDraft{}, err
 	}

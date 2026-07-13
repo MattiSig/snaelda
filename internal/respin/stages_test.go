@@ -180,6 +180,26 @@ func TestRewriteMergesProseAndPreservesVerbatim(t *testing.T) {
 	}
 }
 
+func TestRewriteTranslatesPeopleRoleBioNameVerbatim(t *testing.T) {
+	completer := &fakeCompleter{responses: map[string]string{
+		"respin_rewrite": `{"tagline":"","about":"","services":[],"faqs":[],"offers":[],"people":[{"role":"Hárgreiðslumeistari","bio":"20 ára reynsla í faginu."}]}`,
+	}}
+	in := ExtractedFields{
+		People: []ExtractPerson{{Name: "Anna Jónsdóttir", Role: "Master stylist", Bio: "20 years of experience."}},
+	}
+	out, err := NewAnalyzer(completer).RewriteCopy(context.Background(), in, "is")
+	if err != nil {
+		t.Fatalf("rewrite: %v", err)
+	}
+	if out.People[0].Role != "Hárgreiðslumeistari" || out.People[0].Bio != "20 ára reynsla í faginu." {
+		t.Fatalf("person role/bio not rewritten: %+v", out.People[0])
+	}
+	// The name is a verbatim proper noun and is never sent to the rewrite.
+	if out.People[0].Name != "Anna Jónsdóttir" {
+		t.Fatalf("person name changed: %q", out.People[0].Name)
+	}
+}
+
 func TestRewriteSkippedWithoutProse(t *testing.T) {
 	completer := &fakeCompleter{responses: map[string]string{}}
 	in := ExtractedFields{Contact: ContactDetails{Phone: "555"}}

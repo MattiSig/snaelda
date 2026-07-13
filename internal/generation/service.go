@@ -68,6 +68,14 @@ type GenerateInput struct {
 	// content stage matches its headline register and CTA intent. Nil on the
 	// ordinary path.
 	SourceHero *SourceHero
+	// SeedCollections are collections synthesized deterministically from the
+	// source's list-shaped content (re-spin services/people, Spec 21). When set,
+	// buildDraftFromPlan attaches them to the draft and appends a deterministic
+	// index + detail page per collection. Entries are already published and in the
+	// target language (RewriteCopy), so they bypass the plan-level
+	// language-conformance walker, which only sees the plan. Empty on the ordinary
+	// path.
+	SeedCollections []siteconfig.Collection
 }
 
 type RepromptInput struct {
@@ -265,6 +273,7 @@ func (s *Service) GenerateWithProgress(ctx context.Context, workspaceID string, 
 		PreallocatedSiteID: strings.TrimSpace(input.SiteID),
 		SeedAssetIDs:       input.SeedAssetIDs,
 		SourceHero:         input.SourceHero,
+		SeedCollections:    input.SeedCollections,
 	}
 	jobID, err := s.createGenerationJob(ctx, workspaceID, userID, JobKindSite, inputContext)
 	if err != nil {
@@ -832,7 +841,7 @@ func (s *Service) generateDraftWithRetry(ctx context.Context, workspaceID string
 			return generationPlan{}, siteconfig.SiteDraft{}, attempt - 1, err
 		}
 
-		draft, err := buildDraftFromPlan(plan, slugValue, input.PreferredLanguage, input.Brand, input.PreallocatedSiteID)
+		draft, err := buildDraftFromPlan(plan, slugValue, input.PreferredLanguage, input.Brand, input.PreallocatedSiteID, input.SeedCollections)
 		if err == nil {
 			err = s.writer.SaveDraft(ctx, workspaceID, draft)
 		}
@@ -875,9 +884,10 @@ type generationInputContext struct {
 	// block-suggest scopes use to name an already-existing site; keeping them
 	// distinct means reprompt behaviour is untouched and this field is only ever
 	// consumed by buildDraftFromPlan when a fresh draft is created.
-	PreallocatedSiteID string      `json:"preallocatedSiteId,omitempty"`
-	SeedAssetIDs       []string    `json:"seedAssetIds,omitempty"`
-	SourceHero         *SourceHero `json:"sourceHero,omitempty"`
+	PreallocatedSiteID string                  `json:"preallocatedSiteId,omitempty"`
+	SeedAssetIDs       []string                `json:"seedAssetIds,omitempty"`
+	SourceHero         *SourceHero             `json:"sourceHero,omitempty"`
+	SeedCollections    []siteconfig.Collection `json:"seedCollections,omitempty"`
 }
 
 type generationPlan struct {
@@ -1249,7 +1259,7 @@ func buildGenerationPlan(nameHint string, prompt string, locale string) generati
 // non-empty the draft is built under that id (re-spin, where brand/hero assets
 // were ingested against the site before generation ran); otherwise a fresh id
 // is minted.
-func buildDraftFromPlan(plan generationPlan, slugValue string, preferredLanguage string, brandHint siteconfig.BrandConfig, preallocatedSiteID string) (siteconfig.SiteDraft, error) {
+func buildDraftFromPlan(plan generationPlan, slugValue string, preferredLanguage string, brandHint siteconfig.BrandConfig, preallocatedSiteID string, seedCollections []siteconfig.Collection) (siteconfig.SiteDraft, error) {
 	siteID := strings.TrimSpace(preallocatedSiteID)
 	if siteID == "" {
 		var err error
@@ -1261,6 +1271,7 @@ func buildDraftFromPlan(plan generationPlan, slugValue string, preferredLanguage
 
 	pages := make([]siteconfig.PageDraft, 0, len(plan.Pages))
 	navigation := make([]siteconfig.NavigationItem, 0, len(plan.Pages))
+	usedSlugs := make(map[string]bool, len(plan.Pages))
 	siteDescription := clampSentence(firstNonEmpty(plan.Pages[0].SEO.Description, plan.SiteGoal), 180)
 
 	for _, pagePlan := range plan.Pages {
@@ -1298,7 +1309,21 @@ func buildDraftFromPlan(plan generationPlan, slugValue string, preferredLanguage
 			Label:  pagePlan.Title,
 			PageID: pageID,
 		})
+		if slug := strings.TrimSpace(pagePlan.Slug); slug != "" {
+			usedSlugs[slug] = true
+		}
 	}
+
+	// Attach any seeded collections (re-spin services/people) and give each one a
+	// deterministic index page (its public listing) and a detail template (its
+	// per-entry page). The index page is added to primary navigation; the detail
+	// template is a template address, not a nav destination.
+	collectionPages, collectionNav, err := buildSeedCollectionPages(seedCollections, siteDescription, usedSlugs)
+	if err != nil {
+		return siteconfig.SiteDraft{}, err
+	}
+	pages = append(pages, collectionPages...)
+	navigation = append(navigation, collectionNav...)
 
 	brand := brandHint
 	if strings.TrimSpace(brand.BusinessName) == "" {
@@ -1324,16 +1349,114 @@ func buildDraftFromPlan(plan generationPlan, slugValue string, preferredLanguage
 				Description: siteDescription,
 			},
 		},
-		Brand:      brand,
-		Theme:      plan.Theme,
-		Navigation: siteconfig.NavigationConfig{Primary: navigation},
-		Pages:      pages,
+		Brand:       brand,
+		Theme:       plan.Theme,
+		Navigation:  siteconfig.NavigationConfig{Primary: navigation},
+		Pages:       pages,
+		Collections: seedCollections,
 	}
 
 	if err := siteconfig.ValidateDraft(draft); err != nil {
 		return siteconfig.SiteDraft{}, err
 	}
 	return draft, nil
+}
+
+// buildSeedCollectionPages synthesizes the pages that back each seeded
+// collection: a collection_index page (public listing, added to nav) and a
+// collection_detail template page (per-entry rendering, not in nav). Slugs are
+// derived from the collection slug and deduped against usedSlugs so they never
+// collide with a planner-generated page. The index owns /{collection.slug}, which
+// the composer keeps free by dropping the corresponding static-page hint.
+func buildSeedCollectionPages(collections []siteconfig.Collection, siteDescription string, usedSlugs map[string]bool) ([]siteconfig.PageDraft, []siteconfig.NavigationItem, error) {
+	if len(collections) == 0 {
+		return nil, nil, nil
+	}
+	pages := make([]siteconfig.PageDraft, 0, len(collections)*2)
+	navigation := make([]siteconfig.NavigationItem, 0, len(collections))
+
+	for _, collection := range collections {
+		indexID, err := ids.New()
+		if err != nil {
+			return nil, nil, fmt.Errorf("generate collection index page id: %w", err)
+		}
+		indexBlockID, err := ids.New()
+		if err != nil {
+			return nil, nil, fmt.Errorf("generate collection index block id: %w", err)
+		}
+		indexSlug := uniquePageSlug("/"+collection.Slug, usedSlugs)
+		pages = append(pages, siteconfig.PageDraft{
+			ID:           indexID,
+			Title:        collection.PluralLabel,
+			Slug:         indexSlug,
+			Status:       siteconfig.PageStatusPublished,
+			Type:         siteconfig.PageTypeCollectionIndex,
+			CollectionID: collection.ID,
+			SEO: siteconfig.SEOConfig{
+				Title:       clampSentence(collection.PluralLabel, 70),
+				Description: siteDescription,
+			},
+			Blocks: []siteconfig.BlockInstance{{
+				ID:      indexBlockID,
+				Type:    "collection_index",
+				Version: siteconfig.LatestBlockVersion("collection_index"),
+				Props: map[string]any{
+					"heading": collection.PluralLabel,
+					"sort":    siteconfig.CollectionSortManual,
+					"layout":  "grid",
+				},
+			}},
+		})
+		navigation = append(navigation, siteconfig.NavigationItem{
+			Label:  collection.PluralLabel,
+			PageID: indexID,
+		})
+
+		detailID, err := ids.New()
+		if err != nil {
+			return nil, nil, fmt.Errorf("generate collection detail page id: %w", err)
+		}
+		detailBlockID, err := ids.New()
+		if err != nil {
+			return nil, nil, fmt.Errorf("generate collection detail block id: %w", err)
+		}
+		// The detail slug is a template address (skipped from the public URL
+		// namespace); "-entry" keeps it clear of both the index and the entry URLs
+		// (/{collection.slug}/{entry.slug}).
+		detailSlug := uniquePageSlug("/"+collection.Slug+"-entry", usedSlugs)
+		pages = append(pages, siteconfig.PageDraft{
+			ID:           detailID,
+			Title:        collection.SingularLabel,
+			Slug:         detailSlug,
+			Status:       siteconfig.PageStatusPublished,
+			Type:         siteconfig.PageTypeCollectionDetail,
+			CollectionID: collection.ID,
+			SEO: siteconfig.SEOConfig{
+				Title:       clampSentence(collection.SingularLabel, 70),
+				Description: siteDescription,
+			},
+			Blocks: []siteconfig.BlockInstance{{
+				ID:      detailBlockID,
+				Type:    "collection_detail",
+				Version: siteconfig.LatestBlockVersion("collection_detail"),
+				Props: map[string]any{
+					"layout": "default",
+				},
+			}},
+		})
+	}
+	return pages, navigation, nil
+}
+
+// uniquePageSlug returns base, suffixing "-2", "-3", … until it is unused, and
+// records the chosen slug in used. base is a slash-prefixed page slug.
+func uniquePageSlug(base string, used map[string]bool) string {
+	candidate := base
+	for suffix := 2; used[candidate]; suffix++ {
+		candidate = fmt.Sprintf("%s-%d", base, suffix)
+	}
+	used[candidate] = true
+	return candidate
 }
 
 func cloneStringMap(input map[string]string) map[string]string {

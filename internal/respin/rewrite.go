@@ -17,6 +17,7 @@ type rewritePayload struct {
 	Services []rewriteServicePayload `json:"services"`
 	FAQs     []rewriteFAQPayload     `json:"faqs"`
 	Offers   []rewriteOfferPayload   `json:"offers"`
+	People   []rewritePersonPayload  `json:"people"`
 }
 
 type rewriteServicePayload struct {
@@ -34,15 +35,22 @@ type rewriteOfferPayload struct {
 	Description string `json:"description"`
 }
 
+// rewritePersonPayload carries only a person's prose (role, bio). The name is a
+// verbatim proper noun and is never sent through the rewrite.
+type rewritePersonPayload struct {
+	Role string `json:"role"`
+	Bio  string `json:"bio"`
+}
+
 const rewriteSystemPrompt = `You rewrite a small business's own website copy into natural, native marketing copy in a target language, for a tool that rebuilds their site.
 
 You are given the business's extracted copy in its source language and a target language. Rewrite ONLY the prose into copy that reads as if a native speaker wrote it fresh for this business — never a word-for-word translation.
 
 Rules:
-- Rewrite tagline, about, each service's name and description, each FAQ's question and answer, and each offer's title and description into the TARGET language.
-- Keep the SAME number of services, faqs, and offers in the SAME order. For each, return the rewritten fields.
-- Preserve the meaning and facts. Do not invent services, FAQs, offers, benefits, or claims that were not in the source.
-- Keep proper nouns, brand names, and place names as-is.
+- Rewrite tagline, about, each service's name and description, each FAQ's question and answer, each offer's title and description, and each person's role and bio into the TARGET language.
+- Keep the SAME number of services, faqs, offers, and people in the SAME order. For each, return the rewritten fields.
+- Preserve the meaning and facts. Do not invent services, FAQs, offers, people, benefits, or claims that were not in the source.
+- Keep proper nouns, brand names, place names, and people's names as-is (people names are not sent to you — only their role and bio).
 - No hype, no superlatives, no anglicisms where a natural target-language word exists. Match the direct, warm, unpretentious register a small local business actually uses.
 - If a field was empty in the source, return it empty. Never fill an empty field with invented copy.
 
@@ -61,6 +69,7 @@ type rewriteCounts struct {
 	services int
 	faqs     int
 	offers   int
+	people   int
 }
 
 func rewriteSchema(counts rewriteCounts) map[string]any {
@@ -81,7 +90,7 @@ func rewriteSchema(counts rewriteCounts) map[string]any {
 	return map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
-		"required":             []string{"tagline", "about", "services", "faqs", "offers"},
+		"required":             []string{"tagline", "about", "services", "faqs", "offers", "people"},
 		"properties": map[string]any{
 			"tagline": stringField,
 			"about":   stringField,
@@ -96,6 +105,10 @@ func rewriteSchema(counts rewriteCounts) map[string]any {
 			"offers": fixedArray(counts.offers, []string{"title", "description"}, map[string]any{
 				"title":       stringField,
 				"description": stringField,
+			}),
+			"people": fixedArray(counts.people, []string{"role", "bio"}, map[string]any{
+				"role": stringField,
+				"bio":  stringField,
 			}),
 		},
 	}
@@ -119,6 +132,7 @@ func (a *Analyzer) RewriteCopy(ctx context.Context, fields ExtractedFields, targ
 		Services: make([]rewriteServicePayload, len(fields.Services)),
 		FAQs:     make([]rewriteFAQPayload, len(fields.FAQs)),
 		Offers:   make([]rewriteOfferPayload, len(fields.Offers)),
+		People:   make([]rewritePersonPayload, len(fields.People)),
 	}
 	for i, s := range fields.Services {
 		payloadIn.Services[i] = rewriteServicePayload{Name: s.Name, Description: s.Description}
@@ -128,6 +142,9 @@ func (a *Analyzer) RewriteCopy(ctx context.Context, fields ExtractedFields, targ
 	}
 	for i, o := range fields.Offers {
 		payloadIn.Offers[i] = rewriteOfferPayload{Title: o.Title, Description: o.Description}
+	}
+	for i, p := range fields.People {
+		payloadIn.People[i] = rewritePersonPayload{Role: p.Role, Bio: p.Bio}
 	}
 	payloadJSON, err := json.Marshal(map[string]any{
 		"targetLanguage": firstNonEmptyString(targetLocale, "is"),
@@ -145,7 +162,7 @@ func (a *Analyzer) RewriteCopy(ctx context.Context, fields ExtractedFields, targ
 	var result rewritePayload
 	if err := a.runStage(ctx, CompletionRequest{
 		Name:   "respin_rewrite",
-		Schema: rewriteSchema(rewriteCounts{services: len(fields.Services), faqs: len(fields.FAQs), offers: len(fields.Offers)}),
+		Schema: rewriteSchema(rewriteCounts{services: len(fields.Services), faqs: len(fields.FAQs), offers: len(fields.Offers), people: len(fields.People)}),
 		System: system,
 		User:   fmt.Sprintf("Rewrite this business copy.\n\n%s", string(payloadJSON)),
 	}, &result); err != nil {
@@ -174,6 +191,11 @@ func hasRewritableProse(fields ExtractedFields) bool {
 	}
 	for _, o := range fields.Offers {
 		if strings.TrimSpace(o.Title) != "" || strings.TrimSpace(o.Description) != "" {
+			return true
+		}
+	}
+	for _, p := range fields.People {
+		if strings.TrimSpace(p.Role) != "" || strings.TrimSpace(p.Bio) != "" {
 			return true
 		}
 	}
@@ -223,6 +245,19 @@ func mergeRewrite(fields ExtractedFields, rewrite rewritePayload) ExtractedField
 		}
 		if desc := strings.TrimSpace(rewrite.Offers[i].Description); desc != "" {
 			fields.Offers[i].Description = desc
+		}
+	}
+	for i := range fields.People {
+		if i >= len(rewrite.People) {
+			break
+		}
+		// The name is verbatim (never sent to the rewrite); only role/bio prose
+		// comes back translated.
+		if role := strings.TrimSpace(rewrite.People[i].Role); role != "" {
+			fields.People[i].Role = role
+		}
+		if bio := strings.TrimSpace(rewrite.People[i].Bio); bio != "" {
+			fields.People[i].Bio = bio
 		}
 	}
 	fields.MissingFields = missingFieldsFor(fields)
