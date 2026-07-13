@@ -272,9 +272,22 @@ func (p *Pipeline) Run(ctx context.Context, params RunParams, sink ProgressSink)
 		p.logger.Warn("respin assign share slug", "importId", params.ImportID, "error", err.Error())
 	}
 
+	// Fact-coverage audit: reconcile the generated draft against the verbatim
+	// facts extraction found (phone, email, service names). Silent content loss —
+	// the 2026-07-12 QA shipped a 24/7 plumber with no contact info while
+	// reporting degraded=false — becomes an honest degradation with the missing
+	// facts listed, instead of a false success (Spec 21 fidelity).
+	degraded := comp.Degraded
+	degradeReason := comp.DegradationReason
+	if coverage := AuditFactCoverage(result.Draft, analysis.Fields); !coverage.Complete() {
+		p.logger.Warn("respin fact coverage incomplete", "importId", params.ImportID, "missing", strings.Join(coverage.Missing(), ", "))
+		degraded = true
+		degradeReason = joinDegradeReasons(degradeReason, coverage.DegradationReason())
+	}
+
 	status := StatusSucceeded
-	if comp.Degraded {
-		if _, err := p.store.MarkDegraded(ctx, params.ImportID, comp.DegradationReason); err != nil {
+	if degraded {
+		if _, err := p.store.MarkDegraded(ctx, params.ImportID, degradeReason); err != nil {
 			p.logger.Warn("respin mark degraded", "importId", params.ImportID, "error", err.Error())
 		}
 		status = StatusDegraded
@@ -288,9 +301,24 @@ func (p *Pipeline) Run(ctx context.Context, params RunParams, sink ProgressSink)
 		SiteID:        result.Draft.Site.ID,
 		JobID:         result.JobID,
 		ShareSlug:     shareSlug,
-		Degraded:      comp.Degraded,
+		Degraded:      degraded,
 		PromptPrefill: comp.PromptPrefill,
 	}, nil
+}
+
+// joinDegradeReasons combines a compose-time degradation reason with the
+// fact-coverage reason, keeping both when present.
+func joinDegradeReasons(base, extra string) string {
+	base = strings.TrimSpace(base)
+	extra = strings.TrimSpace(extra)
+	switch {
+	case base == "":
+		return extra
+	case extra == "":
+		return base
+	default:
+		return base + "; " + extra
+	}
 }
 
 // degradeToPrompt records a hard degradation: no unattended generation runs;

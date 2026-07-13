@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -75,11 +76,15 @@ func (f *fakePipelineStore) LinkGenerationJob(_ context.Context, jobID, _ string
 	return nil
 }
 
-// fakeGenerator records whether generation ran and returns a canned draft.
+// fakeGenerator records whether generation ran and returns a canned draft. By
+// default the draft echoes the composed brief into a text block so it carries
+// the verbatim facts (a faithful generation); draftOverride lets a test model a
+// generation that dropped facts to exercise the fact-coverage audit.
 type fakeGenerator struct {
-	called    bool
-	err       error
-	lastInput generation.GenerateInput
+	called        bool
+	err           error
+	lastInput     generation.GenerateInput
+	draftOverride *siteconfig.SiteDraft
 }
 
 func (g *fakeGenerator) GenerateWithProgress(_ context.Context, _, _ string, input generation.GenerateInput, sink generation.ProgressSink) (generation.GenerateResult, error) {
@@ -92,9 +97,25 @@ func (g *fakeGenerator) GenerateWithProgress(_ context.Context, _, _ string, inp
 		sink.OnJobCreated("job-1")
 		sink.OnProgress(generation.ProgressStep{Name: "prompt.normalize", Index: 0, Total: 1})
 	}
+	draft := siteconfig.SiteDraft{
+		Site: siteconfig.DraftSite{ID: "site-1"},
+		Pages: []siteconfig.PageDraft{{
+			ID:    "page-home",
+			Title: "Home",
+			Slug:  "/",
+			Blocks: []siteconfig.BlockInstance{{
+				ID:    "block-1",
+				Type:  "text_section",
+				Props: map[string]any{"heading": "About", "body": input.Prompt},
+			}},
+		}},
+	}
+	if g.draftOverride != nil {
+		draft = *g.draftOverride
+	}
 	return generation.GenerateResult{
 		JobID: "job-1",
-		Draft: siteconfig.SiteDraft{Site: siteconfig.DraftSite{ID: "site-1"}},
+		Draft: draft,
 	}, g.err
 }
 
@@ -371,6 +392,47 @@ func TestPipelineDegradesWhenAnalyzerUnavailable(t *testing.T) {
 	}
 	if store.degradedFor != "analysis_unavailable" {
 		t.Fatalf("expected analysis_unavailable, got %q", store.degradedFor)
+	}
+}
+
+// TestPipelineDegradesOnMissingFacts is the 2026-07-12 QA regression: a
+// generation that succeeds but drops the source's contact/service facts must be
+// flagged degraded with the missing facts listed, not shipped as a false
+// success.
+func TestPipelineDegradesOnMissingFacts(t *testing.T) {
+	srv := servePage(t, richPage)
+	store := &fakePipelineStore{}
+	// The generated draft carries no contact info or services — the exact silent
+	// content loss the fact-coverage audit exists to catch.
+	empty := siteconfig.SiteDraft{Site: siteconfig.DraftSite{ID: "site-1"}}
+	gen := &fakeGenerator{draftOverride: &empty}
+	completer := &fakeCompleter{responses: map[string]string{
+		"respin_classification": `{"vertical":"plumber","services":["drain"],"locale":"is","tone":"warm","confidence":0.9}`,
+		"respin_extraction":     `{"businessName":"Klippt","contact":{"phone":"555-1234","email":"hi@klippt.is"},"services":[{"name":"Drain Cleaning"}]}`,
+		// Empty rewrite keeps the verbatim service name (matched by index).
+		"respin_rewrite": `{"tagline":"","about":"","services":[],"faqs":[],"offers":[],"people":[]}`,
+	}}
+
+	result, err := newTestPipeline(store, NewAnalyzer(completer), gen).Run(context.Background(), RunParams{
+		ImportID: "imp-cov", WorkspaceID: "ws-1", SourceURL: srv.URL,
+	}, nil)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !gen.called {
+		t.Fatal("generator should have run")
+	}
+	if !result.Degraded || result.Status != StatusDegraded {
+		t.Fatalf("expected degraded on missing facts, got %+v", result)
+	}
+	// The draft is kept (soft degrade) so the demo still shows the after-view.
+	if result.SiteID != "site-1" {
+		t.Fatalf("expected the generated site to be kept, got %q", result.SiteID)
+	}
+	for _, want := range []string{"missing_facts", "phone", "email", "Drain Cleaning"} {
+		if !strings.Contains(store.degradedFor, want) {
+			t.Fatalf("degradation reason %q missing %q", store.degradedFor, want)
+		}
 	}
 }
 
