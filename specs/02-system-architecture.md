@@ -126,3 +126,7 @@ Recommended direction:
 ### Generation Engine
 
 The generation engine converts prompt input into validated site configuration. It must not write arbitrary HTML. It should produce structured draft data that passes validation before it is persisted.
+
+### Headless Capture Service (v1.1)
+
+The one component outside the modular monolith: a stock browserless/chromium container that renders untrusted third-party pages for re-spin (Spec 21) — source-site screenshots for the before/after view and OG image, rendered-HTML fetch fallback for JS-walled sites, and later computed-style brand sampling. Because it executes attacker-supplied JavaScript, it is deliberately **not** on the platform's private network: it runs in a separate Railway project and the API calls its REST endpoints over token-authenticated HTTPS (ADR 0004). It holds no state and no credentials beyond its own service token.

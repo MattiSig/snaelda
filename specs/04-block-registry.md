@@ -14,7 +14,7 @@ Purpose: top section with headline, subheadline, CTA, and optional image.
 
 Props:
 
-- variant — `standard` (default) or `full-page`
+- variant — `standard` (default), `full-page`, or `statement`
 - eyebrow
 - headline
 - subheadline
@@ -27,8 +27,9 @@ Variants:
 
 - `standard`: the headline-led hero with optional supporting image. The `layout` prop controls whether the image is centered below the headline (`centered`) or sits beside it (`split-left`, `split-right`).
 - `full-page`: an immersive hero that fills exactly the visitor's viewport on first load (100vh). The image becomes the background; the eyebrow, headline, subheadline, and CTAs sit over a darkening gradient at the bottom. When this hero is the first block on a page, it covers the page header so the viewport opens fully on the hero. An image is strongly recommended; the renderer falls back to a themed gradient if one is missing. The `layout` prop is ignored in this variant.
+- `statement`: a deliberately image-free, type-led hero — oversized display headline on a solid brand-primary (or near-solid tinted) background, with the eyebrow, subheadline, and CTAs set against it in high contrast. Its job is drama through typography and color, not photography: it must not render as a modest centered `standard` hero with the image missing. The `image` prop is ignored; the `layout` prop is ignored. This is an **additive** variant — ships as `hero@1.1.0` with passthrough migration, no breaking change.
 
-Generation should pick `full-page` for image-led brands (photographers, restaurants, hotels, florists, galleries, salons, ceramics studios, wedding planners, tattoo artists, cafes, food, travel, fashion) or when the prompt asks for a bold, atmospheric opener. Headlines should stay short (3–7 words) and subheadlines to a single sentence so the overlay reads cleanly.
+Generation should pick `full-page` for image-led brands (photographers, restaurants, hotels, florists, galleries, salons, ceramics studios, wedding planners, tattoo artists, cafes, food, travel, fashion) or when the prompt asks for a bold, atmospheric opener. It should pick `statement` for text-led trades and services (plumbers, electricians, lawyers, accountants, consultants) with no strong hero photography, and for re-spins whose extracted source hero is text-only (`sourceHero.textOnly`, Spec 21) — matching the source's energy with type and brand color instead of a stock photo. Headlines should stay short (3–7 words) and subheadlines to a single sentence so the overlay reads cleanly.
 
 ### 2. Text Section
 

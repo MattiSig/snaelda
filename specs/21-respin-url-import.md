@@ -30,7 +30,14 @@ This spec extends Spec 07 (Generation Engine), Spec 11 (Assets), Spec 12 (Securi
   "optionalHints": {
     "industry": "salon",
     "style": null,
-    "pages": ["home", "services", "contact"]
+    "pages": ["home", "services", "contact"],
+    "sourceHero": {
+      "headline": "Klippt — hár sem talar",
+      "subheadline": "Bókaðu tíma í dag",
+      "ctaLabel": "Bóka tíma",
+      "imageAssetId": null,
+      "textOnly": true
+    }
   }
 }
 ```
@@ -40,6 +47,7 @@ Consequences of this contract:
 - Extracted brand assets land in Spec 07's existing first-class `brand` input and are therefore used **verbatim** — generation must not invent alternatives. No new generation-side brand plumbing is needed.
 - Structured extraction results (services, hours, testimonials, about copy) are carried in the composed `prompt` and `input_context`, so the generation engine consumes them through its normal intent-extraction and content stages.
 - Degrading to the plain prompt flow is **structural, not bolted on**: a partially failed import simply produces a thinner instance of the same input shape, pre-filled into the homepage prompt UI.
+- `optionalHints.sourceHero` carries the source site's hero as structured data (headline, subheadline, CTA label, hero image asset if one was pulled, and a text-only flag) so the home-page content stage can match the source hero's energy instead of inventing generic copy. Every field is nullable; a missing hero simply omits the hint. The source hero informs copy and variant choice — it never overrides the no-layout-cloning boundary below.
 
 Re-spin never introduces a second draft format, a second validation path, or a second persistence path. Everything downstream of input composition is Spec 07.
 
@@ -47,14 +55,14 @@ Re-spin never introduces a second draft format, a second validation path, or a s
 
 1. **URL intake.** Normalize the URL (scheme, host lowercase, strip fragments and tracking params). Check the result cache (see Security Contract) before doing any work.
 2. **Server-side fetch — plain first.** A plain HTTP fetch through the SSRF-guarded client. If the response yields insufficient readable content (empty `<body>`, client-rendered shell, content below a readability threshold), fall back to:
-3. **Headless fallback.** A sandboxed headless browser renders JS-driven sites. The fetch mode used is recorded on the import record. Up to a small budget of additional same-origin pages (e.g. `/about`, `/services`, `/contact`, discovered from the fetched page's navigation, max 5) may be fetched under the same guards. Never off-site.
+3. **Headless fallback.** The headless capture service (see Headless Capture Service under the Security Contract, and ADR 0004) renders JS-driven sites and returns the rendered HTML. The fetch mode used is recorded on the import record. Up to a small budget of additional same-origin pages (e.g. `/about`, `/services`, `/contact`, discovered from the fetched page's navigation, max 5) may be fetched under the same guards. Never off-site.
 4. **Readability-style extraction + LLM cleanup.** Boilerplate stripping (nav chrome, cookie banners, footers) via readability heuristics, then an LLM pass that cleans the remaining text into coherent source content and flags what is missing.
 5. **Business classification.** LLM classifies the business (vertical, services offered, locale signals, tone).
 6. **Vertical block-set selection.** The classification picks the vertical block set per Spec 23. If no vertical set matches, fall back to the generic block registry (Spec 04) — this is a soft degradation, not a failure.
-7. **Structured field extraction.** Extract into a typed shape: business name, services, opening hours, contact details (phone, email, address), about copy, testimonials. Each field is nullable; missing fields are flagged, not fabricated.
+7. **Structured field extraction.** Extract into a typed shape: business name, services, opening hours, contact details (phone, email, address), about copy, testimonials, and the **source hero** (headline, subheadline, CTA label, hero/background image reference from first-section and section-background patterns, text-only flag) — the hero is extracted deterministically from the DOM, not by LLM. Each field is nullable; missing fields are flagged, not fabricated.
 8. **Copy rewrite.** Rewrite extracted copy into natural, native copy in the site's target language per the localization contract in Spec 22. Target language defaults to the detected source-site language; the demo UI lets the user override before claiming.
-9. **Brand asset pull.** Extract logo (link rel icons, `og:image`, header `<img>` heuristics), photos, and primary color (from CSS custom properties, dominant logo color, or theme-color meta). Assets go through the server-side ingest path below. Brand results populate `brand` in the canonical input. Preserving real brand identity is a hard requirement — a rewrap that strips the business into a generic template converts "that's my business but beautiful" into "it's one of those" (GTM §4 guardrail).
-10. **Compose and generate.** Assemble the canonical Spec 07 input, create a `generation_jobs` row linked to the import record, and run the standard generation pipeline. All Spec 07 guardrails, validation, repair, and persistence apply unchanged.
+9. **Brand asset pull.** Extract logo (link rel icons, `og:image`, header `<img>` heuristics), photos, and primary color. Color sources in priority order: CSS custom properties — **including a bounded fetch of the page's external stylesheets** through the SSRF-guarded client, since site builders (Squarespace, Wix, GoDaddy) declare their palettes there, often as raw HSL triples (`--accent-hsl: 324.37,79.12%,51.18%`) that the parser must handle alongside hex/`rgb()`/`hsl()`; variables that back **primary-button backgrounds score highest** (the CTA color is the brand color), then accent/brand/primary-named variables, then `theme-color` meta, then dominant logo color. Stylesheet fetch failures are non-fatal — fall back down the chain. Hero photo scoring prefers **hero-region and section-background images over `og:image`** (the social card is often a logo lockup, not the hero photograph). Assets go through the server-side ingest path below. Brand results populate `brand` in the canonical input. Preserving real brand identity is a hard requirement — a rewrap that strips the business into a generic template converts "that's my business but beautiful" into "it's one of those" (GTM §4 guardrail).
+10. **Compose and generate.** Assemble the canonical Spec 07 input — including `optionalHints.sourceHero` from the structured extraction — create a `generation_jobs` row linked to the import record, and run the standard generation pipeline. All Spec 07 guardrails, validation, repair, and persistence apply unchanged.
 
 ## Graceful Degradation
 
@@ -102,7 +110,7 @@ alter table generation_jobs add column respin_import_id uuid references respin_i
 ```
 
 - `workspace_id` is **nullable**: a public-demo import exists before any workspace does and is bound to a workspace only on claim.
-- `extracted_content` holds the structured field extraction (name, services, hours, contact, about, testimonials, plus raw cleaned text).
+- `extracted_content` holds the structured field extraction (name, services, hours, contact, about, testimonials, the source hero, plus raw cleaned text).
 - The generation job's `prompt` column is satisfied with the composed business brief, so the existing not-null constraint stands; `respin_import_id` carries provenance.
 - `share_slug` backs the shareable before/after URL (below).
 
@@ -116,12 +124,12 @@ Ingested assets carry source metadata: `source: 'respin'`, the origin URL, and t
 
 The demo is the top-of-funnel (GTM §4): paste a URL on the public site, watch progress, and see the re-spun draft — with **no signup of any kind**.
 
-**v1 ships an after-only view.** There is no captured screenshot of the source site: visitors know exactly what their own site looks like and will compare in their own browser tabs. Skipping the "before" capture removes the entire headless-render requirement from v1 (see Headless Sandboxing, deferred to v1.1).
+**v1 ships an after-only view.** There is no captured screenshot of the source site: visitors know exactly what their own site looks like and will compare in their own browser tabs. Skipping the "before" capture removed the headless-render requirement from v1; the v1.1 headless capture service is now a decided, prioritized workstream (see Headless Capture Service below and ADR 0004).
 
 - **After** is the generated draft rendered through the standard preview pipeline (Spec 09) under a demo-scoped preview token. The view shows the source URL it was spun from as a plain link (opens in a new tab) so side-by-side comparison is one click away.
 - The view offers exactly two actions: **"Re-spin another"** and **"Sign up to keep it."**
 
-**v1.1** upgrades this to the true **before/after view** — a captured screenshot of the source site beside the draft — once the sandboxed headless renderer exists. That view is a distinct surface from Spec 20's revision diff. Spec 20 diffs two draft revisions inside the builder; this is a marketing artifact comparing an external site to a generated draft. They share no code contract.
+**v1.1** upgrades this to the true **before/after view** — a captured screenshot of the source site beside the draft — once the headless capture service ships. That view is a distinct surface from Spec 20's revision diff. Spec 20 diffs two draft revisions inside the builder; this is a marketing artifact comparing an external site to a generated draft. They share no code contract.
 
 ### Claim Handoff
 
@@ -155,14 +163,19 @@ The fetch client (used for page fetch, asset ingest, and headless egress alike) 
 ### Resource Caps
 
 - plain fetch timeout ~10s; headless render budget ~25s wall-clock (v1.1 — no headless component ships in v1)
-- response size caps: ~5 MB per HTML document, ~10 MB per ingested image, ~40 MB total per import
-- same-origin page budget of 5; no off-site fetches ever
+- response size caps: ~5 MB per HTML document, ~10 MB per ingested image, ~500 KB per external stylesheet (max ~4 stylesheets per import), ~40 MB total per import
+- same-origin page budget of 5; no off-site fetches ever — stylesheet fetches are the one exception, allowed to the source page's declared `<link rel="stylesheet">` hosts (builder CDNs like `static1.squarespace.com` serve the palette), still through the full SSRF guard
 
-### Headless Sandboxing (v1.1 — deferred)
+### Headless Capture Service (v1.1 — decided, see ADR 0004)
 
-No headless browser ships in v1: fetching is plain-HTTP only and the demo is after-only, so nothing executes source-site JavaScript. This section is the contract for when v1.1 adds the screenshot capture. The `ModeHeadless` constant and the `'headless'` value in the `respin_imports.fetch_mode` check constraint are inert forward-compatibility markers for that release.
+No headless browser ships in v1: fetching is plain-HTTP only and the demo is after-only, so nothing executes source-site JavaScript. The `ModeHeadless` constant and the `'headless'` value in the `respin_imports.fetch_mode` check constraint are the forward-compatibility markers for the v1.1 release. The architecture below is decided (ADR 0004); this section is its security contract.
 
-The headless browser is the highest-risk component: it executes attacker-supplied JavaScript. It must run in an isolated sandbox (dedicated container/jail, no host filesystem access, non-root), with all network egress forced through the SSRF-guarded proxy so in-page JS cannot reach internal ranges, downloads disabled, and hard kill on the render budget.
+The headless browser is the highest-risk component: it executes attacker-supplied JavaScript. v1.1 ships it as an **off-the-shelf browserless/chromium container in a separate Railway project** — no custom capture code. The Go API calls its REST endpoints synchronously from the respin pipeline with a service token: `POST /screenshot` (PNG for the before/after view and OG image) and `POST /content` (rendered HTML for the JS-wall fetch fallback, pipeline step 3). Later it also enables computed-style brand-color sampling.
+
+- **Isolation instead of an egress proxy.** Railway private networking spans a single project, so placing the browser in its own project means in-page JavaScript cannot reach the API, Postgres, or object storage over the private mesh — it can only reach the public internet. This deliberately substitutes network isolation for the earlier "all egress through the SSRF-guarded proxy" requirement; the residual risk (in-page JS probing arbitrary public hosts from our egress IP) matches what plain fetch already accepts.
+- `ValidatePublicURL` pre-checks every URL before it is handed to the capture service — the browser is never asked to visit a private or internal target.
+- Hard limits on the service: ~25s render budget (hard kill), `MAX_CONCURRENT_SESSIONS=2`, downloads disabled, token-authenticated HTTPS only.
+- Capture calls run inside the runner's existing concurrency slots; a capture failure is a soft degradation (v1 after-only behavior), never a failed import.
 
 ### Abuse and Cost Limits
 

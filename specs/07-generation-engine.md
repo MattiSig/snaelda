@@ -29,12 +29,15 @@ Recommended MVP model choice:
   "optionalHints": {
     "industry": null,
     "style": null,
-    "pages": null
+    "pages": null,
+    "sourceHero": null
   }
 }
 ```
 
 `brand` is a first-class input, not a hint. When any of `businessName`, `logo`, or `primaryColor` is provided up front, generation must use it verbatim and must not invent alternatives. When fields are absent, generation derives them from the prompt (`businessName` from extracted intent, `primaryColor` from style cues, `logo` left null pending user upload).
+
+`optionalHints.sourceHero` (populated by re-spin, Spec 21) carries the source site's hero as structured data: `{headline, subheadline, ctaLabel, imageAssetId, textOnly}`, all nullable. When present, the home-page content stage uses it to match the source hero's energy — punchy headline register, equivalent CTA intent — and the layout stage uses `textOnly` to prefer the `statement` hero variant (Spec 04) over an image-led one. It informs copy and variant choice; it never introduces layout cloning.
 
 ## Output Language
 
@@ -148,6 +151,8 @@ Generate block props such as:
 
 For collection-bound templates, content lives in two places: literal prop values (used when no entry binds the prop) and entry field values (used when a binding is present). Generate both: the template should still preview sensibly in the editor when no entry is selected.
 
+When `optionalHints.sourceHero` is present (re-spin, Spec 21), the home page's hero copy must draw on it: match the source headline's register and promise rather than inventing generic category copy, and carry the CTA intent through to a CTA that targets a page that actually exists in the site plan.
+
 ### Step 5: Theme Draft
 
 Generate:
@@ -158,7 +163,7 @@ Generate:
 - shape
 - mood metadata
 
-The palette is **derived from `brand.primaryColor`** rather than freely chosen — the primary token equals brand color, and secondary/accent/surface tokens are produced deterministically from it (see [Spec 11](./11-theme-navigation-and-assets.md)). The prompt influences typography, spacing, shape, and mood; it does not override the brand color.
+The palette is **derived from `brand.primaryColor`** rather than freely chosen — the primary token equals brand color, and secondary/accent/surface tokens are produced deterministically from it (see [Spec 11](./11-theme-navigation-and-assets.md)). The prompt influences typography, spacing, shape, and mood; it does not override the brand color. For re-spins, `brand.primaryColor` arrives from the source site's own palette (Spec 21 brand pull: external-stylesheet CSS variables with button-background scoring, theme-color meta, or dominant logo color) and is used verbatim like any other provided brand color.
 
 ### Step 6: Starter Images
 

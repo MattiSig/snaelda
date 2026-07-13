@@ -66,6 +66,8 @@ For MVP:
 - rate-limit public form submissions
 - store generated content provenance metadata
 
+Server-side fetching of attacker-controlled URLs (re-spin) carries its own contract in Spec 21: SSRF-guarded fetch client with DNS pinning, and the v1.1 headless capture service isolated in a separate Railway project so rendered attacker JavaScript has no private-network path to internal services (ADR 0004).
+
 ## Preview Tokens
 
 Preview tokens should be:

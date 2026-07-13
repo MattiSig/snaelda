@@ -14,6 +14,8 @@ Recommended first deployment:
 
 Generation can initially be request/response while still recording status in `generation_jobs`.
 
+**Headless capture (v1.1) is a separate Railway project**, not another service inside the platform project: a stock browserless/chromium container (`TOKEN`, `MAX_CONCURRENT_SESSIONS=2`, `TIMEOUT=25000`, downloads disabled, ~1–2 GB RAM). Railway private networking spans a project, so the separate project is the isolation boundary — in-page JavaScript from captured sites cannot reach the API, Postgres, or object storage over the private mesh. The API reaches it via public HTTPS with `CAPTURE_URL` / `CAPTURE_TOKEN` env vars (ADR 0004).
+
 ## Suggested Domains
 
 - `app.platform.com` for the builder

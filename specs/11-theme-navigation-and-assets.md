@@ -23,6 +23,8 @@ Brand lives next to theme in the site config (see [Spec 05](./05-site-configurat
 
 When `brand.primaryColor` changes (via the brand editor), the theme palette regenerates without manual theme editing.
 
+`brand.primaryColor` can arrive three ways, all treated identically by derivation: typed by the user in the brand editor, inferred from prompt style cues when absent, or extracted from a re-spun source site (Spec 21 brand pull — external-stylesheet CSS variables scored by button-background usage, `theme-color` meta, or dominant logo color).
+
 ### Blocks Resolve Brand From Site Context
 
 Header and Footer blocks do not carry their own `logo` or `businessName` props. They read these from `brand` at render time. That keeps brand consistent across every page and removes the failure mode where re-uploading the logo in one place leaves stale copies elsewhere.
