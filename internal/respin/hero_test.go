@@ -191,3 +191,38 @@ func TestExtractPageMarksHeroImageRegion(t *testing.T) {
 		t.Fatal("hero image not present in page images")
 	}
 }
+
+func TestExtractSourceHeroMergesImageShellWithHeadingSection(t *testing.T) {
+	// Squarespace 7.1 shape: the hint-named section-background div holds only
+	// the hero photograph; the headline, supporting line, and CTA live in a
+	// sibling content wrapper. The extractor must merge the two.
+	hero := parseHero(t, `<html><body>
+		<header><a href="/">Home</a></header>
+		<section class="page-section">
+			<div class="section-background">
+				<img src="https://cdn.example.com/hero.png" alt="">
+			</div>
+			<div class="content-wrapper">
+				<h1>Clogged Drain?</h1>
+				<p>We fix them 24/7, fast and reliable.</p>
+				<a class="btn" href="/contact">Get help now</a>
+			</div>
+		</section>
+	</body></html>`)
+
+	if hero.Headline != "Clogged Drain?" {
+		t.Fatalf("headline = %q", hero.Headline)
+	}
+	if hero.Subheadline != "We fix them 24/7, fast and reliable." {
+		t.Fatalf("subheadline = %q", hero.Subheadline)
+	}
+	if hero.CTALabel != "Get help now" {
+		t.Fatalf("cta = %q", hero.CTALabel)
+	}
+	if hero.ImageURL != "https://cdn.example.com/hero.png" {
+		t.Fatalf("image = %q", hero.ImageURL)
+	}
+	if hero.TextOnly {
+		t.Fatal("expected image-led hero")
+	}
+}

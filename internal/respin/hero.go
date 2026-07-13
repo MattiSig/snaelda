@@ -71,17 +71,26 @@ func extractSourceHero(doc *html.Node, base *url.URL) SourceHero {
 		return SourceHero{}
 	}
 
-	var hero SourceHero
-	hero.Headline = firstHeadingText(root)
+	hero := readHeroFields(root, base)
 
-	if sub := firstSupportingLine(root, hero.Headline); sub != "" {
-		hero.Subheadline = sub
-	}
-	if cta := firstCTALabel(root); cta != "" {
-		hero.CTALabel = cta
-	}
-	if img := firstHeroImage(root, base); img != "" {
-		hero.ImageURL = img
+	// A hint-named root can be an image-only shell: Squarespace 7.1's
+	// section-background div holds the hero photograph while the headline lives
+	// in a sibling content wrapper. When the named root yields no headline, read
+	// the text fields from the first <h1>'s own section and keep the image.
+	if hero.Headline == "" {
+		if textRoot := headingHeroRoot(doc); textRoot != nil && textRoot != root {
+			text := readHeroFields(textRoot, base)
+			hero.Headline = text.Headline
+			if hero.Subheadline == "" {
+				hero.Subheadline = text.Subheadline
+			}
+			if hero.CTALabel == "" {
+				hero.CTALabel = text.CTALabel
+			}
+			if hero.ImageURL == "" {
+				hero.ImageURL = text.ImageURL
+			}
+		}
 	}
 	hero.TextOnly = hero.ImageURL == ""
 
@@ -91,13 +100,35 @@ func extractSourceHero(doc *html.Node, base *url.URL) SourceHero {
 	return hero
 }
 
+// readHeroFields reads the hero's headline, supporting line, CTA label, and
+// background image straight from one candidate root.
+func readHeroFields(root *html.Node, base *url.URL) SourceHero {
+	var hero SourceHero
+	hero.Headline = firstHeadingText(root)
+	if sub := firstSupportingLine(root, hero.Headline); sub != "" {
+		hero.Subheadline = sub
+	}
+	if cta := firstCTALabel(root); cta != "" {
+		hero.CTALabel = cta
+	}
+	if img := firstHeroImage(root, base); img != "" {
+		hero.ImageURL = img
+	}
+	return hero
+}
+
 // findHeroRoot returns the hero container: the first element whose class/id names
-// it a hero, otherwise the nearest section/header/main ancestor of the first
-// <h1> (its parent when the <h1> has no such ancestor).
+// it a hero, otherwise the first <h1>'s own section.
 func findHeroRoot(doc *html.Node) *html.Node {
 	if named := firstElementByHint(doc, heroSectionKeywords); named != nil {
 		return named
 	}
+	return headingHeroRoot(doc)
+}
+
+// headingHeroRoot returns the nearest section/header/main ancestor of the first
+// <h1> (its parent when the <h1> has no such ancestor), or nil without an <h1>.
+func headingHeroRoot(doc *html.Node) *html.Node {
 	h1 := firstElementWithAtom(doc, atom.H1)
 	if h1 == nil {
 		return nil

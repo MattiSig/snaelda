@@ -620,3 +620,40 @@ func TestHeroCandidatesPreferSectionBackgroundHint(t *testing.T) {
 		t.Fatalf("top hero candidate = %+v, want the section-background image", got)
 	}
 }
+
+func TestRankStylesheetHrefsPrefersPaletteBearers(t *testing.T) {
+	// The QA target's real declaration order: fonts and platform framework CSS
+	// first, the palette-bearing site.css ninth. Ranking must fetch it inside
+	// the maxStylesheets budget.
+	hrefs := []string{
+		"https://fonts.googleapis.com/css2?family=Epilogue",
+		"https://assets.squarespace.com/universal/styles-compressed/user-account-core-min.en-US.css",
+		"https://definitions.sqspcdn.com/website-component-definition/static-assets/website.components.imageFluid/styles.css",
+		"https://definitions.sqspcdn.com/website-component-definition/static-assets/website.components.scrolling/styles.css",
+		"https://definitions.sqspcdn.com/website-component-definition/static-assets/website.components.button/styles.css",
+		"https://definitions.sqspcdn.com/website-component-definition/static-assets/website.components.form/styles.css",
+		"https://definitions.sqspcdn.com/website-component-definition/static-assets/website.components.code/styles.css",
+		"https://definitions.sqspcdn.com/website-component-definition/static-assets/website.components.html/styles.css",
+		"https://static1.squarespace.com/static/versioned-site-css/abc/20/def/ghi/1806/site.css?nocustom=true",
+		"https://static1.squarespace.com/static/vta/abc/versioned-assets/static.css",
+		"https://fonts.googleapis.com/css2?family=Material+Symbols",
+	}
+	ranked := rankStylesheetHrefs(hrefs)
+	if !strings.Contains(ranked[0], "site.css") {
+		t.Fatalf("expected site.css ranked first, got %q", ranked[0])
+	}
+	// The neutral static.css keeps document order right after the boosted
+	// palette bearer, well inside the fetch budget.
+	if !strings.Contains(ranked[1], "static.css") {
+		t.Fatalf("expected neutral static.css second, got %q", ranked[1])
+	}
+	for _, demoted := range ranked[len(ranked)-2:] {
+		if !strings.Contains(demoted, "fonts.googleapis.com") && !strings.Contains(demoted, "sqspcdn") && !strings.Contains(demoted, "styles-compressed") {
+			t.Fatalf("expected demoted framework/font css at the tail, got %q", demoted)
+		}
+	}
+	// Ranking must not mutate the caller's slice.
+	if !strings.Contains(hrefs[0], "fonts.googleapis.com") {
+		t.Fatalf("input slice mutated: %q", hrefs[0])
+	}
+}

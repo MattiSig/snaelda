@@ -547,7 +547,7 @@ func (p *BrandPuller) resolveCSSColors(ctx context.Context, hints aggregateHints
 	css.WriteString(hints.styleText)
 
 	fetched := 0
-	for _, href := range hints.stylesheets {
+	for _, href := range rankStylesheetHrefs(hints.stylesheets) {
 		if fetched >= maxStylesheets {
 			break
 		}
@@ -570,18 +570,61 @@ func (p *BrandPuller) resolveCSSColors(ctx context.Context, hints aggregateHints
 	return hints.cssColors
 }
 
+// rankStylesheetHrefs orders declared stylesheets by how likely they are to
+// carry the site's palette, so the bounded fetch spends its budget on the right
+// files. Site builders declare a long list — font CDNs and framework/component
+// CSS first, the palette-bearing site stylesheet late (Squarespace's site.css is
+// 9th of 11 on the QA target) — and a DOM-order fetch never reaches it. The sort
+// is stable, so equal scores keep document order.
+func rankStylesheetHrefs(hrefs []string) []string {
+	ranked := make([]string, len(hrefs))
+	copy(ranked, hrefs)
+	sort.SliceStable(ranked, func(i, j int) bool {
+		return stylesheetPaletteScore(ranked[i]) > stylesheetPaletteScore(ranked[j])
+	})
+	return ranked
+}
+
+func stylesheetPaletteScore(href string) int {
+	lower := strings.ToLower(href)
+	score := 0
+	// The site's own stylesheet is where builders write the user palette.
+	for _, s := range []string{"site.css", "versioned-site-css", "custom", "theme", "user-styles"} {
+		if strings.Contains(lower, s) {
+			score += 40
+		}
+	}
+	// Font services and platform framework/component bundles never carry the
+	// brand palette; spend the budget on them last.
+	for _, s := range []string{
+		"fonts.googleapis.com", "fonts.gstatic.com", "use.typekit.net",
+		"styles-compressed", "website-component-definition", "static-assets",
+		"user-account", "cookie", "commerce",
+	} {
+		if strings.Contains(lower, s) {
+			score -= 40
+		}
+	}
+	return score
+}
+
 // fetchStylesheet fetches an external stylesheet through the SSRF-guarded client,
 // enforces the per-stylesheet size cap and the per-import byte budget, and
-// rejects an obvious non-CSS (HTML) response. Cross-origin stylesheet hosts are
-// permitted (builder CDNs serve the palette from static1.squarespace.com and the
-// like) — the SSRF IP guard still applies to every hop.
+// rejects an obvious non-CSS (HTML) response. Over-cap stylesheets are truncated
+// rather than rejected: the custom-property palette sits at the top of the file,
+// and builder site stylesheets routinely exceed the cap (Squarespace's site.css
+// is ~1.3 MB with the palette in the first kilobyte). Cross-origin stylesheet
+// hosts are permitted (builder CDNs serve the palette from
+// static1.squarespace.com and the like) — the SSRF IP guard still applies to
+// every hop.
 func (p *BrandPuller) fetchStylesheet(ctx context.Context, href string, budget *int64) ([]byte, error) {
 	if budget != nil && *budget <= 0 {
 		return nil, fmt.Errorf("respin: import byte budget exhausted")
 	}
 	res, err := p.fetcher.Fetch(ctx, href, FetchOptions{
-		MaxBytes: maxStylesheetBytes,
-		Accept:   "text/css,*/*;q=0.1",
+		MaxBytes:          maxStylesheetBytes,
+		Accept:            "text/css,*/*;q=0.1",
+		TruncateOverLimit: true,
 	})
 	if err != nil {
 		return nil, err

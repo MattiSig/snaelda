@@ -179,3 +179,19 @@ func TestValidatePublicURLAllowsPublicShape(t *testing.T) {
 		t.Fatalf("expected well-formed url to pass, got %v", err)
 	}
 }
+
+func TestFetchTruncateOverLimit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/css")
+		_, _ = w.Write([]byte(strings.Repeat("x", 4096)))
+	}))
+	defer srv.Close()
+
+	res, err := testFetcher().Fetch(context.Background(), srv.URL, FetchOptions{MaxBytes: 1024, TruncateOverLimit: true})
+	if err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	if len(res.Body) != 1024 {
+		t.Fatalf("expected body truncated to 1024 bytes, got %d", len(res.Body))
+	}
+}

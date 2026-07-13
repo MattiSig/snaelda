@@ -215,6 +215,12 @@ type FetchOptions struct {
 	MaxBytes int64
 	// Accept sets the Accept header sent upstream.
 	Accept string
+	// TruncateOverLimit returns the first MaxBytes bytes of an over-cap body
+	// instead of ErrResponseTooLarge. Only sane for prefix-parseable content —
+	// stylesheets, whose custom-property palette sits at the top of the file
+	// (Squarespace's site.css is ~1.3 MB with the palette in the first KB).
+	// Never use it for HTML or images, where truncation corrupts.
+	TruncateOverLimit bool
 }
 
 // FetchResult is the outcome of a guarded fetch.
@@ -268,7 +274,10 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string, opts FetchOptions) (
 		return FetchResult{}, fmt.Errorf("respin: read body: %w", err)
 	}
 	if int64(len(body)) > maxBytes {
-		return FetchResult{}, ErrResponseTooLarge
+		if !opts.TruncateOverLimit {
+			return FetchResult{}, ErrResponseTooLarge
+		}
+		body = body[:maxBytes]
 	}
 
 	return FetchResult{
