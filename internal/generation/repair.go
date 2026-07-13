@@ -41,7 +41,141 @@ func repairGenerationPlan(plan generationPlan, locale string, dropEmptyRepeaters
 
 	repaired.Theme = repairTheme(repaired.ThemePreset, repaired.ThemeSelection, plan.Theme)
 	repaired.Pages = repairPages(repaired.SiteName, repaired.SiteGoal, plan.Pages, dropEmptyRepeaters)
+	if dropEmptyRepeaters {
+		// dropEmptyRepeaters marks a fresh first-generation or re-spin draft,
+		// where the whole page set is present. That is the only safe moment to
+		// run the whole-site copy-polish pass: an in-builder reprompt carries a
+		// partial plan, so link validation would false-positive.
+		repaired.Pages = polishGeneratedPages(repaired.Pages)
+	}
 	return repaired
+}
+
+// polishGeneratedPages runs deterministic, whole-site copy hygiene on a freshly
+// generated plan. It removes short supporting strings that repeat verbatim
+// across the site (a hero subheadline reused as the footer tagline reads as
+// filler), and rewrites internal CTA links that point at a page or section
+// anchor that does not exist so a "Get in touch" button can never dead-end.
+func polishGeneratedPages(pages []generationPagePlan) []generationPagePlan {
+	slugs := make(map[string]bool, len(pages))
+	for _, page := range pages {
+		slug := strings.TrimSpace(page.Slug)
+		if slug == "" {
+			slug = "/"
+		}
+		slugs[slug] = true
+	}
+	fallback := ctaFallbackHref(slugs)
+
+	seenSupporting := map[string]bool{}
+	for pageIndex := range pages {
+		for _, block := range pages[pageIndex].Blocks {
+			// block is a copy, but block.Props is a shared map reference, so
+			// mutating and deleting entries updates the underlying plan.
+			retargetBlockCTAs(block.Props, slugs, fallback)
+			dedupeSupportingCopy(block, seenSupporting)
+		}
+	}
+	return pages
+}
+
+// ctaFallbackHref picks the best real destination for a broken CTA, preferring a
+// contact page (English or Icelandic slug) and falling back to the home page,
+// which always exists.
+func ctaFallbackHref(slugs map[string]bool) string {
+	for _, candidate := range []string{"/contact", "/hafa-samband"} {
+		if slugs[candidate] {
+			return candidate
+		}
+	}
+	return "/"
+}
+
+// retargetBlockCTAs repoints every CTA on a block whose href cannot resolve.
+func retargetBlockCTAs(props map[string]any, slugs map[string]bool, fallback string) {
+	if props == nil {
+		return
+	}
+	for _, key := range []string{"primaryCta", "secondaryCta", "cta"} {
+		cta, ok := props[key].(map[string]any)
+		if !ok {
+			continue
+		}
+		href, ok := cta["href"].(string)
+		if !ok {
+			continue
+		}
+		if resolved, changed := resolveInternalHref(href, slugs, fallback); changed {
+			cta["href"] = resolved
+		}
+	}
+}
+
+// resolveInternalHref rewrites an internal CTA href that cannot reach a real
+// destination. External, mailto:, and tel: links pass through untouched. A link
+// to a page that does not exist, or to a section anchor (the renderer only ever
+// emits page-level anchors, so "#contact"/"/#contact" never resolve), is
+// redirected to the fallback page so the button always lands somewhere real.
+func resolveInternalHref(href string, slugs map[string]bool, fallback string) (string, bool) {
+	trimmed := strings.TrimSpace(href)
+	if trimmed == "" {
+		return fallback, fallback != ""
+	}
+	if !strings.HasPrefix(trimmed, "/") && !strings.HasPrefix(trimmed, "#") {
+		return trimmed, false
+	}
+	if strings.Contains(trimmed, "#") {
+		if trimmed == fallback {
+			return trimmed, false
+		}
+		return fallback, true
+	}
+	if slugs[trimmed] {
+		return trimmed, false
+	}
+	if trimmed == fallback {
+		return trimmed, false
+	}
+	return fallback, true
+}
+
+// dedupeSupportingCopy drops a hero subheadline or footer tagline that repeats a
+// supporting line already used elsewhere on the site. A unique footer tagline is
+// intentionally not recorded as "seen": the footer repeats on every page and its
+// tagline is allowed to stand as the site's one closing line.
+func dedupeSupportingCopy(block generationBlockPlan, seen map[string]bool) {
+	switch block.Type {
+	case "hero":
+		key := normalizeSupportingCopy(readString(block.Props, "subheadline"))
+		if key == "" {
+			return
+		}
+		if seen[key] {
+			delete(block.Props, "subheadline")
+			return
+		}
+		seen[key] = true
+	case "footer":
+		key := normalizeSupportingCopy(readString(block.Props, "tagline"))
+		if key == "" {
+			return
+		}
+		if seen[key] {
+			delete(block.Props, "tagline")
+		}
+	}
+}
+
+func normalizeSupportingCopy(text string) string {
+	return strings.ToLower(strings.Join(strings.Fields(text), " "))
+}
+
+func readString(props map[string]any, key string) string {
+	if props == nil {
+		return ""
+	}
+	value, _ := props[key].(string)
+	return value
 }
 
 func normalizeGeneratedThemePreset(value string) string {
