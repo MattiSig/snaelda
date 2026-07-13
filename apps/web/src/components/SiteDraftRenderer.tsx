@@ -138,7 +138,12 @@ export function SiteDraftRenderer({
   const firstVisibleBlock = firstRenderedPage?.blocks.find(
     (block) => !block.settings?.hidden,
   );
+  // The full-page hero's header overlap is a viewing effect only. In the
+  // builder canvas it must stay off: pulling the hero under the header drags
+  // the block's hover toolbar (anchored above the block) beneath the app
+  // topbar, which then swallows every click on it.
   const headerOverlapsHero =
+    mode !== 'builder' &&
     firstVisibleBlock?.type === 'hero' &&
     asText(firstVisibleBlock.props.variant) === 'full-page';
   const pageIdByAnchor = new Map(
@@ -300,6 +305,7 @@ export function SiteDraftRenderer({
                       siteSlug,
                       publishedBasePath,
                       collectionCtx,
+                      mode,
                     });
 
                     if (!renderBlock) {
@@ -400,6 +406,7 @@ function renderSiteBlock({
   siteSlug,
   publishedBasePath,
   collectionCtx,
+  mode = 'default',
 }: {
   block: RenderedBlock;
   page: RenderedPage;
@@ -415,6 +422,7 @@ function renderSiteBlock({
   siteSlug?: string;
   publishedBasePath?: string;
   collectionCtx: CollectionContext;
+  mode?: 'default' | 'builder';
 }) {
   switch (block.type) {
     case 'hero':
@@ -423,7 +431,7 @@ function renderSiteBlock({
           key={block.id}
           blockId={block.id}
           props={block.props}
-          isFirst={blockIndex === 0}
+          isFirst={blockIndex === 0 && mode !== 'builder'}
           resolveHref={(href) =>
             resolvePageHref(
               href,

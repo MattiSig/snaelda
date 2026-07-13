@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { BlockEditor } from '@/components/BlockEditor';
 import { useInlineEditor } from './context';
@@ -80,7 +81,11 @@ export function BlockDetailsDrawer({
     }
   }
 
-  return (
+  // Portal to <body>: the drawer is a viewport overlay, but it mounts inside
+  // the builder's block subtree, where the canvas transform re-anchors
+  // position:fixed and the block wrapper's `isolate` traps its z-index under
+  // later sibling blocks — leaving the drawer half-buried and click-blocked.
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
@@ -146,7 +151,8 @@ export function BlockDetailsDrawer({
           ) : null}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
