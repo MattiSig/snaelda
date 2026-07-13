@@ -643,7 +643,7 @@ function renderSiteBlock({
 }
 
 const headingClass =
-  '[font-family:var(--font-heading)] text-[var(--size-sectionHeading)] [font-weight:var(--font-headingWeight,700)] leading-[1.08] tracking-tight text-[var(--color-text)]';
+  '[font-family:var(--font-heading)] text-[length:var(--size-sectionHeading)] [font-weight:var(--font-headingWeight,700)] leading-[1.08] tracking-tight text-[var(--color-text)]';
 
 const bodyClass =
   'text-[1.05rem] leading-[1.65] text-[color-mix(in_oklch,var(--color-text)_82%,var(--color-background))]';
@@ -666,7 +666,25 @@ function HeroBlock({
   const primary = asObject(props.primaryCta);
   const secondary = asObject(props.secondaryCta);
   const image = asImageRef(props.image);
-  const variant = asText(props.variant) === 'full-page' ? 'full-page' : 'standard';
+  const variantRaw = asText(props.variant);
+  const variant =
+    variantRaw === 'full-page' || variantRaw === 'statement'
+      ? variantRaw
+      : 'standard';
+
+  if (variant === 'statement') {
+    return (
+      <StatementHeroBlock
+        blockId={blockId}
+        eyebrow={asText(props.eyebrow)}
+        headline={asText(props.headline)}
+        subheadline={asText(props.subheadline)}
+        primary={primary}
+        secondary={secondary}
+        resolveHref={resolveHref}
+      />
+    );
+  }
 
   if (variant === 'full-page') {
     return (
@@ -713,7 +731,7 @@ function HeroBlock({
         value={asText(props.headline)}
         placeholder="Add a headline that says what you do"
         as="h2"
-        className="[font-family:var(--font-heading)] text-[var(--size-heroHeading)] [font-weight:var(--font-headingWeight,700)] leading-[0.96] tracking-[-0.02em] text-[var(--color-text)]"
+        className="[font-family:var(--font-heading)] text-[length:var(--size-heroHeading)] [font-weight:var(--font-headingWeight,700)] leading-[0.96] tracking-[-0.02em] text-[var(--color-text)]"
       />
       <InlineEditableText
         blockId={blockId}
@@ -794,6 +812,92 @@ function HeroBlock({
               </div>
             )}
           </InlineEditableImage>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// StatementHeroBlock is the type-led hero (Spec 04 "statement"): a poster, not a
+// panel. The section is drenched in the brand primary edge to edge, every line
+// is set in the theme background color, and the drama comes entirely from the
+// oversized statement type scale — no image, no card framing, no centering. The
+// image and layout props are ignored by contract.
+function StatementHeroBlock({
+  blockId,
+  eyebrow,
+  headline,
+  subheadline,
+  primary,
+  secondary,
+  resolveHref,
+}: {
+  blockId: string;
+  eyebrow: string | null;
+  headline: string | null;
+  subheadline: string | null;
+  primary: Record<string, unknown> | null;
+  secondary: Record<string, unknown> | null;
+  resolveHref: (href: string) => string;
+}) {
+  return (
+    <section
+      data-statement-hero="true"
+      className="w-full bg-[var(--color-primary)] text-[var(--color-background)] [--color-buttonBackground:var(--color-background)] [--color-buttonForeground:var(--color-primary)] [--color-buttonBorder:var(--color-background)] [--color-buttonGhostForeground:var(--color-background)] [--color-buttonGhostBorder:color-mix(in_oklch,var(--color-background)_55%,transparent)]"
+    >
+      <div className="mx-auto flex min-h-[clamp(460px,72vh,820px)] w-full max-w-[1180px] flex-col justify-between gap-14 px-[max(1.25rem,4vw)] pb-[clamp(44px,7vw,84px)] pt-[clamp(36px,5vw,64px)]">
+        <InlineEditableText
+          blockId={blockId}
+          path={['eyebrow']}
+          value={eyebrow ?? ''}
+          placeholder="Eyebrow (optional)"
+          as="p"
+          className="text-xs font-bold uppercase tracking-[0.2em] text-[color-mix(in_oklch,var(--color-background)_72%,transparent)]"
+        />
+        <div className="grid gap-7">
+          <InlineEditableText
+            blockId={blockId}
+            path={['headline']}
+            value={headline ?? ''}
+            placeholder="Say the one thing you stand for"
+            as="h1"
+            className="max-w-[14ch] [font-family:var(--font-heading)] text-[length:var(--size-statementHeading)] [font-weight:var(--font-headingWeight,700)] leading-[0.92] tracking-[-0.03em] [text-wrap:balance]"
+          />
+          <InlineEditableText
+            blockId={blockId}
+            path={['subheadline']}
+            value={subheadline ?? ''}
+            placeholder="One supporting line, plain and confident"
+            multiline
+            as="p"
+            className="max-w-[44ch] text-[1.2rem] leading-[1.55] text-[color-mix(in_oklch,var(--color-background)_84%,transparent)]"
+          />
+          {primary || secondary ? (
+            <div className={cn(preview.actionRow, 'mt-1')}>
+              {primary ? (
+                <Button asChild variant="plain" className={preview.button}>
+                  <a href={resolveHref(asText(primary.href) || '#')}>
+                    {asText(primary.label) ?? 'Continue'}
+                  </a>
+                </Button>
+              ) : null}
+              {secondary ? (
+                <Button
+                  asChild
+                  variant="plain"
+                  className={cn(
+                    preview.button,
+                    preview.ghostButton,
+                    'hover:bg-[color-mix(in_oklch,var(--color-background)_12%,transparent)]',
+                  )}
+                >
+                  <a href={resolveHref(asText(secondary.href) || '#')}>
+                    {asText(secondary.label) ?? 'Learn more'}
+                  </a>
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
     </section>
@@ -887,7 +991,7 @@ function FullPageHeroBlock({
             value={headline ?? ''}
             placeholder="A bold full-page promise"
             as="h1"
-            className="[font-family:var(--font-heading)] text-[var(--size-fullPageHeading)] [font-weight:var(--font-headingWeight,700)] leading-[0.95] tracking-[-0.02em] text-[#F9F7F2] drop-shadow-[0_2px_24px_rgba(0,0,0,0.35)]"
+            className="[font-family:var(--font-heading)] text-[length:var(--size-fullPageHeading)] [font-weight:var(--font-headingWeight,700)] leading-[0.95] tracking-[-0.02em] text-[#F9F7F2] drop-shadow-[0_2px_24px_rgba(0,0,0,0.35)]"
           />
           <InlineEditableText
             blockId={blockId}

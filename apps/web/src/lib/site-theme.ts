@@ -137,18 +137,21 @@ function resolveTypeScale(value: string): Record<string, string> {
         "--size-sectionHeading": "clamp(1.5rem,2.4vw,2.1rem)",
         "--size-heroHeading": "clamp(2.25rem,5vw,4.25rem)",
         "--size-fullPageHeading": "clamp(2.5rem,6vw,4.8rem)",
+        "--size-statementHeading": "clamp(2.8rem,8vw,5.6rem)",
       };
     case "expressive":
       return {
         "--size-sectionHeading": "clamp(1.9rem,3.4vw,2.9rem)",
         "--size-heroHeading": "clamp(3.2rem,7.5vw,6.6rem)",
         "--size-fullPageHeading": "clamp(3.4rem,8vw,7rem)",
+        "--size-statementHeading": "clamp(3.6rem,10.5vw,8rem)",
       };
     default:
       return {
         "--size-sectionHeading": "clamp(1.65rem,2.8vw,2.4rem)",
         "--size-heroHeading": "clamp(2.6rem,6.2vw,5.4rem)",
         "--size-fullPageHeading": "clamp(2.8rem,7vw,6rem)",
+        "--size-statementHeading": "clamp(3.2rem,9vw,7rem)",
       };
   }
 }

@@ -9,14 +9,19 @@ import (
 
 const BlockVersionV1 = "1.0.0"
 
+// HeroBlockVersion is the hero's current version. 1.1.0 added the "statement"
+// variant (Spec 04) — an additive change, so 1.0.0 stays registered with the
+// same schema and validator and stored drafts keep resolving untouched.
+const HeroBlockVersion = "1.1.0"
+
 func heroBlockDefinition() BlockDefinition {
 	editorSchema := []EditorField{
 		{
 			Name:        "variant",
 			Label:       "Variant",
 			Control:     "select",
-			Options:     []string{"standard", "full-page"},
-			Description: "Choose 'full-page' for an immersive hero that fills the entire viewport on first load.",
+			Options:     []string{"standard", "full-page", "statement"},
+			Description: "Choose 'full-page' for an immersive image-backed hero that fills the viewport, or 'statement' for a bold type-led hero on a solid brand-color background.",
 		},
 		{Name: "eyebrow", Label: "Eyebrow", Control: "text"},
 		{Name: "headline", Label: "Headline", Control: "text"},
@@ -45,11 +50,11 @@ func heroBlockDefinition() BlockDefinition {
 			Control:     "asset",
 			Description: "Pick an uploaded image for split, supporting, or full-page hero layouts. Required for full-page variant.",
 		},
-		{Name: "layout", Label: "Layout", Control: "select", Options: []string{"centered", "split-left", "split-right"}, Description: "Applies to the standard variant. Ignored when variant is full-page."},
+		{Name: "layout", Label: "Layout", Control: "select", Options: []string{"centered", "split-left", "split-right"}, Description: "Applies to the standard variant. Ignored when variant is full-page or statement."},
 	}
 	return BlockDefinition{
 		Type:        "hero",
-		Version:     BlockVersionV1,
+		Version:     HeroBlockVersion,
 		DisplayName: "Hero",
 		Category:    BlockCategoryHero,
 		Tagline:     "Page-leading attention grabber with headline, optional supporting image, and primary call-to-action.",
@@ -63,6 +68,15 @@ func heroBlockDefinition() BlockDefinition {
 		MigrateProps:  migrateBlockPropsPassthrough,
 		ValidateProps: validateHeroProps,
 	}
+}
+
+// heroBlockDefinitionV1 keeps hero@1.0.0 registered so drafts stored before the
+// statement variant landed still resolve. The 1.1.0 change was additive, so both
+// versions share the current schema and validator.
+func heroBlockDefinitionV1() BlockDefinition {
+	definition := heroBlockDefinition()
+	definition.Version = BlockVersionV1
+	return definition
 }
 
 func textSectionBlockDefinition() BlockDefinition {
@@ -804,7 +818,7 @@ func cloneBlockPropValue(value any) any {
 
 func validateHeroProps(path string, props map[string]any, c *collector) {
 	requireKnownProps(path, props, c, "variant", "eyebrow", "headline", "subheadline", "primaryCta", "secondaryCta", "image", "layout")
-	optionalEnum(path, props, "variant", c, "standard", "full-page")
+	optionalEnum(path, props, "variant", c, "standard", "full-page", "statement")
 	optionalString(path, props, "eyebrow", 80, c)
 	requireString(path, props, "headline", 1, 120, c)
 	optionalString(path, props, "subheadline", 280, c)

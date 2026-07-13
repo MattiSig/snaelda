@@ -117,7 +117,7 @@ func TestBlockRegistryDefinitionsAreSorted(t *testing.T) {
 		"features_grid@1.0.0",
 		"footer@1.0.0",
 		"gallery@1.0.0",
-		"hero@1.0.0",
+		"hero@1.1.0",
 		"image_text@1.0.0",
 		"pricing_packages@1.0.0",
 		"stats@1.0.0",
@@ -137,6 +137,65 @@ func TestBlockRegistryDefinitionsAreSorted(t *testing.T) {
 	for index := range want {
 		if got[index] != want[index] {
 			t.Fatalf("expected sorted definitions %v, got %v", want, got)
+		}
+	}
+}
+
+func TestBlockRegistryHeroVersions(t *testing.T) {
+	registry := DefaultBlockRegistry()
+
+	// Stored drafts carry hero@1.0.0 and must keep resolving.
+	legacy, err := registry.Lookup("hero", BlockVersionV1)
+	if err != nil {
+		t.Fatalf("lookup hero@1.0.0: %v", err)
+	}
+	if legacy.Version != BlockVersionV1 {
+		t.Fatalf("expected legacy hero version %q, got %q", BlockVersionV1, legacy.Version)
+	}
+
+	latest, err := registry.Latest("hero")
+	if err != nil {
+		t.Fatalf("latest hero: %v", err)
+	}
+	if latest.Version != HeroBlockVersion {
+		t.Fatalf("expected latest hero version %q, got %q", HeroBlockVersion, latest.Version)
+	}
+	if LatestBlockVersion("hero") != HeroBlockVersion {
+		t.Fatalf("expected LatestBlockVersion(hero) %q, got %q", HeroBlockVersion, LatestBlockVersion("hero"))
+	}
+	if LatestBlockVersion("cta_band") != BlockVersionV1 {
+		t.Fatalf("expected LatestBlockVersion(cta_band) %q, got %q", BlockVersionV1, LatestBlockVersion("cta_band"))
+	}
+	if _, err := registry.Latest("bogus"); err == nil {
+		t.Fatal("expected unknown-type error for Latest(bogus)")
+	}
+
+	// The statement variant is additive: it validates on both registered versions.
+	props := map[string]any{"variant": "statement", "headline": "Pipes fixed, promises kept"}
+	for _, version := range []string{BlockVersionV1, HeroBlockVersion} {
+		if err := registry.ValidateProps("hero", version, "props", props); err != nil {
+			t.Fatalf("statement variant should validate on hero@%s: %v", version, err)
+		}
+	}
+	if err := registry.ValidateProps("hero", HeroBlockVersion, "props", map[string]any{"variant": "poster", "headline": "x"}); err == nil {
+		t.Fatal("expected unknown variant to fail validation")
+	}
+}
+
+func TestCompareBlockVersions(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want int
+	}{
+		{"1.0.0", "1.1.0", -1},
+		{"1.1.0", "1.0.0", 1},
+		{"1.1.0", "1.1.0", 0},
+		{"1.10.0", "1.9.0", 1},
+		{"2.0.0", "1.99.0", 1},
+	}
+	for _, c := range cases {
+		if got := compareBlockVersions(c.a, c.b); got != c.want {
+			t.Fatalf("compareBlockVersions(%q, %q) = %d, want %d", c.a, c.b, got, c.want)
 		}
 	}
 }

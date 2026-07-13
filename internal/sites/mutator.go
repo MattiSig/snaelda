@@ -603,7 +603,7 @@ func (m *PostgresMutator) CreateBlock(ctx context.Context, workspaceID string, s
 	}
 	version := strings.TrimSpace(input.Version)
 	if version == "" {
-		version = siteconfig.BlockVersionV1
+		version = siteconfig.LatestBlockVersion(blockType)
 	}
 	definition, err := siteconfig.DefaultBlockRegistry().Lookup(blockType, version)
 	if err != nil {
@@ -1265,7 +1265,7 @@ func starterDraft(name string, slugValue string, prompt string, defaultLocale st
 					{
 						ID:      heroID,
 						Type:    "hero",
-						Version: siteconfig.BlockVersionV1,
+						Version: siteconfig.LatestBlockVersion("hero"),
 						Props: map[string]any{
 							"eyebrow":     name,
 							"headline":    sc.heroHeadline(name),

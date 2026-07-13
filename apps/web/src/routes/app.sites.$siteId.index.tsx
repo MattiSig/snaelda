@@ -531,10 +531,14 @@ function SiteDetail() {
     };
   }, [replaceDraft, siteId]);
 
+  // Keyed by "type@version", with a bare "type" fallback entry: the registry
+  // payload carries only each block's latest version, while stored blocks keep
+  // the version they were created with (migrations are passthrough, so the
+  // latest schema is always valid for older blocks).
   const blockDefinitions = new Map(
-    blockRegistry.map((definition) => [
-      `${definition.type}@${definition.version}`,
-      definition,
+    blockRegistry.flatMap((definition): [string, BlockDefinition][] => [
+      [`${definition.type}@${definition.version}`, definition],
+      [definition.type, definition],
     ]),
   );
 
@@ -547,7 +551,9 @@ function SiteDetail() {
     selectedPage?.blocks[0] ??
     null;
   const selectedDefinition = selectedBlock
-    ? blockDefinitions.get(`${selectedBlock.type}@${selectedBlock.version}`)
+    ? (blockDefinitions.get(
+        `${selectedBlock.type}@${selectedBlock.version}`,
+      ) ?? blockDefinitions.get(selectedBlock.type))
     : undefined;
   const selectedBlockLabel = selectedDefinition?.displayName
     ? `${selectedDefinition.displayName} block`

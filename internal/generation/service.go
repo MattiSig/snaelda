@@ -1277,7 +1277,7 @@ func buildDraftFromPlan(plan generationPlan, slugValue string, preferredLanguage
 			blocks = append(blocks, siteconfig.BlockInstance{
 				ID:      blockID,
 				Type:    blockPlan.Type,
-				Version: siteconfig.BlockVersionV1,
+				Version: siteconfig.LatestBlockVersion(blockPlan.Type),
 				Props:   blockPlan.Props,
 			})
 		}
@@ -1383,7 +1383,7 @@ func replaceDraftPage(currentPage siteconfig.PageDraft, plan generationPagePlan)
 		blocks = append(blocks, siteconfig.BlockInstance{
 			ID:      blockID,
 			Type:    blockPlan.Type,
-			Version: siteconfig.BlockVersionV1,
+			Version: siteconfig.LatestBlockVersion(blockPlan.Type),
 			Props:   blockPlan.Props,
 		})
 	}

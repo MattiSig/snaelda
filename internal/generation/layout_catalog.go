@@ -34,7 +34,7 @@ func layoutBlockCatalog() []layoutBlockCatalogEntry {
 			entry.Tags = []string{"opener", "positioning", "first_impression", "cta"}
 			entry.Use = "Open a page with the main promise, context, and primary action."
 			entry.Avoid = "Deep detail, long prose, or repeated mid-page sections."
-			entry.VariantHints = []string{"standard", "full-page", "centered", "split-left", "split-right"}
+			entry.VariantHints = []string{"standard", "full-page", "statement", "centered", "split-left", "split-right"}
 		case "text_section":
 			entry.Tags = []string{"content", "narrative", "explanation", "about"}
 			entry.Use = "Explain a focused idea in prose."

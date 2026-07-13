@@ -29,6 +29,7 @@ const variantSubtitles: Record<string, Record<string, string>> = {
   hero: {
     standard: 'Classic hero with split or centered layout',
     'full-page': 'Immersive image hero filling the viewport',
+    statement: 'Oversized type on the brand color, no image',
   },
   cta_band: {
     primary: 'Quiet, trustworthy invitation',

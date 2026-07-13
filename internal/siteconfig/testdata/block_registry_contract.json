@@ -618,7 +618,7 @@
     },
     {
       "type": "hero",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "displayName": "Hero",
       "category": "hero",
       "tagline": "Page-leading attention grabber with headline, optional supporting image, and primary call-to-action.",
@@ -632,10 +632,11 @@
           "name": "variant",
           "label": "Variant",
           "control": "select",
-          "description": "Choose 'full-page' for an immersive hero that fills the entire viewport on first load.",
+          "description": "Choose 'full-page' for an immersive image-backed hero that fills the viewport, or 'statement' for a bold type-led hero on a solid brand-color background.",
           "options": [
             "standard",
-            "full-page"
+            "full-page",
+            "statement"
           ]
         },
         {
@@ -699,7 +700,7 @@
           "name": "layout",
           "label": "Layout",
           "control": "select",
-          "description": "Applies to the standard variant. Ignored when variant is full-page.",
+          "description": "Applies to the standard variant. Ignored when variant is full-page or statement.",
           "options": [
             "centered",
             "split-left",
@@ -1298,7 +1299,7 @@
           {
             "id": "block_10_hero",
             "type": "hero",
-            "version": "1.0.0",
+            "version": "1.1.0",
             "props": {
               "headline": "A focused website starts here",
               "layout": "centered",

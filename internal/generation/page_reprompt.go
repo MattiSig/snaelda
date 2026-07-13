@@ -166,7 +166,7 @@ func (s *Service) draftBlockForChangeSet(
 	if blockType == "" {
 		blockType = op.Existing.Type
 	}
-	definition, err := registry.Lookup(blockType, siteconfig.BlockVersionV1)
+	definition, err := registry.Latest(blockType)
 	if err != nil {
 		return siteconfig.BlockInstance{}, fmt.Errorf("lookup %s for change-set: %w", blockType, err)
 	}
@@ -182,7 +182,7 @@ func (s *Service) draftBlockForChangeSet(
 		block = siteconfig.BlockInstance{
 			ID:      newID,
 			Type:    blockType,
-			Version: siteconfig.BlockVersionV1,
+			Version: definition.Version,
 			Props:   map[string]any{},
 		}
 	}

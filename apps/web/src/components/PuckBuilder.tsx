@@ -903,9 +903,10 @@ function ContentWorkspace({
                     selectedPageId={selectedPage.id}
                     mode="builder"
                     renderBlock={({ block, blockIndex, children }) => {
-                      const definition = blockDefinitions.get(
-                        `${block.type}@${block.version}`,
-                      );
+                      const definition =
+                        blockDefinitions.get(
+                          `${block.type}@${block.version}`,
+                        ) ?? blockDefinitions.get(block.type);
                       return (
                         <Fragment key={block.id}>
                           <DropZone

@@ -371,7 +371,7 @@ func (p *OpenAIPlanner) BuildPageContent(ctx context.Context, request PageConten
 		}
 		defKey := "props_" + blockType
 		if _, ok := defs[defKey]; !ok {
-			def, err := registry.Lookup(blockType, siteconfig.BlockVersionV1)
+			def, err := registry.Latest(blockType)
 			if err != nil {
 				return PageContentResult{}, fmt.Errorf("build page content: lookup %s: %w", blockType, err)
 			}
@@ -1438,7 +1438,8 @@ Theme choices must stay within the provided enums and should reflect Snaelda's w
 Hero block variants:
 - "standard" (default): the headline-led hero with optional image, layout "centered"/"split-left"/"split-right". Use it for most pages.
 - "full-page": an immersive, viewport-filling hero where the image becomes the page on first load and the headline + CTA sit over it. Pick this when the brand is image-led (photographer, restaurant, hotel, florist, gallery, salon, ceramics studio, wedding planner, tattoo artist, cafe, food, travel, fashion) or when the prompt asks for a bold, atmospheric, magazine-style opener. Always include an "image" with descriptive "alt" text when choosing "full-page", and request a "hero-image" in assetsNeeded. Keep "headline" short (3 to 7 words) and the optional "subheadline" to a single sentence so the overlay stays clean.
-Default the "variant" field to "standard" whenever the prompt does not clearly call for an immersive image-led opener.
+- "statement": a deliberately image-free, type-led hero — an oversized headline set directly on the brand color. Pick this for text-led trades and services (plumber, electrician, lawyer, accountant, consultant) with no strong hero photography, or when the prompt calls for a bold typographic opener. Never include an "image" with "statement". Keep "headline" short (3 to 7 words).
+Default the "variant" field to "standard" whenever the prompt does not clearly call for an immersive image-led or bold type-led opener.
 
 When validation feedback is provided, repair the plan instead of repeating the same mistake.`
 
@@ -1578,7 +1579,7 @@ Pick an ordered list of 2-8 block skeletons for ONE page.
 
 When the payload includes a "prompt", treat it as the authoritative brief for this business: it may list real services, prices, hours, contact details, testimonials, and FAQs. Provide blocks that give every relevant fact from the brief a home on this page (e.g. a features/service list for services, an faq block for FAQs, a footer or contact_form for contact details). Carry those facts forward in the contentBrief so the content pass fills them verbatim instead of inventing placeholders.
 
-When the payload includes "sourceHero" (a re-spin of an existing site), the first block must be the hero, and its contentBrief should tell the content pass to match the source hero's headline register and CTA intent (headline/subheadline/ctaLabel carried in sourceHero). When sourceHero.textOnly is true, the source led with type on brand colour rather than a photo — prefer a text-led hero variant over an image-led one. Never clone the source's layout; only match its energy.
+When the payload includes "sourceHero" (a re-spin of an existing site), the first block must be the hero, and its contentBrief should tell the content pass to match the source hero's headline register and CTA intent (headline/subheadline/ctaLabel carried in sourceHero). When sourceHero.textOnly is true, the source led with type on brand colour rather than a photo — pick the "statement" hero variant (type-led, brand-color background, no image) instead of an image-led one. Never clone the source's layout; only match its energy.
 
 The layout is structural only. Full props and copy are written in a later call.`
 
