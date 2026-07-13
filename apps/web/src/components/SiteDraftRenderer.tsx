@@ -714,7 +714,6 @@ function HeroBlock({
         'grid gap-6',
         isSplit && layout === 'split-right' && 'lg:order-1',
         isSplit && layout === 'split-left' && 'lg:order-2',
-        !isSplit && 'max-w-[22ch]',
       )}
     >
       <InlineEditableText
@@ -731,7 +730,7 @@ function HeroBlock({
         value={asText(props.headline)}
         placeholder="Add a headline that says what you do"
         as="h2"
-        className="[font-family:var(--font-heading)] text-[length:var(--size-heroHeading)] [font-weight:var(--font-headingWeight,700)] leading-[0.96] tracking-[-0.02em] text-[var(--color-text)]"
+        className="max-w-[16ch] [font-family:var(--font-heading)] text-[length:var(--size-heroHeading)] [font-weight:var(--font-headingWeight,700)] leading-[0.96] tracking-[-0.02em] text-[var(--color-text)] [text-wrap:balance]"
       />
       <InlineEditableText
         blockId={blockId}
