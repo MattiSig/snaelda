@@ -1,6 +1,9 @@
 package siteconfig
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestFooterValidatesStructuredContact(t *testing.T) {
 	registry := DefaultBlockRegistry()
@@ -54,16 +57,38 @@ func TestFooterRejectsMalformedStructuredContact(t *testing.T) {
 	}
 }
 
-func TestFooterRejectsLegacyStringAddress(t *testing.T) {
+func TestFooterToleratesLegacyContactShapes(t *testing.T) {
 	registry := DefaultBlockRegistry()
 
+	// Drafts generated before the structured contact contract stored the
+	// address as one free-text line and hours as free-text entries. Rejecting
+	// those shapes bricked every pre-contract site on load (Kaffi Krús
+	// incident, 2026-07-13): the renderer tolerates them, so validation must.
 	err := registry.ValidateProps("footer", BlockVersionV1, "props", map[string]any{
 		"copyright": "Copyright 2026 Fléttan",
 		"contact": map[string]any{
 			"address": "Laugavegur 12, 101 Reykjavík",
+			"phone":   "+354 555 0123",
+			"email":   "postur@kaffikrus.is",
+			"hours": []any{
+				"Mán–Fös 08:00–17:00",
+				"Lau 09:00–15:00",
+				"Sun 10:00–14:00",
+			},
 		},
 	})
-	if !hasValidationIssue(err, "invalid_type") {
-		t.Fatalf("expected legacy free-text address to be rejected, got %v", err)
+	if err != nil {
+		t.Fatalf("expected legacy contact shapes to validate, got %v", err)
+	}
+
+	// Legacy tolerance is bounded: absurdly long free-text still fails.
+	err = registry.ValidateProps("footer", BlockVersionV1, "props", map[string]any{
+		"copyright": "Copyright 2026 Fléttan",
+		"contact": map[string]any{
+			"address": strings.Repeat("x", 301),
+		},
+	})
+	if !hasValidationIssue(err, "invalid_length") {
+		t.Fatalf("expected over-long legacy address to be rejected, got %v", err)
 	}
 }

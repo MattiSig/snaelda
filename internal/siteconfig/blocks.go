@@ -1289,8 +1289,19 @@ func validateFooterAddress(path string, props map[string]any, key string, c *col
 	if !ok || value == nil {
 		return
 	}
-	object, ok := asObject(value)
 	fieldPath := child(path, key)
+	// Drafts generated before the structured contact contract (5801843) stored
+	// the address as one free-text line. The renderer folds a string address
+	// into `street`, so validation must keep those drafts loadable — rejecting
+	// them here bricked every pre-contract site on read (Kaffi Krús incident,
+	// 2026-07-13). New writes use the structured shape below.
+	if legacy, isString := value.(string); isString {
+		if len(legacy) > 300 {
+			c.add(fieldPath, "invalid_length", "address must be at most 300 characters")
+		}
+		return
+	}
+	object, ok := asObject(value)
 	if !ok {
 		c.add(fieldPath, "invalid_type", key+" must be an object")
 		return
@@ -1319,6 +1330,15 @@ func validateFooterHours(path string, props map[string]any, key string, c *colle
 	}
 	for index, raw := range values {
 		itemPath := fmt.Sprintf("%s[%d]", fieldPath, index)
+		// Pre-contract drafts stored hours as free-text lines ("Mán–Fös
+		// 08:00–17:00"); the renderer skips them, so validation tolerates them
+		// too instead of bricking the draft. New writes use the day-keyed shape.
+		if legacy, isString := raw.(string); isString {
+			if len(legacy) > 120 {
+				c.add(itemPath, "invalid_length", "hours entry must be at most 120 characters")
+			}
+			continue
+		}
 		entry, ok := asObject(raw)
 		if !ok {
 			c.add(itemPath, "invalid_type", "hours entry must be an object")
