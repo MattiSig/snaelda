@@ -97,6 +97,10 @@ type PageContentRequest struct {
 	Outline           []OutlinePage          `json:"outline"`
 	Layout            []PageLayoutBlock      `json:"layout"`
 	InterviewAnswers  []ClarifyingAnswer     `json:"interviewAnswers,omitempty"`
+	// Feedback carries the reason a previous attempt at this page failed so the
+	// retry can correct exactly that instead of the whole run collapsing to the
+	// mega-call fallback. Empty on the first attempt.
+	Feedback string `json:"feedback,omitempty"`
 }
 
 // PageContentResult is the selected layout filled with full props.

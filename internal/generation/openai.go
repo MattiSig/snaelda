@@ -352,34 +352,49 @@ func (p *OpenAIPlanner) BuildPageContent(ctx context.Context, request PageConten
 		return PageContentResult{}, fmt.Errorf("build page content: no layout blocks")
 	}
 	registry := siteconfig.DefaultBlockRegistry()
-	seenTypes := map[string]bool{}
-	blockVariants := make([]map[string]any, 0, len(layout))
-	for _, layoutBlock := range layout {
+
+	// Pin every output slot to exactly the layout block at that index. blocks is
+	// an object with one required key per position (block_0…block_N-1); each key
+	// is locked to layout[i]'s type via a const and to that type's prop schema.
+	// Because the position and type are structural (not model choices), the model
+	// can no longer legally return a shape that validatePageContentMatchesLayout
+	// then rejects — the drift that discarded a whole page's tokens in QA.
+	// Distinct prop schemas are hoisted into $defs and referenced so a page whose
+	// layout repeats a block type stays compact.
+	defs := map[string]any{}
+	blockProps := make(map[string]any, len(layout))
+	positionKeys := make([]string, len(layout))
+	for index, layoutBlock := range layout {
 		blockType := strings.TrimSpace(layoutBlock.Type)
-		if blockType == "" || seenTypes[blockType] {
-			continue
+		if blockType == "" {
+			return PageContentResult{}, fmt.Errorf("build page content: layout block %d has no type", index)
 		}
-		seenTypes[blockType] = true
-		def, err := registry.Lookup(blockType, siteconfig.BlockVersionV1)
-		if err != nil {
-			return PageContentResult{}, fmt.Errorf("build page content: lookup %s: %w", blockType, err)
-		}
-		propsSchema := def.PropSchema
-		if len(propsSchema) == 0 {
-			propsSchema = map[string]any{
-				"type":                 "object",
-				"additionalProperties": false,
+		defKey := "props_" + blockType
+		if _, ok := defs[defKey]; !ok {
+			def, err := registry.Lookup(blockType, siteconfig.BlockVersionV1)
+			if err != nil {
+				return PageContentResult{}, fmt.Errorf("build page content: lookup %s: %w", blockType, err)
 			}
+			propsSchema := def.PropSchema
+			if len(propsSchema) == 0 {
+				propsSchema = map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+				}
+			}
+			defs[defKey] = propsSchema
 		}
-		blockVariants = append(blockVariants, map[string]any{
+		key := fmt.Sprintf("block_%d", index)
+		positionKeys[index] = key
+		blockProps[key] = map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
 			"required":             []string{"type", "props"},
 			"properties": map[string]any{
 				"type":  map[string]any{"type": "string", "const": blockType},
-				"props": propsSchema,
+				"props": map[string]any{"$ref": "#/$defs/" + defKey},
 			},
-		})
+		}
 	}
 
 	userJSON, err := json.Marshal(request)
@@ -389,17 +404,18 @@ func (p *OpenAIPlanner) BuildPageContent(ctx context.Context, request PageConten
 	schema := map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
+		"$defs":                defs,
 		"required":             []string{"blocks"},
 		"properties": map[string]any{
 			"blocks": map[string]any{
-				"type":     "array",
-				"minItems": len(layout),
-				"maxItems": len(layout),
-				"items":    map[string]any{"anyOf": blockVariants},
+				"type":                 "object",
+				"additionalProperties": false,
+				"required":             positionKeys,
+				"properties":           blockProps,
 			},
 		},
 	}
-	var responsePayload PageContentResult
+	var responsePayload pageContentPayload
 	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
 		Name:   "page_content",
 		Schema: schema,
@@ -409,10 +425,35 @@ func (p *OpenAIPlanner) BuildPageContent(ctx context.Context, request PageConten
 	}, &responsePayload); err != nil {
 		return PageContentResult{}, err
 	}
-	if err := validatePageContentMatchesLayout(responsePayload, layout); err != nil {
+	result, err := responsePayload.toResult(layout)
+	if err != nil {
 		return PageContentResult{}, err
 	}
-	return responsePayload, nil
+	if err := validatePageContentMatchesLayout(result, layout); err != nil {
+		return PageContentResult{}, err
+	}
+	return result, nil
+}
+
+// pageContentPayload is the wire shape of the page-content response. blocks is a
+// position-keyed object (block_0…block_N-1) rather than an array so the strict
+// schema can pin each position to exactly one block type. toResult flattens it
+// back into the ordered PageContentResult the rest of the pipeline consumes.
+type pageContentPayload struct {
+	Blocks map[string]PageContentBlock `json:"blocks"`
+}
+
+func (p pageContentPayload) toResult(layout []PageLayoutBlock) (PageContentResult, error) {
+	blocks := make([]PageContentBlock, len(layout))
+	for index := range layout {
+		key := fmt.Sprintf("block_%d", index)
+		block, ok := p.Blocks[key]
+		if !ok {
+			return PageContentResult{}, fmt.Errorf("page content missing %s", key)
+		}
+		blocks[index] = block
+	}
+	return PageContentResult{Blocks: blocks}, nil
 }
 
 func pageLayoutSchema(allowedTypes []string) map[string]any {
@@ -1532,6 +1573,7 @@ Pick an ordered list of 2-8 block skeletons for ONE page.
 - Include purpose, contentBrief, and variantHint for each block. Keep these concise; do not write final copy.
 - Use contact_form only when the page should collect visitor input. Do not use testimonials, cta_band, or text_section as a substitute for an actual form.
 - Do not duplicate sections the outline assigns to a different page.
+- Prefer gallery over image_text when a page shows several photos of work, products, spaces, or portfolio pieces (e.g. a trades "our work" section or a visual proof strip). Reserve image_text for a single supporting image beside copy.
 - End with footer when this page needs site-level contact details, navigation, socials, or legal copy.
 
 When the payload includes a "prompt", treat it as the authoritative brief for this business: it may list real services, prices, hours, contact details, testimonials, and FAQs. Provide blocks that give every relevant fact from the brief a home on this page (e.g. a features/service list for services, an faq block for FAQs, a footer or contact_form for contact details). Carry those facts forward in the contentBrief so the content pass fills them verbatim instead of inventing placeholders.
@@ -1552,7 +1594,9 @@ Fill full props for ONE page's supplied layout in a single pass.
 The payload's "prompt" is the authoritative brief for this business. When it states real facts — business name, service names and descriptions, prices, opening hours, phone, email, address, testimonials, FAQ answers — reproduce them VERBATIM in the matching props. Never overwrite a supplied fact with a placeholder, a rounded number, or an invented substitute. Each layout block's contentBrief tells you which facts belong in that block.
 
 Repeater items (faq items, feature items, packages, etc.): write 3-6 unless the page goal demands more.
-Names, prices, hours, exact addresses: use the values the prompt + interview answers supply; invent only when they are genuinely absent, and then leave plausible placeholders the user can edit.`
+Names, prices, hours, exact addresses: use the values the prompt + interview answers supply; invent only when they are genuinely absent, and then leave plausible placeholders the user can edit.
+
+If the payload includes a "feedback" field, a previous attempt at this page failed for the reason it states. Fix exactly that while keeping every other block correct; still return one block per layout position, in order.`
 
 const clarifyingQuestionsSystemPrompt = `You are the intake-form planner for Snaelda's site generator.
 Return JSON only, matching the supplied schema exactly.

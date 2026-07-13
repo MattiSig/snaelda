@@ -14,6 +14,22 @@ import (
 // calls. A 5-page site finishes in roughly one call-duration.
 const maxParallelPageContent = 4
 
+// maxPageContentAttempts bounds the per-page content composer to one retry:
+// the first attempt plus a single feedback-guided correction before the page
+// (and only that page) is treated as failed.
+const maxPageContentAttempts = 2
+
+// pageContentRetryFeedback turns a content-composer failure into a short
+// directive the retry attempt sees in its payload's "feedback" field.
+func pageContentRetryFeedback(err error) string {
+	if err == nil {
+		return ""
+	}
+	return "The previous attempt failed to produce valid page content: " +
+		strings.TrimSpace(err.Error()) +
+		". Return every block for the supplied layout in order, with props that satisfy each block's schema exactly."
+}
+
 // generateDraftDecomposed runs the three-step pipeline:
 //  1. BuildOutline (1 small call)         → structure + theme + pages
 //  2. BuildPageLayout (1 call per page)   → ordered block skeleton
@@ -285,7 +301,7 @@ func (s *Service) buildPagePlanFromLayout(
 		return generationPagePlan{}, errors.New("layout returned no blocks")
 	}
 
-	content, err := s.decomposedPlanner.BuildPageContent(ctx, PageContentRequest{
+	contentRequest := PageContentRequest{
 		SiteName:          siteName,
 		SiteGoal:          siteGoal,
 		Prompt:            prompt,
@@ -295,9 +311,25 @@ func (s *Service) buildPagePlanFromLayout(
 		Outline:           outline,
 		Layout:            layout.Blocks,
 		InterviewAnswers:  interviewAnswers,
-	})
-	if err != nil {
-		return generationPagePlan{}, fmt.Errorf("write page content: %w", err)
+	}
+	// One retry, feeding the failure back as guidance. The schema now pins each
+	// slot to its layout type so drift is structurally impossible, but a prop-
+	// validation slip on a single page should be repaired in place rather than
+	// abandoning the whole decomposed run to the mega-call fallback.
+	var content PageContentResult
+	var contentErr error
+	for attempt := 0; attempt < maxPageContentAttempts; attempt++ {
+		content, contentErr = s.decomposedPlanner.BuildPageContent(ctx, contentRequest)
+		if contentErr == nil {
+			break
+		}
+		if ctx.Err() != nil {
+			return generationPagePlan{}, fmt.Errorf("write page content: %w", contentErr)
+		}
+		contentRequest.Feedback = pageContentRetryFeedback(contentErr)
+	}
+	if contentErr != nil {
+		return generationPagePlan{}, fmt.Errorf("write page content: %w", contentErr)
 	}
 
 	blocks := make([]generationBlockPlan, 0, len(content.Blocks))

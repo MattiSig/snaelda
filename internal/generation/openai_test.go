@@ -3,6 +3,7 @@ package generation
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -175,7 +176,7 @@ func TestOpenAIPlannerBuildPageContentUsesSelectedLayoutSchemas(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{{
 				"message": map[string]any{
-					"content": `{"blocks":[{"type":"hero","props":{"variant":"standard","headline":"Ask about coffee","layout":"centered"}},{"type":"contact_form","props":{"heading":"Send an inquiry","submitLabel":"Send inquiry","fields":[{"name":"name","label":"Name","type":"name","required":true},{"name":"email","label":"Email","type":"email","required":true},{"name":"message","label":"Message","type":"message","required":true}]}},{"type":"footer","props":{"copyright":"Gothenburg Roastery"}}]}`,
+					"content": `{"blocks":{"block_0":{"type":"hero","props":{"variant":"standard","headline":"Ask about coffee","layout":"centered"}},"block_1":{"type":"contact_form","props":{"heading":"Send an inquiry","submitLabel":"Send inquiry","fields":[{"name":"name","label":"Name","type":"name","required":true},{"name":"email","label":"Email","type":"email","required":true},{"name":"message","label":"Message","type":"message","required":true}]}},"block_2":{"type":"footer","props":{"copyright":"Gothenburg Roastery"}}}}`,
 				},
 			}},
 		})
@@ -213,19 +214,41 @@ func TestOpenAIPlannerBuildPageContentUsesSelectedLayoutSchemas(t *testing.T) {
 	schema := jsonSchema["schema"].(map[string]any)
 	properties := schema["properties"].(map[string]any)
 	blocks := properties["blocks"].(map[string]any)
-	if blocks["minItems"] != float64(3) || blocks["maxItems"] != float64(3) {
-		t.Fatalf("expected exact layout length in schema, got %#v", blocks)
+	if blocks["type"] != "object" {
+		t.Fatalf("expected blocks to be a position-keyed object, got %#v", blocks)
 	}
-	items := blocks["items"].(map[string]any)
-	anyOf := items["anyOf"].([]any)
+	required := blocks["required"].([]any)
+	if len(required) != 3 {
+		t.Fatalf("expected one required key per layout position, got %#v", required)
+	}
+	blockProps := blocks["properties"].(map[string]any)
 	types := map[string]bool{}
-	for _, candidate := range anyOf {
-		props := candidate.(map[string]any)["properties"].(map[string]any)
-		blockType := props["type"].(map[string]any)["const"].(string)
-		types[blockType] = true
+	for index, wantType := range []string{"hero", "contact_form", "footer"} {
+		key := fmt.Sprintf("block_%d", index)
+		slot, ok := blockProps[key].(map[string]any)
+		if !ok {
+			t.Fatalf("expected schema to pin %s, got %#v", key, blockProps)
+		}
+		slotProps := slot["properties"].(map[string]any)
+		gotType := slotProps["type"].(map[string]any)["const"].(string)
+		if gotType != wantType {
+			t.Fatalf("expected %s pinned to %q, got %q", key, wantType, gotType)
+		}
+		types[gotType] = true
+		// Each slot references its type's prop schema in $defs.
+		ref := slotProps["props"].(map[string]any)["$ref"].(string)
+		if ref != "#/$defs/props_"+wantType {
+			t.Fatalf("expected %s props to $ref props_%s, got %q", key, wantType, ref)
+		}
 	}
 	if len(types) != 3 || !types["hero"] || !types["contact_form"] || !types["footer"] {
-		t.Fatalf("expected schema to include only selected block types, got %#v", types)
+		t.Fatalf("expected schema to pin only selected block types, got %#v", types)
+	}
+	defs := schema["$defs"].(map[string]any)
+	for _, wantType := range []string{"hero", "contact_form", "footer"} {
+		if _, ok := defs["props_"+wantType]; !ok {
+			t.Fatalf("expected $defs to define props_%s, got %#v", wantType, defs)
+		}
 	}
 
 	messages := requestBody["messages"].([]any)
@@ -240,7 +263,7 @@ func TestOpenAIPlannerBuildPageContentRejectsLayoutMismatch(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{{
 				"message": map[string]any{
-					"content": `{"blocks":[{"type":"contact_form","props":{"heading":"Wrong first","submitLabel":"Send","fields":[{"name":"email","label":"Email","type":"email","required":true}]}},{"type":"hero","props":{"headline":"Wrong order"}}]}`,
+					"content": `{"blocks":{"block_0":{"type":"contact_form","props":{"heading":"Wrong first","submitLabel":"Send","fields":[{"name":"email","label":"Email","type":"email","required":true}]}},"block_1":{"type":"hero","props":{"headline":"Wrong order"}}}}`,
 				},
 			}},
 		})
@@ -355,7 +378,7 @@ func captureSystemPrompt(t *testing.T, request PageContentRequest) string {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{{
 				"message": map[string]any{
-					"content": `{"blocks":[{"type":"hero","props":{"variant":"standard","headline":"Halló","layout":"centered"}}]}`,
+					"content": `{"blocks":{"block_0":{"type":"hero","props":{"variant":"standard","headline":"Halló","layout":"centered"}}}}`,
 				},
 			}},
 		})
@@ -457,7 +480,7 @@ func TestRespinBriefReachesPerPageCalls(t *testing.T) {
 
 	t.Run("content", func(t *testing.T) {
 		user, handler := captureUserMessage(t, func() string {
-			return `{"choices":[{"message":{"content":"{\"blocks\":[{\"type\":\"hero\",\"props\":{\"variant\":\"standard\",\"headline\":\"Fast plumbing\",\"layout\":\"centered\"}}]}"}}]}`
+			return `{"choices":[{"message":{"content":"{\"blocks\":{\"block_0\":{\"type\":\"hero\",\"props\":{\"variant\":\"standard\",\"headline\":\"Fast plumbing\",\"layout\":\"centered\"}}}}"}}]}`
 		})
 		server := httptest.NewServer(handler)
 		defer server.Close()
