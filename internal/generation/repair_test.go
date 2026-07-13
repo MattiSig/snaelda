@@ -57,7 +57,7 @@ func TestRepairGenerationPlanConvertsWrongBlockWhenModelIntendedContactForm(t *t
 		},
 	}
 
-	repaired := repairGenerationPlan(plan, "")
+	repaired := repairGenerationPlan(plan, "", true)
 
 	contactPage := repaired.Pages[1]
 	formIndex := blockIndex(contactPage.Blocks, "contact_form")
@@ -116,7 +116,7 @@ func TestRepairGenerationPlanDoesNotMakeContactPageFormMandatory(t *testing.T) {
 		},
 	}
 
-	repaired := repairGenerationPlan(plan, "")
+	repaired := repairGenerationPlan(plan, "", true)
 
 	if blockIndex(repaired.Pages[1].Blocks, "contact_form") != -1 {
 		t.Fatalf("did not expect contact page to gain mandatory contact_form, got %#v", repaired.Pages[1].Blocks)
@@ -181,4 +181,97 @@ func blockIndex(blocks []generationBlockPlan, blockType string) int {
 		}
 	}
 	return -1
+}
+
+// planWithEmptyRepeaters returns a home page with a hero followed by repeater
+// blocks that carry no real items — the shape a model produces when it plans a
+// section it has no facts to fill.
+func planWithEmptyRepeaters() generationPlan {
+	return generationPlan{
+		SiteName: "North Light Studio",
+		SiteGoal: "Help visitors understand the studio and get in touch.",
+		Theme:    siteconfig.ThemePreset(siteconfig.ThemePaletteCleanLocal),
+		Pages: []generationPagePlan{
+			{
+				Title: "Home",
+				Slug:  "/",
+				Blocks: []generationBlockPlan{
+					{
+						Type:  "hero",
+						Props: map[string]any{"headline": "Quiet photography for real homes"},
+					},
+					{
+						Type:  "testimonials",
+						Props: map[string]any{"heading": "Kind words", "items": []any{}},
+					},
+					{
+						Type:  "faq",
+						Props: map[string]any{"heading": "Questions", "items": []any{}},
+					},
+				},
+			},
+		},
+	}
+}
+
+func TestRepairGenerationPlanDropsEmptyRepeatersOnFreshGeneration(t *testing.T) {
+	repaired := repairGenerationPlan(planWithEmptyRepeaters(), "", true)
+
+	home := repaired.Pages[0]
+	if blockIndex(home.Blocks, "testimonials") != -1 {
+		t.Fatalf("expected empty testimonials block dropped on fresh generation, got %#v", home.Blocks)
+	}
+	if blockIndex(home.Blocks, "faq") != -1 {
+		t.Fatalf("expected empty faq block dropped on fresh generation, got %#v", home.Blocks)
+	}
+	if blockIndex(home.Blocks, "hero") == -1 {
+		t.Fatalf("expected hero to survive, got %#v", home.Blocks)
+	}
+}
+
+func TestRepairGenerationPlanKeepsPlaceholderRepeatersOnReprompt(t *testing.T) {
+	repaired := repairGenerationPlan(planWithEmptyRepeaters(), "", false)
+
+	home := repaired.Pages[0]
+	testimonialsIndex := blockIndex(home.Blocks, "testimonials")
+	if testimonialsIndex == -1 {
+		t.Fatalf("expected testimonials placeholder kept on reprompt, got %#v", home.Blocks)
+	}
+	items, ok := home.Blocks[testimonialsIndex].Props["items"].([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected one placeholder testimonial item on reprompt, got %#v", home.Blocks[testimonialsIndex].Props["items"])
+	}
+	if blockIndex(home.Blocks, "faq") == -1 {
+		t.Fatalf("expected faq placeholder kept on reprompt, got %#v", home.Blocks)
+	}
+}
+
+func TestGeneratedTextMentionsContactForm(t *testing.T) {
+	forms := []string{
+		"Contact form",
+		"Use this form to reach us",
+		"Fill out the form below",
+		"Request service now",
+		"Send us a message and we'll reply",
+		"Request a quote",
+		"Fylltu út eyðublaðið",
+	}
+	for _, value := range forms {
+		if !generatedTextMentionsContactForm(value) {
+			t.Errorf("expected %q to read as contact-form intent", value)
+		}
+	}
+
+	// Generic navigation CTAs must NOT be rewritten into an inline form.
+	notForms := []string{
+		"Get in touch",
+		"Contact us",
+		"Learn more about the studio",
+		"",
+	}
+	for _, value := range notForms {
+		if generatedTextMentionsContactForm(value) {
+			t.Errorf("did not expect %q to read as contact-form intent", value)
+		}
+	}
 }

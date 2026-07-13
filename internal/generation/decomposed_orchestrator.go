@@ -115,7 +115,7 @@ func (s *Service) generateDraftDecomposed(
 		Pages:          pagePlans,
 		Assumptions:    outline.Assumptions,
 	}
-	plan = repairGenerationPlan(plan, input.PreferredLanguage)
+	plan = repairGenerationPlan(plan, input.PreferredLanguage, true)
 
 	// English must never leak into an Icelandic draft (Spec 22). The decomposed
 	// pipeline has no retry loop of its own, so surface any leak as a
@@ -246,7 +246,9 @@ func (s *Service) repromptSiteDecomposed(
 		Pages:          pagePlans,
 		Assumptions:    outline.Assumptions,
 	}
-	plan = repairGenerationPlan(plan, currentDraft.Site.DefaultLocale)
+	// Reprompt is an in-builder edit: keep placeholder repeater rows so a
+	// section the owner is mid-editing stays visible rather than vanishing.
+	plan = repairGenerationPlan(plan, currentDraft.Site.DefaultLocale, false)
 
 	// Reprompt keeps the existing site; buildDraftFromPlan mints a throwaway id
 	// that applySiteIdentity (in the caller) replaces with currentDraft's id.

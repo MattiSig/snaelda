@@ -808,7 +808,7 @@ func (s *Service) generateDraftWithRetry(ctx context.Context, workspaceID string
 		if err != nil {
 			return generationPlan{}, siteconfig.SiteDraft{}, attempt - 1, fmt.Errorf("build generation plan: %w", err)
 		}
-		plan = repairGenerationPlan(plan, input.PreferredLanguage)
+		plan = repairGenerationPlan(plan, input.PreferredLanguage, true)
 		if tracker != nil && len(plan.AssetsNeeded) > 0 && s.imagery.available() {
 			if err := tracker.emit(ctx, "assets.fetch"); err != nil {
 				return generationPlan{}, siteconfig.SiteDraft{}, attempt - 1, err
@@ -1669,7 +1669,7 @@ func (s *Service) buildWholePageRepromptPlan(
 	if len(plan.Pages) > 0 {
 		pagePlan := repairSecondaryPage(draft.Site.Name, draft.Site.SEO.Description, plan.Pages[0], map[string]bool{
 			page.Slug: true,
-		})
+		}, false)
 		if len(pagePlan.Blocks) > 0 {
 			pagePlan.Title = firstNonEmpty(pagePlan.Title, page.Title)
 			pagePlan.Slug = page.Slug

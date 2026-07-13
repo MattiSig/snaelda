@@ -1441,6 +1441,10 @@ Hero block variants:
 - "statement": a deliberately image-free, type-led hero — an oversized headline set directly on the brand color. Pick this for text-led trades and services (plumber, electrician, lawyer, accountant, consultant) with no strong hero photography, or when the prompt calls for a bold typographic opener. Never include an "image" with "statement". Keep "headline" short (3 to 7 words).
 Default the "variant" field to "standard" whenever the prompt does not clearly call for an immersive image-led or bold type-led opener.
 
+Block rules:
+- Use contact_form only when a page should collect visitor input. Do not use testimonials, cta_band, or text_section as a substitute for an actual form, and never head a non-form block "Contact us" / "Get in touch" as if it were one.
+- Every call-to-action must point at a real destination: link only to a page that exists in this plan or to an on-page anchor a block on that same page actually renders. Do not invent hrefs like "/#contact" for sections that are not present.
+
 When validation feedback is provided, repair the plan instead of repeating the same mistake.`
 
 const blockSuggestSystemPrompt = `You are the per-block AI editor for Snaelda.

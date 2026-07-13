@@ -16,7 +16,15 @@ var (
 	generatedSlugReplacer          = regexp.MustCompile(`[^a-z0-9]+`)
 )
 
-func repairGenerationPlan(plan generationPlan, locale string) generationPlan {
+// repairGenerationPlan normalizes a generated plan into a valid draft.
+//
+// dropEmptyRepeaters controls how repeater blocks (testimonials, features,
+// gallery, pricing, faq, team) with no real items are handled: on a fresh
+// first-generation or re-spin draft (true) the empty block is dropped entirely
+// rather than shipping a meta-instruction placeholder the visitor would see; on
+// an in-builder reprompt (false) the placeholder is kept so the owner sees the
+// section exists and can fill it in.
+func repairGenerationPlan(plan generationPlan, locale string, dropEmptyRepeaters bool) generationPlan {
 	themeSelection := siteconfig.ThemeSelection{}
 	if hasThemeSelection(plan.ThemeSelection) {
 		themeSelection = normalizeThemeSelection(plan.ThemeSelection)
@@ -32,7 +40,7 @@ func repairGenerationPlan(plan generationPlan, locale string) generationPlan {
 	}
 
 	repaired.Theme = repairTheme(repaired.ThemePreset, repaired.ThemeSelection, plan.Theme)
-	repaired.Pages = repairPages(repaired.SiteName, repaired.SiteGoal, plan.Pages)
+	repaired.Pages = repairPages(repaired.SiteName, repaired.SiteGoal, plan.Pages, dropEmptyRepeaters)
 	return repaired
 }
 
@@ -140,7 +148,7 @@ func repairAssumptions(values []string) []string {
 	return repaired
 }
 
-func repairPages(siteName string, siteGoal string, pages []generationPagePlan) []generationPagePlan {
+func repairPages(siteName string, siteGoal string, pages []generationPagePlan, dropEmptyRepeaters bool) []generationPagePlan {
 	if len(pages) == 0 {
 		return []generationPagePlan{fallbackHomePage(siteName, siteGoal)}
 	}
@@ -157,7 +165,7 @@ func repairPages(siteName string, siteGoal string, pages []generationPagePlan) [
 			break
 		}
 	}
-	repaired = append(repaired, repairHomePage(siteName, siteGoal, homeSource))
+	repaired = append(repaired, repairHomePage(siteName, siteGoal, homeSource, dropEmptyRepeaters))
 
 	for index, page := range pages {
 		if len(repaired) == siteconfig.MaxPagesPerSite {
@@ -166,15 +174,15 @@ func repairPages(siteName string, siteGoal string, pages []generationPagePlan) [
 		if index == homeIndex {
 			continue
 		}
-		repaired = append(repaired, repairSecondaryPage(siteName, siteGoal, page, usedSlugs))
+		repaired = append(repaired, repairSecondaryPage(siteName, siteGoal, page, usedSlugs, dropEmptyRepeaters))
 	}
 
 	return repaired
 }
 
-func repairHomePage(siteName string, siteGoal string, page generationPagePlan) generationPagePlan {
+func repairHomePage(siteName string, siteGoal string, page generationPagePlan, dropEmptyRepeaters bool) generationPagePlan {
 	title := firstNonEmpty(cleanGeneratedText(page.Title, 120), "Home")
-	blocks := repairBlocks(title, siteGoal, "/", page.Blocks)
+	blocks := repairBlocks(title, siteGoal, "/", page.Blocks, dropEmptyRepeaters)
 	description := firstNonEmpty(
 		cleanGeneratedText(page.SEO.Description, 180),
 		cleanGeneratedText(page.Goal, 180),
@@ -194,10 +202,10 @@ func repairHomePage(siteName string, siteGoal string, page generationPagePlan) g
 	}
 }
 
-func repairSecondaryPage(siteName string, siteGoal string, page generationPagePlan, usedSlugs map[string]bool) generationPagePlan {
+func repairSecondaryPage(siteName string, siteGoal string, page generationPagePlan, usedSlugs map[string]bool, dropEmptyRepeaters bool) generationPagePlan {
 	title := firstNonEmpty(cleanGeneratedText(page.Title, 120), "Page")
 	slug := uniqueGeneratedPageSlug(page.Slug, title, usedSlugs)
-	blocks := repairBlocks(title, siteGoal, slug, page.Blocks)
+	blocks := repairBlocks(title, siteGoal, slug, page.Blocks, dropEmptyRepeaters)
 	blocks = repairIntendedContactFormBlock(title, page.Goal, blocks)
 	description := firstNonEmpty(
 		cleanGeneratedText(page.SEO.Description, 180),
@@ -259,12 +267,12 @@ func slugsCandidateFromTitle(title string) string {
 	return text
 }
 
-func repairBlocks(pageTitle string, pageGoal string, pageSlug string, blocks []generationBlockPlan) []generationBlockPlan {
+func repairBlocks(pageTitle string, pageGoal string, pageSlug string, blocks []generationBlockPlan, dropEmptyRepeaters bool) []generationBlockPlan {
 	registry := siteconfig.DefaultBlockRegistry()
 	repaired := make([]generationBlockPlan, 0, len(blocks))
 
 	for _, block := range blocks {
-		next, ok := repairBlockPlan(block, pageTitle, pageGoal, pageSlug)
+		next, ok := repairBlockPlan(block, pageTitle, pageGoal, pageSlug, dropEmptyRepeaters)
 		if !ok {
 			continue
 		}
@@ -354,11 +362,38 @@ func generatedBlockLooksLikeContactFormIntent(block generationBlockPlan) bool {
 
 func generatedTextMentionsContactForm(value string) bool {
 	text := strings.ToLower(strings.TrimSpace(value))
-	return strings.Contains(text, "contact form") ||
-		strings.Contains(text, "kontaktform") ||
-		strings.Contains(text, "inquiry form") ||
-		strings.Contains(text, "enquiry form") ||
-		strings.Contains(text, "message form")
+	for _, marker := range contactFormIntentMarkers {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// contactFormIntentMarkers are phrases that signal a block is standing in for a
+// real contact form. Kept to explicit form-action language ("use this form",
+// "request service") rather than generic navigation CTAs ("get in touch",
+// "contact us") so a cta_band that merely links to a contact page is not
+// rewritten into an inline form. Includes Icelandic form phrasing for the
+// Iceland-first re-spin path.
+var contactFormIntentMarkers = []string{
+	"contact form",
+	"kontaktform",
+	"inquiry form",
+	"enquiry form",
+	"message form",
+	"use this form",
+	"use the form",
+	"fill out the form",
+	"fill out this form",
+	"fill in the form",
+	"request service",
+	"request a quote",
+	"request a callback",
+	"send us a message",
+	"send a message",
+	"eyðublað",
+	"fylltu út",
 }
 
 func generatedBlocksIncludeType(blocks []generationBlockPlan, blockType string) bool {
@@ -370,7 +405,11 @@ func generatedBlocksIncludeType(blocks []generationBlockPlan, blockType string) 
 	return false
 }
 
-func repairBlockPlan(block generationBlockPlan, pageTitle string, pageGoal string, pageSlug string) (generationBlockPlan, bool) {
+func repairBlockPlan(block generationBlockPlan, pageTitle string, pageGoal string, pageSlug string, dropEmptyRepeaters bool) (generationBlockPlan, bool) {
+	// On a fresh generation an empty repeater block should be dropped rather
+	// than shipped with a meta-instruction placeholder; on an in-builder
+	// reprompt the placeholder is kept so the section stays visible to edit.
+	allowPlaceholder := !dropEmptyRepeaters
 	switch strings.TrimSpace(block.Type) {
 	case "hero":
 		props := repairHeroProps(block.Props, pageTitle, pageSlug)
@@ -382,22 +421,40 @@ func repairBlockPlan(block generationBlockPlan, pageTitle string, pageGoal strin
 		props := repairImageTextProps(block.Props, pageTitle, pageGoal)
 		return generationBlockPlan{Type: "image_text", Purpose: cleanGeneratedText(block.Purpose, 280), Props: props}, true
 	case "features_grid":
-		props := repairFeaturesGridProps(block.Props, pageTitle, pageGoal)
+		props, keep := repairFeaturesGridProps(block.Props, pageTitle, pageGoal, allowPlaceholder)
+		if !keep {
+			return generationBlockPlan{}, false
+		}
 		return generationBlockPlan{Type: "features_grid", Purpose: cleanGeneratedText(block.Purpose, 280), Props: props}, true
 	case "gallery":
-		props := repairGalleryProps(block.Props, pageTitle, pageGoal)
+		props, keep := repairGalleryProps(block.Props, pageTitle, pageGoal, allowPlaceholder)
+		if !keep {
+			return generationBlockPlan{}, false
+		}
 		return generationBlockPlan{Type: "gallery", Purpose: cleanGeneratedText(block.Purpose, 280), Props: props}, true
 	case "testimonials":
-		props := repairTestimonialsProps(block.Props, pageTitle)
+		props, keep := repairTestimonialsProps(block.Props, pageTitle, allowPlaceholder)
+		if !keep {
+			return generationBlockPlan{}, false
+		}
 		return generationBlockPlan{Type: "testimonials", Purpose: cleanGeneratedText(block.Purpose, 280), Props: props}, true
 	case "pricing_packages":
-		props := repairPricingPackagesProps(block.Props, pageTitle, pageSlug)
+		props, keep := repairPricingPackagesProps(block.Props, pageTitle, pageSlug, allowPlaceholder)
+		if !keep {
+			return generationBlockPlan{}, false
+		}
 		return generationBlockPlan{Type: "pricing_packages", Purpose: cleanGeneratedText(block.Purpose, 280), Props: props}, true
 	case "faq":
-		props := repairFAQProps(block.Props, pageTitle)
+		props, keep := repairFAQProps(block.Props, pageTitle, allowPlaceholder)
+		if !keep {
+			return generationBlockPlan{}, false
+		}
 		return generationBlockPlan{Type: "faq", Purpose: cleanGeneratedText(block.Purpose, 280), Props: props}, true
 	case "team_profile_cards":
-		props := repairTeamProfileCardsProps(block.Props, pageTitle)
+		props, keep := repairTeamProfileCardsProps(block.Props, pageTitle, allowPlaceholder)
+		if !keep {
+			return generationBlockPlan{}, false
+		}
 		return generationBlockPlan{Type: "team_profile_cards", Purpose: cleanGeneratedText(block.Purpose, 280), Props: props}, true
 	case "contact_form":
 		props := repairContactFormProps(block.Props, pageTitle)
@@ -461,7 +518,7 @@ func repairImageTextProps(props map[string]any, pageTitle string, pageGoal strin
 	return repaired
 }
 
-func repairFeaturesGridProps(props map[string]any, pageTitle string, pageGoal string) map[string]any {
+func repairFeaturesGridProps(props map[string]any, pageTitle string, pageGoal string, allowPlaceholder bool) (map[string]any, bool) {
 	items := make([]any, 0)
 	if rawItems, ok := props["items"].([]any); ok {
 		for _, raw := range rawItems {
@@ -488,6 +545,9 @@ func repairFeaturesGridProps(props map[string]any, pageTitle string, pageGoal st
 		}
 	}
 	if len(items) == 0 {
+		if !allowPlaceholder {
+			return nil, false
+		}
 		items = append(items, map[string]any{
 			"title": firstNonEmpty(pageTitle, "What you get"),
 			"body":  firstNonEmpty(pageGoal, "Add a concise benefit statement."),
@@ -499,10 +559,10 @@ func repairFeaturesGridProps(props map[string]any, pageTitle string, pageGoal st
 		"intro":   readGeneratedText(props, "intro", 500),
 		"items":   items,
 		"columns": readIntEnum(props, "columns", 3, 2, 3, 4),
-	}
+	}, true
 }
 
-func repairGalleryProps(props map[string]any, pageTitle string, pageGoal string) map[string]any {
+func repairGalleryProps(props map[string]any, pageTitle string, pageGoal string, allowPlaceholder bool) (map[string]any, bool) {
 	images := make([]any, 0)
 	if rawItems, ok := props["images"].([]any); ok {
 		for _, raw := range rawItems {
@@ -534,6 +594,9 @@ func repairGalleryProps(props map[string]any, pageTitle string, pageGoal string)
 		}
 	}
 	if len(images) == 0 {
+		if !allowPlaceholder {
+			return nil, false
+		}
 		images = append(images, map[string]any{
 			"title":   firstNonEmpty(pageTitle, "Gallery highlight"),
 			"caption": firstNonEmpty(pageGoal, "Add a short note describing the image or work shown here."),
@@ -545,10 +608,10 @@ func repairGalleryProps(props map[string]any, pageTitle string, pageGoal string)
 		"intro":   readGeneratedText(props, "intro", 500),
 		"images":  images,
 		"layout":  readEnum(props, "layout", "grid", "grid", "masonry", "spotlight"),
-	}
+	}, true
 }
 
-func repairTestimonialsProps(props map[string]any, pageTitle string) map[string]any {
+func repairTestimonialsProps(props map[string]any, pageTitle string, allowPlaceholder bool) (map[string]any, bool) {
 	items := make([]any, 0)
 	if rawItems, ok := props["items"].([]any); ok {
 		for _, raw := range rawItems {
@@ -578,6 +641,9 @@ func repairTestimonialsProps(props map[string]any, pageTitle string) map[string]
 		}
 	}
 	if len(items) == 0 {
+		if !allowPlaceholder {
+			return nil, false
+		}
 		items = append(items, map[string]any{
 			"quote": "Add one concise testimonial that speaks to the actual experience of working together.",
 			"name":  "Client name",
@@ -589,10 +655,10 @@ func repairTestimonialsProps(props map[string]any, pageTitle string) map[string]
 		"heading": firstNonEmpty(readGeneratedText(props, "heading", 120), pageTitle),
 		"intro":   readGeneratedText(props, "intro", 500),
 		"items":   items,
-	}
+	}, true
 }
 
-func repairPricingPackagesProps(props map[string]any, pageTitle string, pageSlug string) map[string]any {
+func repairPricingPackagesProps(props map[string]any, pageTitle string, pageSlug string, allowPlaceholder bool) (map[string]any, bool) {
 	plans := make([]any, 0)
 	if rawPlans, ok := props["plans"].([]any); ok {
 		for _, raw := range rawPlans {
@@ -626,6 +692,9 @@ func repairPricingPackagesProps(props map[string]any, pageTitle string, pageSlug
 		}
 	}
 	if len(plans) == 0 {
+		if !allowPlaceholder {
+			return nil, false
+		}
 		plans = append(plans, map[string]any{
 			"name":        firstNonEmpty(pageTitle, "Starter"),
 			"price":       "From $350",
@@ -639,10 +708,10 @@ func repairPricingPackagesProps(props map[string]any, pageTitle string, pageSlug
 		"heading": firstNonEmpty(readGeneratedText(props, "heading", 120), pageTitle),
 		"intro":   readGeneratedText(props, "intro", 500),
 		"plans":   plans,
-	}
+	}, true
 }
 
-func repairFAQProps(props map[string]any, pageTitle string) map[string]any {
+func repairFAQProps(props map[string]any, pageTitle string, allowPlaceholder bool) (map[string]any, bool) {
 	items := make([]any, 0)
 	if rawItems, ok := props["items"].([]any); ok {
 		for _, raw := range rawItems {
@@ -665,6 +734,9 @@ func repairFAQProps(props map[string]any, pageTitle string) map[string]any {
 		}
 	}
 	if len(items) == 0 {
+		if !allowPlaceholder {
+			return nil, false
+		}
 		items = append(items, map[string]any{
 			"question": "What should someone know before reaching out?",
 			"answer":   "Add one practical answer that reduces hesitation and points toward the next step.",
@@ -675,10 +747,10 @@ func repairFAQProps(props map[string]any, pageTitle string) map[string]any {
 		"heading": firstNonEmpty(readGeneratedText(props, "heading", 120), pageTitle),
 		"intro":   readGeneratedText(props, "intro", 500),
 		"items":   items,
-	}
+	}, true
 }
 
-func repairTeamProfileCardsProps(props map[string]any, pageTitle string) map[string]any {
+func repairTeamProfileCardsProps(props map[string]any, pageTitle string, allowPlaceholder bool) (map[string]any, bool) {
 	people := make([]any, 0)
 	if rawPeople, ok := props["people"].([]any); ok {
 		for _, raw := range rawPeople {
@@ -710,6 +782,9 @@ func repairTeamProfileCardsProps(props map[string]any, pageTitle string) map[str
 		}
 	}
 	if len(people) == 0 {
+		if !allowPlaceholder {
+			return nil, false
+		}
 		people = append(people, map[string]any{
 			"name": "Founder",
 			"role": "Lead contact",
@@ -727,7 +802,7 @@ func repairTeamProfileCardsProps(props map[string]any, pageTitle string) map[str
 		"heading": firstNonEmpty(readGeneratedText(props, "heading", 120), pageTitle),
 		"intro":   readGeneratedText(props, "intro", 500),
 		"people":  people,
-	}
+	}, true
 }
 
 func repairFooterProps(props map[string]any, pageTitle string) map[string]any {

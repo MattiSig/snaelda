@@ -1111,7 +1111,7 @@ func TestRepairGenerationPlanRepairsSafeIssues(t *testing.T) {
 			"<p>Default locale is English.</p>",
 			"<p>Default locale is English.</p>",
 		},
-	}, "")
+	}, "", true)
 
 	if repaired.SiteName != "North Light Studio" {
 		t.Fatalf("expected sanitized site name, got %q", repaired.SiteName)
