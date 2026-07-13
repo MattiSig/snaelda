@@ -22,13 +22,19 @@ const defaultMinWords = 25
 // logo/colour hints, so the single parse captures them here rather than forcing
 // a re-parse later.
 type PageMeta struct {
-	OGImage    string      `json:"ogImage,omitempty"`
-	ThemeColor string      `json:"themeColor,omitempty"`
-	IconHrefs  []string    `json:"iconHrefs,omitempty"`
-	Icons      []IconRef   `json:"icons,omitempty"`
-	Images     []ImageRef  `json:"images,omitempty"`
-	CSSColors  []ColorHint `json:"cssColors,omitempty"`
-	Lang       string      `json:"lang,omitempty"`
+	OGImage         string      `json:"ogImage,omitempty"`
+	ThemeColor      string      `json:"themeColor,omitempty"`
+	IconHrefs       []string    `json:"iconHrefs,omitempty"`
+	Icons           []IconRef   `json:"icons,omitempty"`
+	Images          []ImageRef  `json:"images,omitempty"`
+	CSSColors       []ColorHint `json:"cssColors,omitempty"`
+	StylesheetHrefs []string    `json:"stylesheetHrefs,omitempty"`
+	Lang            string      `json:"lang,omitempty"`
+	// StyleText is the raw CSS collected from inline <style> blocks and style=
+	// attributes. The brand stage combines it with the fetched external
+	// stylesheets so custom-property var() chains resolve across sources. It is
+	// in-memory only (never persisted) — kept off the extraction JSON.
+	StyleText string `json:"-"`
 }
 
 // IconRef is a <link rel="…icon…"> declaration with the rel and sizes hints the
@@ -258,11 +264,18 @@ func readMeta(n *html.Node, base *url.URL, page *Page) {
 
 func readLink(n *html.Node, base *url.URL, page *Page) {
 	rel := strings.ToLower(strings.TrimSpace(attr(n, "rel")))
-	if !strings.Contains(rel, "icon") {
-		return
-	}
 	href := resolveLink(base, attr(n, "href"))
 	if href == "" {
+		return
+	}
+	// External stylesheets carry the brand palette on site-builder sources
+	// (Squarespace/Wix/GoDaddy declare it in site.css, not inline). Record the
+	// href so the brand stage can fetch it through the SSRF-guarded client.
+	if strings.Contains(rel, "stylesheet") {
+		page.Meta.StylesheetHrefs = append(page.Meta.StylesheetHrefs, href)
+		return
+	}
+	if !strings.Contains(rel, "icon") {
 		return
 	}
 	page.Meta.IconHrefs = append(page.Meta.IconHrefs, href)

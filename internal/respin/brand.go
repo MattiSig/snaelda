@@ -38,6 +38,11 @@ const (
 	maxLogoAttempts = 6
 	// maxHeroCandidates bounds how many hero candidates are considered.
 	maxHeroCandidates = 12
+	// maxStylesheets bounds how many external stylesheets are fetched per import
+	// while hunting for the brand palette (Spec 21 §Resource Caps).
+	maxStylesheets = 4
+	// maxStylesheetBytes caps a single external stylesheet fetch (~500 KB).
+	maxStylesheetBytes = 500 << 10
 )
 
 // imageContentTypeExt maps the ingestable image content types to a canonical
@@ -144,6 +149,8 @@ type aggregateHints struct {
 	ogImages    []string
 	themeColors []string
 	cssColors   []ColorHint
+	styleText   string   // concatenated inline CSS across pages
+	stylesheets []string // deduped external stylesheet hrefs to fetch
 }
 
 // PullBrand runs the brand-asset stage over the fetched pages. It never returns
@@ -163,6 +170,12 @@ func (p *BrandPuller) PullBrand(ctx context.Context, pages []Page, opts PullOpti
 
 	hints := aggregate(pages)
 	var budget int64 = maxImportImageBytes
+
+	// --- Brand colour from combined CSS (inline + external stylesheets) ---
+	// Site builders (Squarespace/Wix/GoDaddy) declare their palette in an
+	// external site.css, not inline, so fetch a bounded set of the declared
+	// stylesheets and resolve custom-property colours across all sources.
+	hints.cssColors = p.resolveCSSColors(ctx, hints, &budget)
 
 	// --- Logo ---
 	logoAlt := logoAltText(opts)
@@ -204,8 +217,21 @@ func aggregate(pages []Page) aggregateHints {
 	ogSeen := map[string]bool{}
 	themeSeen := map[string]bool{}
 	colorSeen := map[string]int{} // hex -> index into agg.cssColors
+	sheetSeen := map[string]bool{}
+	var styleText strings.Builder
 
 	for _, page := range pages {
+		if s := strings.TrimSpace(page.Meta.StyleText); s != "" {
+			styleText.WriteString(s)
+			styleText.WriteByte('\n')
+		}
+		for _, href := range page.Meta.StylesheetHrefs {
+			if href == "" || sheetSeen[href] {
+				continue
+			}
+			sheetSeen[href] = true
+			agg.stylesheets = append(agg.stylesheets, href)
+		}
 		for _, img := range page.Meta.Images {
 			if idx, ok := imgByURL[img.URL]; ok {
 				if regionRank(img.Region) > regionRank(agg.images[idx].Region) {
@@ -248,6 +274,7 @@ func aggregate(pages []Page) aggregateHints {
 			agg.cssColors = append(agg.cssColors, c)
 		}
 	}
+	agg.styleText = styleText.String()
 	return agg
 }
 
@@ -483,6 +510,72 @@ func resolvePrimaryColor(hints aggregateHints, logo image.Image) (string, string
 		}
 	}
 	return "", ""
+}
+
+// resolveCSSColors builds the ranked brand-colour hints from the combined CSS:
+// the inline <style>/style= text collected during extraction plus a bounded
+// fetch of the page's declared external stylesheets. Combining the sources lets
+// a custom-property var() chain resolve across a stylesheet boundary (the
+// button-background variable in one file pointing at the accent triple in
+// another). Stylesheet fetch failures are non-fatal — the resolver simply works
+// from whatever CSS it did gather, falling back to the inline-only hints.
+func (p *BrandPuller) resolveCSSColors(ctx context.Context, hints aggregateHints, budget *int64) []ColorHint {
+	var css strings.Builder
+	css.WriteString(hints.styleText)
+
+	fetched := 0
+	for _, href := range hints.stylesheets {
+		if fetched >= maxStylesheets {
+			break
+		}
+		body, err := p.fetchStylesheet(ctx, href, budget)
+		if err != nil {
+			p.debug("respin stylesheet fetch skipped", "url", href, "error", err)
+			continue
+		}
+		fetched++
+		css.WriteByte('\n')
+		css.Write(body)
+	}
+
+	if strings.TrimSpace(css.String()) == "" {
+		return hints.cssColors
+	}
+	if resolved := extractCSSColors(css.String()); len(resolved) > 0 {
+		return resolved
+	}
+	return hints.cssColors
+}
+
+// fetchStylesheet fetches an external stylesheet through the SSRF-guarded client,
+// enforces the per-stylesheet size cap and the per-import byte budget, and
+// rejects an obvious non-CSS (HTML) response. Cross-origin stylesheet hosts are
+// permitted (builder CDNs serve the palette from static1.squarespace.com and the
+// like) — the SSRF IP guard still applies to every hop.
+func (p *BrandPuller) fetchStylesheet(ctx context.Context, href string, budget *int64) ([]byte, error) {
+	if budget != nil && *budget <= 0 {
+		return nil, fmt.Errorf("respin: import byte budget exhausted")
+	}
+	res, err := p.fetcher.Fetch(ctx, href, FetchOptions{
+		MaxBytes: maxStylesheetBytes,
+		Accept:   "text/css,*/*;q=0.1",
+	})
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode >= 400 {
+		return nil, &FetchStatusError{StatusCode: res.StatusCode, URL: res.FinalURL}
+	}
+	if ct := normalizeContentType(res.ContentType); strings.Contains(ct, "html") {
+		return nil, &ContentTypeError{ContentType: res.ContentType, URL: res.FinalURL}
+	}
+	if len(res.Body) == 0 {
+		return nil, fmt.Errorf("respin: empty stylesheet body")
+	}
+	if budget != nil {
+		*budget -= int64(len(res.Body))
+	}
+	return res.Body, nil
 }
 
 // imageData is a fetched, size-checked image body plus its best-effort decode.

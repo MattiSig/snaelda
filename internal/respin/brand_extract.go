@@ -66,8 +66,20 @@ func collectBrandHints(doc *html.Node, base *url.URL, page *Page) {
 	}
 	walk(doc, "")
 
-	page.Meta.CSSColors = extractCSSColors(styleText.String())
+	// Cap the retained inline CSS so a page that inlines megabytes of critical
+	// CSS cannot balloon the in-memory page. The brand palette lives in a handful
+	// of custom-property declarations, well within this bound.
+	css := styleText.String()
+	if len(css) > maxInlineCSSBytes {
+		css = css[:maxInlineCSSBytes]
+	}
+	page.Meta.StyleText = css
+	page.Meta.CSSColors = extractCSSColors(css)
 }
+
+// maxInlineCSSBytes caps the inline CSS text retained per page for brand-colour
+// resolution.
+const maxInlineCSSBytes = 1 << 20 // 1 MB
 
 // imageRefFromNode builds an ImageRef from an <img> node, resolving its source
 // against base. It returns ok=false for images with no resolvable http(s)

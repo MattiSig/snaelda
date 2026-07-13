@@ -358,6 +358,140 @@ func TestExtractCSSColorsRanking(t *testing.T) {
 	}
 }
 
+func TestExtractCSSColorsResolvesVarChainAndHSL(t *testing.T) {
+	// The 2026-07-13 QA palette: a raw HSL triple in --accent-hsl (vivid magenta)
+	// and the CTA button background pointing at it via var(). Both must resolve to
+	// the same colour, the button-background variable scores highest, and the
+	// white surface variable must not outrank the brand accent.
+	css := `:root{
+		--accent-hsl:324.37,79.12%,51.18%;
+		--image-block-card-image-button-bg-color:var(--accent-hsl);
+		--siteBackgroundColor:#ffffff;
+		--border-grey:#dddddd;
+	}`
+	hints := extractCSSColors(css)
+	if len(hints) == 0 {
+		t.Fatal("expected colour hints")
+	}
+	if hints[0].Value != "#e52095" {
+		t.Fatalf("top colour = %q (score %d), want #e52095 magenta accent; all=%+v",
+			hints[0].Value, hints[0].Score, hints)
+	}
+	for _, h := range hints {
+		if h.Value == "#ffffff" && h.Score >= hints[0].Score {
+			t.Errorf("white surface (#ffffff) must not tie/outrank the brand accent: %+v", hints)
+		}
+	}
+}
+
+func TestParseCSSColorHSL(t *testing.T) {
+	cases := map[string]string{
+		"hsl(0, 100%, 50%)":            "#ff0000",
+		"hsl(120 100% 25%)":            "#008000",
+		"hsla(324.37,79.12%,51.18%,1)": "#e52095",
+	}
+	for in, want := range cases {
+		got, ok := parseCSSColor(in)
+		if !ok || got != want {
+			t.Errorf("parseCSSColor(%q) = %q,%v want %q", in, got, ok, want)
+		}
+	}
+}
+
+func TestParseCSSColorNamedTripleGatedByName(t *testing.T) {
+	// A bare H,S%,L% triple only reads as HSL when the property name declares it.
+	if got, ok := parseCSSColorNamed("accent", "324.37,79.12%,51.18%"); ok {
+		t.Errorf("bare triple parsed without an hsl name hint: %q", got)
+	}
+	got, ok := parseCSSColorNamed("accent-hsl", "324.37,79.12%,51.18%")
+	if !ok || got != "#e52095" {
+		t.Errorf("hsl-named triple = %q,%v want #e52095", got, ok)
+	}
+}
+
+func TestPullBrandColorFromExternalStylesheet(t *testing.T) {
+	// The palette lives in an external stylesheet (the site-builder case), stored
+	// as a var() chain resolving to a raw HSL triple. The brand pull must fetch
+	// the stylesheet and surface the vivid accent as the primary colour.
+	css := `:root{--accent-hsl:324.37,79.12%,51.18%;` +
+		`--image-block-card-image-button-bg-color:var(--accent-hsl);` +
+		`--siteBackgroundColor:#ffffff}`
+	greyLogo := solidPNG(t, 120, 40, color.RGBA{200, 200, 200, 255})
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, `<!doctype html><html lang="is"><head>
+<link rel="stylesheet" href="/assets/site.css">
+</head><body>
+<header><img src="/logo.png" class="site-logo" alt="Merki"></header>
+<main><p>Pípulagningaþjónusta sem hreinsar stíflur og lagar leka allan sólarhringinn fyrir heimili og fyrirtæki í öllu bæjarfélaginu.</p></main>
+</body></html>`)
+	})
+	mux.HandleFunc("/assets/site.css", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/css")
+		fmt.Fprint(w, css)
+	})
+	mux.HandleFunc("/logo.png", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(greyLogo)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	page, err := testFetcher().FetchPage(context.Background(), srv.URL)
+	if err != nil {
+		t.Fatalf("fetch page: %v", err)
+	}
+	if len(page.Meta.StylesheetHrefs) != 1 {
+		t.Fatalf("stylesheet hrefs = %v, want one", page.Meta.StylesheetHrefs)
+	}
+
+	res, err := newTestPuller(&fakeIngestor{}).PullBrand(context.Background(), []Page{page}, PullOptions{
+		WorkspaceID: "ws-1", SiteID: "site-1", ImportID: "imp-1", BusinessName: "Pípó",
+	})
+	if err != nil {
+		t.Fatalf("PullBrand: %v", err)
+	}
+	if res.Brand.PrimaryColor != "#e52095" || res.ColorSource != "css-var" {
+		t.Errorf("primary colour = %q (%s), want #e52095 (css-var) from external stylesheet",
+			res.Brand.PrimaryColor, res.ColorSource)
+	}
+}
+
+func TestPullBrandStylesheetFetchFailureNonFatal(t *testing.T) {
+	// The declared stylesheet 404s; the pull must fall back to the inline signal
+	// (theme-color here) instead of failing.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<html lang="en"><head>
+<meta name="theme-color" content="#3366ff">
+<link rel="stylesheet" href="/missing.css">
+</head><body><main><p>A small local bakery serving fresh bread and pastries every single morning of the week for the neighbourhood.</p></main></body></html>`)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	page, err := testFetcher().FetchPage(context.Background(), srv.URL)
+	if err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	res, err := newTestPuller(&fakeIngestor{}).PullBrand(context.Background(), []Page{page}, PullOptions{
+		WorkspaceID: "ws-1", SiteID: "site-1",
+	})
+	if err != nil {
+		t.Fatalf("PullBrand: %v", err)
+	}
+	if res.Brand.PrimaryColor != "#3366ff" || res.ColorSource != "theme-color" {
+		t.Errorf("primary colour = %q (%s), want #3366ff (theme-color) after stylesheet 404",
+			res.Brand.PrimaryColor, res.ColorSource)
+	}
+}
+
 func TestParseCSSColor(t *testing.T) {
 	cases := map[string]string{
 		"#abc":             "#aabbcc",
