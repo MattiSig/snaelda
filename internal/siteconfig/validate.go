@@ -101,6 +101,11 @@ func validateBrand(path string, brand BrandConfig, required bool, c *collector) 
 			c.add(child(logoPath, "assetId"), "required", "brand logo assetId is required")
 		}
 		validateRequiredText(child(logoPath, "alt"), brand.Logo.Alt, 1, 200, c)
+		switch brand.Logo.Size {
+		case "", "small", "medium", "large":
+		default:
+			c.add(child(logoPath, "size"), "invalid_value", "brand logo size must be small, medium, or large")
+		}
 	}
 }
 

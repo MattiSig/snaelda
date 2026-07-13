@@ -387,6 +387,29 @@ func TestValidateDraftRejectsBrandLogoWithoutAsset(t *testing.T) {
 	}
 }
 
+func TestValidateDraftBrandLogoSize(t *testing.T) {
+	draft := validDraft()
+	draft.Brand = BrandConfig{
+		BusinessName: "Nordic Studio",
+		PrimaryColor: "#e52095",
+		Logo: &BrandLogo{
+			AssetID:  "asset_logo_primary",
+			Alt:      "Nordic Studio lockup",
+			Size:     "large",
+			HideName: true,
+		},
+	}
+	if err := ValidateDraft(draft); err != nil {
+		t.Fatalf("expected large/hideName logo to validate, got %v", err)
+	}
+
+	draft.Brand.Logo.Size = "huge"
+	err := ValidateDraft(draft)
+	if !hasIssue(t, err, "invalid_value") {
+		t.Fatalf("expected invalid_value issue for unknown logo size, got %v", err)
+	}
+}
+
 func TestValidatePublishedSnapshotRequiresBrand(t *testing.T) {
 	draft := validDraft()
 	snapshot := PublishedSnapshot{

@@ -1,4 +1,4 @@
-import type { FormEvent, MouseEvent, ReactNode } from 'react';
+import type { CSSProperties, FormEvent, MouseEvent, ReactNode } from 'react';
 import { createContext, useContext, useState } from 'react';
 import {
   APIError,
@@ -173,7 +173,17 @@ export function SiteDraftRenderer({
     <PreviewTokenContext.Provider value={previewToken}>
     <div
       className={preview.shell}
-      style={buildSiteThemeStyle(site.theme)}
+      style={
+        {
+          ...buildSiteThemeStyle(site.theme),
+          // The full-page hero pulls itself up under the header by this
+          // amount; it must track the header's actual height, which grows
+          // with the brand logo size (48px padding + logo height + border).
+          '--preview-header-height':
+            headerHeightByLogoSize[site.brand?.logo?.size ?? 'small'] ??
+            '88px',
+        } as CSSProperties
+      }
       onClick={handleShellClick}
     >
       <header
@@ -2141,6 +2151,25 @@ function madeWithLabel(locale?: string) {
     : 'Made with Snælda';
 }
 
+// headerLogoClass scales the header logo per brand.logo.size. Logos render at
+// their natural aspect ratio (no crop, no border) so wide lockups survive.
+const headerLogoClass: Record<string, string> = {
+  small: 'h-9 max-w-[160px]',
+  medium: 'h-12 max-w-[240px]',
+  large: 'h-16 max-w-[320px]',
+};
+
+// headerHeightByLogoSize keeps --preview-header-height in step with the header
+// the logo size actually produces (py-6 padding + logo height + border + the
+// baseline row's line-height slack). Values overshoot slightly on purpose: a
+// full-page hero tucking a couple of pixels further under the header is
+// invisible, a gap above it is not.
+const headerHeightByLogoSize: Record<string, string> = {
+  small: '88px',
+  medium: '104px',
+  large: '120px',
+};
+
 function HeaderBrand({
   brand,
   siteName,
@@ -2153,21 +2182,31 @@ function HeaderBrand({
   siteSlug?: string;
 }) {
   const brandName = resolveBrandName(brand, siteName);
+  const logo = brand?.logo;
 
   return (
     <span className="flex items-center gap-3">
-      {brand?.logo ? (
+      {logo ? (
         <AssetImage
           image={{
-            assetId: brand.logo.assetId,
-            alt: brand.logo.alt,
+            assetId: logo.assetId,
+            alt: logo.alt,
           }}
           linkMode={linkMode}
           siteSlug={siteSlug}
-          className="h-10 w-10 rounded-full border border-[color-mix(in_oklch,var(--color-border)_52%,transparent)] object-cover"
+          className={cn(
+            'w-auto object-contain',
+            headerLogoClass[logo.size ?? 'small'] ?? headerLogoClass.small,
+          )}
         />
       ) : null}
-      <span>{brandName}</span>
+      {/* A lockup logo already carries the name; keep it in the DOM for
+          assistive tech and crawlers, just not painted twice. */}
+      {logo?.hideName ? (
+        <span className="sr-only">{brandName}</span>
+      ) : (
+        <span>{brandName}</span>
+      )}
     </span>
   );
 }

@@ -23,6 +23,13 @@ type BrandConfig struct {
 type BrandLogo struct {
 	AssetID string `json:"assetId"`
 	Alt     string `json:"alt"`
+	// Size scales the logo in the site header: "small" (default), "medium", or
+	// "large" — wide lockup logos need more presence than a compact mark.
+	Size string `json:"size,omitempty"`
+	// HideName suppresses the visible business-name text beside the header
+	// logo, for lockup logos that already carry the name. The name stays in
+	// the DOM visually hidden so assistive tech and crawlers still read it.
+	HideName bool `json:"hideName,omitempty"`
 }
 
 type DraftSite struct {

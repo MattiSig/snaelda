@@ -79,11 +79,15 @@ export type SiteSummary = {
   pageCount: number;
 };
 
+export type BrandLogoSize = 'small' | 'medium' | 'large';
+
 export type BrandConfig = {
   businessName: string;
   logo?: {
     assetId: string;
     alt: string;
+    size?: BrandLogoSize;
+    hideName?: boolean;
   };
   primaryColor: string;
 };

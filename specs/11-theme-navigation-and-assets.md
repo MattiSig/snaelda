@@ -29,6 +29,8 @@ When `brand.primaryColor` changes (via the brand editor), the theme palette rege
 
 Header and Footer blocks do not carry their own `logo` or `businessName` props. They read these from `brand` at render time. That keeps brand consistent across every page and removes the failure mode where re-uploading the logo in one place leaves stale copies elsewhere.
 
+`brand.logo` carries two header display preferences alongside the asset: `size` (`small` default, `medium`, `large`) scales the logo for wide lockups, and `hideName` suppresses the visible business-name text when the logo already carries the name (common on re-spun sources whose logo is a full lockup). A hidden name stays in the header DOM visually hidden, so assistive tech and crawlers still read the business name. Logos render at their natural aspect ratio, uncropped.
+
 Other blocks that need a brand value (rare; mostly the Hero in some layouts) follow the same pattern: resolve from site context, do not duplicate as a prop.
 
 ## Theme System

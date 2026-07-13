@@ -11,6 +11,7 @@ import { RevisionDiffModal } from "@/components/RevisionDiffModal";
 import { Button } from "@/components/ui/button";
 import { CollectionsPanel } from "./app.sites.$siteId.collections";
 
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -55,6 +56,7 @@ import {
   updateSiteNavigation,
   type NavigationItemInput,
   type AssetRecord,
+  type BrandLogoSize,
   type BillingState,
   type BlockBinding,
   type BlockDefinition,
@@ -198,6 +200,8 @@ function SiteDetail() {
   const [brandPrimaryColor, setBrandPrimaryColor] = useState("");
   const [brandLogoAssetId, setBrandLogoAssetId] = useState("");
   const [brandLogoAlt, setBrandLogoAlt] = useState("");
+  const [brandLogoSize, setBrandLogoSize] = useState<BrandLogoSize>("small");
+  const [brandLogoHideName, setBrandLogoHideName] = useState(false);
   const [selectedPageId, setSelectedPageId] = useState("");
   const [selectedBlockId, setSelectedBlockId] = useState("");
   const [versions, setVersions] = useState<SiteVersion[]>([]);
@@ -403,6 +407,8 @@ function SiteDetail() {
     );
     setBrandLogoAssetId(nextDraft.brand.logo?.assetId ?? "");
     setBrandLogoAlt(nextDraft.brand.logo?.alt ?? "");
+    setBrandLogoSize(nextDraft.brand.logo?.size ?? "small");
+    setBrandLogoHideName(nextDraft.brand.logo?.hideName ?? false);
   }
 
   function syncSelectedPageFields(
@@ -679,6 +685,8 @@ function SiteDetail() {
                 logo: {
                   assetId: brandLogoAssetId.trim(),
                   alt: brandLogoAlt.trim(),
+                  size: brandLogoSize,
+                  hideName: brandLogoHideName,
                 },
               }
             : {}),
@@ -3660,6 +3668,30 @@ function SiteDetail() {
                   disabled={!brandLogoAssetId}
                   required={Boolean(brandLogoAssetId)}
                 />
+              </label>
+              <label className={form.field}>
+                <span className={text.label}>Logo size in header</span>
+                <Select
+                  value={brandLogoSize}
+                  onChange={(event) =>
+                    setBrandLogoSize(event.target.value as BrandLogoSize)
+                  }
+                  disabled={!brandLogoAssetId}
+                >
+                  <option value="small">Small</option>
+                  <option value="medium">Medium</option>
+                  <option value="large">Large</option>
+                </Select>
+              </label>
+              <label className={form.toggle}>
+                <Checkbox
+                  checked={brandLogoHideName}
+                  disabled={!brandLogoAssetId}
+                  onChange={(event) =>
+                    setBrandLogoHideName(event.target.checked)
+                  }
+                />
+                Logo already shows the name, hide the text next to it
               </label>
             </div>
           </div>
