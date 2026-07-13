@@ -63,6 +63,11 @@ type GenerateInput struct {
 	// hero/work photos pulled during re-spin) that the imagery pass prefers over
 	// stock photos when filling hero/gallery/image_text slots.
 	SeedAssetIDs []string
+	// SourceHero carries a re-spin source site's hero (Spec 07
+	// optionalHints.sourceHero, populated by Spec 21). When set, the home-page
+	// content stage matches its headline register and CTA intent. Nil on the
+	// ordinary path.
+	SourceHero *SourceHero
 }
 
 type RepromptInput struct {
@@ -259,6 +264,7 @@ func (s *Service) GenerateWithProgress(ctx context.Context, workspaceID string, 
 		InterviewAnswers:   input.InterviewAnswers,
 		PreallocatedSiteID: strings.TrimSpace(input.SiteID),
 		SeedAssetIDs:       input.SeedAssetIDs,
+		SourceHero:         input.SourceHero,
 	}
 	jobID, err := s.createGenerationJob(ctx, workspaceID, userID, JobKindSite, inputContext)
 	if err != nil {
@@ -869,8 +875,9 @@ type generationInputContext struct {
 	// block-suggest scopes use to name an already-existing site; keeping them
 	// distinct means reprompt behaviour is untouched and this field is only ever
 	// consumed by buildDraftFromPlan when a fresh draft is created.
-	PreallocatedSiteID string   `json:"preallocatedSiteId,omitempty"`
-	SeedAssetIDs       []string `json:"seedAssetIds,omitempty"`
+	PreallocatedSiteID string      `json:"preallocatedSiteId,omitempty"`
+	SeedAssetIDs       []string    `json:"seedAssetIds,omitempty"`
+	SourceHero         *SourceHero `json:"sourceHero,omitempty"`
 }
 
 type generationPlan struct {
@@ -1510,7 +1517,7 @@ func (s *Service) buildWholePageRepromptPlan(
 			Goal:  firstNonEmpty(strings.TrimSpace(prompt), page.SEO.Description, draft.Site.SEO.Description),
 			SEO:   page.SEO,
 		}
-		pagePlan, err := s.buildPagePlanFromLayout(ctx, draft.Site.Name, draft.Site.SEO.Description, prompt, draft.Site.DefaultLocale, draft.Brand, outlinePage, outline.Pages, nil)
+		pagePlan, err := s.buildPagePlanFromLayout(ctx, draft.Site.Name, draft.Site.SEO.Description, prompt, draft.Site.DefaultLocale, draft.Brand, outlinePage, outline.Pages, nil, nil)
 		if err == nil && len(pagePlan.Blocks) > 0 {
 			pagePlan.Title = firstNonEmpty(pagePlan.Title, page.Title)
 			pagePlan.Slug = page.Slug

@@ -138,6 +138,10 @@ type BrandResult struct {
 	PulledAssetIDs []string               `json:"pulledAssetIds,omitempty"`
 	LogoSource     string                 `json:"logoSource,omitempty"`  // header-img | content-img | apple-touch-icon | icon | og:image
 	ColorSource    string                 `json:"colorSource,omitempty"` // css-var | theme-color | logo-dominant
+	// AssetIDByURL maps each pulled image's source URL to its ingested asset id,
+	// so the composer can resolve the source hero's background image to the asset
+	// it was ingested as (optionalHints.sourceHero.imageAssetId).
+	AssetIDByURL map[string]string `json:"assetIdByUrl,omitempty"`
 }
 
 // aggregateHints merges the per-page brand hints into one deduplicated set. The
@@ -169,6 +173,7 @@ func (p *BrandPuller) PullBrand(ctx context.Context, pages []Page, opts PullOpti
 	}
 
 	hints := aggregate(pages)
+	result.AssetIDByURL = map[string]string{}
 	var budget int64 = maxImportImageBytes
 
 	// --- Brand colour from combined CSS (inline + external stylesheets) ---
@@ -184,6 +189,7 @@ func (p *BrandPuller) PullBrand(ctx context.Context, pages []Page, opts PullOpti
 		result.Brand.Logo = &siteconfig.BrandLogo{AssetID: id, Alt: logoAlt}
 		result.LogoSource = source
 		result.PulledAssetIDs = append(result.PulledAssetIDs, id)
+		result.AssetIDByURL[logoURL] = id
 		excludeURLs[logoURL] = true
 
 		// --- Primary colour, with the decoded logo as the last-resort source ---
@@ -201,9 +207,12 @@ func (p *BrandPuller) PullBrand(ctx context.Context, pages []Page, opts PullOpti
 	if opts.MaxHeroes > 0 {
 		maxHeroes = opts.MaxHeroes
 	}
-	heroIDs := p.pullHeroes(ctx, hints, opts, maxHeroes, &budget, excludeURLs)
+	heroIDs, heroByURL := p.pullHeroes(ctx, hints, opts, maxHeroes, &budget, excludeURLs)
 	result.HeroAssetIDs = heroIDs
 	result.PulledAssetIDs = append(result.PulledAssetIDs, heroIDs...)
+	for u, id := range heroByURL {
+		result.AssetIDByURL[u] = id
+	}
 
 	return result, nil
 }
@@ -280,6 +289,10 @@ func aggregate(pages []Page) aggregateHints {
 
 func regionRank(region string) int {
 	switch region {
+	case "hero":
+		// The strongest hero-photo signal: an image the source itself placed in
+		// its above-the-fold hero. It must win a merge against a plainer region.
+		return 4
 	case "header":
 		return 3
 	case "nav":
@@ -415,12 +428,13 @@ var heroKeywords = []string{"hero", "banner", "cover", "masthead", "slider", "ca
 // pullHeroes selects large content photos, fetches them best-first, verifies a
 // minimum decoded dimension (so icons and spacers are rejected), and ingests up
 // to maxHeroes of them, skipping any URL already pulled as the logo.
-func (p *BrandPuller) pullHeroes(ctx context.Context, hints aggregateHints, opts PullOptions, maxHeroes int, budget *int64, excludeURLs map[string]bool) []string {
+func (p *BrandPuller) pullHeroes(ctx context.Context, hints aggregateHints, opts PullOptions, maxHeroes int, budget *int64, excludeURLs map[string]bool) ([]string, map[string]string) {
 	if maxHeroes <= 0 {
-		return nil
+		return nil, nil
 	}
 	candidates := heroCandidates(hints)
 	var ids []string
+	byURL := map[string]string{}
 	considered := 0
 	for _, c := range candidates {
 		if len(ids) >= maxHeroes || considered >= maxHeroCandidates {
@@ -445,8 +459,9 @@ func (p *BrandPuller) pullHeroes(ctx context.Context, hints aggregateHints, opts
 			continue
 		}
 		ids = append(ids, id)
+		byURL[c.url] = id
 	}
-	return ids
+	return ids, byURL
 }
 
 // heroCandidates ranks content/og images as hero photos, dropping tiny declared
@@ -473,6 +488,13 @@ func heroCandidates(hints aggregateHints) []heroCandidate {
 		if w, h := img.Width, img.Height; (w > 0 && w < minHeroDimension) || (h > 0 && h < minHeroDimension) {
 			continue
 		}
+		// The source's own hero-region / section-background image outranks the
+		// og:image below: the social card is often a logo lockup, not the hero
+		// photograph (2026-07-13 QA, Spec 21 step 9).
+		if img.Region == "hero" || containsAny(img.Hint, heroSectionKeywords) {
+			add(heroCandidate{url: img.URL, alt: img.Alt, score: 90})
+			continue
+		}
 		score := 30
 		if containsAny(img.Hint, heroKeywords) || containsAny(strings.ToLower(img.Alt), heroKeywords) {
 			score += 40
@@ -482,7 +504,8 @@ func heroCandidates(hints aggregateHints) []heroCandidate {
 		}
 		add(heroCandidate{url: img.URL, alt: img.Alt, score: score})
 	}
-	// og:image is a strong hero candidate (it is the site's chosen social image).
+	// og:image is a fallback hero candidate: a good social image, but ranked below
+	// the source's own hero-region photograph above.
 	for _, og := range hints.ogImages {
 		add(heroCandidate{url: og, score: 55})
 	}

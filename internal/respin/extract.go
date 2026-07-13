@@ -62,6 +62,10 @@ type Page struct {
 	// included), which the readability text pass strips. It is the highest
 	// precision contact source a page carries.
 	Contact ContactSignals `json:"contact,omitempty"`
+	// Hero is the source's above-the-fold hero, read deterministically from the
+	// DOM (Spec 21 step 7). The home page's hero is the one that matters; interior
+	// pages populate it too but the pipeline only carries the root page's.
+	Hero SourceHero `json:"hero,omitempty"`
 }
 
 // Sufficient reports whether the page carries enough readable text to extract
@@ -174,6 +178,12 @@ func extractPage(body []byte, base *url.URL) Page {
 	// header/footer/nav chrome the copy pass strips, where the phone, email, and
 	// address usually live on a small-business site.
 	page.Contact = harvestContactSignals(doc, base)
+
+	// Read the source hero straight from the DOM (headline register, CTA intent,
+	// background image) and tag its background image as the hero region so the
+	// brand stage scores it above the og:image social card.
+	page.Hero = extractSourceHero(doc, base)
+	markHeroImage(&page, page.Hero.ImageURL)
 	return page
 }
 

@@ -58,8 +58,8 @@ func parseRobots(body string) *robotsRules {
 	const selfToken = "snaeldarespin"
 
 	var (
-		wildcard []string
-		specific []string
+		wildcard        []string
+		specific        []string
 		matchedSpecific bool
 		// groupAgents tracks the user-agents declared for the current group so
 		// consecutive User-agent lines share one rule block.

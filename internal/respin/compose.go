@@ -14,6 +14,10 @@ import (
 type ComposeContext struct {
 	SourceURL string
 	SiteID    string
+	// SourceHero is the source site's hero, read deterministically from the home
+	// page's DOM (Spec 21 step 7). The composer resolves its background image to a
+	// pulled asset id and carries it into optionalHints.sourceHero.
+	SourceHero SourceHero
 }
 
 // Composition is the composer's output. Its Input is exactly Spec 07's Minimum
@@ -81,6 +85,7 @@ func Compose(analysis AnalysisResult, brand BrandResult, cctx ComposeContext) Co
 		PreferredLanguage: locale,
 		OptionalHints:     composeHints(analysis),
 		Brand:             brandConfig,
+		SourceHero:        composeSourceHero(cctx.SourceHero, brand),
 		// The site was reserved before the brand pull so its logo/hero assets are
 		// already scoped to this id; generation reuses it verbatim. The pulled hero
 		// photos seed the draft's image slots ahead of any stock imagery.
@@ -136,6 +141,28 @@ func ComposeDegraded(reason string, salvage Salvage, brand BrandResult, cctx Com
 		Degraded:          true,
 		DegradationReason: strings.TrimSpace(reason),
 		PromptPrefill:     prefill,
+	}
+}
+
+// composeSourceHero maps the deterministically-extracted source hero into the
+// Spec 07 generation contract, resolving the background image URL to the asset id
+// it was ingested as (when the brand pull pulled it). It returns nil when the
+// extraction found no usable hero, so the hint is simply omitted.
+func composeSourceHero(hero SourceHero, brand BrandResult) *generation.SourceHero {
+	if hero.IsEmpty() {
+		return nil
+	}
+	assetID := strings.TrimSpace(hero.ImageAssetID)
+	if assetID == "" && hero.ImageURL != "" {
+		assetID = brand.AssetIDByURL[hero.ImageURL]
+	}
+	return &generation.SourceHero{
+		Headline:     strings.TrimSpace(hero.Headline),
+		Subheadline:  strings.TrimSpace(hero.Subheadline),
+		CTALabel:     strings.TrimSpace(hero.CTALabel),
+		ImageAssetID: assetID,
+		// A hero is text-only when the source carried no background image at all.
+		TextOnly: strings.TrimSpace(hero.ImageURL) == "" && assetID == "",
 	}
 }
 

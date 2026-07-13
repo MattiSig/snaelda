@@ -577,3 +577,46 @@ func TestLogoCandidatesOrdering(t *testing.T) {
 		}
 	}
 }
+
+func TestHeroCandidatesPreferHeroRegionOverOgImage(t *testing.T) {
+	hints := aggregateHints{
+		images: []ImageRef{
+			// The source's own hero image, marked by extractSourceHero. It carries
+			// no size hints and no hero keyword — the only signal is the region.
+			{URL: "https://x/hero.jpg", Region: "hero"},
+			{URL: "https://x/aside.jpg", Region: "content"},
+		},
+		// og:image is often the social card / logo lockup, not the hero photograph.
+		ogImages: []string{"https://x/og.png"},
+	}
+	got := heroCandidates(hints)
+	if len(got) == 0 || got[0].url != "https://x/hero.jpg" {
+		t.Fatalf("top hero candidate = %+v, want the hero-region image", got)
+	}
+	// The og:image must rank below the hero-region image.
+	heroIdx, ogIdx := -1, -1
+	for i, c := range got {
+		switch c.url {
+		case "https://x/hero.jpg":
+			heroIdx = i
+		case "https://x/og.png":
+			ogIdx = i
+		}
+	}
+	if heroIdx < 0 || ogIdx < 0 || heroIdx > ogIdx {
+		t.Fatalf("hero-region image (idx %d) must outrank og:image (idx %d)", heroIdx, ogIdx)
+	}
+}
+
+func TestHeroCandidatesPreferSectionBackgroundHint(t *testing.T) {
+	hints := aggregateHints{
+		images: []ImageRef{
+			{URL: "https://x/bg.jpg", Region: "content", Hint: "section-background"},
+		},
+		ogImages: []string{"https://x/og.png"},
+	}
+	got := heroCandidates(hints)
+	if len(got) == 0 || got[0].url != "https://x/bg.jpg" {
+		t.Fatalf("top hero candidate = %+v, want the section-background image", got)
+	}
+}

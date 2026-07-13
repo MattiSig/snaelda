@@ -335,4 +335,3 @@ func TestNormalizeImagePathDropsEmpties(t *testing.T) {
 		t.Fatalf("expected single trimmed segment, got %#v", got)
 	}
 }
-

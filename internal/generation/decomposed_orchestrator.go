@@ -84,7 +84,12 @@ func (s *Service) generateDraftDecomposed(
 	for i, page := range outline.Pages {
 		i, page := i, page
 		pageGroup.Go(func() error {
-			pagePlan, err := s.buildPagePlanFromLayout(pageCtx, outline.SiteName, outline.SiteGoal, input.Prompt, input.PreferredLanguage, input.Brand, page, outline.Pages, input.InterviewAnswers)
+			// The source hero (re-spin) informs only the home page's opener.
+			var sourceHero *SourceHero
+			if isHomeSlug(page.Slug) {
+				sourceHero = input.SourceHero
+			}
+			pagePlan, err := s.buildPagePlanFromLayout(pageCtx, outline.SiteName, outline.SiteGoal, input.Prompt, input.PreferredLanguage, input.Brand, page, outline.Pages, input.InterviewAnswers, sourceHero)
 			if err != nil {
 				return fmt.Errorf("compose page %s: %w", page.Slug, err)
 			}
@@ -215,7 +220,7 @@ func (s *Service) repromptSiteDecomposed(
 				return nil
 			}
 
-			pagePlan, err := s.buildPagePlanFromLayout(pageCtx, outline.SiteName, outline.SiteGoal, prompt, currentDraft.Site.DefaultLocale, currentDraft.Brand, page, outline.Pages, nil)
+			pagePlan, err := s.buildPagePlanFromLayout(pageCtx, outline.SiteName, outline.SiteGoal, prompt, currentDraft.Site.DefaultLocale, currentDraft.Brand, page, outline.Pages, nil, nil)
 			if err != nil {
 				return fmt.Errorf("reprompt compose page %s: %w", page.Slug, err)
 			}
@@ -262,6 +267,13 @@ func (s *Service) repromptSiteDecomposed(
 	return plan, draft, nil
 }
 
+// isHomeSlug reports whether an outline page slug is the site's home page. Home
+// is the absolute root ("/" or "") or a conventional "home" path.
+func isHomeSlug(slug string) bool {
+	s := strings.ToLower(strings.Trim(strings.TrimSpace(slug), "/"))
+	return s == "" || s == "home" || s == "index"
+}
+
 func repromptDirectiveForPage(sitePrompt string, page OutlinePage) string {
 	directive := strings.TrimSpace(sitePrompt)
 	if directive == "" {
@@ -285,6 +297,7 @@ func (s *Service) buildPagePlanFromLayout(
 	page OutlinePage,
 	outline []OutlinePage,
 	interviewAnswers []ClarifyingAnswer,
+	sourceHero *SourceHero,
 ) (generationPagePlan, error) {
 	layout, err := s.decomposedPlanner.BuildPageLayout(ctx, PageLayoutRequest{
 		SiteName:          siteName,
@@ -295,6 +308,7 @@ func (s *Service) buildPagePlanFromLayout(
 		Page:              page,
 		Outline:           outline,
 		InterviewAnswers:  interviewAnswers,
+		SourceHero:        sourceHero,
 	})
 	if err != nil {
 		return generationPagePlan{}, fmt.Errorf("layout page: %w", err)
@@ -313,6 +327,7 @@ func (s *Service) buildPagePlanFromLayout(
 		Outline:           outline,
 		Layout:            layout.Blocks,
 		InterviewAnswers:  interviewAnswers,
+		SourceHero:        sourceHero,
 	}
 	// One retry, feeding the failure back as guidance. The schema now pins each
 	// slot to its layout type so drift is structurally impossible, but a prop-

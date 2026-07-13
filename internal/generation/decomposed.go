@@ -58,6 +58,21 @@ type OutlinePage struct {
 	SEO   siteconfig.SEOConfig `json:"seo"`
 }
 
+// SourceHero carries a re-spin source site's hero as structured data (Spec 07
+// optionalHints.sourceHero, populated by Spec 21). It is only ever attached to
+// the home page's layout/content requests, where it steers the hero copy to
+// match the source's register and CTA intent — never layout cloning. Every field
+// is optional.
+type SourceHero struct {
+	Headline     string `json:"headline,omitempty"`
+	Subheadline  string `json:"subheadline,omitempty"`
+	CTALabel     string `json:"ctaLabel,omitempty"`
+	ImageAssetID string `json:"imageAssetId,omitempty"`
+	// TextOnly is true when the source hero carried no image — a type-led hero the
+	// layout stage prefers the statement variant for (Spec 04).
+	TextOnly bool `json:"textOnly,omitempty"`
+}
+
 // PageLayoutRequest tells the per-page layout planner everything it needs to
 // pick an ordered block list without writing full block props.
 type PageLayoutRequest struct {
@@ -69,6 +84,9 @@ type PageLayoutRequest struct {
 	Page              OutlinePage            `json:"page"`
 	Outline           []OutlinePage          `json:"outline"`
 	InterviewAnswers  []ClarifyingAnswer     `json:"interviewAnswers,omitempty"`
+	// SourceHero is set only on the home page for a re-spin (Spec 21), so the
+	// layout can match the source hero's energy and variant.
+	SourceHero *SourceHero `json:"sourceHero,omitempty"`
 }
 
 // PageLayoutResult is the model's chosen ordered block skeleton for one page.
@@ -97,6 +115,10 @@ type PageContentRequest struct {
 	Outline           []OutlinePage          `json:"outline"`
 	Layout            []PageLayoutBlock      `json:"layout"`
 	InterviewAnswers  []ClarifyingAnswer     `json:"interviewAnswers,omitempty"`
+	// SourceHero is set only on the home page for a re-spin (Spec 21), so the hero
+	// copy matches the source headline register and CTA intent instead of generic
+	// category copy.
+	SourceHero *SourceHero `json:"sourceHero,omitempty"`
 	// Feedback carries the reason a previous attempt at this page failed so the
 	// retry can correct exactly that instead of the whole run collapsing to the
 	// mega-call fallback. Empty on the first attempt.

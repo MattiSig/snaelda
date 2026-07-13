@@ -501,3 +501,60 @@ func TestRespinBriefReachesPerPageCalls(t *testing.T) {
 		}
 	})
 }
+
+// TestSourceHeroReachesPerPageCalls guards the Spec 21 sourceHero contract: the
+// structured source hero must ride into both per-page user payloads so the
+// home-page hero matches the source's register instead of inventing generic copy.
+func TestSourceHeroReachesPerPageCalls(t *testing.T) {
+	hero := &SourceHero{
+		Headline:    "Clogged Drain? We Fix Them 24/7",
+		Subheadline: "Fast, verified emergency plumbing",
+		CTALabel:    "Call now",
+		TextOnly:    true,
+	}
+
+	t.Run("layout", func(t *testing.T) {
+		user, handler := captureUserMessage(t, func() string {
+			return `{"choices":[{"message":{"content":"{\"blocks\":[{\"type\":\"hero\",\"purpose\":\"Open.\",\"contentBrief\":\"Opener.\",\"variantHint\":\"standard\"}]}"}}]}`
+		})
+		server := httptest.NewServer(handler)
+		defer server.Close()
+		planner, err := NewOpenAIPlanner(OpenAIPlannerConfig{APIKey: "test-key", Model: "gpt-5-mini", BaseURL: server.URL})
+		if err != nil {
+			t.Fatalf("new planner: %v", err)
+		}
+		if _, err := planner.BuildPageLayout(context.Background(), PageLayoutRequest{
+			SiteName:   "My Sewer Guys",
+			Page:       OutlinePage{Title: "Home", Slug: "/", Goal: "Introduce."},
+			SourceHero: hero,
+		}); err != nil {
+			t.Fatalf("build page layout: %v", err)
+		}
+		if !strings.Contains(*user, "sourceHero") || !strings.Contains(*user, "Clogged Drain? We Fix Them 24/7") {
+			t.Fatalf("expected sourceHero in layout user payload, got: %s", *user)
+		}
+	})
+
+	t.Run("content", func(t *testing.T) {
+		user, handler := captureUserMessage(t, func() string {
+			return `{"choices":[{"message":{"content":"{\"blocks\":{\"block_0\":{\"type\":\"hero\",\"props\":{\"variant\":\"standard\",\"headline\":\"Fast plumbing\",\"layout\":\"centered\"}}}}"}}]}`
+		})
+		server := httptest.NewServer(handler)
+		defer server.Close()
+		planner, err := NewOpenAIPlanner(OpenAIPlannerConfig{APIKey: "test-key", Model: "gpt-5-mini", BaseURL: server.URL})
+		if err != nil {
+			t.Fatalf("new planner: %v", err)
+		}
+		if _, err := planner.BuildPageContent(context.Background(), PageContentRequest{
+			SiteName:   "My Sewer Guys",
+			Page:       OutlinePage{Title: "Home", Slug: "/", Goal: "Introduce."},
+			Layout:     []PageLayoutBlock{{Type: "hero", Purpose: "Open.", ContentBrief: "Opener.", VariantHint: "standard"}},
+			SourceHero: hero,
+		}); err != nil {
+			t.Fatalf("build page content: %v", err)
+		}
+		if !strings.Contains(*user, "sourceHero") || !strings.Contains(*user, "Clogged Drain? We Fix Them 24/7") {
+			t.Fatalf("expected sourceHero in content user payload, got: %s", *user)
+		}
+	})
+}

@@ -1578,6 +1578,8 @@ Pick an ordered list of 2-8 block skeletons for ONE page.
 
 When the payload includes a "prompt", treat it as the authoritative brief for this business: it may list real services, prices, hours, contact details, testimonials, and FAQs. Provide blocks that give every relevant fact from the brief a home on this page (e.g. a features/service list for services, an faq block for FAQs, a footer or contact_form for contact details). Carry those facts forward in the contentBrief so the content pass fills them verbatim instead of inventing placeholders.
 
+When the payload includes "sourceHero" (a re-spin of an existing site), the first block must be the hero, and its contentBrief should tell the content pass to match the source hero's headline register and CTA intent (headline/subheadline/ctaLabel carried in sourceHero). When sourceHero.textOnly is true, the source led with type on brand colour rather than a photo — prefer a text-led hero variant over an image-led one. Never clone the source's layout; only match its energy.
+
 The layout is structural only. Full props and copy are written in a later call.`
 
 const pageContentSystemPrompt = `You are the page content composer for Snaelda's structured site generator.
@@ -1592,6 +1594,8 @@ Fill full props for ONE page's supplied layout in a single pass.
 - Do not duplicate sections the outline assigns to a different page.
 
 The payload's "prompt" is the authoritative brief for this business. When it states real facts — business name, service names and descriptions, prices, opening hours, phone, email, address, testimonials, FAQ answers — reproduce them VERBATIM in the matching props. Never overwrite a supplied fact with a placeholder, a rounded number, or an invented substitute. Each layout block's contentBrief tells you which facts belong in that block.
+
+When the payload includes "sourceHero" (a re-spin), the hero block's copy must draw on it: match the source headline's register and promise rather than inventing generic category copy, keep the source's punchy, specific voice (not a flattened summary), and carry the source CTA's intent into a CTA whose target is a page that actually exists in this site. Treat sourceHero.headline/subheadline as register guidance, not verbatim text to copy — rewrite naturally in the site's language. Never introduce layout cloning.
 
 Repeater items (faq items, feature items, packages, etc.): write 3-6 unless the page goal demands more.
 Names, prices, hours, exact addresses: use the values the prompt + interview answers supply; invent only when they are genuinely absent, and then leave plausible placeholders the user can edit.

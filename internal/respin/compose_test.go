@@ -107,6 +107,52 @@ func TestComposeThreadsSiteIDAndSeedAssets(t *testing.T) {
 	}
 }
 
+func TestComposeCarriesSourceHeroWithResolvedAsset(t *testing.T) {
+	brand := BrandResult{
+		Brand:        siteconfig.BrandConfig{BusinessName: "Klippt"},
+		AssetIDByURL: map[string]string{"https://klippt.is/hero.jpg": "asset_hero"},
+	}
+	hero := SourceHero{
+		Headline:    "Klippt — hár sem talar",
+		Subheadline: "Bókaðu tíma í dag",
+		CTALabel:    "Bóka tíma",
+		ImageURL:    "https://klippt.is/hero.jpg",
+	}
+	comp := Compose(sampleAnalysis(), brand, ComposeContext{SourceURL: "https://klippt.is", SourceHero: hero})
+
+	if comp.Input.SourceHero == nil {
+		t.Fatal("expected SourceHero to be carried into the generation input")
+	}
+	if comp.Input.SourceHero.Headline != "Klippt — hár sem talar" {
+		t.Fatalf("headline = %q", comp.Input.SourceHero.Headline)
+	}
+	if comp.Input.SourceHero.ImageAssetID != "asset_hero" {
+		t.Fatalf("imageAssetId = %q, want the pulled hero asset", comp.Input.SourceHero.ImageAssetID)
+	}
+	if comp.Input.SourceHero.TextOnly {
+		t.Fatal("a hero with a resolved image is not text-only")
+	}
+}
+
+func TestComposeSourceHeroTextOnlyWhenNoImage(t *testing.T) {
+	hero := SourceHero{Headline: "Clogged Drain? We Fix Them 24/7", CTALabel: "Call now"}
+	comp := Compose(sampleAnalysis(), BrandResult{}, ComposeContext{SourceHero: hero})
+
+	if comp.Input.SourceHero == nil {
+		t.Fatal("expected SourceHero to be carried")
+	}
+	if !comp.Input.SourceHero.TextOnly {
+		t.Fatal("a hero with no image should be text-only")
+	}
+}
+
+func TestComposeOmitsSourceHeroWhenEmpty(t *testing.T) {
+	comp := Compose(sampleAnalysis(), BrandResult{}, ComposeContext{})
+	if comp.Input.SourceHero != nil {
+		t.Fatalf("expected no SourceHero, got %+v", comp.Input.SourceHero)
+	}
+}
+
 func TestComposeOmitsSectionsWithoutContent(t *testing.T) {
 	analysis := AnalysisResult{
 		Classification: Classification{Vertical: "cafe", Locale: "is", Confidence: 0.8},

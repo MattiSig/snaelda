@@ -57,10 +57,10 @@ type Pipeline struct {
 
 // PipelineConfig wires the pipeline's collaborators.
 type PipelineConfig struct {
-	Store     pipelineStore
-	Fetcher   *Fetcher
-	Analyzer  *Analyzer
-	Brand     *BrandPuller
+	Store    pipelineStore
+	Fetcher  *Fetcher
+	Analyzer *Analyzer
+	Brand    *BrandPuller
 	// Reserver pre-allocates the site the brand assets ingest into. When nil (or
 	// when Brand is nil) the pipeline skips the brand pull and generation mints
 	// its own site id, exactly as the non-re-spin path does.
@@ -210,11 +210,22 @@ func (p *Pipeline) Run(ctx context.Context, params RunParams, sink ProgressSink)
 		}
 	}
 
+	// The source hero is read deterministically from the home page's DOM (Spec 21
+	// step 7); resolve its background image to a pulled asset id for the record and
+	// the generation hint.
+	sourceHero := site.Root.Hero
+	if sourceHero.ImageURL != "" {
+		if id := brandResult.AssetIDByURL[sourceHero.ImageURL]; id != "" {
+			sourceHero.ImageAssetID = id
+		}
+	}
+
 	// Persist the extraction + classification for provenance and the share page.
 	extractedJSON := marshalRaw(map[string]any{
 		"fields":       analysis.Fields,
 		"targetLocale": analysis.TargetLocale,
 		"sourceUrl":    params.SourceURL,
+		"sourceHero":   sourceHero,
 	})
 	classificationJSON := marshalRaw(analysis.Classification)
 	if _, err := p.store.SaveExtraction(ctx, params.ImportID, extractedJSON, classificationJSON); err != nil {
@@ -226,7 +237,7 @@ func (p *Pipeline) Run(ctx context.Context, params RunParams, sink ProgressSink)
 		return RunResult{}, err
 	}
 	emit(StatusComposing)
-	comp := Compose(analysis, brandResult, ComposeContext{SourceURL: params.SourceURL, SiteID: reservedSiteID})
+	comp := Compose(analysis, brandResult, ComposeContext{SourceURL: params.SourceURL, SiteID: reservedSiteID, SourceHero: sourceHero})
 
 	genSink := generationSinkAdapter{onStep: func(step generation.ProgressStep) {
 		if sink != nil {
