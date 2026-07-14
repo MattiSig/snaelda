@@ -148,7 +148,8 @@ function RootDocument({ children }: { children: ReactNode }) {
     pathname !== "/privacy" &&
     !pathname.startsWith("/app") &&
     !pathname.startsWith("/public/") &&
-    !pathname.startsWith("/preview/");
+    !pathname.startsWith("/preview/") &&
+    !pathname.startsWith("/respin");
 
   function toggleColorMode() {
     if (forceDark) {

@@ -271,11 +271,15 @@ function RespinDemo() {
   return (
     <main
       className={cn(
-        'min-h-screen bg-[var(--surface-0)] text-[var(--paper)] antialiased',
+        'relative isolate min-h-screen bg-[var(--surface-0)] text-[var(--paper)] antialiased',
         '[font-family:"Be_Vietnam_Pro","Avenir_Next","Segoe_UI",sans-serif]',
       )}
       style={landingTheme}
     >
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[520px] bg-[radial-gradient(70%_85%_at_50%_-8%,color-mix(in_oklch,var(--thread-mauve)_20%,var(--surface-0))_0%,transparent_72%)]"
+      />
       <header className="mx-auto flex w-full max-w-[1180px] items-center justify-between gap-4 px-6 pt-7 md:px-8 md:pt-10">
         <Link
           to="/"
@@ -306,11 +310,7 @@ function RespinDemo() {
           onKeepIt={() => setIsClaimOpen(true)}
         />
       ) : (
-        <section className="relative isolate mx-auto flex w-full max-w-[760px] flex-col items-center px-6 pb-24 pt-14 text-center md:pt-20">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 -top-10 -z-10 h-[420px] bg-[radial-gradient(60%_80%_at_50%_0%,color-mix(in_oklch,var(--thread-mauve)_20%,transparent)_0%,transparent_72%)]"
-          />
+        <section className="relative mx-auto flex w-full max-w-[760px] flex-col items-center px-6 pb-24 pt-14 text-center md:pt-20">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-[color-mix(in_oklch,var(--thread-mauve)_72%,var(--paper))]">
             {tr('respin.eyebrow')}
           </p>
