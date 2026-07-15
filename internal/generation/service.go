@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/MattiSig/snaelda/internal/platform/audit"
 	"github.com/MattiSig/snaelda/internal/platform/ids"
@@ -2457,9 +2458,24 @@ func clampSentence(value string, limit int) string {
 		return text
 	}
 	if limit <= 3 {
-		return text[:limit]
+		return truncateOnRuneBoundary(text, limit)
 	}
-	return strings.TrimSpace(text[:limit-3]) + "..."
+	return strings.TrimSpace(truncateOnRuneBoundary(text, limit-3)) + "..."
+}
+
+// truncateOnRuneBoundary cuts text to at most limit bytes without splitting a
+// multi-byte rune. A mid-rune cut leaves invalid UTF-8 that json encoding
+// later rewrites to the 3-byte U+FFFD, silently growing the value past the
+// byte limit it was clamped to (and past validation on the next read).
+func truncateOnRuneBoundary(text string, limit int) string {
+	if len(text) <= limit {
+		return text
+	}
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return text[:cut]
 }
 
 func toAnySlice(items []map[string]any) []any {

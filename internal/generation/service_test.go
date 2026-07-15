@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/MattiSig/snaelda/internal/siteconfig"
 	"github.com/MattiSig/snaelda/internal/sites"
@@ -1570,3 +1571,32 @@ func (r *fakeGenerationRows) Values() ([]any, error) {
 func (r *fakeGenerationRows) RawValues() [][]byte { return nil }
 
 func (r *fakeGenerationRows) Conn() *pgx.Conn { return nil }
+
+func TestClampSentenceNeverSplitsRunes(t *testing.T) {
+	// Icelandic body text like production drafts: 2-byte runes make it likely
+	// that a byte-indexed cut lands mid-rune. A mid-rune cut yields invalid
+	// UTF-8 that json encoding rewrites to the 3-byte U+FFFD, growing the
+	// value past the byte limit it was clamped to and failing validation on
+	// the next LoadDraft.
+	base := strings.Repeat("Blóð í þvagi getur bent til æxlis. ", 20)
+	for limit := 4; limit <= 300; limit++ {
+		clamped := clampSentence(base, limit)
+		if len(clamped) > limit {
+			t.Fatalf("limit %d: clamped to %d bytes", limit, len(clamped))
+		}
+		if !utf8.ValidString(clamped) {
+			t.Fatalf("limit %d: clamp produced invalid UTF-8 %q", limit, clamped)
+		}
+		encoded, err := json.Marshal(clamped)
+		if err != nil {
+			t.Fatalf("limit %d: marshal: %v", limit, err)
+		}
+		var decoded string
+		if err := json.Unmarshal(encoded, &decoded); err != nil {
+			t.Fatalf("limit %d: unmarshal: %v", limit, err)
+		}
+		if decoded != clamped {
+			t.Fatalf("limit %d: value changed across json round-trip: %q != %q", limit, decoded, clamped)
+		}
+	}
+}

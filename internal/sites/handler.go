@@ -22,6 +22,7 @@ type Handler struct {
 	authorizer Authorizer
 	previews   PreviewTokenService
 	billingDB  billing.AccessStore
+	logger     *slog.Logger
 }
 
 type Authorizer interface {
@@ -52,12 +53,17 @@ func NewHandlerWithConfig(db DB, cfg HandlerConfig) *Handler {
 	if cfg.Logger != nil {
 		mutatorOptions = append(mutatorOptions, WithLogger(cfg.Logger))
 	}
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Handler{
 		reader:     NewPostgresReader(db),
 		mutator:    NewPostgresMutator(db, mutatorOptions...),
 		authorizer: authorization.New(db),
 		previews:   NewPostgresPreviewTokenService(db, cfg.PreviewTokenTTL),
 		billingDB:  db,
+		logger:     logger,
 	}
 }
 
@@ -208,11 +214,13 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		h.logger.Error("load site draft", "siteId", siteID, "error", err.Error())
 		writeError(w, http.StatusInternalServerError, "load_site_failed", "could not load site draft")
 		return
 	}
 	generation, err := h.reader.LoadGenerationMetadata(r.Context(), siteID)
 	if err != nil {
+		h.logger.Error("load generation metadata", "siteId", siteID, "error", err.Error())
 		writeError(w, http.StatusInternalServerError, "load_site_failed", "could not load site draft")
 		return
 	}
