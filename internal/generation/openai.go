@@ -1436,10 +1436,10 @@ Use "/" for the homepage slug. Use absolute path slugs like "/about" or "/contac
 Theme choices must stay within the provided enums and should reflect Snaelda's warm, crafted, ribbon-led brand direction.
 
 Hero block variants:
-- "standard" (default): the headline-led hero with optional image, layout "centered"/"split-left"/"split-right". Use it for most pages.
-- "full-page": an immersive, viewport-filling hero where the image becomes the page on first load and the headline + CTA sit over it. Pick this when the brand is image-led (photographer, restaurant, hotel, florist, gallery, salon, ceramics studio, wedding planner, tattoo artist, cafe, food, travel, fashion) or when the prompt asks for a bold, atmospheric, magazine-style opener. Always include an "image" with descriptive "alt" text when choosing "full-page", and request a "hero-image" in assetsNeeded. Keep "headline" short (3 to 7 words) and the optional "subheadline" to a single sentence so the overlay stays clean.
+- "full-page" (default for the page-leading hero): an immersive, viewport-filling hero where the image becomes the page on first load and the headline + CTA sit over it. Always include an "image" with descriptive "alt" text when choosing "full-page", and request a "hero-image" in assetsNeeded. Keep "headline" short (3 to 7 words) and the optional "subheadline" to a single sentence so the overlay stays clean.
+- "standard": the headline-led hero with optional image, layout "centered"/"split-left"/"split-right". Use it for secondary pages or when a page needs a compact opener that hands off quickly to dense content.
 - "statement": a deliberately image-free, type-led hero — an oversized headline set directly on the brand color. Pick this for text-led trades and services (plumber, electrician, lawyer, accountant, consultant) with no strong hero photography, or when the prompt calls for a bold typographic opener. Never include an "image" with "statement". Keep "headline" short (3 to 7 words).
-Default the "variant" field to "standard" whenever the prompt does not clearly call for an immersive image-led or bold type-led opener.
+Default the leading hero's "variant" to "full-page". Fall back to "statement" only for text-led brands with no strong hero photography, and reserve "standard" for compact or secondary-page openers.
 
 Block rules:
 - Use contact_form only when a page should collect visitor input. Do not use testimonials, cta_band, or text_section as a substitute for an actual form, and never head a non-form block "Contact us" / "Get in touch" as if it were one.
@@ -1575,6 +1575,7 @@ Return JSON only, matching the supplied schema exactly.
 Pick an ordered list of 2-8 block skeletons for ONE page.
 - Choose block types ONLY from the supplied layoutBlockCatalog; never invent a type.
 - The first block should set the page's tone (typically a hero or section header).
+- When the first block is a hero, default its variantHint to "full-page" — an immersive, viewport-filling hero image with the headline and CTA over it. Hint "statement" instead only for text-led brands with no strong hero photography, and "standard" only when the page needs a compact opener.
 - Include purpose, contentBrief, and variantHint for each block. Keep these concise; do not write final copy.
 - Use contact_form only when the page should collect visitor input. Do not use testimonials, cta_band, or text_section as a substitute for an actual form.
 - Do not duplicate sections the outline assigns to a different page.
@@ -1583,7 +1584,7 @@ Pick an ordered list of 2-8 block skeletons for ONE page.
 
 When the payload includes a "prompt", treat it as the authoritative brief for this business: it may list real services, prices, hours, contact details, testimonials, and FAQs. Provide blocks that give every relevant fact from the brief a home on this page (e.g. a features/service list for services, an faq block for FAQs, a footer or contact_form for contact details). Carry those facts forward in the contentBrief so the content pass fills them verbatim instead of inventing placeholders.
 
-When the payload includes "sourceHero" (a re-spin of an existing site), the first block must be the hero, and its contentBrief should tell the content pass to match the source hero's headline register and CTA intent (headline/subheadline/ctaLabel carried in sourceHero). When sourceHero.textOnly is true, the source led with type on brand colour rather than a photo — pick the "statement" hero variant (type-led, brand-color background, no image) instead of an image-led one. Never clone the source's layout; only match its energy.
+When the payload includes "sourceHero" (a re-spin of an existing site), the first block must be the hero, and its contentBrief should tell the content pass to match the source hero's headline register and CTA intent (headline/subheadline/ctaLabel carried in sourceHero). When sourceHero.textOnly is true, the source led with type on brand colour rather than a photo — pick the "statement" hero variant (type-led, brand-color background, no image) instead of an image-led one. Otherwise hint the "full-page" variant so the re-spin opens with the hero image at full bleed. Never clone the source's layout; only match its energy.
 
 The layout is structural only. Full props and copy are written in a later call.`
 

@@ -101,7 +101,7 @@ export const preview = {
   header:
     "w-full border-b border-[color-mix(in_oklch,var(--color-border)_55%,transparent)]",
   headerInner:
-    "mx-auto flex w-full max-w-[1180px] flex-wrap items-baseline justify-between gap-x-10 gap-y-4 px-[max(1.25rem,4vw)] py-6",
+    "mx-auto flex w-full max-w-[1180px] flex-wrap items-center justify-between gap-x-10 gap-y-4 px-[max(1.25rem,4vw)] py-6",
   headerBrand:
     "text-[1.35rem] leading-none tracking-tight text-[var(--color-text)] [font-family:var(--font-heading)] [font-weight:var(--font-headingWeight,700)]",
   nav: "flex flex-wrap items-baseline gap-x-6 gap-y-2",

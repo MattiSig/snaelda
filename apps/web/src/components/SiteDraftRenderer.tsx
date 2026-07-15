@@ -64,6 +64,7 @@ type CollectionContext = {
   activeCollection?: Collection;
   activeEntry?: CollectionEntry;
   exposesDetailUrlsById: Map<string, boolean>;
+  detailAnchorByCollectionId: Map<string, string>;
 };
 
 // Lets anonymous viewers (shared previews, the public re-spin demo) load
@@ -133,6 +134,22 @@ export function SiteDraftRenderer({
     siteCollections,
     site.pages,
   );
+  // In anchors mode entry detail pages don't exist as URLs — the whole draft
+  // is one document — so entry cards can only jump to the collection's detail
+  // template section.
+  const detailAnchorByCollectionId = new Map<string, string>();
+  for (const page of site.pages) {
+    if (
+      page.type === 'collection_detail' &&
+      page.collectionId &&
+      !detailAnchorByCollectionId.has(page.collectionId)
+    ) {
+      detailAnchorByCollectionId.set(
+        page.collectionId,
+        pageAnchor(page.slug, page.id),
+      );
+    }
+  }
 
   const firstRenderedPage = renderedPages[0];
   const firstVisibleBlock = firstRenderedPage?.blocks.find(
@@ -257,6 +274,7 @@ export function SiteDraftRenderer({
             activeEntry:
               page.type === 'collection_detail' ? activeEntry : undefined,
             exposesDetailUrlsById,
+            detailAnchorByCollectionId,
           };
 
           return (
@@ -581,9 +599,28 @@ function renderSiteBlock({
           key={block.id}
           props={block.props}
           collection={resolved}
+          exposesDetailUrls={
+            resolved
+              ? (collectionCtx.exposesDetailUrlsById.get(resolved.id) ?? false)
+              : false
+          }
+          detailAnchor={
+            resolved
+              ? collectionCtx.detailAnchorByCollectionId.get(resolved.id)
+              : undefined
+          }
           linkMode={linkMode}
           siteSlug={siteSlug}
           publishedBasePath={publishedBasePath}
+          resolveHref={(href) =>
+            resolvePageHref(
+              href,
+              slugToPage,
+              linkMode,
+              siteSlug,
+              publishedBasePath,
+            )
+          }
         />
       );
     }
@@ -599,6 +636,13 @@ function renderSiteBlock({
                   collectionCtx.activeCollection.id,
                 ) ?? false)
               : false
+          }
+          detailAnchor={
+            collectionCtx.activeCollection
+              ? collectionCtx.detailAnchorByCollectionId.get(
+                  collectionCtx.activeCollection.id,
+                )
+              : undefined
           }
           linkMode={linkMode}
           siteSlug={siteSlug}
@@ -2164,18 +2208,17 @@ function madeWithLabel(locale?: string) {
 const headerLogoClass: Record<string, string> = {
   small: 'h-9 max-w-[160px]',
   medium: 'h-12 max-w-[240px]',
-  large: 'h-16 max-w-[320px]',
+  large: 'h-20 max-w-[360px]',
 };
 
 // headerHeightByLogoSize keeps --preview-header-height in step with the header
-// the logo size actually produces (py-6 padding + logo height + border + the
-// baseline row's line-height slack). Values overshoot slightly on purpose: a
-// full-page hero tucking a couple of pixels further under the header is
-// invisible, a gap above it is not.
+// the logo size actually produces (py-6 padding + logo height + border).
+// Values overshoot slightly on purpose: a full-page hero tucking a couple of
+// pixels further under the header is invisible, a gap above it is not.
 const headerHeightByLogoSize: Record<string, string> = {
   small: '88px',
   medium: '104px',
-  large: '120px',
+  large: '136px',
 };
 
 function HeaderBrand({
@@ -2336,15 +2379,21 @@ function formatFooterAddress(address: FooterContact['address']): string[] {
 function CollectionListBlock({
   props,
   collection,
+  exposesDetailUrls,
+  detailAnchor,
   linkMode,
   siteSlug,
   publishedBasePath,
+  resolveHref,
 }: {
   props: Record<string, unknown>;
   collection?: Collection;
+  exposesDetailUrls: boolean;
+  detailAnchor?: string;
   linkMode: 'anchors' | 'published';
   siteSlug?: string;
   publishedBasePath?: string;
+  resolveHref: (href: string) => string;
 }) {
   const layout = asText(props.layout) || 'grid';
   const limit = asInt(props.limit) ?? 6;
@@ -2374,6 +2423,8 @@ function CollectionListBlock({
                 linkMode={linkMode}
                 siteSlug={siteSlug}
                 publishedBasePath={publishedBasePath}
+                linkToDetail={exposesDetailUrls}
+                detailAnchor={detailAnchor}
               />
             ))}
           </div>
@@ -2388,6 +2439,7 @@ function CollectionListBlock({
                   linkMode,
                   siteSlug,
                   publishedBasePath,
+                  resolveHref,
                 )}
               >
                 {asText(cta.label) ?? 'Browse all'}
@@ -2404,6 +2456,7 @@ function CollectionIndexBlock({
   props,
   collection,
   exposesDetailUrls,
+  detailAnchor,
   linkMode,
   siteSlug,
   publishedBasePath,
@@ -2411,6 +2464,7 @@ function CollectionIndexBlock({
   props: Record<string, unknown>;
   collection?: Collection;
   exposesDetailUrls: boolean;
+  detailAnchor?: string;
   linkMode: 'anchors' | 'published';
   siteSlug?: string;
   publishedBasePath?: string;
@@ -2446,6 +2500,7 @@ function CollectionIndexBlock({
                 siteSlug={siteSlug}
                 publishedBasePath={publishedBasePath}
                 linkToDetail={exposesDetailUrls}
+                detailAnchor={detailAnchor}
               />
             ))}
           </div>
@@ -2490,11 +2545,11 @@ function CollectionDetailBlock({
   }
 
   const layout = asText(props.layout) || 'default';
-  const cover =
-    asImageRef(entry.fields.cover) || asImageRef(entry.fields.image);
-  const title = asText(props.heading) || asText(entry.fields.title) || '';
-  const summary = asText(entry.fields.summary);
-  const details = asText(entry.fields.details);
+  const display = resolveEntryDisplay(collection, entry);
+  const cover = display.cover;
+  const title = asText(props.heading) || display.title;
+  const summary = display.summary;
+  const details = display.details;
   const widthClass =
     layout === 'narrow'
       ? 'max-w-[60ch]'
@@ -2549,6 +2604,7 @@ function CollectionEntryCard({
   siteSlug,
   publishedBasePath,
   linkToDetail = true,
+  detailAnchor,
 }: {
   entry: CollectionEntry;
   collection: Collection;
@@ -2556,11 +2612,9 @@ function CollectionEntryCard({
   siteSlug?: string;
   publishedBasePath?: string;
   linkToDetail?: boolean;
+  detailAnchor?: string;
 }) {
-  const title = asText(entry.fields.title) || entry.slug;
-  const summary = asText(entry.fields.summary);
-  const cover =
-    asImageRef(entry.fields.cover) || asImageRef(entry.fields.image);
+  const { title, summary, cover } = resolveEntryDisplay(collection, entry);
   const cardClass =
     'group grid gap-4 rounded-[var(--radius-inner)] border border-[color-mix(in_oklch,var(--color-border)_45%,transparent)] bg-[var(--color-surface)] p-5 transition-transform';
 
@@ -2591,17 +2645,22 @@ function CollectionEntryCard({
     </>
   );
 
-  if (!linkToDetail) {
+  // Anchors mode renders the whole draft as one document, so per-entry paths
+  // like /team/jane don't exist as URLs — linking them would 404. Jump to the
+  // collection's detail template section instead, or drop the link entirely.
+  if (!linkToDetail || (linkMode === 'anchors' && !detailAnchor)) {
     return <div className={cardClass}>{inner}</div>;
   }
 
-  const href = buildCollectionEntryHref(
-    collection,
-    entry,
-    linkMode,
-    siteSlug,
-    publishedBasePath,
-  );
+  const href =
+    linkMode === 'anchors'
+      ? `#${detailAnchor}`
+      : buildCollectionEntryHref(
+          collection,
+          entry,
+          siteSlug,
+          publishedBasePath,
+        );
   return (
     <a href={href} className={cn(cardClass, 'hover:-translate-y-px')}>
       {inner}
@@ -2609,36 +2668,73 @@ function CollectionEntryCard({
   );
 }
 
+// resolveEntryDisplay maps an entry's fields onto the card/detail slots. The
+// canonical keys (title/summary/details/cover/image) win, but collections keep
+// their own schemas — a seeded team collection stores name/role/bio/photo — so
+// fall back to the schema's first matching field of each shape.
+function resolveEntryDisplay(
+  collection: Collection | undefined,
+  entry: CollectionEntry,
+) {
+  const schema = collection?.schema ?? [];
+  const fieldText = (key?: string) => (key ? asText(entry.fields[key]) : '');
+  const titleField =
+    schema.find((f) => f.type === 'text' && f.required) ??
+    schema.find((f) => f.type === 'text');
+  const summaryField = schema.find(
+    (f) => f.type === 'text' && f.key !== titleField?.key,
+  );
+  const longTextField = schema.find(
+    (f) => f.type === 'long_text' || f.type === 'rich_text',
+  );
+  const assetField = schema.find((f) => f.type === 'asset');
+  return {
+    title:
+      asText(entry.fields.title) || fieldText(titleField?.key) || entry.slug,
+    summary: asText(entry.fields.summary) || fieldText(summaryField?.key),
+    details: asText(entry.fields.details) || fieldText(longTextField?.key),
+    cover:
+      asImageRef(entry.fields.cover) ||
+      asImageRef(entry.fields.image) ||
+      (assetField ? asImageRef(entry.fields[assetField.key]) : null),
+  };
+}
+
 function buildCollectionEntryHref(
   collection: Collection,
   entry: CollectionEntry,
-  linkMode: 'anchors' | 'published',
   siteSlug?: string,
   publishedBasePath?: string,
 ) {
-  const entryPath = `/${collection.slug}/${entry.slug}`;
-  if (linkMode === 'published') {
-    const basePath = resolvePublishedBasePath(siteSlug, publishedBasePath);
-    return `${basePath}${entryPath}`;
-  }
-  return entryPath;
+  const basePath = resolvePublishedBasePath(siteSlug, publishedBasePath);
+  return `${basePath}/${collection.slug}/${entry.slug}`;
 }
 
 function resolveCollectionListCtaHref(
   href: string,
   collection: Collection | undefined,
   linkMode: 'anchors' | 'published',
-  siteSlug?: string,
-  publishedBasePath?: string,
+  siteSlug: string | undefined,
+  publishedBasePath: string | undefined,
+  resolveHref: (href: string) => string,
 ) {
+  // In anchors mode internal paths only work when they resolve to a page
+  // anchor in this document; anything else would navigate away and 404.
+  const resolveInternal = (path: string) => {
+    const resolved = resolveHref(path);
+    return resolved.startsWith('#') ? resolved : '#';
+  };
   if (href) {
     const safeHref = sanitizeRenderableHref(href);
     if (!safeHref) {
       return '#';
     }
-    if (safeHref.startsWith('/') && linkMode === 'published') {
-      const basePath = resolvePublishedBasePath(siteSlug, publishedBasePath);
-      return `${basePath}${safeHref}`;
+    if (safeHref.startsWith('/')) {
+      if (linkMode === 'published') {
+        const basePath = resolvePublishedBasePath(siteSlug, publishedBasePath);
+        return `${basePath}${safeHref}`;
+      }
+      return resolveInternal(safeHref);
     }
     return safeHref;
   }
@@ -2647,7 +2743,7 @@ function resolveCollectionListCtaHref(
       const basePath = resolvePublishedBasePath(siteSlug, publishedBasePath);
       return `${basePath}/${collection.slug}`;
     }
-    return `/${collection.slug}`;
+    return resolveInternal(`/${collection.slug}`);
   }
   return '#';
 }

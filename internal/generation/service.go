@@ -1274,6 +1274,17 @@ func buildDraftFromPlan(plan generationPlan, slugValue string, preferredLanguage
 	usedSlugs := make(map[string]bool, len(plan.Pages))
 	siteDescription := clampSentence(firstNonEmpty(plan.Pages[0].SEO.Description, plan.SiteGoal), 180)
 
+	// Collections that expose detail URLs own /{collection.Slug}; a planner
+	// page on that slug would fail draft validation outright. Fold such pages
+	// into the collection's index page instead of failing the whole plan.
+	reservedByPageSlug := make(map[string]string, len(seedCollections))
+	for _, collection := range seedCollections {
+		if collection.Slug != "" {
+			reservedByPageSlug["/"+collection.Slug] = collection.ID
+		}
+	}
+	introBlocksByCollection := map[string][]siteconfig.BlockInstance{}
+
 	for _, pagePlan := range plan.Pages {
 		pageID, err := ids.New()
 		if err != nil {
@@ -1291,6 +1302,14 @@ func buildDraftFromPlan(plan generationPlan, slugValue string, preferredLanguage
 				Version: siteconfig.LatestBlockVersion(blockPlan.Type),
 				Props:   blockPlan.Props,
 			})
+		}
+
+		if collectionID, reserved := reservedByPageSlug[strings.TrimSpace(pagePlan.Slug)]; reserved {
+			introBlocksByCollection[collectionID] = append(
+				introBlocksByCollection[collectionID],
+				collectionIndexIntroBlocks(blocks)...,
+			)
+			continue
 		}
 
 		pages = append(pages, siteconfig.PageDraft{
@@ -1318,7 +1337,7 @@ func buildDraftFromPlan(plan generationPlan, slugValue string, preferredLanguage
 	// deterministic index page (its public listing) and a detail template (its
 	// per-entry page). The index page is added to primary navigation; the detail
 	// template is a template address, not a nav destination.
-	collectionPages, collectionNav, err := buildSeedCollectionPages(seedCollections, siteDescription, usedSlugs)
+	collectionPages, collectionNav, err := buildSeedCollectionPages(seedCollections, siteDescription, usedSlugs, introBlocksByCollection)
 	if err != nil {
 		return siteconfig.SiteDraft{}, err
 	}
@@ -1366,9 +1385,10 @@ func buildDraftFromPlan(plan generationPlan, slugValue string, preferredLanguage
 // collection: a collection_index page (public listing, added to nav) and a
 // collection_detail template page (per-entry rendering, not in nav). Slugs are
 // derived from the collection slug and deduped against usedSlugs so they never
-// collide with a planner-generated page. The index owns /{collection.slug}, which
-// the composer keeps free by dropping the corresponding static-page hint.
-func buildSeedCollectionPages(collections []siteconfig.Collection, siteDescription string, usedSlugs map[string]bool) ([]siteconfig.PageDraft, []siteconfig.NavigationItem, error) {
+// collide with a planner-generated page. The index owns /{collection.slug}; any
+// planner page that claimed that slug has been folded into introBlocks, which
+// render above the listing.
+func buildSeedCollectionPages(collections []siteconfig.Collection, siteDescription string, usedSlugs map[string]bool, introBlocks map[string][]siteconfig.BlockInstance) ([]siteconfig.PageDraft, []siteconfig.NavigationItem, error) {
 	if len(collections) == 0 {
 		return nil, nil, nil
 	}
@@ -1385,6 +1405,17 @@ func buildSeedCollectionPages(collections []siteconfig.Collection, siteDescripti
 			return nil, nil, fmt.Errorf("generate collection index block id: %w", err)
 		}
 		indexSlug := uniquePageSlug("/"+collection.Slug, usedSlugs)
+		blocks := append([]siteconfig.BlockInstance{}, introBlocks[collection.ID]...)
+		blocks = append(blocks, siteconfig.BlockInstance{
+			ID:      indexBlockID,
+			Type:    "collection_index",
+			Version: siteconfig.LatestBlockVersion("collection_index"),
+			Props: map[string]any{
+				"heading": collection.PluralLabel,
+				"sort":    siteconfig.CollectionSortManual,
+				"layout":  "grid",
+			},
+		})
 		pages = append(pages, siteconfig.PageDraft{
 			ID:           indexID,
 			Title:        collection.PluralLabel,
@@ -1396,16 +1427,7 @@ func buildSeedCollectionPages(collections []siteconfig.Collection, siteDescripti
 				Title:       clampSentence(collection.PluralLabel, 70),
 				Description: siteDescription,
 			},
-			Blocks: []siteconfig.BlockInstance{{
-				ID:      indexBlockID,
-				Type:    "collection_index",
-				Version: siteconfig.LatestBlockVersion("collection_index"),
-				Props: map[string]any{
-					"heading": collection.PluralLabel,
-					"sort":    siteconfig.CollectionSortManual,
-					"layout":  "grid",
-				},
-			}},
+			Blocks: blocks,
 		})
 		navigation = append(navigation, siteconfig.NavigationItem{
 			Label:  collection.PluralLabel,
@@ -1446,6 +1468,22 @@ func buildSeedCollectionPages(collections []siteconfig.Collection, siteDescripti
 		})
 	}
 	return pages, navigation, nil
+}
+
+// collectionIndexIntroBlocks filters a folded-in planner page's blocks down to
+// the ones that make sense above a collection listing: rosters and list blocks
+// would duplicate the collection_index itself, and a footer belongs at the end
+// of a page, not mid-page.
+func collectionIndexIntroBlocks(blocks []siteconfig.BlockInstance) []siteconfig.BlockInstance {
+	kept := make([]siteconfig.BlockInstance, 0, len(blocks))
+	for _, block := range blocks {
+		switch block.Type {
+		case "team_profile_cards", "collection_list", "collection_index", "footer":
+			continue
+		}
+		kept = append(kept, block)
+	}
+	return kept
 }
 
 // uniquePageSlug returns base, suffixing "-2", "-3", … until it is unused, and

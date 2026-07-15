@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/MattiSig/snaelda/internal/platform/ids"
 	"github.com/MattiSig/snaelda/internal/siteconfig"
 )
 
@@ -613,7 +614,9 @@ func repairHeroProps(props map[string]any, pageTitle string, pageSlug string) ma
 	if eyebrow := readGeneratedText(props, "eyebrow", 80); eyebrow != "" {
 		repaired["eyebrow"] = eyebrow
 	}
-	if subheadline := readGeneratedText(props, "subheadline", 280); subheadline != "" {
+	headline, _ := repaired["headline"].(string)
+	if subheadline := readGeneratedText(props, "subheadline", 280); subheadline != "" &&
+		normalizeSupportingCopy(subheadline) != normalizeSupportingCopy(headline) {
 		repaired["subheadline"] = subheadline
 	}
 	if cta := repairCTA(props["primaryCta"], "Get in touch", fallbackGeneratedCTAHref(pageSlug)); cta != nil {
@@ -1168,7 +1171,11 @@ func repairImage(value any) map[string]any {
 		return nil
 	}
 	assetID := readGeneratedText(object, "assetId", 120)
-	if assetID == "" {
+	// The model is forced by the strict schema to emit an assetId string and
+	// sometimes invents one ("hero-image"). Real asset ids are UUIDs; anything
+	// else must be dropped so the imagery pass fills the slot with a real
+	// asset instead of the writer rejecting the whole draft.
+	if !ids.IsValid(assetID) {
 		return nil
 	}
 	repaired := map[string]any{"assetId": assetID}
