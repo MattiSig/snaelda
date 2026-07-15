@@ -27,16 +27,17 @@ type Handler struct {
 }
 
 type HandlerConfig struct {
-	Planner              generationPlanBuilder
-	BlockSuggester       BlockSuggester
-	ImageQueryRewriter   ImageQueryRewriter
-	PageChangeSetPlanner PageChangeSetPlanner
-	ClarifyingPlanner    ClarifyingQuestionPlanner
-	DecomposedPlanner    DecomposedPlanner
-	StarterImagery       *StarterImagery
-	AssetImporter        AssetImporter
-	Logger               *slog.Logger
-	AuditRecorder        *audit.Recorder
+	Planner               generationPlanBuilder
+	BlockSuggester        BlockSuggester
+	ImageQueryRewriter    ImageQueryRewriter
+	PageChangeSetPlanner  PageChangeSetPlanner
+	ClarifyingPlanner     ClarifyingQuestionPlanner
+	SeedCollectionPlanner SeedCollectionPlanner
+	DecomposedPlanner     DecomposedPlanner
+	StarterImagery        *StarterImagery
+	AssetImporter         AssetImporter
+	Logger                *slog.Logger
+	AuditRecorder         *audit.Recorder
 }
 
 type Generator interface {
@@ -50,7 +51,7 @@ type Generator interface {
 	ListRepromptHistory(ctx context.Context, workspaceID string, siteID string) ([]RepromptHistoryEntry, error)
 	LoadDraftRevision(ctx context.Context, workspaceID string, siteID string, revisionID string) (DraftRevision, error)
 	RevertReprompt(ctx context.Context, workspaceID string, siteID string, repromptID string) (siteconfig.SiteDraft, error)
-	BuildInterviewQuestions(ctx context.Context, input GenerateInput) ([]ClarifyingQuestion, error)
+	BuildInterview(ctx context.Context, input GenerateInput) (InterviewResult, error)
 }
 
 type ProgressGenerator interface {
@@ -76,6 +77,7 @@ type generateRequest struct {
 	OptionalHints     map[string]string      `json:"optionalHints,omitempty"`
 	Brand             siteconfig.BrandConfig `json:"brand,omitempty"`
 	InterviewAnswers  []ClarifyingAnswer     `json:"interviewAnswers,omitempty"`
+	Collections       []SeedCollectionInput  `json:"collections,omitempty"`
 }
 
 type interviewRequest struct {
@@ -87,7 +89,8 @@ type interviewRequest struct {
 }
 
 type interviewResponse struct {
-	Questions []ClarifyingQuestion `json:"questions"`
+	Questions   []ClarifyingQuestion       `json:"questions"`
+	Collections []SeedCollectionSuggestion `json:"collections,omitempty"`
 }
 
 type repromptRequest struct {
@@ -144,6 +147,9 @@ func NewServiceFromConfig(db DB, cfg HandlerConfig) *Service {
 	}
 	if cfg.ClarifyingPlanner != nil {
 		options = append(options, WithClarifyingQuestionPlanner(cfg.ClarifyingPlanner))
+	}
+	if cfg.SeedCollectionPlanner != nil {
+		options = append(options, WithSeedCollectionPlanner(cfg.SeedCollectionPlanner))
 	}
 	if cfg.DecomposedPlanner != nil {
 		options = append(options, WithDecomposedPlanner(cfg.DecomposedPlanner))
@@ -223,13 +229,14 @@ func (h *Handler) generate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	input := GenerateInput{
-		Name:              strings.TrimSpace(payload.Name),
-		Slug:              strings.TrimSpace(payload.Slug),
-		Prompt:            strings.TrimSpace(payload.Prompt),
-		PreferredLanguage: strings.TrimSpace(payload.PreferredLanguage),
-		OptionalHints:     trimOptionalHints(payload.OptionalHints),
-		Brand:             payload.Brand,
-		InterviewAnswers:  trimInterviewAnswers(payload.InterviewAnswers),
+		Name:                 strings.TrimSpace(payload.Name),
+		Slug:                 strings.TrimSpace(payload.Slug),
+		Prompt:               strings.TrimSpace(payload.Prompt),
+		PreferredLanguage:    strings.TrimSpace(payload.PreferredLanguage),
+		OptionalHints:        trimOptionalHints(payload.OptionalHints),
+		Brand:                payload.Brand,
+		InterviewAnswers:     trimInterviewAnswers(payload.InterviewAnswers),
+		SeedCollectionInputs: trimSeedCollectionInputs(payload.Collections),
 	}
 	if acceptsEventStream(r) {
 		streamer, ok := h.service.(ProgressGenerator)
@@ -280,7 +287,7 @@ func (h *Handler) interview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "prompt_too_long", "prompt exceeds the allowed length")
 		return
 	}
-	questions, err := h.service.BuildInterviewQuestions(r.Context(), GenerateInput{
+	interview, err := h.service.BuildInterview(r.Context(), GenerateInput{
 		Name:              strings.TrimSpace(payload.Name),
 		Prompt:            prompt,
 		PreferredLanguage: strings.TrimSpace(payload.PreferredLanguage),
@@ -291,7 +298,7 @@ func (h *Handler) interview(w http.ResponseWriter, r *http.Request) {
 		h.writeGenerationError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, interviewResponse{Questions: questions})
+	writeJSON(w, http.StatusOK, interviewResponse{Questions: interview.Questions, Collections: interview.Collections})
 }
 
 func trimInterviewAnswers(input []ClarifyingAnswer) []ClarifyingAnswer {
@@ -316,6 +323,38 @@ func trimInterviewAnswers(input []ClarifyingAnswer) []ClarifyingAnswer {
 				continue
 			}
 			trimmed.SelectedOptions = append(trimmed.SelectedOptions, option)
+		}
+		output = append(output, trimmed)
+	}
+	if len(output) == 0 {
+		return nil
+	}
+	return output
+}
+
+// trimSeedCollectionInputs sanitizes the collections step of the generate
+// payload: labels and items are required, item text is capped, and at most
+// MaxSeedCollectionSuggestions collections survive.
+func trimSeedCollectionInputs(input []SeedCollectionInput) []SeedCollectionInput {
+	if len(input) == 0 {
+		return nil
+	}
+	output := make([]SeedCollectionInput, 0, len(input))
+	for _, collection := range input {
+		if len(output) >= MaxSeedCollectionSuggestions {
+			break
+		}
+		trimmed := SeedCollectionInput{
+			SuggestionID:  strings.TrimSpace(collection.SuggestionID),
+			SingularLabel: strings.TrimSpace(collection.SingularLabel),
+			PluralLabel:   strings.TrimSpace(collection.PluralLabel),
+			ItemsText:     strings.TrimSpace(collection.ItemsText),
+		}
+		if trimmed.SingularLabel == "" || trimmed.PluralLabel == "" || trimmed.ItemsText == "" {
+			continue
+		}
+		if runes := []rune(trimmed.ItemsText); len(runes) > maxSeedCollectionItemsCharacters {
+			trimmed.ItemsText = string(runes[:maxSeedCollectionItemsCharacters])
 		}
 		output = append(output, trimmed)
 	}

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MattiSig/snaelda/internal/platform/audit"
@@ -76,6 +77,11 @@ type GenerateInput struct {
 	// language-conformance walker, which only sees the plan. Empty on the ordinary
 	// path.
 	SeedCollections []siteconfig.Collection
+	// SeedCollectionInputs carry the fresh-spin intake's collections step: the
+	// user's confirmed suggestions plus their raw item lines. Generation drafts
+	// them into SeedCollections (drop-on-failure) before planning. Ignored when
+	// SeedCollections is already populated (re-spin).
+	SeedCollectionInputs []SeedCollectionInput
 }
 
 type RepromptInput struct {
@@ -96,19 +102,20 @@ type generationPlanFeedback struct {
 type generationPlanBuilder func(context.Context, generationInputContext, generationPlanFeedback) (generationPlan, error)
 
 type Service struct {
-	db                   DB
-	reader               draftReader
-	writer               draftWriter
-	planner              generationPlanBuilder
-	suggester            BlockSuggester
-	imageRewriter        ImageQueryRewriter
-	pageChangeSetPlanner PageChangeSetPlanner
-	clarifyingPlanner    ClarifyingQuestionPlanner
-	decomposedPlanner    DecomposedPlanner
-	imagery              *StarterImagery
-	assetImporter        AssetImporter
-	logger               *slog.Logger
-	recorder             *audit.Recorder
+	db                    DB
+	reader                draftReader
+	writer                draftWriter
+	planner               generationPlanBuilder
+	suggester             BlockSuggester
+	imageRewriter         ImageQueryRewriter
+	pageChangeSetPlanner  PageChangeSetPlanner
+	clarifyingPlanner     ClarifyingQuestionPlanner
+	seedCollectionPlanner SeedCollectionPlanner
+	decomposedPlanner     DecomposedPlanner
+	imagery               *StarterImagery
+	assetImporter         AssetImporter
+	logger                *slog.Logger
+	recorder              *audit.Recorder
 }
 
 // ServiceOption customizes the Service constructed by NewService.
@@ -177,6 +184,15 @@ func WithPageChangeSetPlanner(planner PageChangeSetPlanner) ServiceOption {
 func WithClarifyingQuestionPlanner(planner ClarifyingQuestionPlanner) ServiceOption {
 	return func(s *Service) {
 		s.clarifyingPlanner = planner
+	}
+}
+
+// WithSeedCollectionPlanner wires the collections step of the intake flow.
+// When nil, the interview returns no collection suggestions and generate
+// ignores SeedCollectionInputs.
+func WithSeedCollectionPlanner(planner SeedCollectionPlanner) ServiceOption {
+	return func(s *Service) {
+		s.seedCollectionPlanner = planner
 	}
 }
 
@@ -255,12 +271,74 @@ func (s *Service) BuildInterviewQuestions(ctx context.Context, input GenerateInp
 	return questions, nil
 }
 
+// InterviewResult is the full intake payload: step one's clarifying questions
+// plus step two's collection suggestions.
+type InterviewResult struct {
+	Questions   []ClarifyingQuestion
+	Collections []SeedCollectionSuggestion
+}
+
+// BuildInterview runs both intake calls in parallel. Clarifying-question
+// errors fail the interview (existing behaviour); collection suggestions are
+// best-effort — a failure logs and returns an empty step two, never an error.
+func (s *Service) BuildInterview(ctx context.Context, input GenerateInput) (InterviewResult, error) {
+	prompt := strings.TrimSpace(input.Prompt)
+	if prompt == "" {
+		return InterviewResult{}, ErrPromptRequired
+	}
+
+	var (
+		result      InterviewResult
+		suggestions []SeedCollectionSuggestion
+		wg          sync.WaitGroup
+	)
+	if s.seedCollectionPlanner != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var err error
+			suggestions, err = s.seedCollectionPlanner.SuggestSeedCollections(ctx, SeedCollectionSuggestRequest{
+				Prompt:            prompt,
+				NameHint:          strings.TrimSpace(input.Name),
+				PreferredLanguage: strings.TrimSpace(input.PreferredLanguage),
+				OptionalHints:     cloneStringMap(input.OptionalHints),
+			})
+			if err != nil {
+				suggestions = nil
+				if s.logger != nil {
+					s.logger.Warn("seed collection suggestions failed; interview proceeds without them", "error", err.Error())
+				}
+			}
+		}()
+	}
+
+	questions, err := s.BuildInterviewQuestions(ctx, input)
+	wg.Wait()
+	if err != nil {
+		return InterviewResult{}, err
+	}
+	result.Questions = questions
+	if len(suggestions) > MaxSeedCollectionSuggestions {
+		suggestions = suggestions[:MaxSeedCollectionSuggestions]
+	}
+	result.Collections = suggestions
+	return result, nil
+}
+
 func (s *Service) GenerateWithProgress(ctx context.Context, workspaceID string, userID string, input GenerateInput, sink ProgressSink) (GenerateResult, error) {
 	prompt := strings.TrimSpace(input.Prompt)
 	if prompt == "" {
 		return GenerateResult{}, ErrPromptRequired
 	}
 	s.pruneGenerationJobs(ctx)
+
+	// Fresh-spin collections step: structure the user's intake items into seed
+	// collections before the job is created, so the persisted input context
+	// carries the final collections. Re-spin arrives with SeedCollections
+	// already synthesized and skips this.
+	if len(input.SeedCollections) == 0 && len(input.SeedCollectionInputs) > 0 {
+		input.SeedCollections = s.draftSeedCollections(ctx, input)
+	}
 
 	inputContext := generationInputContext{
 		NameHint:           strings.TrimSpace(input.Name),

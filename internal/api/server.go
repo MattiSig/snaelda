@@ -170,6 +170,7 @@ func (s *Server) BuildHandler() (http.Handler, error) {
 		generationHandlerConfig.ImageQueryRewriter = generationPlanner
 		generationHandlerConfig.PageChangeSetPlanner = generationPlanner
 		generationHandlerConfig.ClarifyingPlanner = generationPlanner
+		generationHandlerConfig.SeedCollectionPlanner = generationPlanner
 		generationHandlerConfig.DecomposedPlanner = generationPlanner
 		themeHandlerConfig.Regenerator = generationPlanner
 	}

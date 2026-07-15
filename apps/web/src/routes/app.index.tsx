@@ -7,6 +7,7 @@ import {
   type GenerationShadowPage,
 } from '@/components/GenerationProgressCard'
 import { GenerationIntakeForm } from '@/components/GenerationIntakeForm'
+import { CollectionIntakeForm } from '@/components/CollectionIntakeForm'
 import { Ellipsis, PencilLine, Settings, Sparkles, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,6 +21,8 @@ import {
   type ClarifyingAnswer,
   type ClarifyingQuestion,
   type GenerationPartialEvent,
+  type SeedCollectionInput,
+  type SeedCollectionSuggestion,
   type SiteSummary,
 } from '@/lib/api'
 import { actions, emptyState, form, paddedPanel, ribbonPanel, siteCard, text } from '@/lib/styles'
@@ -93,10 +96,12 @@ function SitesIndex() {
   const [generationStep, setGenerationStep] = useState('')
   const [generationStepTotal, setGenerationStepTotal] = useState(0)
   const [intakeQuestions, setIntakeQuestions] = useState<ClarifyingQuestion[] | null>(null)
+  const [intakeCollections, setIntakeCollections] = useState<SeedCollectionSuggestion[]>([])
   const [isPreparingIntake, setIsPreparingIntake] = useState(false)
   const [shadowPages, setShadowPages] = useState<GenerationShadowPage[]>([])
   const intakePromptRef = useRef('')
   const intakeNameRef = useRef('')
+  const intakeAnswersRef = useRef<ClarifyingAnswer[]>([])
   const hasAutoSubmitted = useRef(false)
   const actionsMenuRef = useRef<HTMLDivElement | null>(null)
 
@@ -197,13 +202,17 @@ function SitesIndex() {
     setGenerationPrompt(trimmedPrompt)
     setIsPreparingIntake(true)
     setIntakeQuestions(null)
+    setIntakeCollections([])
+    intakeAnswersRef.current = []
     try {
       const response = await fetchClarifyingQuestions({
         name: nameValue.trim() || undefined,
         prompt: trimmedPrompt,
         preferredLanguage: locale,
       })
-      if (!response.questions || response.questions.length === 0) {
+      const questions = response.questions ?? []
+      const collections = response.collections ?? []
+      if (questions.length === 0 && collections.length === 0) {
         await runGeneration({
           promptValue: trimmedPrompt,
           nameValue,
@@ -211,7 +220,8 @@ function SitesIndex() {
         })
         return
       }
-      setIntakeQuestions(response.questions)
+      setIntakeQuestions(questions.length > 0 ? questions : null)
+      setIntakeCollections(collections)
       setIsPreparingIntake(false)
       setIsCreateOpen(false)
     } catch (error) {
@@ -235,16 +245,19 @@ function SitesIndex() {
     promptValue,
     nameValue,
     interviewAnswers,
+    collections,
   }: {
     promptValue: string
     nameValue: string
     interviewAnswers: ClarifyingAnswer[]
+    collections?: SeedCollectionInput[]
   }) {
     const trimmedPrompt = promptValue.trim()
     if (!trimmedPrompt) {
       return
     }
     setIntakeQuestions(null)
+    setIntakeCollections([])
     setIsPreparingIntake(false)
     setIsSubmitting(true)
     setGenerationPrompt(trimmedPrompt)
@@ -259,6 +272,7 @@ function SitesIndex() {
           prompt: trimmedPrompt,
           preferredLanguage: locale,
           interviewAnswers: interviewAnswers.length > 0 ? interviewAnswers : undefined,
+          collections: collections && collections.length > 0 ? collections : undefined,
         },
         {
           onProgress: (step) => {
@@ -314,23 +328,51 @@ function SitesIndex() {
   }
 
   if (intakeQuestions && intakeQuestions.length > 0 && !errorMessage) {
+    const hasCollectionsStep = intakeCollections.length > 0
+    const advance = (answers: ClarifyingAnswer[]) => {
+      if (hasCollectionsStep) {
+        intakeAnswersRef.current = answers
+        setIntakeQuestions(null)
+        return
+      }
+      void runGeneration({
+        promptValue: intakePromptRef.current,
+        nameValue: intakeNameRef.current,
+        interviewAnswers: answers,
+      })
+    }
     return (
       <GenerationIntakeForm
         prompt={generationPrompt || intakePromptRef.current}
         questions={intakeQuestions}
         isSubmitting={isSubmitting}
-        onSubmit={(answers) =>
+        onSubmit={advance}
+        onSkipAll={() => advance([])}
+        submitLabel={hasCollectionsStep ? 'Continue' : undefined}
+        skipAllLabel={hasCollectionsStep ? 'Skip questions' : undefined}
+      />
+    )
+  }
+
+  if (intakeCollections.length > 0 && !errorMessage) {
+    return (
+      <CollectionIntakeForm
+        prompt={generationPrompt || intakePromptRef.current}
+        suggestions={intakeCollections}
+        isSubmitting={isSubmitting}
+        onSubmit={(collections) =>
           runGeneration({
             promptValue: intakePromptRef.current,
             nameValue: intakeNameRef.current,
-            interviewAnswers: answers,
+            interviewAnswers: intakeAnswersRef.current,
+            collections,
           })
         }
-        onSkipAll={() =>
+        onSkip={() =>
           runGeneration({
             promptValue: intakePromptRef.current,
             nameValue: intakeNameRef.current,
-            interviewAnswers: [],
+            interviewAnswers: intakeAnswersRef.current,
           })
         }
       />

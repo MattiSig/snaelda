@@ -95,8 +95,8 @@ func (g *fakeGenerator) RevertReprompt(_ context.Context, _ string, _ string, re
 	return g.undoResult, g.err
 }
 
-func (g *fakeGenerator) BuildInterviewQuestions(_ context.Context, _ GenerateInput) ([]ClarifyingQuestion, error) {
-	return nil, g.err
+func (g *fakeGenerator) BuildInterview(_ context.Context, _ GenerateInput) (InterviewResult, error) {
+	return InterviewResult{}, g.err
 }
 
 type fakeWorkspaceAuthorizer struct{}

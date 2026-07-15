@@ -53,8 +53,12 @@ func (s *Service) generateDraftDecomposed(
 	if err := emitTrackerStep(ctx, tracker, "plan.pages"); err != nil {
 		return generationPlan{}, siteconfig.SiteDraft{}, err
 	}
+	// Seeded collections already own their items (index + detail pages); tell
+	// the outline and page composers so they do not duplicate the entries into
+	// static blocks with placeholder facts.
+	prompt := input.Prompt + seedCollectionsPromptDirective(input.SeedCollections)
 	outline, err := s.decomposedPlanner.BuildOutline(ctx, OutlineRequest{
-		Prompt:            input.Prompt,
+		Prompt:            prompt,
 		NameHint:          input.NameHint,
 		PreferredLanguage: input.PreferredLanguage,
 		OptionalHints:     input.OptionalHints,
@@ -89,7 +93,7 @@ func (s *Service) generateDraftDecomposed(
 			if isHomeSlug(page.Slug) {
 				sourceHero = input.SourceHero
 			}
-			pagePlan, err := s.buildPagePlanFromLayout(pageCtx, outline.SiteName, outline.SiteGoal, input.Prompt, input.PreferredLanguage, input.Brand, page, outline.Pages, input.InterviewAnswers, sourceHero)
+			pagePlan, err := s.buildPagePlanFromLayout(pageCtx, outline.SiteName, outline.SiteGoal, prompt, input.PreferredLanguage, input.Brand, page, outline.Pages, input.InterviewAnswers, sourceHero)
 			if err != nil {
 				return fmt.Errorf("compose page %s: %w", page.Slug, err)
 			}

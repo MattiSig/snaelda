@@ -665,6 +665,130 @@ func (p *OpenAIPlanner) BuildClarifyingQuestions(ctx context.Context, request Cl
 	return responsePayload.Questions, nil
 }
 
+// SuggestSeedCollections runs the second intake call: given the same minimal
+// context as the clarifying questions, propose 0-2 collections the site would
+// clearly benefit from. Runs in parallel with BuildClarifyingQuestions so the
+// collections step costs no extra interview latency.
+func (p *OpenAIPlanner) SuggestSeedCollections(ctx context.Context, request SeedCollectionSuggestRequest) ([]SeedCollectionSuggestion, error) {
+	if p == nil {
+		return nil, ErrClarifyingPlannerUnavailable
+	}
+	userJSON, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("encode seed collection suggest payload: %w", err)
+	}
+	schema := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"collections"},
+		"properties": map[string]any{
+			"collections": map[string]any{
+				"type":     "array",
+				"maxItems": MaxSeedCollectionSuggestions,
+				"items": map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+					// OpenAI strict mode requires every property in required.
+					// Empty string means "not applicable".
+					"required": []string{"id", "singularLabel", "pluralLabel", "helper", "itemHint", "example"},
+					"properties": map[string]any{
+						"id":            map[string]any{"type": "string"},
+						"singularLabel": map[string]any{"type": "string"},
+						"pluralLabel":   map[string]any{"type": "string"},
+						"helper":        map[string]any{"type": "string"},
+						"itemHint":      map[string]any{"type": "string"},
+						"example":       map[string]any{"type": "string"},
+					},
+				},
+			},
+		},
+	}
+
+	var responsePayload struct {
+		Collections []SeedCollectionSuggestion `json:"collections"`
+	}
+	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
+		Name:   "seed_collection_suggestions",
+		Schema: schema,
+		System: seedCollectionSuggesterSystemPrompt + languageDirective(request.PreferredLanguage),
+		User:   string(userJSON),
+		Strict: true,
+	}, &responsePayload); err != nil {
+		return nil, err
+	}
+	return responsePayload.Collections, nil
+}
+
+// DraftSeedCollection structures the user's raw item lines (step two of the
+// intake form) into a field schema plus one entry per line. The generation
+// service finishes the result deterministically — ids, slugs, published
+// status, validation — before it becomes a seed collection.
+func (p *OpenAIPlanner) DraftSeedCollection(ctx context.Context, request SeedCollectionDraftRequest) (SeedCollectionDraftResponse, error) {
+	if p == nil {
+		return SeedCollectionDraftResponse{}, ErrClarifyingPlannerUnavailable
+	}
+	userJSON, err := json.Marshal(request)
+	if err != nil {
+		return SeedCollectionDraftResponse{}, fmt.Errorf("encode seed collection draft payload: %w", err)
+	}
+	schema := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"schema", "entries"},
+		"properties": map[string]any{
+			"schema": map[string]any{
+				"type":     "array",
+				"minItems": 1,
+				"maxItems": 6,
+				"items": map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+					"required":             []string{"key", "label", "type"},
+					"properties": map[string]any{
+						"key": map[string]any{
+							"type":        "string",
+							"pattern":     "^[a-z][a-z0-9_]*$",
+							"description": "snake_case field key starting with a letter",
+						},
+						"label":    map[string]any{"type": "string", "minLength": 1, "maxLength": 60},
+						"type":     map[string]any{"type": "string", "enum": []string{"text", "long_text", "asset"}},
+						"required": map[string]any{"type": "boolean"},
+					},
+				},
+			},
+			"entries": map[string]any{
+				"type":     "array",
+				"minItems": 1,
+				"maxItems": maxSeedCollectionEntries,
+				"items": map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+					"required":             []string{"title", "fields"},
+					"properties": map[string]any{
+						"title": map[string]any{"type": "string", "minLength": 1, "maxLength": 120},
+						"fields": map[string]any{
+							"type":                 "object",
+							"additionalProperties": true,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	var response SeedCollectionDraftResponse
+	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
+		Name:   "seed_collection_draft",
+		Schema: schema,
+		System: seedCollectionDrafterSystemPrompt + languageDirective(request.PreferredLanguage),
+		User:   string(userJSON),
+		Strict: false,
+	}, &response); err != nil {
+		return SeedCollectionDraftResponse{}, err
+	}
+	return response, nil
+}
+
 // PlanPageChanges runs the diff-style page reprompt: a small structured call
 // that decides which blocks on a page to keep, edit, remove, or insert. It
 // returns an ordered list of operations, never block copy. Per-block copy is
@@ -1622,6 +1746,35 @@ Question rules:
 - Avoid jargon and avoid asking about visual style unless the user volunteered an opinion in the prompt.
 
 Each question id should be a short kebab-case slug (e.g., "primary-conversion", "needs-collection", "vibe"). Helper text is optional and should clarify rare ambiguity; do not pad with marketing copy.`
+
+const seedCollectionSuggesterSystemPrompt = `You are the collections scout for Snaelda's site generator intake form.
+Return JSON only, matching the supplied schema exactly.
+Decide whether the described site clearly revolves around a list of similar items the owner maintains over time — services with prices, menu items, team members, projects, classes, properties, treatments. Suggest at most 2 collections; suggest zero when the site reads as a simple one-off page (a personal landing page, a single event, a plain contact site) or when you would only be guessing.
+
+A collection gives every item its own editable entry and detail page, so only suggest one when per-item pages earn their keep.
+
+For each suggestion:
+- "id": short kebab-case slug (e.g., "services", "menu-items", "team").
+- "singularLabel" / "pluralLabel": natural editor-facing labels in the site's language.
+- "helper": one short sentence, addressed to the site owner, saying why listing these now pays off.
+- "itemHint": one short instruction telling the owner what to write per line (e.g., "One service per line: name, short description, price").
+- "example": one realistic example line matching the itemHint, plausible for this specific business.`
+
+const seedCollectionDrafterSystemPrompt = `You are the seed-collection drafter for Snaelda's site generator.
+Return JSON only, matching the supplied schema exactly.
+The user listed their items as free-form text, roughly one item per line, for a collection with the supplied labels. Structure that text into a field schema plus one entry per item.
+
+Schema rules:
+- 2-5 fields that fit what the user actually provided: "text" for short values (name, price, role), "long_text" for prose descriptions.
+- The first field must be a required "text" field holding the item's name/title.
+- Add one "asset" image field at the end so the owner can attach photos later.
+- Field keys are snake_case; labels are editor-facing, in the site's language.
+
+Entry rules:
+- One entry per item in the user's text; skip blank lines. Never invent items the user did not list, and never drop one they did.
+- Preserve the user's facts VERBATIM — names, prices, numbers. Do not embellish, translate, or round. Only tidy obvious typos in separators.
+- "title" is the item's display name; also place it in the schema's first field.
+- "fields" must use only keys from the schema; leave the asset field out of entries.`
 
 const pageChangeSetSystemPrompt = `You are the structured page-edit planner for Snaelda.
 Return JSON only, matching the supplied schema exactly.

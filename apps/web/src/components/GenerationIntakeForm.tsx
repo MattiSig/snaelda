@@ -12,6 +12,10 @@ type IntakeFormProps = {
   isSubmitting?: boolean
   onSubmit: (answers: ClarifyingAnswer[]) => void
   onSkipAll: () => void
+  // Overridden when a collections step follows, so the buttons promise the
+  // next step instead of generation.
+  submitLabel?: string
+  skipAllLabel?: string
 }
 
 type DraftAnswer = {
@@ -30,6 +34,8 @@ export function GenerationIntakeForm({
   isSubmitting = false,
   onSubmit,
   onSkipAll,
+  submitLabel = 'Generate site',
+  skipAllLabel = 'Skip all and generate',
 }: IntakeFormProps) {
   const initial = useMemo(() => {
     const seed: Record<string, DraftAnswer> = {}
@@ -187,7 +193,7 @@ export function GenerationIntakeForm({
           <div className={cn(actions.row, 'items-center')}>
             <Button onClick={handleSubmit} disabled={isSubmitting}>
               <Sparkles className="size-4" />
-              {isSubmitting ? 'Generating...' : 'Generate site'}
+              {isSubmitting ? 'Generating...' : submitLabel}
             </Button>
             <button
               type="button"
@@ -195,7 +201,7 @@ export function GenerationIntakeForm({
               onClick={onSkipAll}
               disabled={isSubmitting}
             >
-              Skip all and generate
+              {skipAllLabel}
             </button>
           </div>
         </div>

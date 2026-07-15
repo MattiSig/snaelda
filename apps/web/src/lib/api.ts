@@ -1409,8 +1409,25 @@ export type ClarifyingAnswer = {
   skipped?: boolean;
 };
 
+export type SeedCollectionSuggestion = {
+  id: string;
+  singularLabel: string;
+  pluralLabel: string;
+  helper?: string;
+  itemHint?: string;
+  example?: string;
+};
+
+export type SeedCollectionInput = {
+  suggestionId?: string;
+  singularLabel: string;
+  pluralLabel: string;
+  itemsText: string;
+};
+
 export type InterviewResponse = {
   questions: ClarifyingQuestion[];
+  collections?: SeedCollectionSuggestion[];
 };
 
 export async function fetchClarifyingQuestions(input: {
@@ -1437,6 +1454,7 @@ export async function generateSite(input: {
   optionalHints?: Record<string, string>;
   brand?: BrandConfig;
   interviewAnswers?: ClarifyingAnswer[];
+  collections?: SeedCollectionInput[];
 }) {
   return apiFetch<SiteRepromptResponse>("/api/sites/generate", {
     method: "POST",
@@ -1456,6 +1474,7 @@ export async function streamGenerateSite(
     optionalHints?: Record<string, string>;
     brand?: BrandConfig;
     interviewAnswers?: ClarifyingAnswer[];
+    collections?: SeedCollectionInput[];
   },
   handlers?: {
     onJobCreated?: (jobId: string) => void;
