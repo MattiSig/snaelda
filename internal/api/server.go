@@ -168,6 +168,7 @@ func (s *Server) BuildHandler() (http.Handler, error) {
 		generationHandlerConfig.Planner = generationPlanner.BuildPlan
 		generationHandlerConfig.BlockSuggester = generationPlanner
 		generationHandlerConfig.ImageQueryRewriter = generationPlanner
+		generationHandlerConfig.ImageQueryNormalizer = generationPlanner
 		generationHandlerConfig.PageChangeSetPlanner = generationPlanner
 		generationHandlerConfig.ClarifyingPlanner = generationPlanner
 		generationHandlerConfig.SeedCollectionPlanner = generationPlanner

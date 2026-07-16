@@ -96,11 +96,15 @@ func (s *Service) applyStarterImagery(ctx context.Context, workspaceID string, u
 	}
 
 	profile := profilePrompt(prompt, draft.Site.DefaultLocale)
+	var normalized map[string]string
+	if stockAvailable {
+		normalized = s.normalizeStarterImageQueries(ctx, draft, prompt)
+	}
 	for pageIndex := range draft.Pages {
 		page := &draft.Pages[pageIndex]
 		for blockIndex := range page.Blocks {
 			block := &page.Blocks[blockIndex]
-			s.fillBlockStarterImagery(ctx, workspaceID, userID, draft.Site, page, block, profile, prompt, seeds, stockAvailable)
+			s.fillBlockStarterImagery(ctx, workspaceID, userID, draft.Site, page, block, profile, prompt, seeds, stockAvailable, normalized, pageIndex, blockIndex)
 		}
 	}
 
@@ -118,6 +122,9 @@ func (s *Service) fillBlockStarterImagery(
 	prompt string,
 	seeds *seedPool,
 	stockAvailable bool,
+	normalized map[string]string,
+	pageIndex int,
+	blockIndex int,
 ) {
 	if block == nil || block.Props == nil {
 		return
@@ -130,7 +137,7 @@ func (s *Service) fillBlockStarterImagery(
 			if filled := seedImage(seeds, image, alt); filled != nil {
 				block.Props["image"] = filled
 			} else if stockAvailable {
-				queries := heroImageQueries(site, page, block, profile, prompt)
+				queries := prependQuery(heroImageQueries(site, page, block, profile, prompt), normalized[starterImageSlotKey(pageIndex, blockIndex, -1)])
 				if filled := s.fetchAndStoreImage(ctx, workspaceID, userID, site.ID, queries, alt, imagery.OrientationLandscape, image); filled != nil {
 					block.Props["image"] = filled
 				}
@@ -142,7 +149,7 @@ func (s *Service) fillBlockStarterImagery(
 			if filled := seedImage(seeds, image, alt); filled != nil {
 				block.Props["image"] = filled
 			} else if stockAvailable {
-				queries := imageTextQueries(site, page, block, profile)
+				queries := prependQuery(imageTextQueries(site, page, block, profile), normalized[starterImageSlotKey(pageIndex, blockIndex, -1)])
 				if filled := s.fetchAndStoreImage(ctx, workspaceID, userID, site.ID, queries, alt, imagery.OrientationLandscape, image); filled != nil {
 					block.Props["image"] = filled
 				}
@@ -167,7 +174,7 @@ func (s *Service) fillBlockStarterImagery(
 				item["image"] = filled
 				raw[index] = item
 			} else if stockAvailable {
-				queries := galleryImageQueries(site, page, item, profile)
+				queries := prependQuery(galleryImageQueries(site, page, item, profile), normalized[starterImageSlotKey(pageIndex, blockIndex, index)])
 				if filled := s.fetchAndStoreImage(ctx, workspaceID, userID, site.ID, queries, alt, imagery.OrientationLandscape, image); filled != nil {
 					item["image"] = filled
 					raw[index] = item
@@ -403,7 +410,7 @@ func appendQuery(queries []string, value string) []string {
 		return queries
 	}
 	if len(clean) > 80 {
-		clean = strings.TrimSpace(clean[:80])
+		clean = strings.TrimSpace(truncateOnRuneBoundary(clean, 80))
 	}
 	return append(queries, clean)
 }

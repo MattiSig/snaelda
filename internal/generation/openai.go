@@ -911,6 +911,71 @@ func (p *OpenAIPlanner) RewriteImageQuery(ctx context.Context, request ImageQuer
 	return strings.TrimSpace(response.Query), nil
 }
 
+// NormalizeStarterImageQueries rewrites every empty image slot's local
+// context into a short English Pexels search query in one batched structured
+// call. The response is position-keyed (query_0…query_N-1) rather than an
+// array so the strict schema can require exactly one query per slot.
+func (p *OpenAIPlanner) NormalizeStarterImageQueries(ctx context.Context, request StarterImageQueryRequest) ([]string, error) {
+	if p == nil {
+		return nil, ErrBlockSuggestUnavailable
+	}
+	if len(request.Slots) == 0 {
+		return nil, nil
+	}
+	userJSON, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("encode starter image query request: %w", err)
+	}
+
+	properties := map[string]any{}
+	required := make([]string, 0, len(request.Slots))
+	for index := range request.Slots {
+		key := fmt.Sprintf("query_%d", index)
+		properties[key] = map[string]any{
+			"type":      "string",
+			"minLength": 1,
+			"maxLength": 80,
+		}
+		required = append(required, key)
+	}
+	schema := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"queries"},
+		"properties": map[string]any{
+			"queries": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"required":             required,
+				"properties":           properties,
+			},
+		},
+	}
+
+	var response struct {
+		Queries map[string]string `json:"queries"`
+	}
+	if err := p.createStructuredCompletion(ctx, structuredCompletionRequest{
+		Name:   "starter_image_queries",
+		Schema: schema,
+		System: starterImageQuerySystemPrompt,
+		User:   string(userJSON),
+		Strict: true,
+	}, &response); err != nil {
+		return nil, err
+	}
+
+	queries := make([]string, len(request.Slots))
+	for index := range request.Slots {
+		query, ok := response.Queries[fmt.Sprintf("query_%d", index)]
+		if !ok {
+			return nil, fmt.Errorf("starter image queries missing query_%d", index)
+		}
+		queries[index] = strings.TrimSpace(query)
+	}
+	return queries, nil
+}
+
 // SuggestBlockProps rewrites a single block's props using the model. The
 // returned props are constrained by the block definition's PropSchema, so the
 // shape always matches the existing block type/version.
@@ -1674,6 +1739,15 @@ Honor the user instruction when one is provided — the instruction trumps infer
 Do not return brand names, person names, hashtags, quotation marks, or commentary. Just the query string.
 If the page is image-led (florist, photographer, restaurant, hotel, cafe, salon, ceramics studio, etc.) skew the query toward atmospheric, magazine-style results.
 If the page is task-oriented (pricing, contact, FAQ) prefer broader supporting imagery that matches the brand mood.`
+
+const starterImageQuerySystemPrompt = `You are the image-search query writer for Snaelda's website builder.
+Return JSON only, matching the supplied schema exactly.
+You receive a site's name, goal, locale, and a list of image slots. Each slot carries its block type, page title, and nearby copy — often not in English.
+For every slot, write one short ENGLISH photo-search query (3-6 words, under 80 characters) for the Pexels stock-photo library. Always answer in English regardless of the input language — stock libraries are indexed in English.
+Describe a concrete photographable subject and setting; translate the meaning, never transliterate. A slot about "greining og stigun" (diagnosis and staging) wants "doctor consulting patient clinic", not the Icelandic words.
+Prefer concrete nouns and a clear setting. Photography lexicon is welcome ("warm natural light", "behind the scenes") but keep it terse.
+Do not return brand names, person names, place names, hashtags, quotation marks, or commentary.
+Hero slots want atmospheric, magazine-style establishing imagery; gallery and supporting slots want closer, more specific subjects. Vary the queries so a page does not fill with near-identical photos.`
 
 const outlinePlannerSystemPrompt = `You are the outline planner for Snaelda's structured site generator.
 Return JSON only, matching the supplied schema exactly.

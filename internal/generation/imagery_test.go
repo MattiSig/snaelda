@@ -14,11 +14,13 @@ type fakeImageryProvider struct {
 	photos    []imagery.Photo
 	pickError error
 	bodies    map[string][]byte
+	searched  []string
 }
 
 func (f *fakeImageryProvider) Name() string { return "fake" }
 
-func (f *fakeImageryProvider) Search(_ context.Context, _ imagery.SearchInput) ([]imagery.Photo, error) {
+func (f *fakeImageryProvider) Search(_ context.Context, input imagery.SearchInput) ([]imagery.Photo, error) {
+	f.searched = append(f.searched, input.Query)
 	if f.pickError != nil {
 		return nil, f.pickError
 	}

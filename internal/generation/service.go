@@ -109,6 +109,7 @@ type Service struct {
 	planner               generationPlanBuilder
 	suggester             BlockSuggester
 	imageRewriter         ImageQueryRewriter
+	imageQueryPlanner     StarterImageQueryPlanner
 	pageChangeSetPlanner  PageChangeSetPlanner
 	clarifyingPlanner     ClarifyingQuestionPlanner
 	seedCollectionPlanner SeedCollectionPlanner
@@ -167,6 +168,15 @@ func WithBlockSuggester(suggester BlockSuggester) ServiceOption {
 func WithImageQueryRewriter(rewriter ImageQueryRewriter) ServiceOption {
 	return func(s *Service) {
 		s.imageRewriter = rewriter
+	}
+}
+
+// WithStarterImageQueryPlanner wires the batched image-query normalizer used
+// by starter-imagery enrichment. When nil, enrichment searches with the
+// deterministic (draft-language) query chain only.
+func WithStarterImageQueryPlanner(planner StarterImageQueryPlanner) ServiceOption {
+	return func(s *Service) {
+		s.imageQueryPlanner = planner
 	}
 }
 

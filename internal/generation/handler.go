@@ -30,6 +30,7 @@ type HandlerConfig struct {
 	Planner               generationPlanBuilder
 	BlockSuggester        BlockSuggester
 	ImageQueryRewriter    ImageQueryRewriter
+	ImageQueryNormalizer  StarterImageQueryPlanner
 	PageChangeSetPlanner  PageChangeSetPlanner
 	ClarifyingPlanner     ClarifyingQuestionPlanner
 	SeedCollectionPlanner SeedCollectionPlanner
@@ -141,6 +142,9 @@ func NewServiceFromConfig(db DB, cfg HandlerConfig) *Service {
 	}
 	if cfg.ImageQueryRewriter != nil {
 		options = append(options, WithImageQueryRewriter(cfg.ImageQueryRewriter))
+	}
+	if cfg.ImageQueryNormalizer != nil {
+		options = append(options, WithStarterImageQueryPlanner(cfg.ImageQueryNormalizer))
 	}
 	if cfg.PageChangeSetPlanner != nil {
 		options = append(options, WithPageChangeSetPlanner(cfg.PageChangeSetPlanner))
